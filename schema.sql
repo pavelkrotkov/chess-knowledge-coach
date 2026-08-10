@@ -1,0 +1,2 @@
+-- Canonical schema is embedded in chess_coach.db for zero-config CLI use.
+-- This file is kept as a human-readable migration anchor.

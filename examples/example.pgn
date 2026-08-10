@@ -1,0 +1,10 @@
+[Event "Example"]
+[Site "local"]
+[Date "2026.01.01"]
+[Round "1"]
+[White "White"]
+[Black "Black"]
+[Result "1-0"]
+[TimeControl "300+3"]
+
+1. e4 {[%clk 0:05:00]} e5 {[%clk 0:05:00]} 2. Nf3 {[%clk 0:04:58]} Nc6 {[%clk 0:04:59]} 1-0
