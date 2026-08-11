@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 
 import chess
+import chess.pgn
 
 from .db import Database
 
@@ -18,11 +19,36 @@ def position_key(board: chess.Board) -> str:
 
 
 def _rows(path: str | Path) -> list[dict[str, str]]:
-    text = Path(path).read_text(encoding="utf-8")
-    if Path(path).suffix.lower() == ".json":
-        payload = json.loads(text)
-        return payload if isinstance(payload, list) else payload["openings"]
-    return list(csv.DictReader(io.StringIO(text), dialect="excel-tab"))
+    path = Path(path)
+    try:
+        text = path.read_text(encoding="utf-8")
+        if path.suffix.lower() == ".json":
+            payload = json.loads(text)
+            rows = payload if isinstance(payload, list) else payload["openings"]
+        else:
+            rows = list(csv.DictReader(io.StringIO(text), dialect="excel-tab"))
+    except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise ValueError(f"failed to read opening dataset {path}: {exc}") from exc
+    if not isinstance(rows, list):
+        raise ValueError(f"opening dataset {path} must contain a list of rows")
+    return rows
+
+
+def _moves(row: dict[str, str]) -> list[chess.Move]:
+    text = row.get("moves") or row.get("pgn")
+    if not text:
+        raise ValueError("opening row requires a moves or pgn field")
+    if row.get("pgn"):
+        game = chess.pgn.read_game(io.StringIO(text))
+        if game is None:
+            raise ValueError("opening row contains an empty PGN")
+        return [node.move for node in game.mainline()]
+    board = chess.Board()
+    moves = []
+    for token in text.split():
+        moves.append(board.parse_san(token))
+        board.push(moves[-1])
+    return moves
 
 
 def import_openings(
@@ -32,44 +58,59 @@ def import_openings(
     version: str,
     source_url: str,
 ) -> int:
-    """Import rows with ECO/name/moves columns into a versioned position DAG."""
-    dataset = db.connection.execute(
-        "INSERT OR IGNORE INTO opening_datasets(version, source_url) VALUES (?, ?)",
-        (version, source_url),
-    )
-    dataset_id = (
-        dataset.lastrowid
-        or db.connection.execute(
+    """Import ECO/name/moves or ECO/name/pgn rows into a position DAG."""
+    try:
+        db.connection.execute(
+            "INSERT OR IGNORE INTO opening_datasets(version, source_url) VALUES (?, ?)",
+            (version, source_url),
+        )
+        dataset_id = db.connection.execute(
             "SELECT id FROM opening_datasets WHERE version = ? AND source_url = ?",
             (version, source_url),
-        ).fetchone()[0]
-    )
-    imported = 0
-    for row in _rows(path):
-        board = chess.Board()
-        parent = position_key(board)
-        for ply, san in enumerate(row["moves"].split(), start=1):
-            move = board.parse_san(san)
-            board.push(move)
-            child = position_key(board)
-            db.connection.execute(
-                "INSERT OR IGNORE INTO opening_edges(dataset_id, parent_key, child_key, uci) VALUES (?, ?, ?, ?)",
-                (dataset_id, parent, child, move.uci()),
-            )
+        ).fetchone()
+        if dataset_id is None:
+            raise ValueError(f"failed to insert or find dataset {version!r}")
+        dataset_id = dataset_id[0]
+        imported = 0
+        for row in _rows(path):
+            name = row.get("name")
+            if not name:
+                raise ValueError("opening row requires a name field")
+            board = chess.Board()
+            parent = position_key(board)
+            moves = _moves(row)
+            for move in moves:
+                board.push(move)
+                child = position_key(board)
+                db.connection.execute(
+                    """INSERT OR IGNORE INTO opening_edges
+                    (dataset_id, parent_key, child_key, uci) VALUES (?, ?, ?, ?)""",
+                    (dataset_id, parent, child, move.uci()),
+                )
+                parent = child
+            if not moves:
+                raise ValueError("opening row requires at least one move")
             db.connection.execute(
                 """INSERT OR IGNORE INTO opening_nodes
                 (dataset_id, position_key, eco, name, ply) VALUES (?, ?, ?, ?, ?)""",
-                (dataset_id, child, row.get("eco"), row["name"], ply),
+                (dataset_id, parent, row.get("eco"), name, len(moves)),
             )
-            parent = child
-        imported += 1
-    db.connection.commit()
-    return imported
+            imported += 1
+        db.connection.commit()
+        return imported
+    except Exception:
+        db.connection.rollback()
+        raise
 
 
 def classify_game(
     db: Database, game_id: int, *, version: str, source_url: str
 ) -> dict[str, object]:
+    game = db.connection.execute("SELECT variant FROM games WHERE id = ?", (game_id,)).fetchone()
+    if game is None:
+        raise ValueError(f"unknown game id: {game_id}")
+    if game["variant"] != "Standard":
+        raise ValueError(f"opening classification does not support variant {game['variant']!r}")
     dataset = db.connection.execute(
         "SELECT id FROM opening_datasets WHERE version = ? AND source_url = ?",
         (version, source_url),
