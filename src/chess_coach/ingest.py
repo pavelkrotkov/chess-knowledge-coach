@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import io
 import re
-from typing import TextIO
+from typing import TextIO, cast
 
 import chess.pgn
 
@@ -24,7 +24,7 @@ def _clock_seconds(value: str) -> float:
 
 
 def ingest_pgn(db: Database, pgn: str | TextIO, source: str = "local") -> dict[str, int]:
-    stream = pgn if hasattr(pgn, "read") else io.StringIO(pgn)
+    stream = cast(TextIO, pgn) if hasattr(pgn, "read") else io.StringIO(pgn)
     games = positions = 0
     while game := chess.pgn.read_game(stream):
         headers = game.headers
@@ -35,15 +35,28 @@ def ingest_pgn(db: Database, pgn: str | TextIO, source: str = "local") -> dict[s
             (source, source_id, pgn, event, site, date, round, white, black,
              result, time_control, white_elo, black_elo)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (source, source_id, raw_pgn, headers.get("Event"), headers.get("Site"),
-             headers.get("Date"), headers.get("Round"), headers.get("White", "?"),
-             headers.get("Black", "?"), headers.get("Result", "*"),
-             headers.get("TimeControl"), _int_or_none(headers.get("WhiteElo")),
-             _int_or_none(headers.get("BlackElo"))),
+            (
+                source,
+                source_id,
+                raw_pgn,
+                headers.get("Event"),
+                headers.get("Site"),
+                headers.get("Date"),
+                headers.get("Round"),
+                headers.get("White", "?"),
+                headers.get("Black", "?"),
+                headers.get("Result", "*"),
+                headers.get("TimeControl"),
+                _int_or_none(headers.get("WhiteElo")),
+                _int_or_none(headers.get("BlackElo")),
+            ),
         )
-        game_id = cur.lastrowid or db.connection.execute(
-            "SELECT id FROM games WHERE source = ? AND source_id = ?", (source, source_id)
-        ).fetchone()[0]
+        game_id = (
+            cur.lastrowid
+            or db.connection.execute(
+                "SELECT id FROM games WHERE source = ? AND source_id = ?", (source, source_id)
+            ).fetchone()[0]
+        )
         board = game.board()
         for ply, node in enumerate(game.mainline(), start=1):
             clock = None

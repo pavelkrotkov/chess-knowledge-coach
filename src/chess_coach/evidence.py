@@ -7,18 +7,32 @@ from typing import Any
 from .db import Database
 
 
-def record_evidence(db: Database, *, skill: str, operation: str, outcome: str,
-                    confidence: float, position_id: int | None = None,
-                    source_facts: list[str] | None = None,
-                    mapper_version: str = "0.1.0") -> None:
+def record_evidence(
+    db: Database,
+    *,
+    skill: str,
+    operation: str,
+    outcome: str,
+    confidence: float,
+    position_id: int | None = None,
+    source_facts: list[str] | None = None,
+    mapper_version: str = "0.1.0",
+) -> None:
     if outcome not in {"success", "failure", "ambiguous"}:
         raise ValueError("outcome must be success, failure, or ambiguous")
     db.connection.execute(
         """INSERT INTO evidence_mappings
         (position_id, skill, operation, outcome, confidence, source_facts_json, mapper_version)
         VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (position_id, skill, operation, outcome, confidence,
-         json.dumps(source_facts or []), mapper_version),
+        (
+            position_id,
+            skill,
+            operation,
+            outcome,
+            confidence,
+            json.dumps(source_facts or []),
+            mapper_version,
+        ),
     )
     db.connection.commit()
 
@@ -35,9 +49,15 @@ def evidence_report(db: Database) -> list[dict[str, Any]]:
         report[key].update({"skill": row["skill"], "operation": row["operation"]})
         report[key][row["outcome"]] = row["count"]
     return [
-        {"skill": skill, "operation": operation,
-         "opportunities": item.get("success", 0) + item.get("failure", 0) + item.get("ambiguous", 0),
-         "success": item.get("success", 0), "failure": item.get("failure", 0),
-         "ambiguous": item.get("ambiguous", 0)}
+        {
+            "skill": skill,
+            "operation": operation,
+            "opportunities": item.get("success", 0)
+            + item.get("failure", 0)
+            + item.get("ambiguous", 0),
+            "success": item.get("success", 0),
+            "failure": item.get("failure", 0),
+            "ambiguous": item.get("ambiguous", 0),
+        }
         for (skill, operation), item in sorted(report.items())
     ]

@@ -16,24 +16,26 @@ Local-first foundations for turning chess games into reproducible skill evidence
 
 The supported development environment is Python 3.11+ with SQLite. On Ubuntu:
 
+Install `uv` first, then let it manage the project environment and lockfile:
+
 ```bash
 sudo apt update
-sudo apt install -y git curl ca-certificates jq sqlite3 python3-venv python3-pip python3-dev build-essential zstd stockfish
-python3 -m venv .venv
-. .venv/bin/activate
-python -m pip install -e . pytest
+sudo apt install -y git curl ca-certificates jq sqlite3 python3-dev build-essential zstd stockfish
+uv sync --dev
 ```
+
+`uv run` executes commands in the reproducible uv-managed environment; no manual
+activation or `pip install` step is needed.
 
 Ubuntu currently ships Stockfish 17. The pipeline records the engine identity and configuration. For the intended Stockfish 18 deployment, install the upstream compatible POPCNT/generic x64 binary and pass its path to the analysis adapter.
 
 ## Quick start
 
 ```bash
-. .venv/bin/activate
-chess-coach --db coach.sqlite init-db
-chess-coach --db coach.sqlite ingest-pgn games.pgn
-chess-coach --db coach.sqlite evidence-report
-pytest
+uv run chess-coach --db coach.sqlite init-db
+uv run chess-coach --db coach.sqlite ingest-pgn games.pgn
+uv run chess-coach --db coach.sqlite evidence-report
+uv run pytest
 ```
 
 The Python API can run a scan after ingestion:
