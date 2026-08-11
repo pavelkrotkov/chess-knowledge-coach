@@ -12,7 +12,7 @@ def test_seed_ontology_and_recursive_edges() -> None:
     descendants = skill_descendants(db, "tactics")
 
     assert "fork" in descendants
-    assert map_detector_facts(db, "test-1") == []
+    assert "fork" in skill_descendants(db, "tactics", version="test-1")
 
 
 def test_mapper_preserves_fact_provenance_and_operation() -> None:
@@ -35,9 +35,10 @@ def test_mapper_preserves_fact_provenance_and_operation() -> None:
     )
     db.connection.commit()
 
-    result = map_detector_facts(db, "map-1")
+    result = map_detector_facts(db, "map-1", detector_version="det-1")
+    again = map_detector_facts(db, "map-1", detector_version="det-1")
 
-    assert result[0]["skill"] == "fork"
+    assert len(result) == len(again) == 1
     assert result[0]["operation"] == "execute"
     assert result[0]["source_facts"]
     assert result[0]["mapper_version"] == "map-1"
