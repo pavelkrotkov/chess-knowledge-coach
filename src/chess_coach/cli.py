@@ -10,6 +10,7 @@ from .evidence import evidence_report
 from .ingest import ingest_pgn
 from .lichess import LichessClient
 from .openings import classify_game, import_openings
+from .structures import extract_game_episodes
 
 
 def main() -> None:
@@ -32,6 +33,9 @@ def main() -> None:
     classify.add_argument("game_id", type=int)
     classify.add_argument("--version", required=True)
     classify.add_argument("--source-url", required=True)
+    structures = sub.add_parser("extract-structures")
+    structures.add_argument("game_id", type=int)
+    structures.add_argument("--detector-version", default="0.1.0")
     sub.add_parser("evidence-report")
     args = parser.parse_args()
     db = Database(args.db)
@@ -69,6 +73,17 @@ def main() -> None:
         print(
             json.dumps(
                 classify_game(db, args.game_id, version=args.version, source_url=args.source_url),
+                indent=2,
+            )
+        )
+    elif args.command == "extract-structures":
+        print(
+            json.dumps(
+                {
+                    "episodes": extract_game_episodes(
+                        db, args.game_id, detector_version=args.detector_version
+                    )
+                },
                 indent=2,
             )
         )
