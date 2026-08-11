@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS puzzle_corpora (
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS puzzles (
-    puzzle_id TEXT PRIMARY KEY,
+    puzzle_id TEXT NOT NULL,
     corpus_id INTEGER NOT NULL REFERENCES puzzle_corpora(id) ON DELETE CASCADE,
     fen TEXT NOT NULL,
     source TEXT NOT NULL,
@@ -75,10 +75,11 @@ CREATE TABLE IF NOT EXISTS puzzles (
     rating_deviation INTEGER NOT NULL,
     opening TEXT,
     themes_json TEXT NOT NULL,
-    objective TEXT NOT NULL
+    objective TEXT NOT NULL,
+    PRIMARY KEY(corpus_id, puzzle_id)
 );
 CREATE INDEX IF NOT EXISTS idx_puzzles_selection
-    ON puzzles(corpus_id, rating, rating_deviation, objective);
+    ON puzzles(corpus_id, objective, rating, rating_deviation);
 CREATE TABLE IF NOT EXISTS skills (
     id INTEGER PRIMARY KEY,
     skill TEXT NOT NULL,

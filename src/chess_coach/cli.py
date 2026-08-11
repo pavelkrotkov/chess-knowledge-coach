@@ -55,6 +55,8 @@ def main() -> None:
     puzzle_query.add_argument("--operation")
     puzzle_query.add_argument("--min-rating", type=int)
     puzzle_query.add_argument("--max-rating", type=int)
+    puzzle_query.add_argument("--limit", type=int, default=100)
+    puzzle_query.add_argument("--offset", type=int, default=0)
     sub.add_parser("evidence-report")
     args = parser.parse_args()
     db = Database(args.db)
@@ -134,6 +136,8 @@ def main() -> None:
                     operation=args.operation,
                     min_rating=args.min_rating,
                     max_rating=args.max_rating,
+                    limit=args.limit,
+                    offset=args.offset,
                 ),
                 indent=2,
             )
