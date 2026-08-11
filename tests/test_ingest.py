@@ -1,8 +1,7 @@
 from chess_coach.db import Database
 from chess_coach.ingest import ingest_pgn
 
-
-PGN = '''[Event "Test"]
+PGN = """[Event "Test"]
 [Site "Local"]
 [Date "2026.01.01"]
 [Round "1"]
@@ -14,7 +13,7 @@ PGN = '''[Event "Test"]
 [BlackElo "1450"]
 
 1. e4 {[%clk 0:05:00]} e5 {[%clk 0:05:00]} 2. Nf3 {[%clk 0:04:58]} Nc6 {[%clk 0:04:59]} 1-0
-'''
+"""
 
 
 def test_ingest_preserves_game_metadata_moves_and_clocks(tmp_path):
@@ -24,9 +23,7 @@ def test_ingest_preserves_game_metadata_moves_and_clocks(tmp_path):
     result = ingest_pgn(db, PGN)
 
     assert result == {"games": 1, "positions": 4}
-    game = db.connection.execute(
-        "SELECT white, black, result, time_control FROM games"
-    ).fetchone()
+    game = db.connection.execute("SELECT white, black, result, time_control FROM games").fetchone()
     assert tuple(game) == ("Alice", "Bob", "1-0", "300+3")
     moves = db.connection.execute(
         "SELECT ply, san, clock_seconds FROM positions ORDER BY ply"

@@ -9,11 +9,13 @@ def test_evidence_report_keeps_success_failure_and_ambiguity(tmp_path):
     record_evidence(db, skill="fork", operation="prevent", outcome="failure", confidence=0.8)
     record_evidence(db, skill="fork", operation="prevent", outcome="ambiguous", confidence=0.3)
 
-    assert evidence_report(db) == [{
-        "skill": "fork",
-        "operation": "prevent",
-        "opportunities": 3,
-        "success": 1,
-        "failure": 1,
-        "ambiguous": 1,
-    }]
+    assert evidence_report(db) == [
+        {
+            "skill": "fork",
+            "operation": "prevent",
+            "opportunities": 3,
+            "success": 1,
+            "failure": 1,
+            "ambiguous": 1,
+        }
+    ]
