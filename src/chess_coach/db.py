@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS games (
     event TEXT, site TEXT, date TEXT, round TEXT,
     white TEXT NOT NULL, black TEXT NOT NULL, result TEXT NOT NULL,
     time_control TEXT, white_elo INTEGER, black_elo INTEGER,
+    variant TEXT NOT NULL DEFAULT 'Standard', termination TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(source, source_id)
 );
@@ -68,6 +69,13 @@ class Database:
 
     def initialize(self) -> None:
         self.connection.executescript(SCHEMA)
+        columns = {row[1] for row in self.connection.execute("PRAGMA table_info(games)")}
+        if "variant" not in columns:
+            self.connection.execute(
+                "ALTER TABLE games ADD COLUMN variant TEXT NOT NULL DEFAULT 'Standard'"
+            )
+        if "termination" not in columns:
+            self.connection.execute("ALTER TABLE games ADD COLUMN termination TEXT")
         self.connection.commit()
 
     def close(self) -> None:
