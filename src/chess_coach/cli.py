@@ -9,6 +9,7 @@ from .db import Database
 from .evidence import evidence_report
 from .ingest import ingest_pgn
 from .lichess import LichessClient
+from .openings import classify_game, import_openings
 
 
 def main() -> None:
@@ -23,6 +24,14 @@ def main() -> None:
     sync.add_argument("--max-games", type=int, default=100)
     sync.add_argument("--page-size", type=int, default=100)
     sync.add_argument("--since", type=int)
+    openings = sub.add_parser("import-openings")
+    openings.add_argument("path", type=Path)
+    openings.add_argument("--version", required=True)
+    openings.add_argument("--source-url", required=True)
+    classify = sub.add_parser("classify-opening")
+    classify.add_argument("game_id", type=int)
+    classify.add_argument("--version", required=True)
+    classify.add_argument("--source-url", required=True)
     sub.add_parser("evidence-report")
     args = parser.parse_args()
     db = Database(args.db)
@@ -42,6 +51,24 @@ def main() -> None:
                     page_size=args.page_size,
                     since=args.since,
                 ),
+                indent=2,
+            )
+        )
+    elif args.command == "import-openings":
+        print(
+            json.dumps(
+                {
+                    "rows": import_openings(
+                        db, args.path, version=args.version, source_url=args.source_url
+                    )
+                },
+                indent=2,
+            )
+        )
+    elif args.command == "classify-opening":
+        print(
+            json.dumps(
+                classify_game(db, args.game_id, version=args.version, source_url=args.source_url),
                 indent=2,
             )
         )

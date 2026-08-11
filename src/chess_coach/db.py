@@ -57,6 +57,38 @@ CREATE TABLE IF NOT EXISTS evidence_mappings (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_evidence_skill ON evidence_mappings(skill, operation);
+CREATE TABLE IF NOT EXISTS opening_datasets (
+    id INTEGER PRIMARY KEY,
+    version TEXT NOT NULL,
+    source_url TEXT NOT NULL,
+    imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(version, source_url)
+);
+CREATE TABLE IF NOT EXISTS opening_nodes (
+    id INTEGER PRIMARY KEY,
+    dataset_id INTEGER NOT NULL REFERENCES opening_datasets(id) ON DELETE CASCADE,
+    position_key TEXT NOT NULL,
+    eco TEXT,
+    name TEXT NOT NULL,
+    ply INTEGER NOT NULL,
+    UNIQUE(dataset_id, position_key, name)
+);
+CREATE TABLE IF NOT EXISTS opening_edges (
+    dataset_id INTEGER NOT NULL REFERENCES opening_datasets(id) ON DELETE CASCADE,
+    parent_key TEXT NOT NULL,
+    child_key TEXT NOT NULL,
+    uci TEXT NOT NULL,
+    PRIMARY KEY(dataset_id, parent_key, child_key)
+);
+CREATE TABLE IF NOT EXISTS game_openings (
+    game_id INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+    dataset_id INTEGER NOT NULL REFERENCES opening_datasets(id) ON DELETE CASCADE,
+    opening_node_id INTEGER REFERENCES opening_nodes(id),
+    confidence REAL NOT NULL CHECK(confidence >= 0 AND confidence <= 1),
+    PRIMARY KEY(game_id, dataset_id)
+);
+CREATE INDEX IF NOT EXISTS idx_opening_nodes_position
+    ON opening_nodes(dataset_id, position_key);
 """
 
 
