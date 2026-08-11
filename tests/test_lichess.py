@@ -54,11 +54,27 @@ def test_token_is_sent_only_as_http_header() -> None:
     fake = FakeClient(PGN)
     client = LichessClient(token="secret", client=fake)
 
-    client.export_page("alice", max_games=1)
+    client.export_page("alice", max_games=7)
 
     request = fake.calls[0]
     assert request["headers"] == {
         "Accept": "application/x-chess-pgn",
         "Authorization": "Bearer secret",
     }
-    assert "secret" not in str(request["params"])
+    params = request["params"]
+    assert isinstance(params, dict)
+    assert params["max"] == 7
+    assert "secret" not in str(params)
+
+
+def test_site_url_provides_stable_id_and_raw_pgn_is_preserved() -> None:
+    pgn = PGN.replace('[GameId "abc123"]\n', "")
+    db = Database(":memory:")
+    db.initialize()
+    client = LichessClient(client=FakeClient(pgn))
+
+    client.sync_user(db, "alice", max_games=1)
+
+    game = db.connection.execute("SELECT source_id, pgn FROM games").fetchone()
+    assert game[0] == "abc123"
+    assert '[Site "https://lichess.org/abc123"]' in game[1]

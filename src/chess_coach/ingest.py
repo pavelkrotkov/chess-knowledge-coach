@@ -23,13 +23,23 @@ def _clock_seconds(value: str) -> float:
     return parts[0]
 
 
-def ingest_pgn(db: Database, pgn: str | TextIO, source: str = "local") -> dict[str, int]:
+def ingest_pgn(
+    db: Database,
+    pgn: str | TextIO,
+    source: str = "local",
+    *,
+    raw_pgn_override: str | None = None,
+) -> dict[str, int]:
     stream = cast(TextIO, pgn) if hasattr(pgn, "read") else io.StringIO(pgn)
     games = positions = 0
     while game := chess.pgn.read_game(stream):
         headers = game.headers
-        raw_pgn = str(game)
+        raw_pgn = raw_pgn_override or str(game)
         source_id = headers.get("GameId") if source == "lichess" else None
+        if source == "lichess" and not source_id:
+            site = headers.get("Site", "")
+            match = re.search(r"lichess\.org/([A-Za-z0-9]{6,})", site)
+            source_id = match.group(1) if match else None
         source_id = source_id or hashlib.sha256(raw_pgn.encode()).hexdigest()
         cur = db.connection.execute(
             """INSERT OR IGNORE INTO games

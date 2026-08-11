@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import re
 import time
 from collections.abc import Iterator
 from datetime import UTC, datetime
@@ -36,11 +37,28 @@ def _utc_millis(headers: chess.pgn.Headers) -> int | None:
 
 
 def _parse_games(payload: str) -> list[str]:
+    records = re.split(r"(?m)(?=^\[Event )", payload.strip())
     games: list[str] = []
-    stream = io.StringIO(payload)
-    while game := chess.pgn.read_game(stream):
-        games.append(str(game))
+    for record in records:
+        if not record.strip():
+            continue
+        game = chess.pgn.read_game(io.StringIO(record))
+        if game is not None:
+            games.append(record.strip() + "\n")
     return games
+
+
+def _headers(raw_pgn: str) -> chess.pgn.Headers | None:
+    game = chess.pgn.read_game(io.StringIO(raw_pgn))
+    return game.headers if game is not None else None
+
+
+def _source_id(headers: chess.pgn.Headers) -> str:
+    game_id = headers.get("GameId")
+    if game_id:
+        return game_id
+    match = re.search(r"lichess\.org/([A-Za-z0-9]{6,})", headers.get("Site", ""))
+    return match.group(1) if match else ""
 
 
 class LichessClient:
@@ -70,7 +88,7 @@ class LichessClient:
         until: int | None = None,
     ) -> list[str]:
         params: dict[str, int | str] = {
-            "max": min(max(1000, max_games), 1000),
+            "max": min(max(1, max_games), 1000),
             "clocks": "true",
             "evals": "false",
             "opening": "true",
@@ -95,7 +113,14 @@ class LichessClient:
                     )
                 response.raise_for_status()
                 return _parse_games(response.text)
-            except (httpx.HTTPError, ValueError) as exc:
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code != 429 and exc.response.status_code < 500:
+                    raise LichessError(f"Lichess rejected export for {username}") from exc
+                last_error = exc
+                if attempt == self.retries:
+                    break
+                time.sleep(self.backoff_seconds * (2**attempt))
+            except (httpx.RequestError, ValueError) as exc:
                 last_error = exc
                 if attempt == self.retries:
                     break
@@ -112,24 +137,42 @@ class LichessClient:
     ) -> Iterator[str]:
         """Yield at most ``max_games`` games, paging backwards by UTC timestamp."""
         remaining = max(0, max_games)
+        page_size = min(1000, max(1, page_size))
         until: int | None = None
+        seen_ids: set[str] = set()
         while remaining:
+            request_size = min(page_size, remaining)
             page = self.export_page(
                 username,
-                max_games=min(page_size, remaining),
+                max_games=request_size,
                 since=since,
                 until=until,
             )
             if not page:
                 return
-            yield from page[:remaining]
-            remaining -= len(page)
-            if len(page) < min(page_size, remaining + len(page)):
+            yielded = 0
+            newest_cursor: int | None = None
+            for raw_pgn in page:
+                headers = _headers(raw_pgn)
+                if headers is None or headers.get("Variant", "Standard") != "Standard":
+                    continue
+                identifier = _source_id(headers) or raw_pgn
+                cursor = _utc_millis(headers)
+                if cursor is not None:
+                    newest_cursor = cursor if newest_cursor is None else min(newest_cursor, cursor)
+                if identifier in seen_ids:
+                    continue
+                seen_ids.add(identifier)
+                yield raw_pgn
+                yielded += 1
+                remaining -= 1
+                if not remaining:
+                    return
+            if len(page) < request_size or newest_cursor is None or yielded == 0:
                 return
-            parsed = chess.pgn.read_game(io.StringIO(page[-1]))
-            if parsed is None or (next_until := _utc_millis(parsed.headers)) is None:
-                return
-            until = next_until - 1
+            # Lichess timestamps have one-second precision. Keep the boundary
+            # inclusive and deduplicate to avoid silently skipping tied games.
+            until = newest_cursor
 
     def sync_user(
         self,
@@ -145,6 +188,11 @@ class LichessClient:
         for raw_pgn in self.iter_user_games(
             username, max_games=max_games, page_size=page_size, since=since
         ):
-            result = ingest_pgn(db, raw_pgn, source="lichess")
+            result = ingest_pgn(
+                db,
+                raw_pgn,
+                source="lichess",
+                raw_pgn_override=raw_pgn,
+            )
             totals = {key: totals[key] + result[key] for key in totals}
         return totals
