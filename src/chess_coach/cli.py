@@ -64,7 +64,9 @@ def main() -> None:
     mastery_update = sub.add_parser("update-mastery")
     mastery_update.add_argument("skill")
     mastery_update.add_argument("operation")
-    sub.add_parser("mastery-report")
+    mastery_update.add_argument("--subject", default="default")
+    mastery_report_parser = sub.add_parser("mastery-report")
+    mastery_report_parser.add_argument("--subject", default="default")
     training_create = sub.add_parser("create-training")
     training_create.add_argument("source_type", choices=["game", "puzzle", "canonical"])
     training_create.add_argument("source_ref")
@@ -165,9 +167,16 @@ def main() -> None:
         validate_evidence(db, args.evidence_id)
         print(json.dumps({"validated": args.evidence_id}, indent=2))
     elif args.command == "update-mastery":
-        print(json.dumps(update_mastery(db, skill=args.skill, operation=args.operation), indent=2))
+        print(
+            json.dumps(
+                update_mastery(
+                    db, skill=args.skill, operation=args.operation, subject=args.subject
+                ),
+                indent=2,
+            )
+        )
     elif args.command == "mastery-report":
-        print(json.dumps(mastery_report(db), indent=2))
+        print(json.dumps(mastery_report(db, subject=args.subject), indent=2))
     elif args.command == "create-training":
         print(
             json.dumps(

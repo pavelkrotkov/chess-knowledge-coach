@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
+from datetime import UTC, datetime
 from typing import Any, cast
 
 from .db import Database
@@ -18,6 +19,8 @@ def record_evidence(
     source_facts: list[str] | None = None,
     mapper_version: str = "0.1.0",
     context: dict[str, Any] | None = None,
+    subject: str = "default",
+    observed_at: datetime | None = None,
 ) -> int:
     if outcome not in {"success", "failure", "ambiguous"}:
         raise ValueError("outcome must be success, failure, or ambiguous")
@@ -25,8 +28,8 @@ def record_evidence(
         raise ValueError("confidence must be between 0 and 1")
     cursor = db.connection.execute(
         """INSERT INTO evidence_mappings
-        (position_id, skill, operation, outcome, confidence, source_facts_json, mapper_version, context_json)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (position_id, skill, operation, outcome, confidence, source_facts_json, mapper_version, context_json, subject, observation_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             position_id,
             skill,
@@ -36,6 +39,8 @@ def record_evidence(
             json.dumps(source_facts or []),
             mapper_version,
             json.dumps(context or {}, sort_keys=True),
+            subject,
+            (observed_at or datetime.now(UTC)).astimezone(UTC).isoformat(),
         ),
     )
     db.connection.commit()

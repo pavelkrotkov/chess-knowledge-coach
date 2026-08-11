@@ -8,90 +8,127 @@ from typing import Any
 
 from .db import Database
 
+MASTERY_MODEL_VERSION = "weighted-outcomes-v1"
 
-def update_mastery(db: Database, *, skill: str, operation: str) -> dict[str, Any] | None:
+
+def _score(rows: list[Any]) -> tuple[float, float]:
+    effective = [row for row in rows if row["outcome"] in {"success", "failure"}]
+    weight = sum(row["confidence"] for row in effective)
+    score = (
+        sum(row["confidence"] for row in effective if row["outcome"] == "success") / weight
+        if weight
+        else 0.5
+    )
+    return score, weight
+
+
+def _observation_time(row: Any) -> datetime:
+    try:
+        value = datetime.fromisoformat(row["observation_at"])
+    except ValueError:
+        return datetime.now(UTC)
+    return value if value.tzinfo else value.replace(tzinfo=UTC)
+
+
+def update_mastery(
+    db: Database, *, skill: str, operation: str, subject: str = "default"
+) -> dict[str, Any] | None:
     rows = db.connection.execute(
-        """SELECT id, outcome, confidence, context_json, created_at
+        """SELECT id, outcome, confidence, context_json, observation_at
         FROM evidence_mappings
-        WHERE skill = ? AND operation = ? AND human_validated = 1
+        WHERE subject = ? AND skill = ? AND operation = ? AND human_validated = 1
         ORDER BY id""",
-        (skill, operation),
+        (subject, skill, operation),
     ).fetchall()
-    if not rows:
-        return None
     state_row = db.connection.execute(
-        "SELECT * FROM mastery_states WHERE skill = ? AND operation = ?", (skill, operation)
+        "SELECT * FROM mastery_states WHERE subject = ? AND skill = ? AND operation = ?",
+        (subject, skill, operation),
     ).fetchone()
-    previous_ids: set[int] = set()
+    if not rows:
+        if state_row is not None:
+            db.connection.execute("DELETE FROM mastery_states WHERE id = ?", (state_row["id"],))
+            db.connection.commit()
+        return None
+
+    evidence_ids = [int(row["id"]) for row in rows]
+    previous_ids: list[int] = []
     if state_row is not None:
         event = db.connection.execute(
             "SELECT evidence_ids_json FROM mastery_events WHERE state_id = ? ORDER BY id DESC LIMIT 1",
             (state_row["id"],),
         ).fetchone()
         if event:
-            previous_ids = set(json.loads(event["evidence_ids_json"]))
-    new_rows = [row for row in rows if row["id"] not in previous_ids]
-    if not new_rows and state_row is not None:
-        return dict(state_row)
+            previous_ids = json.loads(event["evidence_ids_json"])
 
-    weighted_total = sum(row["confidence"] for row in rows)
-    weighted_score = sum(
-        row["confidence"]
-        * (1 if row["outcome"] == "success" else 0 if row["outcome"] == "failure" else 0.5)
-        for row in rows
-    )
-    mastery = weighted_score / weighted_total if weighted_total else 0.5
-    uncertainty = 1 / (1 + weighted_total)
+    mastery, evidence_weight = _score(rows)
+    uncertainty = 1 / (1 + evidence_weight)
     cutoff = datetime.now(UTC) - timedelta(days=30)
-    recent = []
-    older = []
-    for row in rows:
-        try:
-            created = datetime.fromisoformat(row["created_at"]).replace(tzinfo=UTC)
-        except ValueError:
-            created = datetime.now(UTC)
-        (recent if created >= cutoff else older).append(row)
-
-    def score(items: list[Any]) -> float:
-        weight = sum(row["confidence"] for row in items)
-        return (
-            sum(
-                row["confidence"]
-                * (1 if row["outcome"] == "success" else 0 if row["outcome"] == "failure" else 0.5)
-                for row in items
-            )
-            / weight
-            if weight
-            else 0.5
-        )
-
-    trend = score(recent) - score(older) if older else 0.0
+    recent = [row for row in rows if _observation_time(row) >= cutoff]
+    older = [row for row in rows if _observation_time(row) < cutoff]
+    recent_score, _ = _score(recent)
+    older_score, older_weight = _score(older)
+    trend = recent_score - older_score if older_weight else 0.0
     now = datetime.now(UTC).isoformat()
+    previous_mastery = state_row["mastery"] if state_row is not None else None
+    changed = (
+        state_row is None
+        or set(previous_ids) != set(evidence_ids)
+        or abs(state_row["mastery"] - mastery) > 1e-12
+        or abs(state_row["uncertainty"] - uncertainty) > 1e-12
+        or abs(state_row["trend_30d"] - trend) > 1e-12
+    )
+
     if state_row is None:
         db.connection.execute(
-            """INSERT INTO mastery_states(skill, operation, mastery, uncertainty, evidence_weight, trend_30d, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (skill, operation, mastery, uncertainty, weighted_total, trend, now),
+            """INSERT INTO mastery_states
+            (subject, skill, operation, mastery, uncertainty, evidence_weight, trend_30d, updated_at, model_version)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                subject,
+                skill,
+                operation,
+                mastery,
+                uncertainty,
+                evidence_weight,
+                trend,
+                now,
+                MASTERY_MODEL_VERSION,
+            ),
         )
         state_row = db.connection.execute(
-            "SELECT * FROM mastery_states WHERE skill = ? AND operation = ?", (skill, operation)
+            "SELECT * FROM mastery_states WHERE subject = ? AND skill = ? AND operation = ?",
+            (subject, skill, operation),
         ).fetchone()
     else:
         db.connection.execute(
-            """UPDATE mastery_states SET mastery = ?, uncertainty = ?, evidence_weight = ?, trend_30d = ?, updated_at = ? WHERE id = ?""",
-            (mastery, uncertainty, weighted_total, trend, now, state_row["id"]),
+            """UPDATE mastery_states
+            SET mastery = ?, uncertainty = ?, evidence_weight = ?, trend_30d = ?, updated_at = ?, model_version = ?
+            WHERE id = ?""",
+            (
+                mastery,
+                uncertainty,
+                evidence_weight,
+                trend,
+                now,
+                MASTERY_MODEL_VERSION,
+                state_row["id"],
+            ),
         )
-    db.connection.execute(
-        """INSERT INTO mastery_events(state_id, evidence_ids_json, previous_mastery, new_mastery, changed_at)
-        VALUES (?, ?, ?, ?, ?)""",
-        (
-            state_row["id"],
-            json.dumps([row["id"] for row in rows]),
-            state_row["mastery"] if state_row else None,
-            mastery,
-            now,
-        ),
-    )
+
+    if changed:
+        db.connection.execute(
+            """INSERT INTO mastery_events
+            (state_id, evidence_ids_json, previous_mastery, new_mastery, changed_at, model_version)
+            VALUES (?, ?, ?, ?, ?, ?)""",
+            (
+                state_row["id"],
+                json.dumps(evidence_ids),
+                previous_mastery,
+                mastery,
+                now,
+                MASTERY_MODEL_VERSION,
+            ),
+        )
     db.connection.commit()
     return dict(
         db.connection.execute(
@@ -100,9 +137,9 @@ def update_mastery(db: Database, *, skill: str, operation: str) -> dict[str, Any
     )
 
 
-def mastery_report(db: Database) -> list[dict[str, Any]]:
+def mastery_report(db: Database, *, subject: str = "default") -> list[dict[str, Any]]:
     rows = db.connection.execute(
-        "SELECT * FROM mastery_states ORDER BY skill, operation"
+        "SELECT * FROM mastery_states WHERE subject = ? ORDER BY skill, operation", (subject,)
     ).fetchall()
     result = []
     for row in rows:
@@ -120,21 +157,25 @@ def mastery_report(db: Database) -> list[dict[str, Any]]:
         ).fetchone()
         evidence_ids = json.loads(event["evidence_ids_json"]) if event else []
         contexts = []
-        if evidence_ids:
+        if evidence_ids and all(isinstance(evidence_id, int) for evidence_id in evidence_ids):
             placeholders = ",".join("?" for _ in evidence_ids)
-            contexts = db.connection.execute(
-                f"SELECT context_json FROM evidence_mappings WHERE id IN ({placeholders})",
+            context_rows = db.connection.execute(
+                f"SELECT id, context_json FROM evidence_mappings WHERE id IN ({placeholders})",
                 evidence_ids,
             ).fetchall()
-        context: dict[str, Any] = {}
-        for item in contexts:
-            context.update(json.loads(item["context_json"]))
+            contexts = [
+                {
+                    "evidence_id": context_row["id"],
+                    "context": json.loads(context_row["context_json"]),
+                }
+                for context_row in context_rows
+            ]
         result.append(
             {
                 **dict(row),
                 "state": state,
                 "supporting_evidence_ids": evidence_ids,
-                "context": context,
+                "contexts": contexts,
             }
         )
     return result
