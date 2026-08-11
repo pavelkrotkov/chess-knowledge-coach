@@ -9,8 +9,17 @@ def test_extracts_open_files_and_isolated_pawns() -> None:
     features = extract_features(board)
 
     assert features["open_files"] == ["b", "c", "d", "e", "f", "g", "h"]
-    assert features["half_open_files"]["white"] == ["a"]
+    assert features["half_open_files"]["white"] == []
+    assert features["half_open_files"]["black"] == ["a"]
     assert features["isolated_pawns"]["white"] == ["a2"]
+
+
+def test_detects_minority_deficit() -> None:
+    board = chess.Board("4k3/8/8/8/ppp5/8/8/4K3 w - - 0 1")
+
+    features = extract_features(board)
+
+    assert features["minority_structure"]["white"] == ["queenside"]
 
 
 def test_detects_locked_center_and_space() -> None:

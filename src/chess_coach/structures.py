@@ -54,7 +54,7 @@ def _open_files(board: chess.Board) -> list[str]:
 def _half_open_files(board: chess.Board, color: chess.Color) -> list[str]:
     own = _pawn_files(board, color)
     enemy = _pawn_files(board, not color)
-    return [_FILES[index] for index in range(8) if index in own and index not in enemy]
+    return [_FILES[index] for index in range(8) if index not in own and index in enemy]
 
 
 def _backward(board: chess.Board, color: chess.Color) -> list[str]:
@@ -98,7 +98,7 @@ def _minority(board: chess.Board, color: chess.Color) -> list[str]:
     for name, files in (("queenside", range(4)), ("kingside", range(4, 8))):
         own_count = sum(_file(square) in files for square in _pawns(board, color))
         enemy_count = sum(_file(square) in files for square in _pawns(board, enemy))
-        if own_count + 1 == enemy_count:
+        if own_count < enemy_count:
             result.append(name)
     return result
 
