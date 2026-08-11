@@ -57,6 +57,30 @@ CREATE TABLE IF NOT EXISTS evidence_mappings (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_evidence_skill ON evidence_mappings(skill, operation);
+CREATE TABLE IF NOT EXISTS training_items (
+    id INTEGER PRIMARY KEY,
+    source_type TEXT NOT NULL,
+    source_ref TEXT NOT NULL,
+    skill TEXT NOT NULL,
+    operation TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'learning',
+    step INTEGER,
+    stability REAL,
+    difficulty REAL,
+    due TEXT NOT NULL,
+    last_review TEXT,
+    scheduler_version TEXT NOT NULL,
+    UNIQUE(source_type, source_ref, skill, operation)
+);
+CREATE TABLE IF NOT EXISTS training_attempts (
+    id INTEGER PRIMARY KEY,
+    item_id INTEGER NOT NULL REFERENCES training_items(id) ON DELETE CASCADE,
+    rating TEXT NOT NULL CHECK(rating IN ('again', 'hard', 'good', 'easy')),
+    elapsed_seconds INTEGER,
+    reviewed_at TEXT NOT NULL,
+    scheduler_version TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_training_due ON training_items(due);
 CREATE TABLE IF NOT EXISTS puzzle_corpora (
     id INTEGER PRIMARY KEY,
     version TEXT NOT NULL UNIQUE,
