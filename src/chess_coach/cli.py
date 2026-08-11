@@ -9,6 +9,7 @@ from .db import Database
 from .evidence import evidence_report
 from .ingest import ingest_pgn
 from .lichess import LichessClient
+from .motifs import record_motif_opportunities
 from .openings import classify_game, import_openings
 from .structures import extract_game_episodes
 
@@ -36,6 +37,14 @@ def main() -> None:
     structures = sub.add_parser("extract-structures")
     structures.add_argument("game_id", type=int)
     structures.add_argument("--detector-version", default="0.1.0")
+    motifs = sub.add_parser("record-motifs")
+    motifs.add_argument("position_id", type=int)
+    motifs.add_argument("--detector-version", default="0.1.0")
+    motifs.add_argument("--mapper-version", default="0.1.0")
+    motifs.add_argument("--operation", default="prevent")
+    motifs.add_argument(
+        "--outcome", choices=["success", "failure", "ambiguous"], default="ambiguous"
+    )
     sub.add_parser("evidence-report")
     args = parser.parse_args()
     db = Database(args.db)
@@ -82,6 +91,22 @@ def main() -> None:
                 {
                     "episodes": extract_game_episodes(
                         db, args.game_id, detector_version=args.detector_version
+                    )
+                },
+                indent=2,
+            )
+        )
+    elif args.command == "record-motifs":
+        print(
+            json.dumps(
+                {
+                    "facts": record_motif_opportunities(
+                        db,
+                        args.position_id,
+                        detector_version=args.detector_version,
+                        mapper_version=args.mapper_version,
+                        operation=args.operation,
+                        outcome=args.outcome,
                     )
                 },
                 indent=2,
