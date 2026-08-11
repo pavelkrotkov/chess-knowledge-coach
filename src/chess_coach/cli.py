@@ -13,7 +13,7 @@ from .motifs import record_motif_opportunities
 from .openings import classify_game, import_openings
 from .puzzles import import_puzzles, query_puzzles
 from .structures import extract_game_episodes
-from .training import due_items, review_item
+from .training import create_training_item, due_items, review_item
 
 
 def main() -> None:
@@ -58,6 +58,11 @@ def main() -> None:
     puzzle_query.add_argument("--max-rating", type=int)
     puzzle_query.add_argument("--limit", type=int, default=100)
     puzzle_query.add_argument("--offset", type=int, default=0)
+    training_create = sub.add_parser("create-training")
+    training_create.add_argument("source_type", choices=["game", "puzzle", "canonical"])
+    training_create.add_argument("source_ref")
+    training_create.add_argument("skill")
+    training_create.add_argument("operation")
     training_due = sub.add_parser("due-training")
     training_due.add_argument("--limit", type=int, default=100)
     training_review = sub.add_parser("review-training")
@@ -146,6 +151,21 @@ def main() -> None:
                     limit=args.limit,
                     offset=args.offset,
                 ),
+                indent=2,
+            )
+        )
+    elif args.command == "create-training":
+        print(
+            json.dumps(
+                {
+                    "id": create_training_item(
+                        db,
+                        source_type=args.source_type,
+                        source_ref=args.source_ref,
+                        skill=args.skill,
+                        operation=args.operation,
+                    )
+                },
                 indent=2,
             )
         )
