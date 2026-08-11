@@ -57,6 +57,28 @@ CREATE TABLE IF NOT EXISTS evidence_mappings (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_evidence_skill ON evidence_mappings(skill, operation);
+CREATE TABLE IF NOT EXISTS puzzle_corpora (
+    id INTEGER PRIMARY KEY,
+    version TEXT NOT NULL UNIQUE,
+    source TEXT NOT NULL,
+    checksum TEXT NOT NULL,
+    imported_rows INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS puzzles (
+    puzzle_id TEXT PRIMARY KEY,
+    corpus_id INTEGER NOT NULL REFERENCES puzzle_corpora(id) ON DELETE CASCADE,
+    fen TEXT NOT NULL,
+    source TEXT NOT NULL,
+    solution TEXT NOT NULL,
+    rating INTEGER NOT NULL,
+    rating_deviation INTEGER NOT NULL,
+    opening TEXT,
+    themes_json TEXT NOT NULL,
+    objective TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_puzzles_selection
+    ON puzzles(corpus_id, rating, rating_deviation, objective);
 CREATE TABLE IF NOT EXISTS skills (
     id INTEGER PRIMARY KEY,
     skill TEXT NOT NULL,
