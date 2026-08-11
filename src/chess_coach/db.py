@@ -57,6 +57,19 @@ CREATE TABLE IF NOT EXISTS evidence_mappings (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_evidence_skill ON evidence_mappings(skill, operation);
+CREATE TABLE IF NOT EXISTS skills (
+    id INTEGER PRIMARY KEY,
+    skill TEXT NOT NULL UNIQUE,
+    description TEXT NOT NULL,
+    ontology_version TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS skill_edges (
+    parent_skill TEXT NOT NULL REFERENCES skills(skill) ON DELETE CASCADE,
+    child_skill TEXT NOT NULL REFERENCES skills(skill) ON DELETE CASCADE,
+    edge_type TEXT NOT NULL,
+    ontology_version TEXT NOT NULL,
+    PRIMARY KEY(parent_skill, child_skill, edge_type, ontology_version)
+);
 CREATE TABLE IF NOT EXISTS opening_datasets (
     id INTEGER PRIMARY KEY,
     version TEXT NOT NULL,
