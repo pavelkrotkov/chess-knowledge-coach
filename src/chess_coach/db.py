@@ -31,7 +31,12 @@ CREATE TABLE IF NOT EXISTS analysis_runs (
     id INTEGER PRIMARY KEY,
     game_id INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
     engine TEXT NOT NULL, engine_version TEXT NOT NULL,
-    config_json TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    config_json TEXT NOT NULL,
+    binary_path TEXT NOT NULL DEFAULT '',
+    binary_version TEXT NOT NULL DEFAULT '',
+    nnue TEXT NOT NULL DEFAULT '',
+    compatibility_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS engine_outputs (
     id INTEGER PRIMARY KEY,
@@ -232,6 +237,19 @@ class Database:
             self.connection.execute(
                 "ALTER TABLE evidence_mappings ADD COLUMN observation_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP"
             )
+        analysis_columns = {
+            row[1] for row in self.connection.execute("PRAGMA table_info(analysis_runs)")
+        }
+        for column, definition in {
+            "binary_path": "TEXT NOT NULL DEFAULT ''",
+            "binary_version": "TEXT NOT NULL DEFAULT ''",
+            "nnue": "TEXT NOT NULL DEFAULT ''",
+            "compatibility_json": "TEXT NOT NULL DEFAULT '{}'",
+        }.items():
+            if column not in analysis_columns:
+                self.connection.execute(
+                    f"ALTER TABLE analysis_runs ADD COLUMN {column} {definition}"
+                )
         self.connection.commit()
 
     def close(self) -> None:
