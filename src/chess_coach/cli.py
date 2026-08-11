@@ -40,6 +40,8 @@ def main() -> None:
     motifs = sub.add_parser("record-motifs")
     motifs.add_argument("position_id", type=int)
     motifs.add_argument("--detector-version", default="0.1.0")
+    motifs.add_argument("--mapper-version", default="0.1.0")
+    motifs.add_argument("--operation", default="prevent")
     motifs.add_argument(
         "--outcome", choices=["success", "failure", "ambiguous"], default="ambiguous"
     )
@@ -102,6 +104,8 @@ def main() -> None:
                         db,
                         args.position_id,
                         detector_version=args.detector_version,
+                        mapper_version=args.mapper_version,
+                        operation=args.operation,
                         outcome=args.outcome,
                     )
                 },

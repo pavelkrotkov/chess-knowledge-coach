@@ -10,6 +10,7 @@ import chess
 from .db import Database
 
 DETECTOR_VERSION = "0.1.0"
+MAPPER_VERSION = "0.1.0"
 _VALUES = {
     chess.PAWN: 1,
     chess.KNIGHT: 3,
@@ -20,15 +21,23 @@ _VALUES = {
 }
 
 
+def _legal_targets(board: chess.Board, attacker: chess.Square) -> list[chess.Square]:
+    return [
+        move.to_square
+        for move in board.legal_moves
+        if move.from_square == attacker and board.piece_at(move.to_square) is not None
+    ]
+
+
 def _forks(board: chess.Board) -> list[dict[str, Any]]:
     facts = []
     for attacker in chess.SQUARES:
         piece = board.piece_at(attacker)
-        if piece is None:
+        if piece is None or piece.color != board.turn:
             continue
         targets = [
             square
-            for square in board.attacks(attacker)
+            for square in _legal_targets(board, attacker)
             if (target := board.piece_at(square)) is not None
             and target.color != piece.color
             and _VALUES[target.piece_type] >= 3
@@ -50,26 +59,19 @@ def _hanging(board: chess.Board) -> list[dict[str, Any]]:
         piece = board.piece_at(square)
         if piece is None or piece.piece_type == chess.KING:
             continue
-        attackers = board.attackers(not piece.color, square)
+        attackers = board.attackers(board.turn, square)
         defenders = board.attackers(piece.color, square)
-        if attackers and not defenders:
+        if attackers and piece.color != board.turn and not defenders:
             facts.append({"motif": "hanging_piece", "square": chess.square_name(square)})
     return facts
 
 
 def _pins(board: chess.Board) -> list[dict[str, Any]]:
     facts = []
-    for color in chess.COLORS:
-        for square in chess.SQUARES:
-            piece = board.piece_at(square)
-            if piece is not None and piece.color == color and board.is_pinned(color, square):
-                facts.append(
-                    {
-                        "motif": "pin",
-                        "square": chess.square_name(square),
-                        "side": "white" if color else "black",
-                    }
-                )
+    for square in chess.SQUARES:
+        piece = board.piece_at(square)
+        if piece is not None and piece.color != board.turn and board.is_pinned(piece.color, square):
+            facts.append({"motif": "absolute_pin", "square": chess.square_name(square)})
     return facts
 
 
@@ -88,18 +90,37 @@ def record_motif_opportunities(
     position_id: int,
     *,
     detector_version: str = DETECTOR_VERSION,
+    mapper_version: str = MAPPER_VERSION,
+    operation: str = "prevent",
     outcome: str = "ambiguous",
+    outcomes: dict[str, str] | None = None,
 ) -> int:
-    """Persist raw motif facts and evidence without inferring human cognition."""
+    """Persist raw motif facts and per-fact evidence without inferring cognition."""
+    if outcome not in {"success", "failure", "ambiguous"}:
+        raise ValueError("outcome must be success, failure, or ambiguous")
+    if not operation:
+        raise ValueError("operation must not be empty")
     position = db.connection.execute(
-        "SELECT fen FROM positions WHERE id = ?", (position_id,)
+        "SELECT p.fen, g.variant FROM positions p JOIN games g ON g.id = p.game_id WHERE p.id = ?",
+        (position_id,),
     ).fetchone()
     if position is None:
         raise ValueError(f"unknown position id: {position_id}")
-    if outcome not in {"success", "failure", "ambiguous"}:
-        raise ValueError("outcome must be success, failure, or ambiguous")
+    if position["variant"] != "Standard":
+        raise ValueError(f"motif detection does not support variant {position['variant']!r}")
     facts = detect_motifs(chess.Board(position["fen"]), detector_version=detector_version)
-    for fact in facts:
+    db.connection.execute(
+        "DELETE FROM detector_facts WHERE position_id = ? AND detector_version = ?",
+        (position_id, detector_version),
+    )
+    db.connection.execute(
+        "DELETE FROM evidence_mappings WHERE position_id = ? AND mapper_version = ? AND operation = ?",
+        (position_id, mapper_version, operation),
+    )
+    for index, fact in enumerate(facts):
+        fact_outcome = (outcomes or {}).get(str(index), outcome if len(facts) == 1 else "ambiguous")
+        if fact_outcome not in {"success", "failure", "ambiguous"}:
+            raise ValueError("all outcomes must be success, failure, or ambiguous")
         db.connection.execute(
             "INSERT INTO detector_facts(position_id, detector_version, fact_type, payload_json) VALUES (?, ?, ?, ?)",
             (position_id, detector_version, fact["motif"], json.dumps(fact, sort_keys=True)),
@@ -111,11 +132,11 @@ def record_motif_opportunities(
             (
                 position_id,
                 fact["motif"],
-                "opportunity",
-                outcome,
+                operation,
+                fact_outcome,
                 1.0,
                 json.dumps([fact]),
-                detector_version,
+                mapper_version,
             ),
         )
     db.connection.commit()

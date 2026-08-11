@@ -22,7 +22,7 @@ def test_motif_facts_and_outcomes_preserve_versions() -> None:
     )
     position_id = db.connection.execute("SELECT id FROM positions").fetchone()[0]
 
-    assert record_motif_opportunities(db, position_id, outcome="failure") >= 1
+    assert record_motif_opportunities(db, position_id, outcomes={"0": "failure"}) >= 1
     fact = db.connection.execute(
         "SELECT detector_version, fact_type FROM detector_facts"
     ).fetchone()
