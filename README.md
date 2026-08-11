@@ -5,6 +5,7 @@ Local-first foundations for turning chess games into reproducible skill evidence
 ## Current vertical slice
 
 - PGN ingestion, including Lichess `%clk` comments
+- Lichess export synchronization with optional token authentication and idempotent GameId imports
 - Immutable game and position records in SQLite
 - Provenance tables for analysis runs and engine outputs
 - Stockfish UCI fixed-node/depth analysis persistence
@@ -37,6 +38,16 @@ uv run chess-coach --db coach.sqlite ingest-pgn games.pgn
 uv run chess-coach --db coach.sqlite evidence-report
 uv run pytest
 ```
+
+```bash
+uv run chess-coach --db coach.sqlite sync-lichess username --max-games 100
+# Set LICHESS_API_TOKEN only when authenticating; it is never written to SQLite.
+LICHESS_API_TOKEN=... uv run chess-coach --db coach.sqlite sync-lichess username --page-size 100
+```
+
+The adapter requests clocks and opening headers, uses bounded exponential-backoff
+retries for rate limits and server errors, and pages backward by UTC timestamps.
+Game IDs from Lichess are used as stable source IDs, so re-syncing is idempotent.
 
 The Python API can run a scan after ingestion:
 
