@@ -6,9 +6,10 @@ import os
 from pathlib import Path
 
 from .db import Database
-from .evidence import evidence_report
+from .evidence import evidence_report, validate_evidence
 from .ingest import ingest_pgn
 from .lichess import LichessClient
+from .mastery import mastery_report, update_mastery
 from .motifs import record_motif_opportunities
 from .openings import classify_game, import_openings
 from .puzzles import import_puzzles, query_puzzles
@@ -58,6 +59,14 @@ def main() -> None:
     puzzle_query.add_argument("--max-rating", type=int)
     puzzle_query.add_argument("--limit", type=int, default=100)
     puzzle_query.add_argument("--offset", type=int, default=0)
+    validate = sub.add_parser("validate-evidence")
+    validate.add_argument("evidence_id", type=int)
+    mastery_update = sub.add_parser("update-mastery")
+    mastery_update.add_argument("skill")
+    mastery_update.add_argument("operation")
+    mastery_update.add_argument("--subject", default="default")
+    mastery_report_parser = sub.add_parser("mastery-report")
+    mastery_report_parser.add_argument("--subject", default="default")
     training_create = sub.add_parser("create-training")
     training_create.add_argument("source_type", choices=["game", "puzzle", "canonical"])
     training_create.add_argument("source_ref")
@@ -154,6 +163,20 @@ def main() -> None:
                 indent=2,
             )
         )
+    elif args.command == "validate-evidence":
+        validate_evidence(db, args.evidence_id)
+        print(json.dumps({"validated": args.evidence_id}, indent=2))
+    elif args.command == "update-mastery":
+        print(
+            json.dumps(
+                update_mastery(
+                    db, skill=args.skill, operation=args.operation, subject=args.subject
+                ),
+                indent=2,
+            )
+        )
+    elif args.command == "mastery-report":
+        print(json.dumps(mastery_report(db, subject=args.subject), indent=2))
     elif args.command == "create-training":
         print(
             json.dumps(

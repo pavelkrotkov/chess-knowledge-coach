@@ -54,9 +54,35 @@ CREATE TABLE IF NOT EXISTS evidence_mappings (
     confidence REAL NOT NULL CHECK(confidence >= 0 AND confidence <= 1),
     source_facts_json TEXT NOT NULL DEFAULT '[]',
     mapper_version TEXT NOT NULL DEFAULT '0.1.0',
+    human_validated INTEGER NOT NULL DEFAULT 0,
+    context_json TEXT NOT NULL DEFAULT '{}',
+    subject TEXT NOT NULL DEFAULT 'default',
+    observation_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_evidence_skill ON evidence_mappings(skill, operation);
+CREATE TABLE IF NOT EXISTS mastery_states (
+    id INTEGER PRIMARY KEY,
+    subject TEXT NOT NULL DEFAULT 'default',
+    skill TEXT NOT NULL,
+    operation TEXT NOT NULL,
+    mastery REAL NOT NULL,
+    uncertainty REAL NOT NULL,
+    evidence_weight REAL NOT NULL,
+    trend_30d REAL NOT NULL,
+    updated_at TEXT NOT NULL,
+    model_version TEXT NOT NULL,
+    UNIQUE(subject, skill, operation)
+);
+CREATE TABLE IF NOT EXISTS mastery_events (
+    id INTEGER PRIMARY KEY,
+    state_id INTEGER NOT NULL REFERENCES mastery_states(id) ON DELETE CASCADE,
+    evidence_ids_json TEXT NOT NULL,
+    previous_mastery REAL,
+    new_mastery REAL NOT NULL,
+    changed_at TEXT NOT NULL,
+    model_version TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS training_items (
     id INTEGER PRIMARY KEY,
     source_type TEXT NOT NULL,
@@ -187,6 +213,25 @@ class Database:
             )
         if "termination" not in columns:
             self.connection.execute("ALTER TABLE games ADD COLUMN termination TEXT")
+        evidence_columns = {
+            row[1] for row in self.connection.execute("PRAGMA table_info(evidence_mappings)")
+        }
+        if "human_validated" not in evidence_columns:
+            self.connection.execute(
+                "ALTER TABLE evidence_mappings ADD COLUMN human_validated INTEGER NOT NULL DEFAULT 0"
+            )
+        if "context_json" not in evidence_columns:
+            self.connection.execute(
+                "ALTER TABLE evidence_mappings ADD COLUMN context_json TEXT NOT NULL DEFAULT '{}'"
+            )
+        if "subject" not in evidence_columns:
+            self.connection.execute(
+                "ALTER TABLE evidence_mappings ADD COLUMN subject TEXT NOT NULL DEFAULT 'default'"
+            )
+        if "observation_at" not in evidence_columns:
+            self.connection.execute(
+                "ALTER TABLE evidence_mappings ADD COLUMN observation_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP"
+            )
         self.connection.commit()
 
     def close(self) -> None:

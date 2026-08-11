@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from typing import Any
+from datetime import UTC, datetime
+from typing import Any, cast
 
 from .db import Database
 
@@ -17,13 +18,18 @@ def record_evidence(
     position_id: int | None = None,
     source_facts: list[str] | None = None,
     mapper_version: str = "0.1.0",
-) -> None:
+    context: dict[str, Any] | None = None,
+    subject: str = "default",
+    observed_at: datetime | None = None,
+) -> int:
     if outcome not in {"success", "failure", "ambiguous"}:
         raise ValueError("outcome must be success, failure, or ambiguous")
-    db.connection.execute(
+    if not 0 <= confidence <= 1:
+        raise ValueError("confidence must be between 0 and 1")
+    cursor = db.connection.execute(
         """INSERT INTO evidence_mappings
-        (position_id, skill, operation, outcome, confidence, source_facts_json, mapper_version)
-        VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (position_id, skill, operation, outcome, confidence, source_facts_json, mapper_version, context_json, subject, observation_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             position_id,
             skill,
@@ -32,8 +38,21 @@ def record_evidence(
             confidence,
             json.dumps(source_facts or []),
             mapper_version,
+            json.dumps(context or {}, sort_keys=True),
+            subject,
+            (observed_at or datetime.now(UTC)).astimezone(UTC).isoformat(),
         ),
     )
+    db.connection.commit()
+    return cast(int, cursor.lastrowid)
+
+
+def validate_evidence(db: Database, evidence_id: int) -> None:
+    cursor = db.connection.execute(
+        "UPDATE evidence_mappings SET human_validated = 1 WHERE id = ?", (evidence_id,)
+    )
+    if cursor.rowcount != 1:
+        raise ValueError(f"unknown evidence mapping: {evidence_id}")
     db.connection.commit()
 
 
