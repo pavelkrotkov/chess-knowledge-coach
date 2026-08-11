@@ -11,6 +11,7 @@ from .ingest import ingest_pgn
 from .lichess import LichessClient
 from .motifs import record_motif_opportunities
 from .openings import classify_game, import_openings
+from .puzzles import import_puzzles, query_puzzles
 from .structures import extract_game_episodes
 
 
@@ -45,6 +46,17 @@ def main() -> None:
     motifs.add_argument(
         "--outcome", choices=["success", "failure", "ambiguous"], default="ambiguous"
     )
+    puzzle_import = sub.add_parser("import-puzzles")
+    puzzle_import.add_argument("path", type=Path)
+    puzzle_import.add_argument("--version", required=True)
+    puzzle_query = sub.add_parser("query-puzzles")
+    puzzle_query.add_argument("--version", required=True)
+    puzzle_query.add_argument("--theme")
+    puzzle_query.add_argument("--operation")
+    puzzle_query.add_argument("--min-rating", type=int)
+    puzzle_query.add_argument("--max-rating", type=int)
+    puzzle_query.add_argument("--limit", type=int, default=100)
+    puzzle_query.add_argument("--offset", type=int, default=0)
     sub.add_parser("evidence-report")
     args = parser.parse_args()
     db = Database(args.db)
@@ -109,6 +121,24 @@ def main() -> None:
                         outcome=args.outcome,
                     )
                 },
+                indent=2,
+            )
+        )
+    elif args.command == "import-puzzles":
+        print(json.dumps({"rows": import_puzzles(db, args.path, version=args.version)}, indent=2))
+    elif args.command == "query-puzzles":
+        print(
+            json.dumps(
+                query_puzzles(
+                    db,
+                    version=args.version,
+                    theme=args.theme,
+                    operation=args.operation,
+                    min_rating=args.min_rating,
+                    max_rating=args.max_rating,
+                    limit=args.limit,
+                    offset=args.offset,
+                ),
                 indent=2,
             )
         )
