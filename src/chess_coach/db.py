@@ -89,6 +89,19 @@ CREATE TABLE IF NOT EXISTS game_openings (
 );
 CREATE INDEX IF NOT EXISTS idx_opening_nodes_position
     ON opening_nodes(dataset_id, position_key);
+CREATE TABLE IF NOT EXISTS structure_episodes (
+    id INTEGER PRIMARY KEY,
+    game_id INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+    start_ply INTEGER NOT NULL,
+    end_ply INTEGER NOT NULL,
+    features_json TEXT NOT NULL,
+    structure_json TEXT NOT NULL,
+    confidence REAL NOT NULL CHECK(confidence >= 0 AND confidence <= 1),
+    detector_version TEXT NOT NULL,
+    UNIQUE(game_id, start_ply, end_ply, detector_version)
+);
+CREATE INDEX IF NOT EXISTS idx_structure_episodes_game
+    ON structure_episodes(game_id, start_ply);
 """
 
 

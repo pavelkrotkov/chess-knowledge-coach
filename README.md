@@ -6,6 +6,7 @@ Local-first foundations for turning chess games into reproducible skill evidence
 
 - PGN ingestion, including Lichess `%clk` comments
 - Lichess export synchronization with optional token authentication and idempotent GameId imports
+- Deterministic atomic structure extraction with versioned episodes
 - Immutable game and position records in SQLite
 - Provenance tables for analysis runs and engine outputs
 - Stockfish UCI fixed-node/depth analysis persistence
