@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 
+from .analysis import analyze_game
 from .db import Database
 from .evidence import evidence_report, validate_evidence
 from .ingest import ingest_pgn
@@ -24,6 +25,14 @@ def main() -> None:
     sub.add_parser("init-db")
     ingest = sub.add_parser("ingest-pgn")
     ingest.add_argument("path", type=Path)
+    analyze = sub.add_parser("analyze-game")
+    analyze.add_argument("game_id", type=int)
+    analyze.add_argument("--engine-path", default="/usr/games/stockfish")
+    analyze.add_argument("--nodes", type=int, default=20_000)
+    analyze.add_argument("--depth", type=int)
+    analyze.add_argument("--multipv", type=int, default=1)
+    analyze.add_argument("--threads", type=int, default=1)
+    analyze.add_argument("--hash", dest="hash_mb", type=int, default=64)
     sync = sub.add_parser("sync-lichess", help="Import a user's Lichess game export")
     sync.add_argument("username")
     sync.add_argument("--max-games", type=int, default=100)
@@ -86,6 +95,24 @@ def main() -> None:
         print(f"initialized {args.db}")
     elif args.command == "ingest-pgn":
         print(json.dumps(ingest_pgn(db, args.path.open()), indent=2))
+    elif args.command == "analyze-game":
+        print(
+            json.dumps(
+                {
+                    "analysis_run_id": analyze_game(
+                        db,
+                        args.game_id,
+                        engine_path=args.engine_path,
+                        nodes=args.nodes,
+                        depth=args.depth,
+                        multipv=args.multipv,
+                        threads=args.threads,
+                        hash_mb=args.hash_mb,
+                    )
+                },
+                indent=2,
+            )
+        )
     elif args.command == "sync-lichess":
         client = LichessClient(token=os.environ.get("LICHESS_API_TOKEN"))
         print(
