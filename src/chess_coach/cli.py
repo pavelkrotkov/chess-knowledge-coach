@@ -38,7 +38,7 @@ def main() -> None:
     maia.add_argument("position_id", type=int)
     maia.add_argument("--command", dest="maia_command")
     maia.add_argument("--model", default="maia-3")
-    maia.add_argument("--checkpoint", default="configured")
+    maia.add_argument("--checkpoint", required=True)
     sync = sub.add_parser("sync-lichess", help="Import a user's Lichess game export")
     sync.add_argument("username")
     sync.add_argument("--max-games", type=int, default=100)

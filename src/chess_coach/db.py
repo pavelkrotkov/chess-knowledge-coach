@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS maia_predictions (
     model TEXT NOT NULL,
     checkpoint TEXT NOT NULL,
     adapter_version TEXT NOT NULL,
+    conditioning_elo INTEGER,
     probabilities_json TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -277,6 +278,13 @@ class Database:
         if "multipv" not in output_columns:
             self.connection.execute(
                 "ALTER TABLE engine_outputs ADD COLUMN multipv INTEGER NOT NULL DEFAULT 1"
+            )
+        maia_columns = {
+            row[1] for row in self.connection.execute("PRAGMA table_info(maia_predictions)")
+        }
+        if "conditioning_elo" not in maia_columns:
+            self.connection.execute(
+                "ALTER TABLE maia_predictions ADD COLUMN conditioning_elo INTEGER"
             )
         self.connection.commit()
 

@@ -60,8 +60,11 @@ cannot mutate canonical state.
 For bulk analysis on newer hardware, copy the SQLite database or use a dedicated
 analysis database, run bounded `analyze-game` jobs with explicit nodes/depth,
 threads, hash, and MultiPV settings, then merge only the versioned analysis
-outputs. Keep the 2010 Mac mini in ingestion/reporting mode rather than running
-large engine or Maia batches locally.
+outputs with `merge_analysis_outputs(target_db, source_db)`. That helper maps
+games by `(source, source_id)`, positions by `(game_id, ply)`, remaps run and
+position foreign keys, and commits atomically; missing stable games or plies
+abort the entire import. Keep the 2010 Mac mini in ingestion/reporting mode
+rather than running large engine or Maia batches locally.
 
 The Python API can run a scan after ingestion:
 
