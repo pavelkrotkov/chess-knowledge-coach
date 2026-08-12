@@ -46,6 +46,24 @@ CREATE TABLE IF NOT EXISTS engine_outputs (
     multipv INTEGER NOT NULL DEFAULT 1,
     pv TEXT, nodes INTEGER, depth INTEGER
 );
+CREATE TABLE IF NOT EXISTS maia_predictions (
+    id INTEGER PRIMARY KEY,
+    position_id INTEGER NOT NULL REFERENCES positions(id) ON DELETE CASCADE,
+    model TEXT NOT NULL,
+    checkpoint TEXT NOT NULL,
+    adapter_version TEXT NOT NULL,
+    probabilities_json TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS llm_explanations (
+    id INTEGER PRIMARY KEY,
+    position_id INTEGER NOT NULL REFERENCES positions(id) ON DELETE CASCADE,
+    model TEXT NOT NULL,
+    prompt_version TEXT NOT NULL,
+    prompt_json TEXT NOT NULL,
+    response TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS detector_facts (
     id INTEGER PRIMARY KEY,
     position_id INTEGER REFERENCES positions(id) ON DELETE CASCADE,
