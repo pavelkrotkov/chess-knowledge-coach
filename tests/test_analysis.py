@@ -26,3 +26,5 @@ def test_analysis_schema_contains_provenance_columns():
     columns = {row[1] for row in db.connection.execute("PRAGMA table_info(analysis_runs)")}
 
     assert {"binary_path", "binary_version", "nnue", "compatibility_json"}.issubset(columns)
+    output_columns = {row[1] for row in db.connection.execute("PRAGMA table_info(engine_outputs)")}
+    assert "multipv" in output_columns

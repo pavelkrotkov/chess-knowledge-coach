@@ -29,7 +29,8 @@ def detect_compatibility() -> dict[str, object]:
     return {
         "machine": machine,
         "generic_x64": machine in {"x86_64", "amd64"},
-        "popcnt": "popcnt" in flags,
+        "popcnt": "popcnt" in flags if flags else None,
+        "cpu_flags_available": bool(flags),
         "cpu_flags": sorted(flags),
     }
 
@@ -54,15 +55,16 @@ def analyze_game(
 ) -> int:
     """Run a reproducible fixed-budget scan and persist all engine provenance."""
     _validate_config(nodes, depth, multipv, threads, hash_mb)
-    binary = Path(engine_path)
+    binary = Path(engine_path).expanduser()
     if not binary.is_file() or not os.access(binary, os.X_OK):
         raise RuntimeError(f"engine binary is unavailable or not executable: {binary}")
+    binary = binary.resolve()
     game = db.connection.execute("SELECT * FROM games WHERE id = ?", (game_id,)).fetchone()
     if game is None:
         raise ValueError(f"unknown game id: {game_id}")
     try:
         engine = chess.engine.SimpleEngine.popen_uci(str(binary))
-    except (OSError, chess.engine.EngineError) as exc:
+    except (OSError, TimeoutError, chess.engine.EngineError) as exc:
         raise RuntimeError(f"could not start engine binary {binary}: {exc}") from exc
     try:
         info = engine.id
@@ -83,7 +85,7 @@ def analyze_game(
             "compatibility": compatibility,
             "nnue_options": nnue_options,
         }
-        binary_version = info.get("author", info.get("unicode", "unknown"))
+        binary_version = info.get("name", info.get("unicode", "unknown"))
         run = db.connection.execute(
             """INSERT INTO analysis_runs
             (game_id, engine, engine_version, config_json, binary_path, binary_version, nnue, compatibility_json)
@@ -108,25 +110,27 @@ def analyze_game(
             board = chess.Board(position["fen"])
             limit: dict[str, Any] = {"nodes": nodes}
             if depth is not None:
-                limit = {"depth": depth}
+                limit["depth"] = depth
             result = engine.analyse(board, chess.engine.Limit(**limit), multipv=multipv)
-            best = result[0] if isinstance(result, list) else result
-            score = best["score"].pov(board.turn).score(mate_score=100000)
-            db.connection.execute(
-                """INSERT INTO engine_outputs
-                (run_id, position_id, score_cp, best_move, played_move, pv, nodes, depth)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    run_id,
-                    position["id"],
-                    score,
-                    best["pv"][0].uci(),
-                    position["uci"],
-                    " ".join(move.uci() for move in best["pv"]),
-                    best.get("nodes"),
-                    best.get("depth"),
-                ),
-            )
+            lines = result if isinstance(result, list) else [result]
+            for line_number, best in enumerate(lines, start=1):
+                score = best["score"].pov(board.turn).score(mate_score=100000)
+                db.connection.execute(
+                    """INSERT INTO engine_outputs
+                    (run_id, position_id, score_cp, best_move, played_move, multipv, pv, nodes, depth)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        run_id,
+                        position["id"],
+                        score,
+                        best["pv"][0].uci(),
+                        position["uci"],
+                        line_number,
+                        " ".join(move.uci() for move in best["pv"]),
+                        best.get("nodes"),
+                        best.get("depth"),
+                    ),
+                )
         db.connection.commit()
         return int(run_id)
     finally:

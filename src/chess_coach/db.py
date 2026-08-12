@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS engine_outputs (
     run_id INTEGER NOT NULL REFERENCES analysis_runs(id) ON DELETE CASCADE,
     position_id INTEGER NOT NULL REFERENCES positions(id) ON DELETE CASCADE,
     score_cp INTEGER, wdl_json TEXT, best_move TEXT, played_move TEXT,
+    multipv INTEGER NOT NULL DEFAULT 1,
     pv TEXT, nodes INTEGER, depth INTEGER
 );
 CREATE TABLE IF NOT EXISTS detector_facts (
@@ -247,9 +248,18 @@ class Database:
             "compatibility_json": "TEXT NOT NULL DEFAULT '{}'",
         }.items():
             if column not in analysis_columns:
+                if column not in {"binary_path", "binary_version", "nnue", "compatibility_json"}:
+                    raise ValueError(f"unexpected analysis schema column: {column}")
                 self.connection.execute(
                     f"ALTER TABLE analysis_runs ADD COLUMN {column} {definition}"
                 )
+        output_columns = {
+            row[1] for row in self.connection.execute("PRAGMA table_info(engine_outputs)")
+        }
+        if "multipv" not in output_columns:
+            self.connection.execute(
+                "ALTER TABLE engine_outputs ADD COLUMN multipv INTEGER NOT NULL DEFAULT 1"
+            )
         self.connection.commit()
 
     def close(self) -> None:
