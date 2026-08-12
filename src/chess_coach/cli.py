@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .analysis import analyze_game
 from .db import Database
+from .enrichment import SubprocessMaiaAdapter, UnavailableMaiaAdapter, predict_maia
 from .evidence import evidence_report, validate_evidence
 from .ingest import ingest_pgn
 from .lichess import LichessClient
@@ -33,6 +34,11 @@ def main() -> None:
     analyze.add_argument("--multipv", type=int, default=1)
     analyze.add_argument("--threads", type=int, default=1)
     analyze.add_argument("--hash", dest="hash_mb", type=int, default=64)
+    maia = sub.add_parser("predict-maia")
+    maia.add_argument("position_id", type=int)
+    maia.add_argument("--command", dest="maia_command")
+    maia.add_argument("--model", default="maia-3")
+    maia.add_argument("--checkpoint", required=True)
     sync = sub.add_parser("sync-lichess", help="Import a user's Lichess game export")
     sync.add_argument("username")
     sync.add_argument("--max-games", type=int, default=100)
@@ -113,6 +119,17 @@ def main() -> None:
                 indent=2,
             )
         )
+    elif args.command == "predict-maia":
+        adapter = (
+            SubprocessMaiaAdapter(
+                executable=args.maia_command,
+                model=args.model,
+                checkpoint=args.checkpoint,
+            )
+            if args.maia_command
+            else UnavailableMaiaAdapter()
+        )
+        print(json.dumps(predict_maia(db, args.position_id, adapter), indent=2))
     elif args.command == "sync-lichess":
         client = LichessClient(token=os.environ.get("LICHESS_API_TOKEN"))
         print(

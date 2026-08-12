@@ -13,6 +13,7 @@ Local-first foundations for turning chess games into reproducible skill evidence
 - Evidence records that preserve success, failure, and ambiguity
 - Deterministic evidence reports suitable for human validation
 - CLI and pytest coverage
+- Optional Maia-3 and facts-only explanation adapters with separate provenance tables
 
 ## Install
 
@@ -49,6 +50,21 @@ LICHESS_API_TOKEN=... uv run chess-coach --db coach.sqlite sync-lichess username
 The adapter requests clocks and opening headers, uses bounded exponential-backoff
 retries for rate limits and server errors, and pages backward by UTC timestamps.
 Game IDs from Lichess are used as stable source IDs, so re-syncing is idempotent.
+
+Maia is optional and can run in a separate environment behind a small JSON
+subprocess adapter. Without a configured command, offline mode returns no Maia
+prediction and the canonical game/position tables remain unchanged. Explanations
+receive serialized facts and evidence only; they are stored separately and
+cannot mutate canonical state.
+
+For bulk analysis on newer hardware, copy the SQLite database or use a dedicated
+analysis database, run bounded `analyze-game` jobs with explicit nodes/depth,
+threads, hash, and MultiPV settings, then merge only the versioned analysis
+outputs with `merge_analysis_outputs(target_db, source_db)`. That helper maps
+games by `(source, source_id)`, positions by `(game_id, ply)`, remaps run and
+position foreign keys, and commits atomically; missing stable games or plies
+abort the entire import. Keep the 2010 Mac mini in ingestion/reporting mode
+rather than running large engine or Maia batches locally.
 
 The Python API can run a scan after ingestion:
 
