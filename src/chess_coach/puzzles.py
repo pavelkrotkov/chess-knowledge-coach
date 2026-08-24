@@ -140,7 +140,7 @@ def import_puzzles(db: Database, path: str | Path, *, version: str, batch_size: 
             # bad file never wipes good data.
             db.connection.execute(
                 "UPDATE puzzle_corpora SET imported_rows = ? WHERE id = ?",
-                (existing["previous_rows"], corpus_id),
+                (existing["imported_rows"], corpus_id),
             )
         db.connection.commit()
         raise

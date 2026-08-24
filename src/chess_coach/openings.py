@@ -97,7 +97,7 @@ def import_openings(
                 )
                 parent = child
             if not moves:
-                raise ValueError("opening row requires at least one move")
+                raise ValueError(f"opening row {row_number} requires at least one move")
             db.connection.execute(
                 """INSERT OR IGNORE INTO opening_nodes
                 (dataset_id, position_key, eco, name, ply) VALUES (?, ?, ?, ?, ?)""",
