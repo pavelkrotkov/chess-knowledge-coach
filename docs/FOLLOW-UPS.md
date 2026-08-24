@@ -5,9 +5,12 @@ code, captured so they are not lost. Create these as GitHub issues when picked u
 
 ## 1. Human-validation workflow for evidence
 
-The mastery gate supports human validation (validation metadata, timestamps), but
-there is no CLI workflow for a human to review an evidence report and mark items
-validated/rejected. Needed before mastery numbers can be trusted end-to-end.
+The mastery gate stores human validation (a `human_validated` flag plus validation
+metadata/timestamps on evidence), and `validate-evidence` already marks items
+validated. What is missing is the full review workflow: a CLI flow for a human to
+review an evidence report and mark items **rejected** (distinct from unreviewed),
+plus richer validation provenance (who validated, when, per item). Needed before
+mastery numbers can be trusted end-to-end.
 
 ## 2. Training-loop closure: due items → session → outcome → evidence
 
@@ -27,9 +30,10 @@ Nothing yet selects *what* to train next from the learner model. Requires #1 and
 
 ## 5. Bulk-analysis handoff runbook
 
-`merge_analysis_outputs()` exists and is atomic, but there is no documented
-end-to-end procedure for the "analyze on newer hardware, merge back" workflow
-(copy DB, run bounded jobs, merge, verify). Write it as docs + a smoke test.
+`merge_analysis_outputs()` exists and is atomic, and the README documents the
+handoff at a high level. Missing is an end-to-end runbook for the "analyze on
+newer hardware, merge back" workflow (copy DB, run bounded jobs, merge, verify)
+plus a smoke test exercising the full path. Write it as docs + a smoke test.
 
 ## 6. Maia deployment story
 
