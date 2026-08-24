@@ -78,3 +78,23 @@ def test_unknown_game_id_is_rejected() -> None:
 
     with pytest.raises(ValueError, match="unknown game id"):
         classify_game(db, 999, version="test-1", source_url="cc0://test")
+
+
+def test_opening_row_with_missing_moves_reports_row_number(tmp_path) -> None:
+    source = tmp_path / "bad.tsv"
+    source.write_text(
+        "eco\tname\tpgn\nA00\tAmar Opening\t1. Nh3\nA00\tBroken Opening\t\n",
+        encoding="utf-8",
+    )
+    db = Database(":memory:")
+    db.initialize()
+
+    try:
+        import_openings(db, source, version="v", source_url="https://example.test")
+    except ValueError as exc:
+        assert "opening row" in str(exc)
+        assert "moves or pgn field" in str(exc)
+    else:
+        raise AssertionError("expected ValueError for row missing moves")
+
+    assert db.connection.execute("SELECT count(*) FROM opening_datasets").fetchone()[0] == 0

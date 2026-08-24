@@ -72,13 +72,17 @@ def import_openings(
             raise ValueError(f"failed to insert or find dataset {version!r}")
         dataset_id = dataset_id[0]
         imported = 0
-        for row in _rows(path):
-            name = row.get("name")
+        rows = _rows(path)
+        for row in rows:
+            name = row.get("name") or row.get("Name")
             if not name:
                 raise ValueError("opening row requires a name field")
             board = chess.Board()
             parent = position_key(board)
-            moves = _moves(row)
+            try:
+                moves = _moves(row)
+            except ValueError as exc:
+                raise ValueError(f"opening row {rows.index(row) + 1}: {exc}") from exc
             for move in moves:
                 board.push(move)
                 child = position_key(board)
