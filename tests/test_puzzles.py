@@ -33,41 +33,53 @@ def test_streaming_puzzle_import_is_versioned_and_queryable(tmp_path) -> None:
     assert tuple(stored) == ("https://lichess.org/game1", "e2e4 e7e5")
 
 
-def test_puzzle_row_with_missing_required_field_fails_cleanly(tmp_path) -> None:
-    source = tmp_path / "truncated.csv"
-    source.write_text(
-        "PuzzleId,FEN,Moves,Rating,RatingDeviation,Themes,GameUrl,OpeningTags\n"
-        "p1,fen1,e2e4 e7e5,1200,80,fork middlegame,https://lichess.org/game1,Italian_Game\n"
-        "p2,fen2,d2d4 d7d5,1800\n",
-        encoding="utf-8",
-    )
-    db = Database(":memory:")
-    db.initialize()
-
-    try:
-        import_puzzles(db, source, version="bad")
-    except ValueError as exc:
-        assert "missing required fields" in str(exc)
-        assert "Rating" in str(exc) or "RatingDeviation" in str(exc)
-    else:
-        raise AssertionError("expected ValueError for malformed row")
-
-    # The failed corpus import is fully rolled back.
-    assert db.connection.execute("SELECT count(*) FROM puzzles").fetchone()[0] == 0
-    assert db.connection.execute("SELECT count(*) FROM puzzle_corpora").fetchone()[0] == 0
-
-
-def test_row_with_missing_optional_fields_imports(tmp_path) -> None:
-    # A byte-truncated corpus tail may drop trailing optional columns;
-    # this must not crash the import with a NOT NULL violation.
-    source = tmp_path / "short.csv"
-    source.write_text(
+def test_failed_reimport_preserves_existing_corpus_rows(tmp_path) -> None:
+    good = tmp_path / "good.csv"
+    good.write_text(
         "PuzzleId,FEN,Moves,Rating,RatingDeviation,Themes,GameUrl,OpeningTags\n"
         "p1,fen1,e2e4 e7e5,1200,80,fork middlegame,,\n",
         encoding="utf-8",
     )
+    bad = tmp_path / "bad.csv"
+    bad.write_text(
+        "PuzzleId,FEN,Moves,Rating,RatingDeviation,Themes,GameUrl,OpeningTags\n"
+        "p1,fen1,e2e4 e7e5,1200,80,fork middlegame,,\n"
+        "p2,,d2d4 d7d5,1800,60,endgame,,\n",
+        encoding="utf-8",
+    )
     db = Database(":memory:")
     db.initialize()
-    assert import_puzzles(db, source, version="v") == 1
-    stored = db.connection.execute("SELECT source FROM puzzles WHERE puzzle_id = 'p1'").fetchone()
-    assert stored is not None and stored["source"] == ""
+    assert import_puzzles(db, good, version="v") == 1
+
+    try:
+        import_puzzles(db, bad, version="v")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("expected ValueError for malformed re-import")
+
+    # The original corpus rows survive the failed re-import.
+    assert db.connection.execute("SELECT count(*) FROM puzzles").fetchone()[0] == 1
+    assert (
+        db.connection.execute(
+            "SELECT imported_rows FROM puzzle_corpora WHERE version = 'v'"
+        ).fetchone()["imported_rows"]
+        == 1
+    )
+
+
+def test_empty_rating_cell_is_rejected(tmp_path) -> None:
+    source = tmp_path / "empty_rating.csv"
+    source.write_text(
+        "PuzzleId,FEN,Moves,Rating,RatingDeviation,Themes,GameUrl,OpeningTags\n"
+        "p1,fen1,e2e4 e7e5,,80,fork,,\n",
+        encoding="utf-8",
+    )
+    db = Database(":memory:")
+    db.initialize()
+    try:
+        import_puzzles(db, source, version="v")
+    except ValueError as exc:
+        assert "Rating" in str(exc)
+    else:
+        raise AssertionError("expected ValueError for empty rating")

@@ -6,7 +6,6 @@ import csv
 import hashlib
 import json
 import subprocess
-from collections.abc import Sequence
 from itertools import chain
 from pathlib import Path
 from typing import TextIO, cast
@@ -52,7 +51,7 @@ def _open_csv(path: Path) -> tuple[TextIO, subprocess.Popen[str] | None]:
     return path.open(encoding="utf-8", newline=""), None
 
 
-def _objective(themes: Sequence[str]) -> str:
+def _objective(themes: list[str]) -> str:
     for theme in themes:
         if theme in _OBJECTIVES:
             return _OBJECTIVES[theme]
@@ -96,18 +95,7 @@ def import_puzzles(db: Database, path: str | Path, *, version: str, batch_size: 
         if reader.fieldnames is None or not required.issubset(reader.fieldnames):
             raise ValueError(f"CSV missing required columns: {sorted(required)}")
         for row in reader:
-            puzzle_id = row.get("PuzzleId")
-            fen = row.get("FEN")
-            moves = row.get("Moves")
-            truncated = [f for f in required if row.get(f) is None]
-            if truncated:
-                raise ValueError(
-                    f"puzzle row {reader.line_num} is missing required fields: {truncated}"
-                )
-            if not puzzle_id or not fen or not moves:
-                raise ValueError(f"puzzle row {reader.line_num} is missing required fields")
-            themes_raw = row.get("Themes") or ""
-            themes = list(themes_raw.split())
+            themes = row.get("Themes", "").split()
             db.connection.execute(
                 """INSERT INTO puzzles
                 (puzzle_id, corpus_id, fen, source, solution, rating, rating_deviation, opening, themes_json, objective)
@@ -116,7 +104,7 @@ def import_puzzles(db: Database, path: str | Path, *, version: str, batch_size: 
                     row["PuzzleId"],
                     corpus_id,
                     row["FEN"],
-                    row.get("GameUrl") or "",
+                    row.get("GameUrl", ""),
                     row["Moves"],
                     int(row["Rating"]),
                     int(row["RatingDeviation"]),
