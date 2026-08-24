@@ -77,13 +77,12 @@ from chess_coach.db import Database
  run_id = analyze_game(db, game_id=1, nodes=20_000)
 ```
 
-## Design boundaries
+## Design & decisions
 
-- Raw games and positions are immutable inputs; analysis and mapping are versioned.
-- Stockfish owns move/evaluation facts. It does not own mastery.
-- A centipawn loss is not automatically a skill failure.
-- Evidence is opportunity-based and can be ambiguous.
-- LLM features, Maia-3, named structures, style, and recommendations are intentionally deferred until evidence reports make chess sense.
+- [docs/adr/ADR.md](docs/adr/ADR.md) — architecture decision records: evidence-based
+  mastery (never centipawn-loss mastery), deterministic-first with sandboxed LLM
+  adapters, atomic imports/merges, reproducible engine configuration, provenance.
+- [kg.md](kg.md) — the original concept: learner model, knowledge graph, learning loop.
 
 ## Roadmap / glue work
 
