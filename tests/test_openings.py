@@ -78,3 +78,35 @@ def test_unknown_game_id_is_rejected() -> None:
 
     with pytest.raises(ValueError, match="unknown game id"):
         classify_game(db, 999, version="test-1", source_url="cc0://test")
+
+
+def test_invalid_pgn_in_opening_row_is_rejected(tmp_path) -> None:
+    source = tmp_path / "bad_pgn.tsv"
+    source.write_text(
+        "eco\tname\tpgn\nA00\tBroken PGN\t1. e4 e5 2. Nf3 Nc6 3. Bb5 Nf6 4. O-O Be7 5. Re1 d6 a6\n",
+        encoding="utf-8",
+    )
+    db = Database(":memory:")
+    db.initialize()
+    try:
+        import_openings(db, source, version="v", source_url="https://example.test")
+    except ValueError as exc:
+        assert "invalid PGN" in str(exc)
+    else:
+        raise AssertionError("expected ValueError for invalid PGN")
+
+
+def test_missing_name_error_includes_row_number(tmp_path) -> None:
+    source = tmp_path / "no_name.tsv"
+    source.write_text(
+        "eco\tname\tpgn\nA00\tAmar Opening\t1. Nh3\nB00\t\t1. e4\n",
+        encoding="utf-8",
+    )
+    db = Database(":memory:")
+    db.initialize()
+    try:
+        import_openings(db, source, version="v", source_url="https://example.test")
+    except ValueError as exc:
+        assert "opening row 2" in str(exc)
+    else:
+        raise AssertionError("expected ValueError for missing name")

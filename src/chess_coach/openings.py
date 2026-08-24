@@ -42,6 +42,10 @@ def _moves(row: dict[str, str]) -> list[chess.Move]:
         game = chess.pgn.read_game(io.StringIO(text))
         if game is None:
             raise ValueError("opening row contains an empty PGN")
+        if game.errors:
+            raise ValueError(
+                f"opening row contains an invalid PGN ({len(game.errors)} parse error(s))"
+            )
         return [node.move for node in game.mainline()]
     board = chess.Board()
     moves = []
@@ -72,13 +76,17 @@ def import_openings(
             raise ValueError(f"failed to insert or find dataset {version!r}")
         dataset_id = dataset_id[0]
         imported = 0
-        for row in _rows(path):
-            name = row.get("name")
+        rows = _rows(path)
+        for row_number, row in enumerate(rows, start=1):
+            name = row.get("name") or row.get("Name")
             if not name:
-                raise ValueError("opening row requires a name field")
+                raise ValueError(f"opening row {row_number} requires a name field")
             board = chess.Board()
             parent = position_key(board)
-            moves = _moves(row)
+            try:
+                moves = _moves(row)
+            except ValueError as exc:
+                raise ValueError(f"opening row {row_number}: {exc}") from exc
             for move in moves:
                 board.push(move)
                 child = position_key(board)
@@ -89,7 +97,7 @@ def import_openings(
                 )
                 parent = child
             if not moves:
-                raise ValueError("opening row requires at least one move")
+                raise ValueError(f"opening row {row_number} requires at least one move")
             db.connection.execute(
                 """INSERT OR IGNORE INTO opening_nodes
                 (dataset_id, position_key, eco, name, ply) VALUES (?, ?, ?, ?, ?)""",
