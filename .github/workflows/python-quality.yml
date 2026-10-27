@@ -4,7 +4,6 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
 
 permissions:
   contents: read
@@ -37,3 +36,5 @@ jobs:
         run: uv run ruff format --check .
       - name: Run ty type check
         run: uv run ty check
+      - name: Report quality metrics (enforcement pending issue 29)
+        run: uv run python -m scripts.quality --report-only
