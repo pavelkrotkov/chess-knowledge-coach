@@ -149,9 +149,19 @@ Legacy facts without run provenance retain unknown timestamps and ownership.
 The record_fact_run_in_transaction function supports a caller-owned transaction
 and never commits it.
 
-This storage layer does not yet replace the legacy motif/evidence mapping
-paths. Those paths remain destructive on rerun until issue #75 is complete;
-the layers must be integrated together before release.
+Motif and ontology mapping now write producer-scoped runs with links to their
+source facts. Repeating an identical run preserves evidence IDs; a new run
+supersedes only its own scope and keeps prior reviews attached to prior evidence.
+An empty run can replace a scope. Duplicate active fact, subject, skill, and
+operation combinations are rejected. Historical records with unproven source
+lineage remain visible as unknown. The two existing mappers use the unassigned
+subject until learner attribution supplies one.
+
+Consumers count current evidence and omit stale mastery states. Superseding a
+mapping or its detector input invalidates affected mastery states without
+deleting their event history. Callers composing fact and mapping writes can use
+the in-transaction mapping primitive in the same transaction as the detector
+primitive; callers own commit and rollback.
 
 ## Database upgrades
 

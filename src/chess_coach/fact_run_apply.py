@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from .db import Database
 from .fact_fingerprint import canonical, digest
 from .fact_storage import insert_fact, insert_run, previous_run, replay_result
+from .mapping_invalidation import supersede_detector_mappings
 
 
 def persist_run(
@@ -37,6 +38,7 @@ def persist_run(
     prior = previous_run(db.connection, producer, position_id)
     prior_id = prior["id"] if prior is not None else None
     if prior_id is not None:
+        supersede_detector_mappings(db, prior_id)
         db.connection.execute(
             "UPDATE detector_runs SET status = 'superseded' WHERE id = ?", (prior_id,)
         )

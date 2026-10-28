@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from .db import Database
+from .ontology_mapping import map_facts
 
 SEED = {
     "tactics": "Pattern-based tactical opportunities",
@@ -63,47 +63,4 @@ def map_detector_facts(
     *,
     detector_version: str | None = None,
 ) -> list[dict[str, Any]]:
-    query = "SELECT id, position_id, fact_type, payload_json, detector_version FROM detector_facts"
-    params: tuple[str, ...] = ()
-    if detector_version is not None:
-        query += " WHERE detector_version = ?"
-        params = (detector_version,)
-    rows = db.connection.execute(query + " ORDER BY id", params).fetchall()
-    db.connection.execute(
-        "DELETE FROM evidence_mappings WHERE mapper_version = ?", (mapper_version,)
-    )
-    result = []
-    for row in rows:
-        skill = row["fact_type"]
-        if skill not in FACT_OPERATIONS:
-            continue
-        operation = FACT_OPERATIONS[skill]
-        payload = json.loads(row["payload_json"])
-        source = [{"id": row["id"], "detector_version": row["detector_version"]}]
-        db.connection.execute(
-            """INSERT INTO evidence_mappings
-            (position_id, skill, operation, outcome, confidence, source_facts_json, mapper_version)
-            VALUES (?, ?, ?, 'ambiguous', ?, ?, ?)""",
-            (
-                row["position_id"],
-                skill,
-                operation,
-                1.0,
-                json.dumps(source, sort_keys=True),
-                mapper_version,
-            ),
-        )
-        result.append(
-            {
-                "position_id": row["position_id"],
-                "skill": skill,
-                "operation": operation,
-                "confidence": 1.0,
-                "source_facts": [row["id"]],
-                "detector_version": row["detector_version"],
-                "mapper_version": mapper_version,
-                "payload": payload,
-            }
-        )
-    db.connection.commit()
-    return result
+    return map_facts(db, mapper_version, detector_version=detector_version)

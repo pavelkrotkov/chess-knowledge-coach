@@ -236,10 +236,13 @@ def test_v5_legacy_fact_and_review_migrate_without_fabricated_lineage():
     ).fetchone()
     assert tuple(fact) == (1, None, None, None)
     assert (
-        tuple(db.connection.execute("SELECT * FROM evidence_mappings").fetchone()) == old_evidence
+        tuple(db.connection.execute("SELECT * FROM evidence_mappings").fetchone())[
+            : len(old_evidence)
+        ]
+        == old_evidence
     )
     assert db.connection.execute("SELECT COUNT(*) FROM detector_runs").fetchone()[0] == 0
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 6
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 7
     assert db.connection.execute("PRAGMA foreign_key_check").fetchall() == []
     new = produce(db)
     assert new["fact_ids"]
@@ -248,12 +251,15 @@ def test_v5_legacy_fact_and_review_migrate_without_fabricated_lineage():
         is None
     )
     assert (
-        tuple(db.connection.execute("SELECT * FROM evidence_mappings").fetchone()) == old_evidence
+        tuple(db.connection.execute("SELECT * FROM evidence_mappings").fetchone())[
+            : len(old_evidence)
+        ]
+        == old_evidence
     )
 
 
 def test_failed_v6_migration_rolls_back_schema_and_version(monkeypatch):
-    from chess_coach import db_versioning
+    from chess_coach import db_recent
 
     legacy = SCHEMA.replace(RUN_TABLE, "").replace(
         "    payload_json TEXT NOT NULL,\n    run_id INTEGER REFERENCES detector_runs(id),\n"
@@ -264,13 +270,13 @@ def test_failed_v6_migration_rolls_back_schema_and_version(monkeypatch):
     db.connection.executescript(legacy)
     db.connection.execute("PRAGMA user_version = 5")
     db.connection.commit()
-    original = db_versioning.add_fact_lineage
+    original = db_recent.add_fact_lineage
 
     def fail_after_schema(connection):
         original(connection)
         raise RuntimeError("injected schema failure")
 
-    monkeypatch.setattr(db_versioning, "add_fact_lineage", fail_after_schema)
+    monkeypatch.setattr(db_recent, "add_fact_lineage", fail_after_schema)
     with pytest.raises(RuntimeError, match="injected schema failure"):
         db.initialize()
     assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 5
