@@ -7,13 +7,16 @@ from .evidence_review import inspect_evidence, list_evidence, review_evidence
 from .pipeline_status import pipeline_status
 from .web_board import board_rows
 from .web_db import database
+from .web_release import release_info
 
 views = Blueprint("views", __name__)
 
 
 @views.get("/")
 def index():
-    return render_template("status.html", status=pipeline_status(database()))
+    return render_template(
+        "status.html", status=pipeline_status(database()), release=release_info()
+    )
 
 
 @views.get("/evidence")

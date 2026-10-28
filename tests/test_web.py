@@ -84,7 +84,9 @@ def test_private_access_and_csrf(setup):
     page = client.get(f"/evidence/{evidence_id}", base_url=ORIGIN, headers=HEADERS)
     assert page.status_code == 200
     cookie = page.headers["Set-Cookie"]
+    assert cookie.startswith("__Host-chess_coach_session=")
     assert "Secure" in cookie and "HttpOnly" in cookie and "SameSite=Strict" in cookie
+    assert "Path=/" in cookie and "Domain=" not in cookie
     assert page.headers["Cache-Control"] == "no-store"
     csrf = token(page)
     endpoint = f"/evidence/{evidence_id}/review"
@@ -436,3 +438,51 @@ def test_web_server_restarts_after_sigkill():
         finally:
             second.kill()
             second.wait(timeout=5)
+
+
+def test_browser_cookie_does_not_overwrite_other_app_session(setup):
+    _, app, evidence_id = setup
+    client = app.test_client()
+    client.set_cookie("session", "another-app-cookie", domain="coach.invalid")
+    page = client.get(f"/evidence/{evidence_id}", base_url=ORIGIN, headers=HEADERS)
+    csrf = token(page)
+    assert (
+        post(client, f"/evidence/{evidence_id}/review", csrf, decision="accept").status_code == 303
+    )
+    assert client.get_cookie("session", domain="coach.invalid").value == "another-app-cookie"
+    assert client.get_cookie("__Host-chess_coach_session", domain="coach.invalid") is not None
+
+
+def test_release_info_uses_installed_module_and_matching_marker(tmp_path, monkeypatch):
+    import sys
+
+    from chess_coach import web_release
+
+    commit = "a" * 40
+    release = tmp_path / ".runtime" / "releases" / commit
+    module = release / "venv" / "lib" / "chess_coach" / "web_release.py"
+    module.parent.mkdir(parents=True)
+    module.write_text("fixture")
+    (release / "COMMIT").write_text(commit)
+    monkeypatch.setattr(sys, "prefix", str(release / "venv"))
+    monkeypatch.setattr(web_release, "__file__", str(module))
+    assert web_release.release_info() == {"commit": commit, "module_path": str(module)}
+    (release / "COMMIT").write_text("b" * 40)
+    assert web_release.release_info() is None
+
+
+def test_status_displays_release_identity(setup, monkeypatch):
+    from chess_coach import web_views
+
+    _, app, _ = setup
+    monkeypatch.setattr(
+        web_views,
+        "release_info",
+        lambda: {
+            "commit": "a" * 40,
+            "module_path": "/project/release/venv/module.py",
+        },
+    )
+    page = app.test_client().get("/", base_url=ORIGIN, headers=HEADERS)
+    assert b"Release:" in page.data and b"a" * 40 in page.data
+    assert b"/project/release/venv/module.py" in page.data

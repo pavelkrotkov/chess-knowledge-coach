@@ -18,6 +18,8 @@ def create_app(
     app = Flask(__name__)
     app.config.update(
         SECRET_KEY=secrets.token_bytes(32),
+        SESSION_COOKIE_NAME="__Host-chess_coach_session",
+        SESSION_COOKIE_PATH="/",
         SESSION_COOKIE_SECURE=True,
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Strict",
