@@ -240,8 +240,26 @@ Choose a new attempt ID for each attempt and a new event ID for each move or
 hint. To safely retry a request, reuse its event ID with the same input. The
 attempt can be resumed by ID after restarting; its puzzle version, checksum,
 and line are snapshotted so reimporting a corpus cannot change an in-progress
-attempt. Verified results and hints are stored separately from FSRS scheduling:
-use `review-training` only when you choose a separate self-rating.
+attempt.
+
+To connect a terminal move to training, create a puzzle item and provide its ID
+and the learner subject when playing:
+
+```bash
+uv run chess-coach --db coach.sqlite create-puzzle-training corpus-v1 puzzle-id mate_in_one execute
+uv run chess-coach --db coach.sqlite play-puzzle attempt-1 c5c8 --event-id move-1 --training-item-id 1 --subject learner
+```
+
+Use the ID returned by the create command and a subject supplied at runtime.
+The terminal move, completion, and FSRS review commit together. The scheduling
+policy uses `good` for an unhinted solve, `hard` for a hinted solve, and `again`
+for a failure. Active duration is unknown, rather than inferred from elapsed
+wall time. An unhinted legal checkmate on the first puzzle decision can create
+unreviewed `mate_in_one/execute` success evidence. Hinted, failed, and unsupported
+decisions record an explicit reason instead of guessing skill evidence.
+Evidence remains subject to the ordinary human-review policy. Retrying the same
+terminal event returns the stored result; conflicting retries are rejected.
+Use `play-puzzle` without training options for a standalone practice attempt.
 
 ## Tactical opportunities
 

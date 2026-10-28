@@ -205,6 +205,8 @@ def test_replay_rejects_missing_or_modified_stored_facts():
 
 
 def test_v5_legacy_fact_and_review_migrate_without_fabricated_lineage():
+    from chess_coach.puzzle_session_schema import add_puzzle_sessions
+
     legacy = SCHEMA.replace(RUN_TABLE, "").replace(
         "    payload_json TEXT NOT NULL,\n    run_id INTEGER REFERENCES detector_runs(id),\n"
         "    fact_key TEXT,\n    produced_at TEXT\n",
@@ -212,6 +214,7 @@ def test_v5_legacy_fact_and_review_migrate_without_fabricated_lineage():
     )
     db = Database(":memory:")
     db.connection.executescript(legacy)
+    add_puzzle_sessions(db.connection)
     db.connection.execute(
         "INSERT INTO games (pgn, white, black, result) VALUES ('raw', 'A', 'B', '*')"
     )
@@ -242,7 +245,7 @@ def test_v5_legacy_fact_and_review_migrate_without_fabricated_lineage():
         == old_evidence
     )
     assert db.connection.execute("SELECT COUNT(*) FROM detector_runs").fetchone()[0] == 0
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 11
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 12
     assert db.connection.execute("PRAGMA foreign_key_check").fetchall() == []
     new = produce(db)
     assert new["fact_ids"]

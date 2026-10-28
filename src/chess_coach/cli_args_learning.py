@@ -26,6 +26,13 @@ def configure(sub):
     training_create.add_argument("source_ref")
     training_create.add_argument("skill")
     training_create.add_argument("operation")
+    puzzle_training = sub.add_parser(
+        "create-puzzle-training", help="Create a versioned puzzle training item"
+    )
+    puzzle_training.add_argument("version")
+    puzzle_training.add_argument("puzzle_id")
+    puzzle_training.add_argument("skill")
+    puzzle_training.add_argument("operation")
     training_due = sub.add_parser("due-training")
     training_due.add_argument("--limit", type=int, default=100)
     training_review = sub.add_parser("review-training")
@@ -43,6 +50,8 @@ def configure(sub):
     play.add_argument("attempt_id")
     play.add_argument("move")
     play.add_argument("--event-id", required=True)
+    play.add_argument("--training-item-id", type=int)
+    play.add_argument("--subject")
     hint = sub.add_parser("hint-puzzle", help="Ask for the starting square of the next move")
     hint.add_argument("attempt_id")
     hint.add_argument("--event-id", required=True)

@@ -68,3 +68,42 @@ def test_malformed_puzzle_cli_error_does_not_reveal_solution(tmp_path) -> None:
     assert result.returncode != 0
     assert "invalid puzzle position or solution" in result.stderr
     assert "z9z9" not in result.stderr
+
+
+def test_puzzle_cli_can_complete_verified_training_feedback(tmp_path) -> None:
+    path = tmp_path / "coach.sqlite"
+    csv = tmp_path / "puzzles.csv"
+    csv.write_text(
+        "PuzzleId,FEN,Moves,Rating,RatingDeviation\n"
+        "p1,6k1/8/6K1/2Q5/8/8/8/8 b - - 0 1,g8h8 c5f8,1200,80\n"
+    )
+
+    def run(*args: str) -> dict:
+        result = subprocess.run(
+            [sys.executable, "-m", "chess_coach.cli", "--db", str(path), *args],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return json.loads(result.stdout)
+
+    run("import-puzzles", str(csv), "--version", "v1")
+    run("start-puzzle", "v1", "p1", "attempt")
+    item = run("create-puzzle-training", "v1", "p1", "mate_in_one", "execute")["id"]
+    args = (
+        "play-puzzle",
+        "attempt",
+        "c5c8",
+        "--event-id",
+        "move",
+        "--training-item-id",
+        str(item),
+        "--subject",
+        "learner",
+    )
+    result = run(*args)
+    assert result["status"] == "solved" and result["training"]["evidence_id"] is not None
+    assert run(*args) == result
+    db = Database(path)
+    assert db.connection.execute("SELECT COUNT(*) FROM training_completions").fetchone()[0] == 1
+    assert db.connection.execute("SELECT human_validated FROM evidence_mappings").fetchone()[0] == 0

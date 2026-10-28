@@ -25,6 +25,7 @@ COMMANDS = {
     "update-mastery": learning.handle_update_mastery,
     "mastery-report": learning.handle_mastery_report,
     "create-training": learning.handle_create_training,
+    "create-puzzle-training": learning.handle_create_puzzle_training,
     "due-training": learning.handle_due_training,
     "review-training": learning.handle_review_training,
     "evidence-report": learning.handle_evidence_report,
