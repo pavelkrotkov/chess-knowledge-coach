@@ -44,7 +44,8 @@ CREATE TABLE IF NOT EXISTS engine_outputs (
     position_id INTEGER NOT NULL REFERENCES positions(id) ON DELETE CASCADE,
     score_cp INTEGER, wdl_json TEXT, best_move TEXT, played_move TEXT,
     multipv INTEGER NOT NULL DEFAULT 1,
-    pv TEXT, nodes INTEGER, depth INTEGER
+    pv TEXT, nodes INTEGER, depth INTEGER,
+    decision_fen TEXT, score_pov TEXT
 );
 CREATE TABLE IF NOT EXISTS maia_predictions (
     id INTEGER PRIMARY KEY,
