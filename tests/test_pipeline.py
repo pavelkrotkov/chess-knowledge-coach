@@ -399,7 +399,7 @@ def test_v12_migration_adds_pipeline_without_losing_existing_history(monkeypatch
     db.connection.execute('INSERT INTO games(pgn,white,black,result) VALUES ("raw","A","B","*")')
     db.connection.commit()
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 13
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 14
     assert db.connection.execute("SELECT pgn FROM games").fetchone()[0] == "raw"
     for table in ("opening_runs", "structure_runs"):
         assert "pipeline_generation" in {
@@ -754,3 +754,57 @@ def test_tactical_generation_superseded_after_interruption_advances(tmp_path, mo
         'SELECT input_json FROM detector_runs WHERE status="active"'
     ).fetchone()[0]
     assert json.loads(current)["detector_input"]["pipeline_generation"] == 2
+
+
+def test_v13_upgrade_preserves_curriculum_cursor_revision_and_indexes(monkeypatch):
+    from chess_coach import db_recent
+    from chess_coach.curriculum_cursor import new_state, resume_state
+    from chess_coach.curriculum_cursor_codec import decode_cursor, encode_cursor
+
+    db = Database(":memory:")
+    with monkeypatch.context() as patch:
+        patch.setattr(db_recent, "add_pipeline_stages", lambda connection: None)
+        db.initialize()
+    db.connection.execute("PRAGMA user_version=13")
+    db.connection.execute(
+        'INSERT INTO games(pgn,white,black,result) VALUES ("fixture","A","B","*")'
+    )
+    db.connection.commit()
+    before = tuple(
+        db.connection.execute(
+            "SELECT revision,cursor_key FROM curriculum_source_revision"
+        ).fetchone()
+    )
+    indexes = [
+        tuple(row)
+        for row in db.connection.execute(
+            'SELECT name,sql FROM sqlite_master WHERE type="index" AND (name LIKE "idx_curriculum_%" OR name="idx_puzzles_curriculum") ORDER BY name'
+        )
+    ]
+    assert any(row[0] == "idx_puzzles_curriculum" for row in indexes)
+    state = new_state(db, "learner", "fixture", 10, 10, datetime.now(UTC))
+    token = encode_cursor(db, state)
+    db.initialize()
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 14
+    assert (
+        tuple(
+            db.connection.execute(
+                "SELECT revision,cursor_key FROM curriculum_source_revision"
+            ).fetchone()
+        )
+        == before
+    )
+    assert [
+        tuple(row)
+        for row in db.connection.execute(
+            'SELECT name,sql FROM sqlite_master WHERE type="index" AND (name LIKE "idx_curriculum_%" OR name="idx_puzzles_curriculum") ORDER BY name'
+        )
+    ] == indexes
+    decoded = decode_cursor(db, token)
+    assert decoded == state
+    assert resume_state(db, decoded, "learner", "fixture", 10, 10, None)[0] == state
+    for table in ("opening_runs", "structure_runs"):
+        assert "pipeline_generation" in {
+            row[1] for row in db.connection.execute(f"PRAGMA table_info({table})")
+        }
+    assert db.connection.execute("PRAGMA foreign_key_check").fetchall() == []
