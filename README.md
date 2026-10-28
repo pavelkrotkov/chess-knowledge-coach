@@ -129,7 +129,7 @@ in the source tree:
 
     for context in decision_contexts(db, game_id=1, learner=os.environ.get("LICHESS_USERNAME")):
         if context["subject"] is not None:
-            print(context)
+            print({key: context[key] for key in ("game_id", "ply", "mover")})
 
 Only a uniquely matched, case-insensitive learner side receives a subject on
 its own moves. Opponent moves and unknown or inconsistent identities have no
