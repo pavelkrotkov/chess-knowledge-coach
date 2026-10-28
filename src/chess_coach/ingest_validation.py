@@ -7,6 +7,7 @@ import io
 import chess.pgn
 
 from .ingest_reader import SilentGameBuilder
+from .ingest_result import last_mainline_token
 from .ingest_syntax import validate_syntax
 
 
@@ -36,5 +37,5 @@ def validate_game(game: chess.pgn.Game, source: str, raw: str) -> None:
         "1/2-1/2",
     }:
         raise ValueError("unsupported or unfinished Lichess game")
-    if not raw.rstrip().endswith(result):
+    if last_mainline_token(raw) != result:
         raise ValueError("incomplete Lichess game PGN")

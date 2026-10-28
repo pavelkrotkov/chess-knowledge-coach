@@ -180,3 +180,57 @@ def test_default_storage_is_normalized_but_explicit_override_remains_exact() -> 
         chess.pgn.read_game(io.StringIO(PGN))
     )
     assert with_override.connection.execute("SELECT pgn FROM games").fetchone()[0] == PGN
+
+
+@pytest.mark.parametrize("override", [False, True])
+@pytest.mark.parametrize(
+    "movetext",
+    [
+        "1. e4 e5 2. Nf3 ; 1-0",
+        "1. e4 e5 2. Nf3 0-1 ; 1-0",
+        "1. e4 e5 2. Nf3 { 1-0 }",
+        "1. e4 (1. d4 { 1-0 }) e5 2. Nf3",
+    ],
+)
+def test_comment_or_variation_result_cannot_complete_lichess_game(movetext, override):
+    raw = PGN.replace("1. e4 e5 2. Nf3 1-0", movetext)
+    db = database()
+    with pytest.raises(ValueError, match="incomplete Lichess game PGN"):
+        ingest_pgn(db, raw, source="lichess", raw_pgn_override=raw if override else None)
+    assert db.connection.execute("SELECT COUNT(*) FROM games").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("override", [False, True])
+@pytest.mark.parametrize("tail", [" { final comment }", " ; final comment", "\n% final comment"])
+def test_completed_lichess_result_allows_trailing_comments(tail, override):
+    raw = PGN.replace("2. Nf3 1-0\n", "2. Nf3 1-0" + tail + "\n")
+    db = database()
+    assert ingest_pgn(db, raw, source="lichess", raw_pgn_override=raw if override else None) == {
+        "games": 1,
+        "positions": 3,
+    }
+    if override:
+        assert db.connection.execute("SELECT pgn FROM games").fetchone()[0] == raw
+
+
+def test_comment_only_result_in_later_game_rolls_back_batch():
+    valid = PGN.replace("abc12345", "abc12346")
+    incomplete = PGN.replace("2. Nf3 1-0\n", "2. Nf3 ; 1-0")
+    db = database()
+    with pytest.raises(ValueError, match="incomplete Lichess game PGN"):
+        ingest_pgn(db, valid + "\n" + incomplete, source="lichess")
+    assert db.connection.execute("SELECT COUNT(*) FROM games").fetchone()[0] == 0
+    assert db.connection.execute("SELECT COUNT(*) FROM positions").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("override", [False, True])
+def test_nested_variations_do_not_hide_mainline_result(override):
+    raw = PGN.replace(
+        "1. e4 e5 2. Nf3 1-0",
+        "1. e4 (1. d4 d5 (1... Nf6)) e5 2. Nf3 1-0 { done }",
+    )
+    db = database()
+    assert ingest_pgn(db, raw, source="lichess", raw_pgn_override=raw if override else None) == {
+        "games": 1,
+        "positions": 3,
+    }
