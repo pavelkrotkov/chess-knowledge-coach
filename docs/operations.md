@@ -116,7 +116,15 @@ and absence of a direct backend TCP listener. Serve supplies `Host: localhost`
 to the Unix backend and the browser requires that exact backend Host and the
 exact configured Tailscale login. This is not validation of the original public
 Host. For state-changing requests, the browser separately requires the exact
-configured public HTTPS Origin and a valid session CSRF token.
+configured public HTTPS Origin and a valid session CSRF token. Missing, `null`,
+or incorrect Origins are rejected.
+
+The server returns `Referrer-Policy: same-origin`. The [Fetch Standard](https://fetch.spec.whatwg.org/#origin-header)
+allows ordinary same-origin HTTPS form submissions to retain their actual
+Origin under this policy; `no-referrer` can cause an `Origin: null` form POST.
+The [Referrer Policy specification](https://w3c.github.io/webappsec-referrer-policy/#referrer-policy-same-origin)
+withholds referrer information from other origins. Same-origin requests may
+include the full page URL as referrer, so keep service logs private.
 
 `X-Forwarded-Host` can be supplied by a caller in this setup; the browser does
 not use it to establish identity or origin. Keep the socket directory mode 0700
@@ -129,8 +137,10 @@ intended private Serve route and that the allowed login matches the signed-in
 Tailscale identity. Check the configured HTTPS origin, including its port,
 against the browser address. For a failed state change, reload the page and
 retry so the browser obtains a current session and CSRF token; sessions expire
-when the server restarts. A 403 on a read can indicate an identity or backend
-Host mismatch; a 403 on a state change can also indicate an Origin or CSRF
+when the server restarts. Browser privacy settings or extensions may also
+suppress the Origin; check them privately or try another approved browser. Do
+not allow `null` Origins or disable the Origin or CSRF checks. A 403 on a read
+can indicate an identity or backend Host mismatch; a 403 on a state change can also indicate an Origin or CSRF
 mismatch. Do not print, copy, or share identity headers, credentials, or private
 configuration while troubleshooting. Never use a forwarded Host header to
 bypass these checks.
