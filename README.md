@@ -216,6 +216,12 @@ verification after the remaining release work is tracked in
 
 ## Daily practice plan
 
+For scheduled copies of the same canonical prompt, planning uses the schedule with
+the latest valid actual review; known review times outrank unknown ones, and the
+lowest item ID breaks ties. The bounded cross-schedule scan may require a
+continuation before a due item can be offered. Missing or malformed scheduled
+sources prevent that check and produce an actionable repair diagnostic.
+
 `daily-plan` produces a bounded, read-only plan for a runtime learner and
 selected puzzle corpus. It selects supported due items first, then scans puzzles
 in rating and ID order. Every offered puzzle is checked for an immediate legal

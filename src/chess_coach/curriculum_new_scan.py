@@ -6,13 +6,19 @@ from .curriculum_new import new_page
 from .db import Database
 
 
-def scan_new(db: Database, state: dict, summary: dict) -> tuple[list[dict], dict, str | None]:
+def scan_new(
+    db: Database, state: dict, summary: dict, scheduled_examined: int
+) -> tuple[list[dict], dict, str | None]:
     rows = new_page(db, state["corpus_version"], state["new_after"], state["scan_limit"])
     if state["pending"] is not None and not rows:
         raise ValueError("curriculum candidate changed; restart the plan")
     selected = []
     seen = set(state["seen"])
-    counts = {"corpus_examined": 0, "scheduled_examined": 0, "scheduled_unavailable_item_id": None}
+    counts = {
+        "corpus_examined": 0,
+        "scheduled_examined": scheduled_examined,
+        "scheduled_unavailable_item_id": None,
+    }
     for row in rows[: state["scan_limit"]]:
         if len(row["puzzle_id"]) > 256:
             raise ValueError("puzzle ID is too long for bounded continuation")

@@ -18,6 +18,7 @@ def validate_state(state) -> None:
         "new_after",
         "pending",
         "scheduled_after",
+        "scheduled_best",
         "seen",
     }
     if (

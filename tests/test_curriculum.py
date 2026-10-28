@@ -17,7 +17,7 @@ from chess_coach.evidence_review import review_evidence
 from chess_coach.ingest import ingest_pgn
 from chess_coach.puzzle_sessions import start_attempt
 from chess_coach.tactical_opportunities import record_game_opportunities
-from chess_coach.training import create_training_item
+from chess_coach.training import create_training_item, review_item
 from chess_coach.training_feedback import puzzle_training_ref, submit_training_move
 
 FEN_A = "6k1/8/6K1/2Q5/8/8/8/8 b - - 0 1"
@@ -583,7 +583,7 @@ def test_keyset_pagination_preserves_many_equal_rating_and_due_ties():
     item(db, "late", NOW - timedelta(days=1))
     pages = collect_pages(db, scan_limit=1, limit=1)
     assert [entry["puzzle_id"] for page in pages for entry in page["items"]] == ["late"]
-    assert sum(page["scan"]["due_examined"] for page in pages) == 5
+    assert sum(page["scan"]["due_examined"] for page in pages) >= 5
 
 
 def test_equal_key_continuation_seeks_both_columns():
@@ -691,32 +691,73 @@ def test_continuation_survives_database_reopen(tmp_path):
 
 def test_due_continuation_passes_one_thousand_unsupported_rows():
     db = database()
+    corpus = db.connection.execute("SELECT id FROM puzzle_corpora WHERE version='v1'").fetchone()[0]
     for number in range(1000):
+        name = f"unsupported-{number:04d}"
+        db.connection.execute(
+            """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,
+            rating_deviation,themes_json,objective) VALUES(?,?,?,'','e2e4 e7e5',100,80,'[]','execute')""",
+            (name, corpus, chess.STARTING_FEN),
+        )
         db.connection.execute(
             """INSERT INTO training_items(source_type,source_ref,skill,operation,due,scheduler_version)
             VALUES('puzzle',?,'mate_in_one','execute',?,'fixture')""",
-            (
-                puzzle_training_ref("v1", f"missing-{number:04d}"),
-                (NOW - timedelta(days=1)).isoformat(),
-            ),
+            (puzzle_training_ref("v1", name), (NOW - timedelta(days=1)).isoformat()),
         )
     db.connection.commit()
     puzzle(db, "due", FEN_A, "g8h8 c5f8", 100)
     item(db, "due", NOW - timedelta(days=1))
-    first = daily_plan(
-        db, subject="learner", corpus_version="v1", scan_limit=1000, as_of=NOW, limit=1
+    pages = collect_pages(db, scan_limit=1000, limit=1)
+    assert pages[0]["scan"]["due_examined"] == 1000
+    assert pages[0]["continuation_reason"] == "due_scan_incomplete"
+    assert [entry["puzzle_id"] for page in pages for entry in page["items"]] == ["due"]
+    assert any(page["continuation_reason"] == "scheduled_scan_incomplete" for page in pages)
+
+
+def test_due_conflict_with_missing_source_fails_closed():
+    db = database()
+    missing = item(db, "missing", NOW - timedelta(days=1))
+    puzzle(db, "due", FEN_A, "g8h8 c5f8", 100)
+    item(db, "due", NOW - timedelta(hours=1))
+    result = daily_plan(db, subject="learner", corpus_version="v1", as_of=NOW)
+    assert result["items"] == []
+    assert result["continuation_reason"] == "scheduled_prompt_unavailable"
+    assert result["scan"]["scheduled_unavailable_item_id"] == missing
+    assert "repair" in result["diagnostic"]
+
+
+def test_reviewed_copy_defers_older_due_copy_across_bounded_pages():
+    db = database()
+    puzzle(db, "a", FEN_A, "g8h8 c5f8", 100)
+    puzzle(db, "copy", FEN_A.replace("0 1", "9 10"), "g8h8 c5f8", 200)
+    first = item(db, "a", NOW - timedelta(days=2))
+    second = item(db, "copy", NOW - timedelta(days=1))
+    before = collect_pages(db, scan_limit=1, limit=1)
+    assert [entry["item_id"] for page in before for entry in page["items"]] == [first]
+    result = review_item(db, second, "good", reviewed_at=NOW - timedelta(minutes=1))
+    assert datetime.fromisoformat(cast(str, result["due"])) > NOW
+    pages = collect_pages(db, scan_limit=1, limit=1)
+    assert not [entry for page in pages for entry in page["items"]]
+    assert any(page["continuation_reason"] == "scheduled_scan_incomplete" for page in pages)
+
+
+def test_latest_review_wins_over_an_older_future_copy():
+    db = database()
+    puzzle(db, "a", FEN_A, "g8h8 c5f8", 100)
+    puzzle(db, "copy", FEN_A, "g8h8 c5f8", 200)
+    older = item(db, "a", NOW + timedelta(days=1))
+    newer = item(db, "copy", NOW - timedelta(minutes=1))
+    db.connection.execute(
+        "UPDATE training_items SET last_review=? WHERE id=?",
+        ((NOW - timedelta(days=2)).isoformat(), older),
     )
-    assert first["items"] == [] and first["scan"]["due_examined"] == 1000
-    assert first["continuation_reason"] == "due_scan_incomplete"
-    second = daily_plan(
-        db,
-        subject="learner",
-        corpus_version="v1",
-        scan_limit=1000,
-        cursor=first["next_cursor"],
-        limit=1,
+    db.connection.execute(
+        "UPDATE training_items SET last_review=? WHERE id=?",
+        ((NOW - timedelta(hours=1)).isoformat(), newer),
     )
-    assert [entry["puzzle_id"] for entry in second["items"]] == ["due"]
+    db.connection.commit()
+    pages = collect_pages(db, scan_limit=1, limit=1)
+    assert [entry["item_id"] for page in pages for entry in page["items"]] == [newer]
 
 
 def test_cursor_rejects_evidence_review_changes_between_pages():

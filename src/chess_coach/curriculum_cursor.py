@@ -23,6 +23,7 @@ def new_state(
         "new_after": None,
         "pending": None,
         "scheduled_after": 0,
+        "scheduled_best": 0,
         "seen": [],
     }
 

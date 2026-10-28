@@ -5,7 +5,7 @@ from datetime import datetime
 from .curriculum_cursor_codec import encode_cursor
 from .curriculum_due_scan import scan_due
 from .curriculum_evidence import evidence_summary
-from .curriculum_new_page import new_page
+from .curriculum_new_page import diagnostic, new_page
 from .curriculum_query import corpus_status
 from .db import Database
 
@@ -27,8 +27,10 @@ def build_page(db: Database, state: dict, learner: str, now: datetime) -> dict:
     }
     reason = None
     if state["phase"] == "due":
-        items, scan["due_examined"], scan["due_incomplete"] = scan_due(db, state, now, summary)
-        if scan["due_incomplete"] and len(state["seen"]) < state["limit"]:
+        items, scan["due_examined"], scan["due_incomplete"], reason = scan_due(
+            db, state, now, summary, scan
+        )
+        if reason is None and scan["due_incomplete"] and len(state["seen"]) < state["limit"]:
             reason = "due_scan_incomplete"
     if _should_scan_new(state, reason):
         new_items, status, reason = new_page(db, state, summary, scan, status)
@@ -43,7 +45,7 @@ def build_page(db: Database, state: dict, learner: str, now: datetime) -> dict:
         "items": items,
         "next_cursor": _next_cursor(db, state, reason),
         "continuation_reason": reason,
-        "diagnostic": _diagnostic(reason),
+        "diagnostic": diagnostic(reason),
     }
 
 
@@ -53,9 +55,3 @@ def _should_scan_new(state: dict, reason: str | None) -> bool:
 
 def _next_cursor(db: Database, state: dict, reason: str | None) -> str | None:
     return encode_cursor(db, state) if reason and reason.endswith("_scan_incomplete") else None
-
-
-def _diagnostic(reason: str | None) -> str | None:
-    if reason == "scheduled_prompt_unavailable":
-        return "Restore the referenced versioned corpus or repair the scheduled item source."
-    return None
