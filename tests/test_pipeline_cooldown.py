@@ -221,11 +221,20 @@ def test_v14_upgrade_preserves_existing_health_and_adds_unknown_deadline(monkeyp
     db.connection.execute("PRAGMA user_version=14")
     db.connection.commit()
     start_run(db)
+    db.connection.execute(
+        "INSERT INTO pipeline_cursors(account_key,last_game_id,updated_at,scan_hash) VALUES (?,?,?,?)",
+        ("synthetic-key", 42, "2026-01-01T00:00:00+00:00", "synthetic-hash"),
+    )
+    db.connection.commit()
+    before_cursor = tuple(db.connection.execute("SELECT * FROM pipeline_cursors").fetchone())
     before = tuple(db.connection.execute("SELECT * FROM pipeline_health").fetchone())
     db.initialize()
     assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 15
     after = tuple(db.connection.execute("SELECT * FROM pipeline_health").fetchone())
     assert after[:-1] == before and after[-1] is None
+    assert (
+        tuple(db.connection.execute("SELECT * FROM pipeline_cursors").fetchone()) == before_cursor
+    )
     assert db.connection.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
