@@ -1,0 +1,25 @@
+[Unit]
+Description=Private chess coach browser
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@ROOT@/.runtime
+EnvironmentFile=@ROOT@/.runtime/config.env
+Environment=CHESS_RELEASE_SHA=@COMMIT@
+Environment=CHESS_PROJECT_ROOT=@ROOT@
+Environment=CHESS_WEB_SOCKET=@ROOT@/.runtime/web.sock
+Environment=TMPDIR=@ROOT@/.runtime/tmp
+Environment=XDG_CACHE_HOME=@ROOT@/.runtime/cache
+Environment=PYTHONDONTWRITEBYTECODE=1
+UnsetEnvironment=PYTHONPATH PYTHONHOME
+UMask=0077
+ExecStart=@RELEASE@/venv/bin/python -I -B -m chess_coach.web_server
+Restart=on-failure
+RestartSec=5s
+StandardOutput=append:@ROOT@/.runtime/logs/web.log
+StandardError=append:@ROOT@/.runtime/logs/web.log
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,4 @@
+{% extends "base.html" %}
+{% block content %}<h2>Unable to continue</h2>
+<p role="alert">{{ message }}</p>
+<a href="{{ url_for('views.plan') }}">Return to daily plan</a>{% endblock %}

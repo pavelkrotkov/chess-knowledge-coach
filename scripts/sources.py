@@ -9,7 +9,7 @@ from pathlib import Path
 def source_directories(root: Path, current: Path, names: list[str]) -> list[str]:
     excluded = {".git", ".venv", "__pycache__"}
     if current == root:
-        excluded.add("tests")
+        excluded.update({"tests", ".runtime"})
     return [name for name in names if name not in excluded]
 
 

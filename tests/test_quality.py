@@ -92,3 +92,25 @@ def test_maintainability_at_threshold_is_rejected(
     monkeypatch.setattr(quality, "measure", lambda _: (50.0, []))
     monkeypatch.setattr("sys.argv", ["quality.py", "--check"])
     assert quality.main() == 1
+
+
+def test_root_runtime_artifacts_are_excluded_without_hiding_authored_sources(
+    tmp_path: Path,
+) -> None:
+    package = tmp_path / "src/chess_coach"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("")
+    authored = package / "ops_release.py"
+    authored.write_text("x = 1")
+    nested = package / ".runtime" / "authored.py"
+    nested.parent.mkdir()
+    nested.write_text("y = 2")
+    generated = tmp_path / ".runtime" / "releases" / "vendor.py"
+    generated.parent.mkdir(parents=True)
+    generated.write_text("this is generated, not project source")
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "quality.py").write_text("")
+    files = production_files(tmp_path)
+    assert authored in files and nested in files
+    assert generated not in files

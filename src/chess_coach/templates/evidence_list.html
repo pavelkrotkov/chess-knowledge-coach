@@ -1,0 +1,5 @@
+{% extends "base.html" %}
+{% block content %}<h2>Evidence</h2>{% if rows %}<ul>{% for row in rows %}<li>
+<a href="{{ url_for('views.evidence_detail', evidence_id=row.id) }}">Evidence {{ row.id }}</a>: {{ row.skill }} - {{ row.outcome }}, {{ row.review_status }} ({{ row.lifecycle_status }})</li>{% endfor %}</ul>{% if rows|length == 100 %}<a href="{{ url_for('views.evidence_list', after=rows[-1].id) }}">Next evidence</a>{% endif %}
+{% else %}<p>No evidence on this page. Process games or complete practice to create evidence.</p>{% endif %}
+{% endblock %}

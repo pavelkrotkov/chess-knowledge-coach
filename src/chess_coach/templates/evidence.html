@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}<h2>Evidence {{ evidence.id }}</h2>
+<p>{{ evidence.skill }} / {{ evidence.operation }}: {{ evidence.outcome }}. Review: {{ evidence.review_status }}. Lifecycle: {{ evidence.lifecycle_status }}.</p>
+<p>Subject: {{ evidence.subject or "unattributed" }}.</p>
+<p>Source game: {{ evidence.game_id if evidence.game_id is not none else "unavailable" }}; ply: {{ evidence.ply if evidence.ply is not none else "unavailable" }}. Observed: {{ evidence.observation_at or "unknown" }}.</p>{% include "board.html" %}<h3>Explanation and source facts</h3>
+<pre>{{ evidence.context | tojson(indent=2) }}</pre>{% if evidence.facts %}<ul>{% for fact in evidence.facts %}<li>{{ fact.fact_type }} - {{ fact.detector_version }}<pre>{{ fact.payload | tojson(indent=2) }}</pre>
+</li>{% endfor %}</ul>{% else %}<p>No linked detector facts; see the source and explanation above.</p>{% endif %}<h3>Human review</h3>
+<form method="post" action="{{ url_for('views.evidence_review', evidence_id=evidence.id) }}">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<button name="decision" value="accept">Accept</button> <button name="decision" value="reject">Reject</button>{% if evidence.review_status != "unreviewed" %} <button name="decision" value="revoke">Revoke</button>{% endif %}</form>{% if evidence.reviews %}<ul>{% for review in evidence.reviews %}<li>{{ review.decision }} - {{ review.reviewed_at }}{% if review.rationale %}: {{ review.rationale }}{% endif %}</li>{% endfor %}</ul>{% endif %}
+{% endblock %}

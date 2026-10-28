@@ -1158,3 +1158,26 @@ def test_opening_dataset_change_during_scan_prevents_false_completion(tmp_path, 
     assert result["status"] == "partial" and result["scan"]["has_more"]
     replay = process_pipeline(db, config, transport=network)
     assert replay["games"][0]["game_id"] == 1 and replay["status"] == "complete"
+
+
+def test_worker_sends_application_identity_and_existing_auth_headers(tmp_path, monkeypatch):
+    from chess_coach import __version__
+
+    db, config, _, _ = setup(tmp_path, monkeypatch, count=0)
+    requests = []
+
+    def handle(request):
+        requests.append(request)
+        return httpx.Response(200, text="")
+
+    result = process_pipeline(
+        db, config, token="synthetic-token", transport=httpx.MockTransport(handle)
+    )
+    assert result["sync"]["status"] in {"complete", "partial"}
+    assert requests
+    for request in requests:
+        assert request.headers["user-agent"] == (
+            f"chess-knowledge-coach/{__version__} (+https://github.com/pavelkrotkov/chess-knowledge-coach)"
+        )
+        assert request.headers["accept"] == "application/x-chess-pgn"
+        assert request.headers["authorization"] == "Bearer synthetic-token"

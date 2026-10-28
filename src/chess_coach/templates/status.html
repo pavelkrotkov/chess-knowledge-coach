@@ -1,0 +1,5 @@
+{% extends "base.html" %}
+{% block content %}<h2>Processing status</h2>{% if release %}<p>Release: {{ release.commit }}. Installed module: {{ release.module_path }}.</p>{% else %}<p>Release identity unavailable in this environment.</p>{% endif %}{% if status.health %}<p>Last run: {{ status.health.status }}. Last success: {{ status.health.last_success_at or "not yet" }}.</p>
+<p>Sync: {{ status.health.sync_status or "not yet run" }}.{% if status.health.sync_detail %} {{ status.health.sync_detail }}{% endif %}</p>{% if status.health.retry_until %}<p>Sync resumes after {{ status.health.retry_until }} UTC.</p>{% endif %}{% else %}<p>Processing has not run yet.</p>{% endif %}
+{% if status.counts %}<ul>{% for name, count in status.counts.items() %}<li>{{ name }}: {{ count }}</li>{% endfor %}</ul>{% else %}<p>No processed games yet.</p>{% endif %}<p>
+<a href="{{ url_for('views.evidence_list') }}">Review evidence</a> or <a href="{{ url_for('views.plan') }}">plan practice</a>.</p>{% endblock %}

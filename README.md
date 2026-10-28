@@ -191,6 +191,34 @@ legacy evidence record has no observation timestamp, the value is NULL rather
 than a guessed date, and that record is excluded from temporal trend comparisons.
 An unsupported newer database version is rejected without modification.
 
+## Database backup and restore
+
+Before a schema upgrade, create a verified online backup without initializing
+or migrating the source database. From the project root, choose new paths whose
+parent directories already exist:
+
+```bash
+uv run chess-coach backup-db coach.sqlite coach-backup.sqlite --project-root "$PWD"
+uv run chess-coach restore-db coach-backup.sqlite coach-restored.sqlite --project-root "$PWD"
+```
+
+Both paths must be inside the explicitly selected project root. The source is
+opened read-only, and SQLite's online backup API captures a consistent copy
+including committed WAL data. The copy is checked with `integrity_check` and
+`foreign_key_check` before publication; the new file has owner-only permissions.
+An existing destination or its SQLite journal, WAL, or shared-memory companion
+is never overwritten. Keep exclusive control of the destination directory while
+the operation runs so another process cannot create a companion afterward.
+Temporary files are created in
+the destination directory and cleaned up after completion or a handled failure.
+Restoring does not replace the original database or run schema migrations. It
+requires a standalone rollback-journal backup, such as one produced by
+`backup-db`; use `backup-db` first for a WAL-mode source.
+
+For a WAL database, keep the database and its SQLite-managed sidecars available
+to the live SQLite connection; copying the main file alone can omit committed
+data. See [SQLite's online backup documentation](https://www.sqlite.org/backup.html).
+
 ## Code quality metrics
 
 `uv run python -m scripts.quality --check` uses pinned Radon 6.0.1 to check all
@@ -449,3 +477,36 @@ superseded output creates a new current generation. Engine outputs and their
 completion checkpoint commit together. Untimed or unassigned decisions do not
 produce learner tactical candidates. Candidate evidence still requires an
 explicit review before it can contribute to mastery.
+
+
+## Private browser tutor
+
+The browser process reuses the existing evidence review, curriculum, puzzle,
+and scheduler services. It requires a pre-existing database and does not run
+the background worker. Configure these environment variables in a private
+runtime environment (not in the repository):
+
+- `CHESS_PROJECT_ROOT`: selected project folder.
+- `CHESS_DB`: existing SQLite database inside that folder.
+- `CHESS_WEB_SOCKET`: new Unix socket path inside a user-owned directory with
+  mode 0700; the socket is created with mode 0600.
+- `CHESS_SUBJECT`, `CHESS_REVIEW_ACTOR`, `CHESS_CORPUS`: the configured
+  learner, explicit review actor, and imported puzzle corpus version.
+- `CHESS_TAILSCALE_LOGIN`: the single allowed exact Tailscale login.
+- `CHESS_WEB_ORIGIN`: the exact externally served HTTPS origin, including
+  the port if present, without a trailing slash.
+
+Run `uv run python -m chess_coach.web_server` with those values configured.
+Proxy the Unix socket with Tailscale Serve, not a TCP listener or Funnel. Serve
+strips incoming spoofed identity headers before supplying its own identity;
+the socket directory and its account must remain private because local processes
+with socket access are trusted. Requests with missing or mismatched identity
+or host are rejected, and state changes require the exact origin and a session
+CSRF token. The signing key is process-local, so sessions expire on restart. A private
+lifetime lock prevents overlapping browser instances; on Linux a stale owned
+socket is reclaimed only if no process has it bound. Unexpected paths are left
+untouched.
+This command does not configure Tailscale Serve or install a service.
+
+For private service installation, backup, upgrade, and recovery, see the
+[Hermes operations guide](docs/operations.md).
