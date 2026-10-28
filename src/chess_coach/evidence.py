@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import Any, cast
 
 from .db import Database
+from .evidence_review import validate_evidence as validate_evidence
 
 
 def record_evidence(
@@ -47,20 +48,14 @@ def record_evidence(
     return cast(int, cursor.lastrowid)
 
 
-def validate_evidence(db: Database, evidence_id: int) -> None:
-    cursor = db.connection.execute(
-        "UPDATE evidence_mappings SET human_validated = 1 WHERE id = ?", (evidence_id,)
-    )
-    if cursor.rowcount != 1:
-        raise ValueError(f"unknown evidence mapping: {evidence_id}")
-    db.connection.commit()
-
-
 def evidence_report(db: Database) -> list[dict[str, Any]]:
     rows = db.connection.execute(
-        """SELECT skill, operation, outcome, COUNT(*) AS count
-        FROM evidence_mappings GROUP BY skill, operation, outcome
-        ORDER BY skill, operation, outcome"""
+        """SELECT e.skill, e.operation, e.outcome, COUNT(*) AS count
+        FROM evidence_mappings e
+        LEFT JOIN mapping_runs r ON r.id = e.mapping_run_id
+        WHERE e.mapping_run_id IS NULL OR r.status = 'active'
+        GROUP BY e.skill, e.operation, e.outcome
+        ORDER BY e.skill, e.operation, e.outcome"""
     ).fetchall()
     report: dict[tuple[str, str], dict[str, Any]] = defaultdict(dict)
     for row in rows:

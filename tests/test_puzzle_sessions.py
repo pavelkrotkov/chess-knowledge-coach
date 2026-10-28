@@ -158,7 +158,7 @@ def test_concurrent_identical_event_is_applied_once(tmp_path) -> None:
 
 
 def test_schema_v4_upgrade_preserves_cursor_and_creates_session_tables(monkeypatch) -> None:
-    from chess_coach import db_versioning
+    from chess_coach import db_recent
 
     db = Database(":memory:")
     db.connection.executescript(SCHEMA)
@@ -179,7 +179,7 @@ def test_schema_v4_upgrade_preserves_cursor_and_creates_session_tables(monkeypat
         raise RuntimeError("injected migration failure")
 
     with monkeypatch.context() as patch:
-        patch.setattr(db_versioning, "add_puzzle_sessions", fail_after_first_table)
+        patch.setattr(db_recent, "add_puzzle_sessions", fail_after_first_table)
         with pytest.raises(RuntimeError, match="injected migration failure"):
             db.initialize()
     assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 4
@@ -192,7 +192,7 @@ def test_schema_v4_upgrade_preserves_cursor_and_creates_session_tables(monkeypat
 
     db.initialize()
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 5
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 8
     assert db.connection.execute("SELECT pgn FROM games").fetchone()[0] == "existing"
     row = db.connection.execute("SELECT * FROM sync_progress").fetchone()
     assert (row["revision"], row["next_kind"], row["history_windows"]) == (

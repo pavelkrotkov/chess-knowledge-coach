@@ -24,10 +24,10 @@ def test_motif_facts_and_outcomes_preserve_versions() -> None:
 
     assert record_motif_opportunities(db, position_id, outcomes={"0": "failure"}) >= 1
     fact = db.connection.execute(
-        "SELECT detector_version, fact_type FROM detector_facts"
+        "SELECT detector_version, fact_type FROM detector_facts WHERE fact_type = 'fork'"
     ).fetchone()
     evidence = db.connection.execute(
-        "SELECT outcome, mapper_version FROM evidence_mappings"
+        "SELECT outcome, mapper_version FROM evidence_mappings WHERE skill = 'fork'"
     ).fetchone()
     assert tuple(fact) == ("0.1.0", "fork")
     assert tuple(evidence) == ("failure", "0.1.0")

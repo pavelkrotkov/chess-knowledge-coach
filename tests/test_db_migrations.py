@@ -75,7 +75,7 @@ def test_populated_legacy_upgrade_is_repeatable_and_preserves_history(
     }
     db.initialize()
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 5
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 8
     for table, old_rows in preserved.items():
         new_rows = rows(db, table)
         assert [

@@ -139,6 +139,41 @@ separate. A recorded clock is after the move, while the prior clock for the same
 side is supplied separately when available. This context does not itself create
 or validate skill evidence.
 
+## Versioned detector facts
+
+The Python API provides record_fact_run for immutable detector facts scoped
+to a producer and position. Provide deterministic JSON input data and facts as
+objects with fact_type and payload. Exact replays return the same run and
+fact IDs; a new successful run supersedes only its producer/position scope.
+Legacy facts without run provenance retain unknown timestamps and ownership.
+The record_fact_run_in_transaction function supports a caller-owned transaction
+and never commits it.
+
+Motif and ontology mapping now write producer-scoped runs with links to their
+source facts. Repeating an identical run preserves evidence IDs; a new run
+supersedes only its own scope and keeps prior reviews attached to prior evidence.
+An empty run can replace a scope. Duplicate active fact, subject, skill, and
+operation combinations are rejected. Historical records with unproven source
+lineage remain visible as unknown. The two existing mappers use the unassigned
+subject until learner attribution supplies one.
+
+Consumers count current evidence and omit stale mastery states. Superseding a
+mapping or its detector input invalidates affected mastery states without
+deleting their event history. Callers composing fact and mapping writes can use
+the in-transaction mapping primitive in the same transaction as the detector
+primitive; callers own commit and rollback.
+
+## Structure and opening history
+
+Structure extraction and opening classification retain immutable generations.
+The current results are available in `current_structure_episodes` and
+`current_game_openings`; the underlying tables retain prior and legacy rows.
+Runs record production time and the detector or classifier version. Opening
+runs also identify the imported dataset and fingerprint its contents. A
+no-match opening is stored as a current classification with a NULL opening
+node and zero confidence. Old rows whose production time and run identity were
+never recorded retain NULLs and are not guessed into the current views.
+
 ## Database upgrades
 
 Startup applies ordered schema upgrades atomically and records their version in
