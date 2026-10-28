@@ -425,8 +425,11 @@ the scan cursor. Engine nodes and
 seconds apply to each position; thread and hash limits apply to each engine.
 The request count, aggregate response bytes, elapsed time, individual request
 timeout and retry-sleep budget bound the network portion. When the server’s
-required retry delay exceeds the remaining budget, synchronization stops with
-pending progress rather than retrying early. Large games receive a
+required retry delay exceeds the remaining budget, synchronization records a
+UTC retry deadline and stops rather than retrying early. Later scheduled runs
+make no Lichess requests until that deadline; they can still advance local
+work. `pipeline-status` exposes the deadline and waiting status. Unrelated
+network budget failures do not create a cooldown. Large games receive a
 `position_budget_exceeded` status and do not prevent later games from advancing.
 
 To classify openings, supply both `--opening-version` and `--opening-source`

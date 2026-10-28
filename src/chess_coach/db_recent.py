@@ -9,6 +9,7 @@ from .evidence_schema import add_evidence_lineage
 from .fact_schema import add_fact_lineage
 from .lichess_schema import add_sync_turn
 from .mastery_schema import allow_unknown_trend
+from .pipeline_cooldown_schema import add_pipeline_cooldown
 from .pipeline_schema import add_pipeline_stages
 from .puzzle_session_schema import add_puzzle_sessions
 from .training_completion_schema import add_training_completions
@@ -28,6 +29,7 @@ def upgrade_recent(connection: sqlite3.Connection, version: int) -> None:
         (12, add_training_completions),
         (13, add_curriculum_index),
         (14, add_pipeline_stages),
+        (15, add_pipeline_cooldown),
     )
     for target, apply_upgrade in upgrades:
         if version < target:

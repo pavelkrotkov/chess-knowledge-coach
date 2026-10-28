@@ -21,3 +21,11 @@ def bounded_body(response, limit: int, deadline: float) -> bytes:
     if time.monotonic() > deadline:
         raise BudgetExceeded("network response budget exhausted")
     return bytes(content)
+
+
+def observe_before_timeout(observe, response) -> None:
+    try:
+        observe(response)
+    except BudgetExceeded:
+        observe(response)
+        raise

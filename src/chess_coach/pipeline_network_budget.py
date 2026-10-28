@@ -4,18 +4,23 @@ import time
 
 import httpx
 
-from .pipeline_network_response import BudgetExceeded, bounded_body
+from .pipeline_network_response import BudgetExceeded, bounded_body, observe_before_timeout
 
 
 class BoundedClient:
-    def __init__(self, client, maximum: int, deadline: float, byte_limit: int, timeout: float):
+    def __init__(
+        self, client, maximum: int, deadline: float, byte_limit: int, timeout: float, guard, observe
+    ):
         self.client = client
         self.remaining = maximum
         self.deadline = deadline
         self.byte_limit = byte_limit
         self.timeout = timeout
+        self.guard = guard
+        self.observe = observe
 
     def get(self, url: str, **kwargs):
+        self.guard()
         remaining = self.deadline - time.monotonic()
         if self.remaining <= 0 or remaining <= 0:
             raise BudgetExceeded("network budget exhausted")
@@ -23,6 +28,7 @@ class BoundedClient:
         with self.client.stream(
             "GET", url, timeout=min(self.timeout, remaining), **kwargs
         ) as response:
+            observe_before_timeout(self.observe, response)
             content = bounded_body(response, self.byte_limit, self.deadline)
             self.byte_limit -= len(content)
             return httpx.Response(
