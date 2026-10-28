@@ -157,19 +157,53 @@ def test_concurrent_identical_event_is_applied_once(tmp_path) -> None:
     assert show_attempt(db, "a1")["fen"] == first["fen"]
 
 
-def test_schema_v3_upgrades_without_erasing_existing_data() -> None:
+def test_schema_v4_upgrade_preserves_cursor_and_creates_session_tables(monkeypatch) -> None:
+    from chess_coach import db_versioning
+
     db = Database(":memory:")
     db.connection.executescript(SCHEMA)
-    db.connection.execute("PRAGMA user_version = 3")
+    db.connection.execute("PRAGMA user_version = 4")
     db.connection.execute(
         "INSERT INTO games (pgn, white, black, result) VALUES ('existing', 'A', 'B', '*')"
     )
+    db.connection.execute(
+        """INSERT INTO sync_progress
+        (account_key, revision, next_kind, history_start, history_windows, history_cycles,
+         recent_windows, recent_end, recent_target)
+        VALUES ('synthetic', 7, 'history', 20, '[[20,30]]', 2, '[[25,30]]', 25, 30)"""
+    )
     db.connection.commit()
-    db.initialize()
-    db.initialize()
+
+    def fail_after_first_table(connection):
+        connection.execute("CREATE TABLE puzzle_sessions (attempt_id TEXT PRIMARY KEY)")
+        raise RuntimeError("injected migration failure")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(db_versioning, "add_puzzle_sessions", fail_after_first_table)
+        with pytest.raises(RuntimeError, match="injected migration failure"):
+            db.initialize()
     assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 4
+    assert (
+        db.connection.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'puzzle_sessions'"
+        ).fetchone()[0]
+        == 0
+    )
+
+    db.initialize()
+    db.initialize()
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 5
     assert db.connection.execute("SELECT pgn FROM games").fetchone()[0] == "existing"
+    row = db.connection.execute("SELECT * FROM sync_progress").fetchone()
+    assert (row["revision"], row["next_kind"], row["history_windows"]) == (
+        7,
+        "history",
+        "[[20,30]]",
+    )
+    assert (row["recent_windows"], row["recent_end"], row["recent_target"]) == ("[[25,30]]", 25, 30)
     assert db.connection.execute("SELECT COUNT(*) FROM puzzle_sessions").fetchone()[0] == 0
+    assert db.connection.execute("SELECT COUNT(*) FROM puzzle_session_events").fetchone()[0] == 0
+    assert db.connection.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
 def test_puzzle_resolution_uses_corpus_version() -> None:
