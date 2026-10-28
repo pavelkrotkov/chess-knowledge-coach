@@ -12,7 +12,14 @@ from .web_views import views
 
 
 def create_app(
-    *, db_path: str | Path, subject: str, actor: str, corpus: str, login: str, origin: str
+    *,
+    db_path: str | Path,
+    subject: str,
+    actor: str,
+    corpus: str,
+    login: str,
+    origin: str,
+    backend_host: str | None = None,
 ) -> Flask:
     host = validate_config(subject, actor, corpus, login, origin)
     app = Flask(__name__)
@@ -29,7 +36,7 @@ def create_app(
         ACTOR=actor,
         CORPUS=corpus,
     )
-    install_security(app, login, origin, host)
+    install_security(app, login, origin, host if backend_host is None else backend_host)
     app.register_blueprint(views)
     app.register_blueprint(practice)
 

@@ -455,7 +455,7 @@ def test_web_server_restarts_after_sigkill():
                 client.settimeout(5)
                 client.connect(str(path))
                 client.sendall(
-                    b"GET / HTTP/1.1\r\nHost: coach.invalid\r\n"
+                    b"GET / HTTP/1.1\r\nHost: localhost\r\n"
                     b"Tailscale-User-Login: fixture-login\r\nConnection: close\r\n\r\n"
                 )
                 assert b"HTTP/1.1 200 OK" in client.recv(4096)
@@ -610,3 +610,166 @@ def test_stale_practice_form_cannot_submit_to_newer_attempt(setup):
         ).status_code
         == 303
     )
+
+
+def test_real_unix_server_enforces_identity_origin_and_csrf(setup):
+    import http.client
+    import os
+    import shutil
+    import socket
+    import subprocess
+    import sys
+    import tempfile
+    import time
+    from urllib.parse import urlencode
+
+    source_db, _, evidence_id = setup
+    with tempfile.TemporaryDirectory(prefix="wh-") as directory:
+        root = Path(directory)
+        path = root / "web.sock"
+        db_path = root / "coach.sqlite"
+        shutil.copyfile(source_db, db_path)
+        env = os.environ | {
+            "CHESS_PROJECT_ROOT": str(root),
+            "CHESS_DB": str(db_path),
+            "CHESS_WEB_SOCKET": str(path),
+            "CHESS_SUBJECT": "learner",
+            "CHESS_REVIEW_ACTOR": "fixture-reviewer",
+            "CHESS_CORPUS": "fixture-v1",
+            "CHESS_TAILSCALE_LOGIN": LOGIN,
+            "CHESS_WEB_ORIGIN": ORIGIN,
+        }
+
+        class UnixConnection(http.client.HTTPConnection):
+            def connect(self):
+                self.sock = socket.socket(socket.AF_UNIX)
+                self.sock.settimeout(5)
+                self.sock.connect(str(path))
+
+        def request(method, route, *, headers=None, data=None):
+            client = UnixConnection("localhost", timeout=5)
+            body = urlencode(data or {}) if method == "POST" else None
+            supplied = {"Host": "localhost", "X-Forwarded-Host": "coach.invalid"}
+            supplied.update(headers or {})
+            if body is not None:
+                supplied["Content-Type"] = "application/x-www-form-urlencoded"
+            client.request(method, route, body=body, headers=supplied)
+            response = client.getresponse()
+            status, response_headers, payload = response.status, response.headers, response.read()
+            client.close()
+            return status, response_headers, payload
+
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "chess_coach.web_server"],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        try:
+            deadline = time.monotonic() + 10
+            while not path.exists() and proc.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.02)
+            assert path.is_socket() and proc.poll() is None
+            route = f"/evidence/{evidence_id}"
+            assert request("GET", route)[0] == 403
+            assert request("GET", route, headers={"Tailscale-User-Login": "wrong"})[0] == 403
+            assert (
+                request(
+                    "GET",
+                    route,
+                    headers={**HEADERS, "Host": "coach.invalid", "X-Forwarded-Host": "localhost"},
+                )[0]
+                == 403
+            )
+            status, headers, body = request(
+                "GET",
+                route,
+                headers={
+                    **HEADERS,
+                    "Origin": "https://evil.invalid",
+                    "X-Forwarded-Host": "evil.invalid",
+                },
+            )
+            assert status == 200 and headers.get("Access-Control-Allow-Origin") is None
+            cookie = headers["Set-Cookie"]
+            assert cookie.startswith("__Host-chess_coach_session=")
+            assert (
+                "Secure" in cookie
+                and "HttpOnly" in cookie
+                and "SameSite=Strict" in cookie
+                and "Path=/" in cookie
+                and "Domain=" not in cookie
+            )
+            quote = bytes([34])
+            marker = b"name=" + quote + b"csrf" + quote + b" value=" + quote
+            csrf = body.split(marker, 1)[1].split(quote, 1)[0].decode()
+            post_route = route + "/review"
+            authenticated = {**HEADERS, "Cookie": cookie.split(";", 1)[0]}
+            form = {"csrf": csrf, "decision": "accept"}
+            no_identity = {"Cookie": authenticated["Cookie"], "Origin": ORIGIN}
+            assert request("POST", post_route, headers=no_identity, data=form)[0] == 403
+            assert (
+                request(
+                    "POST",
+                    post_route,
+                    headers={**no_identity, "Tailscale-User-Login": "wrong"},
+                    data=form,
+                )[0]
+                == 403
+            )
+            assert request("POST", post_route, headers=authenticated, data=form)[0] == 403
+            assert (
+                request(
+                    "POST",
+                    post_route,
+                    headers={**authenticated, "Origin": "https://evil.invalid"},
+                    data=form,
+                )[0]
+                == 403
+            )
+            assert (
+                request(
+                    "POST",
+                    post_route,
+                    headers={**authenticated, "Origin": ORIGIN},
+                    data={"decision": "accept"},
+                )[0]
+                == 403
+            )
+            assert (
+                request(
+                    "POST",
+                    post_route,
+                    headers={**authenticated, "Origin": ORIGIN},
+                    data={"csrf": "wrong", "decision": "accept"},
+                )[0]
+                == 403
+            )
+            check = Database(db_path)
+            assert (
+                check.connection.execute("SELECT COUNT(*) FROM evidence_review_events").fetchone()[
+                    0
+                ]
+                == 0
+            )
+            check.close()
+            assert (
+                request(
+                    "POST",
+                    post_route,
+                    headers={**authenticated, "Origin": ORIGIN, "X-Forwarded-Host": "evil.invalid"},
+                    data=form,
+                )[0]
+                == 303
+            )
+            check = Database(db_path)
+            assert (
+                check.connection.execute("SELECT COUNT(*) FROM evidence_review_events").fetchone()[
+                    0
+                ]
+                == 1
+            )
+            check.close()
+        finally:
+            proc.kill()
+            proc.wait(timeout=5)
