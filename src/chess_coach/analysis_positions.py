@@ -9,11 +9,13 @@ from collections.abc import Iterator
 import chess
 import chess.pgn
 
+from .ingest_reader import SilentGameBuilder
+
 
 def decisions(
     connection: sqlite3.Connection, game: sqlite3.Row
 ) -> Iterator[tuple[sqlite3.Row, chess.Board]]:
-    parsed = chess.pgn.read_game(io.StringIO(game["pgn"]))
+    parsed = chess.pgn.read_game(io.StringIO(game["pgn"]), Visitor=SilentGameBuilder)
     if parsed is None or parsed.errors:
         raise ValueError("invalid or incomplete game PGN")
     if game["variant"] != "Standard":

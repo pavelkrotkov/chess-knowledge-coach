@@ -119,6 +119,26 @@ outputs whose decision and perspective were not recorded retain NULL provenance
 and should not be treated as corrected analysis. A failed run commits no partial
 outputs. Engine evaluations are not mastery evidence.
 
+## Learner decision context
+
+The Python API exposes per-move context without storing an account identifier
+in the source tree:
+
+    import os
+    from chess_coach.learner_context import decision_contexts
+
+    for context in decision_contexts(db, game_id=1, learner=os.environ.get("LICHESS_USERNAME")):
+        if context["subject"] is not None:
+            print(context)
+
+Only a uniquely matched, case-insensitive learner side receives a subject on
+its own moves. Opponent moves and unknown or inconsistent identities have no
+subject. The context uses the PGN UTC game-start time when both UTC date and
+time are available; otherwise observation time is unknown. Processing time is
+separate. A recorded clock is after the move, while the prior clock for the same
+side is supplied separately when available. This context does not itself create
+or validate skill evidence.
+
 ## Database upgrades
 
 Startup applies ordered schema upgrades atomically and records their version in
