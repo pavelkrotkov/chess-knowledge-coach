@@ -338,3 +338,49 @@ def test_response_body_budget_does_not_discard_received_retry_after(tmp_path, mo
         == "waiting"
     )
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize("deadline_interrupts_retry", [False, True])
+def test_interrupt_during_deadline_transaction_retries_before_exit(
+    tmp_path, monkeypatch, deadline_interrupts_retry
+):
+    from contextlib import contextmanager
+
+    from chess_coach import pipeline_cooldown_storage
+    from chess_coach.pipeline_network_response import BudgetExceeded
+
+    db, config, clock = setup(tmp_path, monkeypatch)
+    original = pipeline_cooldown_storage.mapping_transaction
+    attempts = []
+    calls = []
+
+    @contextmanager
+    def interrupted_transaction(db):
+        with original(db):
+            attempts.append(1)
+            yield
+            if len(attempts) == 1:
+                assert db.connection.in_transaction
+                raise KeyboardInterrupt()
+            if len(attempts) == 2 and deadline_interrupts_retry:
+                assert db.connection.in_transaction
+                raise BudgetExceeded("synthetic deadline")
+
+    def limited(request):
+        calls.append(request)
+        return httpx.Response(429, headers={"Retry-After": "900"})
+
+    transport = httpx.MockTransport(limited)
+    with monkeypatch.context() as patch:
+        patch.setattr(pipeline_cooldown_storage, "mapping_transaction", interrupted_transaction)
+        with pytest.raises(KeyboardInterrupt):
+            process_pipeline(db, config, transport=transport, clock=clock)
+    assert len(attempts) == 2 + deadline_interrupts_retry and not db.connection.in_transaction
+    path = db.path
+    db.close()
+    reopened = Database(path)
+    health = pipeline_status(reopened)["health"]
+    assert health["retry_until"] == (clock() + timedelta(seconds=900)).isoformat()
+    assert health["sync_status"] == "waiting" and health["sync_detail"] == "server_backoff"
+    resumed = process_pipeline(reopened, config, transport=transport, clock=clock)
+    assert resumed["sync"]["status"] == "waiting" and len(calls) == 1

@@ -26,6 +26,11 @@ def bounded_body(response, limit: int, deadline: float) -> bytes:
 def observe_before_timeout(observe, response) -> None:
     try:
         observe(response)
-    except BudgetExceeded:
-        observe(response)
+    except (BudgetExceeded, KeyboardInterrupt):
+        while True:
+            try:
+                observe(response)
+                break
+            except (BudgetExceeded, KeyboardInterrupt):
+                continue
         raise
