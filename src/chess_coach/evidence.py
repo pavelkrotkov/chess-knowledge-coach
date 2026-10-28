@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import Any, cast
 
 from .db import Database
+from .evidence_review import validate_evidence as validate_evidence
 
 
 def record_evidence(
@@ -43,26 +44,8 @@ def record_evidence(
             (observed_at or datetime.now(UTC)).astimezone(UTC).isoformat(),
         ),
     )
-    db.connection.execute(
-        "UPDATE mastery_states SET is_stale = 1 WHERE subject = ? AND skill = ? AND operation = ?",
-        (subject, skill, operation),
-    )
     db.connection.commit()
     return cast(int, cursor.lastrowid)
-
-
-def validate_evidence(db: Database, evidence_id: int) -> None:
-    cursor = db.connection.execute(
-        "UPDATE evidence_mappings SET human_validated = 1 WHERE id = ?", (evidence_id,)
-    )
-    if cursor.rowcount != 1:
-        raise ValueError(f"unknown evidence mapping: {evidence_id}")
-    db.connection.execute(
-        """UPDATE mastery_states SET is_stale = 1 WHERE (subject, skill, operation) IN
-        (SELECT subject, skill, operation FROM evidence_mappings WHERE id = ?)""",
-        (evidence_id,),
-    )
-    db.connection.commit()
 
 
 def evidence_report(db: Database) -> list[dict[str, Any]]:

@@ -61,8 +61,4 @@ def insert_mapping(db: Database, run: dict, item: dict) -> int:
         )
     except sqlite3.IntegrityError as exc:
         raise ValueError("effective fact already mapped for subject, skill and operation") from exc
-    db.connection.execute(
-        "UPDATE mastery_states SET is_stale = 1 WHERE subject = ? AND skill = ? AND operation = ?",
-        (run["subject"], item["skill"], run["operation"]),
-    )
     return evidence_id

@@ -7,7 +7,7 @@ def supersede_mapping(db: Database, run_id: int) -> None:
     db.connection.execute(
         """UPDATE mastery_states SET is_stale = 1
         WHERE (subject, skill, operation) IN
-        (SELECT subject, skill, operation FROM evidence_mappings WHERE mapping_run_id = ?)""",
+        (SELECT subject, skill, operation FROM evidence_mappings WHERE mapping_run_id = ? AND human_validated = 1)""",
         (run_id,),
     )
     db.connection.execute(

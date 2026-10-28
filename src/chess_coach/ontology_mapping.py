@@ -5,25 +5,17 @@ import json
 from .db import Database
 from .mapping_runs import record_mapping_run_in_transaction
 from .mapping_transaction import mapping_transaction
+from .ontology_scopes import previous_scopes
 
 FACT_OPERATIONS = {"fork": "execute", "hanging_piece": "prevent", "absolute_pin": "recognize"}
 
 
 def map_facts(db: Database, mapper_version: str, *, detector_version: str | None) -> list[dict]:
-    scope_key = json.dumps({"detector_version": detector_version}, sort_keys=True)
     with mapping_transaction(db):
         rows = _source_rows(db, detector_version)
-        groups = _groups(rows, mapper_version)
-        previous = db.connection.execute(
-            """SELECT position_id, operation FROM mapping_runs
-            WHERE producer = 'ontology' AND scope_key = ?
-            AND id IN (SELECT MAX(id) FROM mapping_runs WHERE producer = 'ontology'
-                       AND scope_key = ? GROUP BY position_id, subject, operation, scope_key)""",
-            (scope_key, scope_key),
-        ).fetchall()
-        for row in previous:
-            groups.setdefault((row["position_id"], row["operation"]), [])
-        for (position_id, operation), items in groups.items():
+        groups = _groups(rows, mapper_version, detector_version)
+        previous_scopes(db, detector_version, groups)
+        for (position_id, operation, scope_key), items in groups.items():
             _record_group(db, position_id, operation, scope_key, mapper_version, items)
     return [item["report"] for items in groups.values() for item in items]
 
@@ -38,7 +30,7 @@ def _source_rows(db: Database, version: str | None):
     ).fetchall()
 
 
-def _groups(rows, mapper_version: str) -> dict:
+def _groups(rows, mapper_version: str, detector_version: str | None) -> dict:
     groups = {}
     for row in rows:
         skill = row["fact_type"]
@@ -63,9 +55,10 @@ def _groups(rows, mapper_version: str) -> dict:
             "context": {},
             "observation_at": None,
         }
-        groups.setdefault((row["position_id"], operation), []).append(
-            {"report": report, "mapping": mapping}
+        scope = json.dumps(
+            {"detector_version": detector_version, "fact_id": row["id"]}, sort_keys=True
         )
+        groups[(row["position_id"], operation, scope)] = [{"report": report, "mapping": mapping}]
     return groups
 
 
