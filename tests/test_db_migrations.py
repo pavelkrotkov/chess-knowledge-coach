@@ -75,7 +75,7 @@ def test_populated_legacy_upgrade_is_repeatable_and_preserves_history(
     }
     db.initialize()
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 9
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 10
     for table, old_rows in preserved.items():
         new_rows = rows(db, table)
         assert [
@@ -143,7 +143,7 @@ def test_future_schema_and_pending_transactions_are_not_modified() -> None:
     db.connection.execute("PRAGMA user_version = 99")
     with pytest.raises(RuntimeError, match="unsupported schema version"):
         db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 99
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 109
     db.connection.execute("PRAGMA user_version = 0")
     db.connection.execute("CREATE TABLE test (value TEXT)")
     db.connection.execute("INSERT INTO test VALUES ('uncommitted')")

@@ -163,6 +163,15 @@ deleting their event history. Callers composing fact and mapping writes can use
 the in-transaction mapping primitive in the same transaction as the detector
 primitive; callers own commit and rollback.
 
+## Scheduler provenance
+
+Training attempts record the installed FSRS version and actual scheduler
+parameters, including learning steps, retention, interval limit, and fuzzing.
+Review durations are accepted in integer seconds and converted to milliseconds
+for FSRS. Review times must be timezone-aware and cannot precede the previous
+review; they are stored in UTC. Existing records without saved scheduler
+configuration retain an unknown value.
+
 ## Structure and opening history
 
 Structure extraction and opening classification retain immutable generations.
