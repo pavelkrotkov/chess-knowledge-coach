@@ -8,6 +8,7 @@ from .lichess import LichessClient
 from .pipeline_config import PipelineConfig
 from .pipeline_network_budget import BoundedClient, BoundedSleep
 from .pipeline_network_budget import BudgetExceeded as BudgetExceeded
+from .pipeline_network_deadline import network_deadline
 from .pipeline_network_privacy import private_network_logs
 
 
@@ -15,6 +16,7 @@ def sync_games(db, config: PipelineConfig, *, token: str | None = None, transpor
     deadline = time.monotonic() + config.network_seconds
     with (
         private_network_logs(),
+        network_deadline(config.network_seconds),
         httpx.Client(
             timeout=config.network_timeout,
             transport=transport,

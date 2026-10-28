@@ -33,6 +33,8 @@ def process_pipeline(
 def _run_pipeline(db, config, token, transport):
     sync = sync_result(db, config, token, transport)
     record_sync(db, sync)
+    if sync.get("detail") == "worker_process_required":
+        return {"status": "failed", "sync": sync, "games": [], "mastery": []}
     engine_hash = engine_identity(config.engine_path)
     games = []
     pending, scan, cursor = pending_games(db, config, engine_hash)

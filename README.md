@@ -433,6 +433,9 @@ sanitized sync diagnostics, the scan count, and per-game stage codes; use
 `pipeline-status` to read persisted timestamps and the last sync/run outcome
 without starting work. A `running` status left by an interrupted process is
 resolved by the next invocation. The lock is local to the database host.
+Run the synchronous worker as a dedicated process on its main thread; its
+network deadline uses the process timer and will refuse to replace an active
+timer or run inside a request thread.
 
 Completed stage inputs and configuration versions are checkpointed. A retry
 reuses a pending generation, while a changed configuration or an externally

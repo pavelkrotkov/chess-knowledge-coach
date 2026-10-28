@@ -808,3 +808,147 @@ def test_v13_upgrade_preserves_curriculum_cursor_revision_and_indexes(monkeypatc
             row[1] for row in db.connection.execute(f"PRAGMA table_info({table})")
         }
     assert db.connection.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_real_slow_stream_is_cancelled_at_total_deadline(tmp_path, monkeypatch):
+    import signal
+    import socket
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    from chess_coach.lichess import LichessClient
+    from chess_coach.pipeline_network import BudgetExceeded, sync_games
+
+    disconnected = threading.Event()
+    started = threading.Event()
+    sent = threading.Event()
+
+    class SlowStream(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def do_GET(self):
+            started.set()
+            self.send_response(200)
+            self.send_header("Content-Length", "2")
+            self.end_headers()
+            time.sleep(0.65)
+            try:
+                self.wfile.write(b"x")
+                self.wfile.flush()
+                sent.set()
+                self.connection.settimeout(2)
+                if self.connection.recv(1, socket.MSG_PEEK) == b"":
+                    disconnected.set()
+            except OSError:
+                disconnected.set()
+
+        def log_message(self, format, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), SlowStream)
+    server.daemon_threads = True
+    thread = threading.Thread(
+        target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True
+    )
+    thread.start()
+    old_handler = signal.getsignal(signal.SIGALRM)
+    try:
+        monkeypatch.setattr(
+            LichessClient, "endpoint", f"http://127.0.0.1:{server.server_port}/{{username}}"
+        )
+        db = Database(tmp_path / "slow.sqlite")
+        db.initialize()
+        config = PipelineConfig(
+            learner="synthetic", network_seconds=1.0, network_timeout=2, network_retries=0
+        )
+        start = time.monotonic()
+        with pytest.raises(BudgetExceeded):
+            sync_games(db, config)
+        elapsed = time.monotonic() - start
+        assert 0.65 <= elapsed < 1.45
+        assert started.is_set() and sent.is_set() and disconnected.wait(1)
+        assert not db.connection.in_transaction
+        assert db.connection.execute("SELECT COUNT(*) FROM games").fetchone()[0] == 0
+        assert signal.getsignal(signal.SIGALRM) == old_handler
+        assert signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+    assert not thread.is_alive()
+
+
+def test_network_deadline_refuses_non_main_threads_and_existing_timers():
+    import signal
+    import threading
+
+    from chess_coach.pipeline_network_deadline import WorkerContextError, network_deadline
+
+    errors = []
+
+    def worker():
+        try:
+            with network_deadline(0.1):
+                pass
+        except WorkerContextError as exc:
+            errors.append(str(exc))
+
+    thread = threading.Thread(target=worker)
+    thread.start()
+    thread.join(timeout=2)
+    assert errors == ["network worker requires a dedicated process main thread"]
+    assert signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0)
+    previous = signal.getsignal(signal.SIGALRM)
+    signal.signal(signal.SIGALRM, lambda *_: None)
+    signal.setitimer(signal.ITIMER_REAL, 5)
+    try:
+        with pytest.raises(WorkerContextError, match="active process timer"), network_deadline(0.1):
+            pass
+        assert signal.getitimer(signal.ITIMER_REAL)[0] > 0
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+
+
+def test_threaded_worker_reports_safe_failure_without_network(tmp_path):
+    import threading
+
+    from chess_coach.ingest import ingest_pgn
+    from chess_coach.pipeline_status import pipeline_status
+
+    path = tmp_path / "threaded.sqlite"
+    db = Database(path)
+    db.initialize()
+    ingest_pgn(db, game("threaded01", int(time.time()) - 5))
+    db.close()
+    calls = []
+    results = []
+
+    def transport(request):
+        calls.append(request)
+        return httpx.Response(200, text="")
+
+    def worker():
+        local_db = Database(path)
+        try:
+            results.append(
+                process_pipeline(
+                    local_db,
+                    PipelineConfig(learner="synthetic"),
+                    transport=httpx.MockTransport(transport),
+                )
+            )
+        finally:
+            local_db.close()
+
+    thread = threading.Thread(target=worker)
+    thread.start()
+    thread.join(timeout=5)
+    assert not thread.is_alive() and not calls
+    assert results[0]["sync"] == {"status": "failed", "detail": "worker_process_required"}
+    assert results[0]["games"] == []
+    db = Database(path)
+    assert db.connection.execute("SELECT COUNT(*) FROM analysis_runs").fetchone()[0] == 0
+    health = pipeline_status(db)["health"]
+    assert health["sync_status"] == "failed" and health["sync_detail"] == "worker_process_required"
+    db.close()

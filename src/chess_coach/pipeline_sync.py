@@ -1,6 +1,7 @@
 """Translate sync results to bounded, sanitized worker status."""
 
 from .pipeline_network import BudgetExceeded, sync_games
+from .pipeline_network_deadline import WorkerContextError
 
 
 def sync_result(db, config, token, transport):
@@ -20,6 +21,8 @@ def sync_result(db, config, token, transport):
             "history_complete": result["history_complete"],
             "blocked_saturated": result["blocked_saturated"],
         }
+    except WorkerContextError:
+        return {"status": "failed", "detail": "worker_process_required"}
     except BudgetExceeded:
         return {"status": "partial", "detail": "network_budget_exhausted"}
     except Exception:
