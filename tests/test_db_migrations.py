@@ -233,3 +233,44 @@ def test_external_foreign_key_prevents_destructive_rebuild() -> None:
     assert db.connection.execute("SELECT * FROM custom").fetchone()[0] == 1
     assert db.connection.execute("SELECT COUNT(*) FROM evidence_mappings").fetchone()[0] == 1
     assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 0
+
+
+def test_upgrade_preserves_custom_evidence_index_and_trigger() -> None:
+    db = legacy_database()
+    db.connection.executescript("""
+        CREATE TABLE evidence_audit (evidence_id INTEGER, outcome TEXT);
+        CREATE INDEX custom_evidence_outcome ON evidence_mappings (skill, outcome);
+        CREATE TRIGGER custom_evidence_insert AFTER INSERT ON evidence_mappings
+        BEGIN
+            INSERT INTO evidence_audit (evidence_id, outcome) VALUES (NEW.id, NEW.outcome);
+        END;
+    """)
+    before = {
+        row["name"]: row["sql"]
+        for row in db.connection.execute(
+            "SELECT name, sql FROM sqlite_master WHERE name IN (?, ?)",
+            ("custom_evidence_outcome", "custom_evidence_insert"),
+        )
+    }
+    assert len(before) == 2
+    db.initialize()
+    db.initialize()
+    after = {
+        row["name"]: row["sql"]
+        for row in db.connection.execute(
+            "SELECT name, sql FROM sqlite_master WHERE name IN (?, ?)",
+            ("custom_evidence_outcome", "custom_evidence_insert"),
+        )
+    }
+    assert after == before
+    assert [
+        row["name"] for row in db.connection.execute("PRAGMA index_info(custom_evidence_outcome)")
+    ] == ["skill", "outcome"]
+    assert db.connection.execute("SELECT COUNT(*) FROM evidence_audit").fetchone()[0] == 0
+    cursor = db.connection.execute(
+        "INSERT INTO evidence_mappings (skill, operation, outcome, confidence) "
+        "VALUES ('pin', 'execute', 'failure', 1)"
+    )
+    audit = db.connection.execute("SELECT evidence_id, outcome FROM evidence_audit").fetchone()
+    assert tuple(audit) == (cursor.lastrowid, "failure")
+    assert db.connection.execute("PRAGMA foreign_key_check").fetchall() == []
