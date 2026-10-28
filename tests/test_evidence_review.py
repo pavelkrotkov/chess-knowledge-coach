@@ -94,6 +94,10 @@ def test_legacy_flag_has_unknown_reviewer_and_no_fabricated_event() -> None:
         (skill, operation, outcome, confidence, human_validated, context_json, source_facts_json)
         VALUES ('fork', 'execute', 'success', 1, 1, 'legacy-invalid-json', '[17]')"""
     )
+    db.connection.execute(
+        "INSERT INTO evidence_mappings (skill, operation, outcome, confidence, human_validated) "
+        "VALUES ('fork', 'execute', 'success', 1, 2)"
+    )
     db.connection.execute("PRAGMA user_version = 8")
     db.connection.commit()
     db.initialize()
@@ -105,6 +109,14 @@ def test_legacy_flag_has_unknown_reviewer_and_no_fabricated_event() -> None:
     assert result["legacy_validation"] == {"accepted": True, "actor": None, "reviewed_at": None}
     assert result["context"] == "legacy-invalid-json" and result["decision_fen"] is None
     assert result["source_facts"] == [17] and result["facts"] == []
+    unknown = inspect_evidence(db, 2)
+    assert unknown["review_status"] == "legacy_unknown"
+    assert unknown["legacy_validation"] == {
+        "accepted": None,
+        "actor": None,
+        "reviewed_at": None,
+        "raw_flag": 2,
+    }
     assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 9
     revoked = review_evidence(db, 1, decision="revoke", actor="fixture-reviewer")
     assert revoked["review_status"] == "revoked" and len(revoked["reviews"]) == 1
@@ -292,3 +304,68 @@ def test_v8_review_migration_rolls_back_without_losing_legacy_flag(monkeypatch) 
     )
     db.initialize()
     assert inspect_evidence(db, 1)["review_status"] == "legacy_accepted"
+
+
+def test_only_changed_active_review_eligibility_stales_mastery() -> None:
+    db = Database(":memory:")
+    db.initialize()
+    accepted = record_evidence(
+        db,
+        skill="fork",
+        operation="execute",
+        outcome="success",
+        confidence=1.0,
+        subject="fixture-subject",
+    )
+    validate_evidence(db, accepted, actor="fixture-reviewer")
+    assert update_mastery(db, skill="fork", operation="execute", subject="fixture-subject")
+    assert mastery_report(db, subject="fixture-subject")
+
+    review_evidence(db, accepted, decision="accept", actor="fixture-reviewer")
+    assert mastery_report(db, subject="fixture-subject")
+    unreviewed = record_evidence(
+        db,
+        skill="fork",
+        operation="execute",
+        outcome="failure",
+        confidence=1.0,
+        subject="fixture-subject",
+    )
+    assert mastery_report(db, subject="fixture-subject")
+    review_evidence(db, unreviewed, decision="reject", actor="fixture-reviewer")
+    assert mastery_report(db, subject="fixture-subject")
+    review_evidence(db, unreviewed, decision="revoke", actor="fixture-reviewer")
+    assert mastery_report(db, subject="fixture-subject")
+    review_evidence(db, accepted, decision="reject", actor="fixture-reviewer")
+    assert mastery_report(db, subject="fixture-subject") == []
+
+
+def test_nonstandard_legacy_flag_acceptance_changes_eligibility() -> None:
+    db = Database(":memory:")
+    db.initialize()
+    first = record_evidence(
+        db,
+        skill="fork",
+        operation="execute",
+        outcome="success",
+        confidence=1.0,
+        subject="fixture-subject",
+    )
+    validate_evidence(db, first, actor="fixture-reviewer")
+    assert update_mastery(db, skill="fork", operation="execute", subject="fixture-subject")
+    unusual = record_evidence(
+        db,
+        skill="fork",
+        operation="execute",
+        outcome="failure",
+        confidence=1.0,
+        subject="fixture-subject",
+    )
+    db.connection.execute(
+        "UPDATE evidence_mappings SET human_validated = 2 WHERE id = ?", (unusual,)
+    )
+    db.connection.commit()
+    assert mastery_report(db, subject="fixture-subject")
+    assert inspect_evidence(db, unusual)["review_status"] == "legacy_unknown"
+    review_evidence(db, unusual, decision="accept", actor="fixture-reviewer")
+    assert mastery_report(db, subject="fixture-subject") == []

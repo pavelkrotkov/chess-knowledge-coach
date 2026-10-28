@@ -295,7 +295,8 @@ uv run chess-coach --db coach.sqlite review-evidence 1 --decision revoke --actor
 
 Use your chosen operator label instead of the example. Each action appends a
 timestamped event; corrections do not erase earlier decisions. Review state
-(unreviewed, accepted, rejected, revoked, or legacy accepted) is separate
+(unreviewed, accepted, rejected, revoked, legacy accepted, or legacy unknown)
+is separate
 from mapping lifecycle (active, superseded, or unscoped). A legacy validation
 flag has an unknown reviewer and review time; no event is fabricated for it.
 That legacy flag remains visible separately after a later review decision.

@@ -6,7 +6,7 @@ from sqlite3 import Row
 
 from .db import Database
 from .evidence_review_facts import facts_for_evidence
-from .evidence_review_json import decision_fen, decode, legacy_validation
+from .evidence_review_json import decision_fen, decode, legacy_status, legacy_validation
 
 _SELECT = """
 SELECT e.*, p.game_id, p.ply, p.fen AS position_fen,
@@ -29,7 +29,7 @@ def _status(row: Row) -> str:
         return {"accept": "accepted", "reject": "rejected", "revoke": "revoked"}[
             row["review_decision"]
         ]
-    return "legacy_accepted" if row["human_validated"] else "unreviewed"
+    return legacy_status(row["human_validated"])
 
 
 def _lifecycle(row: Row) -> str:

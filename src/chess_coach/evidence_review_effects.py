@@ -6,7 +6,7 @@ from .db import Database
 
 
 def invalidate_changed_eligibility(db: Database, row: Row, decision: str) -> None:
-    if bool(row["human_validated"]) == (decision == "accept"):
+    if (row["human_validated"] == 1) == (decision == "accept"):
         return
     if row["mapping_run_id"] is not None and row["run_status"] != "active":
         return

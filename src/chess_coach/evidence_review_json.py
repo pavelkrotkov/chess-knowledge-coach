@@ -15,6 +15,16 @@ def decision_fen(context):
 
 
 def legacy_validation(value):
-    if not value:
+    if value == 0:
         return None
-    return {"accepted": True, "actor": None, "reviewed_at": None}
+    if value == 1:
+        return {"accepted": True, "actor": None, "reviewed_at": None}
+    return {"accepted": None, "actor": None, "reviewed_at": None, "raw_flag": value}
+
+
+def legacy_status(value):
+    if value == 1:
+        return "legacy_accepted"
+    if value == 0:
+        return "unreviewed"
+    return "legacy_unknown"

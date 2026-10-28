@@ -35,7 +35,7 @@ def test_surviving_producer_mapping_and_review_remain_current():
     source_a = facts(db, "a", "v1", [fork()])
     map_detector_facts(db, "v1")
     a_id = db.connection.execute("SELECT id FROM evidence_mappings").fetchone()[0]
-    validate_evidence(db, a_id)
+    validate_evidence(db, a_id, actor="fixture-reviewer")
     update_mastery(db, subject="unassigned", skill="fork", operation="execute")
     source_b = facts(db, "b", "v1", [fork()])
     assert len(map_detector_facts(db, "v1")) == 2
@@ -83,7 +83,7 @@ def test_legacy_combined_scope_moves_to_independent_fact_scopes_without_review_t
             input_data={"source_fact_ids": a["fact_ids"] + b["fact_ids"]},
             mappings=mappings,
         )
-    validate_evidence(db, old["evidence_ids"][0])
+    validate_evidence(db, old["evidence_ids"][0], actor="fixture-reviewer")
     map_detector_facts(db, "v1")
     row = db.connection.execute(
         "SELECT status FROM mapping_runs WHERE id=?", (old["run_id"],)
@@ -108,7 +108,7 @@ def test_unreviewed_manual_or_mapped_evidence_does_not_hide_mastery():
     evidence = record_evidence(
         db, skill="fork", operation="execute", outcome="success", confidence=1, subject="unassigned"
     )
-    validate_evidence(db, evidence)
+    validate_evidence(db, evidence, actor="fixture-reviewer")
     update_mastery(db, subject="unassigned", skill="fork", operation="execute")
     assert mastery_report(db, subject="unassigned")
     record_evidence(
@@ -118,12 +118,12 @@ def test_unreviewed_manual_or_mapped_evidence_does_not_hide_mastery():
     facts(db, "a", "v1", [fork()])
     map_detector_facts(db, "v1")
     assert mastery_report(db, subject="unassigned")
-    validate_evidence(db, evidence)
+    validate_evidence(db, evidence, actor="fixture-reviewer")
     assert mastery_report(db, subject="unassigned")
     newly_reviewed = db.connection.execute(
         "SELECT id FROM evidence_mappings WHERE human_validated=0 ORDER BY id LIMIT 1"
     ).fetchone()[0]
-    validate_evidence(db, newly_reviewed)
+    validate_evidence(db, newly_reviewed, actor="fixture-reviewer")
     assert mastery_report(db, subject="unassigned") == []
 
 
@@ -132,7 +132,7 @@ def test_validating_superseded_evidence_does_not_stale_active_mastery():
     current = record_evidence(
         db, skill="fork", operation="execute", outcome="success", confidence=1, subject="unassigned"
     )
-    validate_evidence(db, current)
+    validate_evidence(db, current, actor="fixture-reviewer")
     update_mastery(db, subject="unassigned", skill="fork", operation="execute")
     facts(db, "a", "v1", [fork()])
     map_detector_facts(db, "v1")
@@ -140,5 +140,5 @@ def test_validating_superseded_evidence_does_not_stale_active_mastery():
         "SELECT id FROM evidence_mappings WHERE mapping_run_id IS NOT NULL"
     ).fetchone()[0]
     facts(db, "a", "v2", [])
-    validate_evidence(db, old_id)
+    validate_evidence(db, old_id, actor="fixture-reviewer")
     assert mastery_report(db, subject="unassigned")
