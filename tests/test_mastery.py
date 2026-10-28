@@ -23,7 +23,7 @@ def test_mastery_requires_human_validated_evidence_and_preserves_context(tmp_pat
     assert update_mastery(db, skill="fork", operation="execute") is None
 
     evidence_id = db.connection.execute("SELECT id FROM evidence_mappings").fetchone()[0]
-    validate_evidence(db, evidence_id)
+    validate_evidence(db, evidence_id, actor="fixture-reviewer")
     state = update_mastery(db, skill="fork", operation="execute")
 
     assert state is not None
@@ -44,7 +44,7 @@ def test_mastery_tracks_failure_and_recent_trend(tmp_path):
         record_evidence(db, skill="pin", operation="prevent", outcome=outcome, confidence=1.0)
     ids = [row[0] for row in db.connection.execute("SELECT id FROM evidence_mappings")]
     for evidence_id in ids:
-        validate_evidence(db, evidence_id)
+        validate_evidence(db, evidence_id, actor="fixture-reviewer")
     state = update_mastery(db, skill="pin", operation="prevent")
 
     assert state is not None
@@ -58,7 +58,7 @@ def test_ambiguous_evidence_does_not_reduce_uncertainty(tmp_path):
     db.initialize()
     record_evidence(db, skill="pin", operation="prevent", outcome="ambiguous", confidence=1.0)
     evidence_id = db.connection.execute("SELECT id FROM evidence_mappings").fetchone()[0]
-    validate_evidence(db, evidence_id)
+    validate_evidence(db, evidence_id, actor="fixture-reviewer")
 
     state = update_mastery(db, skill="pin", operation="prevent")
 

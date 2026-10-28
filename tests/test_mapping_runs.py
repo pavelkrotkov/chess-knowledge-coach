@@ -68,7 +68,7 @@ def test_replay_replacement_review_and_empty_scope(db):
     source = fact(db)
     first = mapping(db, source["fact_ids"][0])
     evidence_id = first["evidence_ids"][0]
-    validate_evidence(db, evidence_id)
+    validate_evidence(db, evidence_id, actor="fixture-reviewer")
     assert mapping(db, source["fact_ids"][0])["evidence_ids"] == [evidence_id]
     assert update_mastery(db, subject="learner", skill="fork", operation="execute") is not None
     second = mapping(db, source["fact_ids"][0], version="two", value="failure")
@@ -117,7 +117,7 @@ def test_collision_and_changed_output_roll_back(db):
 def test_detector_supersession_invalidates_linked_evidence_and_history(db):
     one = fact(db)
     result = mapping(db, one["fact_ids"][0])
-    validate_evidence(db, result["evidence_ids"][0])
+    validate_evidence(db, result["evidence_ids"][0], actor="fixture-reviewer")
     update_mastery(db, subject="learner", skill="fork", operation="execute")
     fact(db, version="two")
     assert evidence_report(db) == []

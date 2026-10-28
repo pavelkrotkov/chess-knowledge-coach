@@ -279,3 +279,26 @@ without using private game data:
 ```bash
 uv run python examples/tactical_fixture_report.py
 ```
+
+## Reviewing evidence
+
+List evidence by stable ID, inspect the decision context and linked facts, then
+record a decision with an explicit operator identity:
+
+```bash
+uv run chess-coach --db coach.sqlite list-evidence --limit 50
+uv run chess-coach --db coach.sqlite inspect-evidence 1
+uv run chess-coach --db coach.sqlite review-evidence 1 --decision accept --actor local-operator
+uv run chess-coach --db coach.sqlite review-evidence 1 --decision reject --actor local-operator --rationale 'Needs another look'
+uv run chess-coach --db coach.sqlite review-evidence 1 --decision revoke --actor local-operator
+```
+
+Use your chosen operator label instead of the example. Each action appends a
+timestamped event; corrections do not erase earlier decisions. Review state
+(unreviewed, accepted, rejected, revoked, or legacy accepted) is separate
+from mapping lifecycle (active, superseded, or unscoped). A legacy validation
+flag has an unknown reviewer and review time; no event is fabricated for it.
+That legacy flag remains visible separately after a later review decision.
+Rejected and revoked items are excluded from the aggregate evidence report and
+cannot contribute to mastery. Review changes invalidate existing mastery state.
+The compatibility command `validate-evidence` also requires `--actor`.

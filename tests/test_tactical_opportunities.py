@@ -121,7 +121,7 @@ def test_engine_disagreement_is_ambiguous_without_changing_fact_identity() -> No
     before = record_game_opportunities(db, 1, learner="SyntheticWhite")[0]
     assert isinstance(before["evidence_ids"], list)
     evidence_id = before["evidence_ids"][0]
-    validate_evidence(db, evidence_id)
+    validate_evidence(db, evidence_id, actor="fixture-reviewer")
     reviewed = record_game_opportunities(db, 1, learner="SyntheticWhite")[0]
     assert reviewed["evidence_ids"] == [evidence_id] and reviewed["human_validated"] is True
     db.connection.execute(
@@ -283,7 +283,7 @@ def test_new_ontology_version_supersedes_mapping_without_transferring_review() -
     first = record_game_opportunities(db, 1, learner="SyntheticWhite")[0]
     assert isinstance(first["evidence_ids"], list)
     old_id = first["evidence_ids"][0]
-    validate_evidence(db, old_id)
+    validate_evidence(db, old_id, actor="fixture-reviewer")
     second = record_game_opportunities(
         db, 1, learner="SyntheticWhite", ontology_version="tactical-mate-v2"
     )[0]
@@ -386,7 +386,7 @@ def test_unrelated_reviewed_evidence_is_preserved() -> None:
             ],
         )
     evidence_id = mapping["evidence_ids"][0]
-    validate_evidence(db, evidence_id)
+    validate_evidence(db, evidence_id, actor="fixture-reviewer")
     candidate = record_game_opportunities(db, 1, learner="SyntheticWhite")[0]
     assert candidate["evidence_ids"] != [evidence_id]
     assert (
