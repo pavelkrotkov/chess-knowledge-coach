@@ -168,3 +168,32 @@ Existing modules exceed the limits. CI and pre-commit use `--report-only` to
 expose the baseline without claiming enforcement; it still fails for unreadable
 or missing source and analysis errors. Global enforcement and remediation remain
 tracked in [issue #29](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/29).
+
+## Verified puzzle practice
+
+Import a Lichess puzzle CSV with `import-puzzles`, then select a puzzle ID from
+`query-puzzles`. Use the same database and corpus version for the session:
+
+```bash
+uv run chess-coach --db coach.sqlite import-puzzles puzzles.csv --version corpus-v1
+uv run chess-coach --db coach.sqlite query-puzzles --version corpus-v1 --limit 10
+uv run chess-coach --db coach.sqlite start-puzzle corpus-v1 puzzle-id attempt-1
+uv run chess-coach --db coach.sqlite show-puzzle attempt-1
+uv run chess-coach --db coach.sqlite hint-puzzle attempt-1 --event-id hint-1
+uv run chess-coach --db coach.sqlite play-puzzle attempt-1 e7e5 --event-id move-1
+```
+
+Replace the example puzzle ID and move with one from the selected corpus and
+the move you choose. The displayed FEN is after the opponent's setup move.
+Moves use UCI notation, including a promotion suffix such as `a7a8q`. A correct
+move may be followed by the recorded opponent reply; a legal incorrect move ends
+the attempt, while an illegal move leaves it active. A hint reveals the origin
+square of the next move and is recorded as assistance. The prompt does not
+include the remaining solution.
+
+Choose a new attempt ID for each attempt and a new event ID for each move or
+hint. To safely retry a request, reuse its event ID with the same input. The
+attempt can be resumed by ID after restarting; its puzzle version, checksum,
+and line are snapshotted so reimporting a corpus cannot change an in-progress
+attempt. Verified results and hints are stored separately from FSRS scheduling:
+use `review-training` only when you choose a separate self-rating.

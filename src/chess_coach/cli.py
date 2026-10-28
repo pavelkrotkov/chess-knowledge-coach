@@ -25,6 +25,10 @@ COMMANDS = {
     "due-training": learning.handle_due_training,
     "review-training": learning.handle_review_training,
     "evidence-report": learning.handle_evidence_report,
+    "start-puzzle": learning.handle_start_puzzle,
+    "show-puzzle": learning.handle_show_puzzle,
+    "play-puzzle": learning.handle_play_puzzle,
+    "hint-puzzle": learning.handle_hint_puzzle,
 }
 
 

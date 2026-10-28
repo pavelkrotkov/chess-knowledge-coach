@@ -19,8 +19,8 @@ def validate_line(fen: str, solution: str) -> str:
             if index == 0:
                 prompt_fen = board.fen()
         return prompt_fen
-    except (ValueError, TypeError) as exc:
-        raise ValueError("invalid puzzle position or solution") from exc
+    except (ValueError, TypeError):
+        raise ValueError("invalid puzzle position or solution") from None
 
 
 def legal_move(board: chess.Board, text: str) -> chess.Move:
