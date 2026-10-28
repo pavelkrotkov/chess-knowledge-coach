@@ -23,6 +23,7 @@ def main() -> None:
         corpus=os.environ["CHESS_CORPUS"],
         login=os.environ["CHESS_TAILSCALE_LOGIN"],
         origin=os.environ["CHESS_WEB_ORIGIN"],
+        backend_host="localhost",
     )
     db = Database(db_path)
     try:
