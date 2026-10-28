@@ -36,11 +36,10 @@ def handle_process_pipeline(db, args):
     if not learner:
         raise SystemExit("learner is required as an argument or LICHESS_USERNAME")
     config = PipelineConfig(learner=learner, **{name: getattr(args, name) for name in names})
-    print(
-        json.dumps(
-            process_pipeline(db, config, token=os.environ.get("LICHESS_API_TOKEN")), indent=2
-        )
-    )
+    result = process_pipeline(db, config, token=os.environ.get("LICHESS_API_TOKEN"))
+    print(json.dumps(result, indent=2))
+    if result.get("status") == "failed":
+        raise SystemExit(1)
 
 
 def handle_pipeline_status(db, args):

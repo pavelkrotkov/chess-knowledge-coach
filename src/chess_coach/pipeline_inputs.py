@@ -100,3 +100,22 @@ def opening_stage_input(db: Database, game_id: int, config: PipelineConfig, game
             "classifier": config.classifier_version,
         }
     ), dataset
+
+
+def scan_input(config: PipelineConfig, engine_hash: str | None) -> str:
+    # Scheduling and network budgets do not change processing outputs.
+    names = (
+        "max_positions",
+        "nodes",
+        "seconds_per_position",
+        "threads",
+        "hash_mb",
+        "opening_version",
+        "opening_source",
+        "structure_version",
+        "classifier_version",
+        "ontology_version",
+        "tactical_version",
+    )
+    settings = {name: getattr(config, name) for name in names}
+    return fingerprint({"settings": settings, "engine": engine_hash, "mapper": MAPPER_VERSION})

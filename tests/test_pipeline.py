@@ -952,3 +952,83 @@ def test_threaded_worker_reports_safe_failure_without_network(tmp_path):
     health = pipeline_status(db)["health"]
     assert health["sync_status"] == "failed" and health["sync_detail"] == "worker_process_required"
     db.close()
+
+
+def test_changed_settings_require_a_fresh_bounded_scan(tmp_path, monkeypatch):
+    from chess_coach.ingest import ingest_pgn
+    from chess_coach.openings import import_openings
+
+    db, config, _, _ = setup(tmp_path, monkeypatch, count=0)
+    now = int(time.time())
+    ingest_pgn(db, game("fixture01", now - 10))
+    ingest_pgn(db, game("fixture02", now - 20))
+    network = httpx.MockTransport(lambda request: httpx.Response(200, text=""))
+    openings = tmp_path / "openings.tsv"
+    openings.write_text("eco\tname\tmoves\nC20\tOpen\te4 e5\n")
+    import_openings(db, openings, version="fixture", source_url="fixture://opening")
+    config = replace(
+        config,
+        max_games=1,
+        max_scan=1,
+        opening_version="fixture",
+        opening_source="fixture://opening",
+    )
+    first = process_pipeline(db, config, transport=network)
+    assert first["games"][0]["game_id"] == 1 and first["status"] == "partial"
+    changed = replace(config, nodes=config.nodes + 1)
+    second = process_pipeline(db, changed, transport=network)
+    assert second["games"][0]["game_id"] == 1 and second["status"] == "partial"
+    path = db.path
+    db.close()
+    db = Database(path)
+    third = process_pipeline(db, changed, transport=network)
+    assert third["games"][0]["game_id"] == 2 and third["status"] == "complete"
+    assert db.connection.execute("SELECT COUNT(*) FROM analysis_runs").fetchone()[0] == 3
+
+
+@pytest.mark.parametrize("status,exit_code", [("failed", 1), ("partial", 0), ("complete", 0)])
+def test_pipeline_cli_exit_status_matches_failure(tmp_path, monkeypatch, capsys, status, exit_code):
+    from chess_coach import cli_pipeline
+    from chess_coach.cli_parser import build_parser
+
+    db, _, _, _ = setup(tmp_path, monkeypatch, count=0)
+    monkeypatch.setattr(
+        cli_pipeline, "process_pipeline", lambda *args, **kwargs: {"status": status}
+    )
+    args = build_parser().parse_args(["process-pipeline", "learner"])
+    if exit_code:
+        with pytest.raises(SystemExit) as error:
+            cli_pipeline.handle_process_pipeline(db, args)
+        assert error.value.code == exit_code
+    else:
+        cli_pipeline.handle_process_pipeline(db, args)
+    assert json.loads(capsys.readouterr().out) == {"status": status}
+
+
+def test_scan_fingerprint_tracks_output_settings_but_not_worker_budgets():
+    from chess_coach.pipeline_inputs import scan_input
+
+    config = PipelineConfig(learner="learner")
+    original = scan_input(config, "engine-a")
+    changes = {
+        "max_positions": 10,
+        "nodes": 11,
+        "seconds_per_position": 2.0,
+        "threads": 2,
+        "hash_mb": 128,
+        "opening_version": "v2",
+        "opening_source": "fixture://other",
+        "structure_version": "v2",
+        "classifier_version": "v2",
+        "ontology_version": "v2",
+        "tactical_version": "v2",
+    }
+    assert all(
+        scan_input(replace(config, **{key: value}), "engine-a") != original
+        for key, value in changes.items()
+    )
+    assert scan_input(config, "engine-b") != original
+    assert (
+        scan_input(replace(config, max_games=1, max_scan=2, network_requests=3), "engine-a")
+        == original
+    )

@@ -38,11 +38,11 @@ def _run_pipeline(db, config, token, transport):
     engine_hash = engine_identity(config.engine_path)
     games = []
     pending, scan, cursor = pending_games(db, config, engine_hash)
-    account, last_scanned = cursor
+    account, last_scanned, scan_hash = cursor
     for game_id, game_hash in pending:
         games.append(process_game(db, game_id, game_hash, config, engine_hash))
-        save_cursor(db, account, game_id)
-    save_cursor(db, account, last_scanned)
+        save_cursor(db, account, game_id, scan_hash)
+    save_cursor(db, account, last_scanned, scan_hash)
     reports = mastery_report(db, subject=config.learner)
     status = run_status(db, sync, games, scan)
     return {

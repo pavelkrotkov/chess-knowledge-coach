@@ -13,7 +13,8 @@ def add_pipeline_stages(connection: sqlite3.Connection) -> None:
         PRIMARY KEY (game_id, stage)
     )""")
     connection.execute("""CREATE TABLE IF NOT EXISTS pipeline_cursors (
-        account_key TEXT PRIMARY KEY, last_game_id INTEGER NOT NULL, updated_at TEXT NOT NULL
+        account_key TEXT PRIMARY KEY, last_game_id INTEGER NOT NULL, updated_at TEXT NOT NULL,
+        scan_hash TEXT
     )""")
     connection.execute("""CREATE TABLE IF NOT EXISTS pipeline_health (
         id INTEGER PRIMARY KEY CHECK(id=1), status TEXT NOT NULL, started_at TEXT NOT NULL,

@@ -418,7 +418,10 @@ uv run chess-coach --db .venv/coach.sqlite process-pipeline \
 uv run chess-coach --db .venv/coach.sqlite pipeline-status
 ```
 
-Game and scan limits bound the work selected per invocation. Engine nodes and
+Game and scan limits bound the work selected per invocation. Processing-setting
+changes restart the bounded game scan, so completion requires scanning every game
+under the new settings; changing only scheduling or network budgets preserves
+the scan cursor. Engine nodes and
 seconds apply to each position; thread and hash limits apply to each engine.
 The request count, aggregate response bytes, elapsed time, individual request
 timeout and retry-sleep budget bound the network portion. When the server’s
