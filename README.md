@@ -232,3 +232,33 @@ attempt can be resumed by ID after restarting; its puzzle version, checksum,
 and line are snapshotted so reimporting a corpus cannot change an in-progress
 attempt. Verified results and hints are stored separately from FSRS scheduling:
 use `review-training` only when you choose a separate self-rating.
+
+## Tactical opportunity preview
+
+The mate-in-one preview checks legal moves on the learner's reconstructed
+pre-move position. A played mating move is a success; a move that immediately
+stalemates when mate was available is a narrowly defined failure. Other legal
+moves remain ambiguous, as does a decision with contradictory engine output.
+These are chess observations, not claims about calculation, recognition, or
+mastery. Descriptive fork and hanging-piece labels alone do not establish an
+opportunity or outcome.
+
+To create an explicit ontology version and inspect a game using a learner
+identity supplied at runtime:
+
+```python
+import os
+from chess_coach.db import Database
+from chess_coach.tactical_ontology import seed_tactical_ontology
+from chess_coach.tactical_opportunities import record_game_opportunities
+
+db = Database("coach.sqlite")
+db.initialize()
+seed_tactical_ontology(db, version="tactical-v1")
+candidates = record_game_opportunities(db, game_id=1, learner=os.environ.get("LICHESS_USERNAME"))
+```
+
+The returned candidates include the decision, mating moves, detector and mapper
+versions, source-fact IDs, and a reason for the proposed outcome. Detector facts
+are persisted with lineage; the outcome is a preview, not a stored or validated
+evidence mapping. Unmatched learner identities produce no learner candidates.
