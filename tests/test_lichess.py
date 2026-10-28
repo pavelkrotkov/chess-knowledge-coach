@@ -42,7 +42,7 @@ def test_sync_preserves_lichess_metadata_and_is_idempotent() -> None:
     client = LichessClient(client=fake)
 
     assert client.sync_user(db, "alice", max_games=1) == {"games": 1, "positions": 3}
-    assert client.sync_user(db, "alice", max_games=1) == {"games": 1, "positions": 3}
+    assert client.sync_user(db, "alice", max_games=1) == {"games": 0, "positions": 0}
     game = db.connection.execute(
         "SELECT source, source_id, variant, termination, time_control, white_elo FROM games"
     ).fetchone()
