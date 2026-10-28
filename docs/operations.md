@@ -32,12 +32,10 @@ without a trailing slash, and the exact allowed Tailscale login. Keep actual
 identities and credentials out of the repository, command history, output,
 and logs. The reviewed units set the project root and socket path.
 
-For a new, absent database only, use the development CLI with
-`--db .runtime/data/coach.sqlite init-db`. Back up an existing database before
-running code that can migrate it. Import a project-local legal puzzle corpus
-with `import-puzzles <path> --version <version>`, and set `CHESS_CORPUS` to
-that version. Check the installed Stockfish binary and its UCI options; the
-worker defaults to `/usr/games/stockfish`.
+Back up an existing database before running code that can migrate it. Check
+the installed Stockfish binary and its UCI options; the worker defaults to
+`/usr/games/stockfish`. Initialize and import data only with the reviewed
+release prepared below, never with a newer development checkout.
 
 ## Prepare a reviewed release
 
@@ -69,6 +67,17 @@ cd ..
 
 The import path must be inside that release's `venv`; its `COMMIT` file
 must match the selected SHA.
+
+For a new, absent database only, initialize and import the project-local
+puzzle corpus with that same reviewed release:
+
+```sh
+release="$PWD/.runtime/releases/<reviewed-full-sha>/venv/bin/python"
+"$release" -I -m chess_coach.cli --db "$PWD/.runtime/data/coach.sqlite" init-db
+"$release" -I -m chess_coach.cli --db "$PWD/.runtime/data/coach.sqlite" import-puzzles <project-local-csv> --version <version>
+```
+
+Use the imported version for `CHESS_CORPUS`.
 
 ## Registration and private access
 
@@ -112,10 +121,23 @@ Use `systemctl --user status chess-coach-web.service
 chess-coach-worker.timer` and the browser status page to inspect recent
 processing, failures, and any server-requested retry deadline. Worker runs are
 bounded and serialized, and the timer does not immediately restart a failed
-run. Logs remain private and project-local. Stop with `systemctl --user stop
-chess-coach-worker.timer chess-coach-web.service` without removing data.
+run. Logs remain private and project-local. Stop the timer, any already-running worker, and the browser; then verify
+each is inactive before backup, upgrade, or rollback:
 
-Before an upgrade, stop both services, run `backup-db` to a new path under
+```sh
+systemctl --user stop chess-coach-worker.timer chess-coach-worker.service chess-coach-web.service
+for unit in chess-coach-worker.timer chess-coach-worker.service chess-coach-web.service; do
+  if systemctl --user is-active --quiet "$unit"; then
+    printf 'Still active: %s\n' "$unit"
+    exit 1
+  fi
+done
+```
+
+Stopping the timer alone does not stop a running oneshot worker. Do not
+remove data.
+
+Before an upgrade, stop and verify all three units as above, run `backup-db` to a new path under
 `.runtime/backups`, and `restore-db` that backup to a separate new path
 under `.runtime/data`; both require `--project-root "$PWD"`. The commands
 verify integrity and foreign keys and refuse existing destinations and SQLite
