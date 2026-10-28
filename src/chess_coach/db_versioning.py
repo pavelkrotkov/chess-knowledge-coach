@@ -4,8 +4,9 @@ import sqlite3
 
 from .analysis_schema import add_decision_columns
 from .lichess_schema import add_sync_progress, add_sync_turn
+from .puzzle_session_schema import add_puzzle_sessions
 
-CURRENT_VERSION = 4
+CURRENT_VERSION = 5
 
 
 def upgrade(connection: sqlite3.Connection, schema: str) -> None:
@@ -27,10 +28,17 @@ def upgrade(connection: sqlite3.Connection, schema: str) -> None:
         if version < 3:
             add_sync_progress(connection)
             connection.execute("PRAGMA user_version = 3")
-        if version < 4:
-            add_sync_turn(connection)
-            connection.execute("PRAGMA user_version = 4")
+        _upgrade_recent(connection, version)
         connection.commit()
     except Exception:
         connection.rollback()
         raise
+
+
+def _upgrade_recent(connection: sqlite3.Connection, version: int) -> None:
+    if version < 4:
+        add_sync_turn(connection)
+        connection.execute("PRAGMA user_version = 4")
+    if version < 5:
+        add_puzzle_sessions(connection)
+        connection.execute("PRAGMA user_version = 5")
