@@ -131,7 +131,15 @@ def test_review_practice_completion_and_followup_plan(setup):
     assert page.status_code == 200 and b"Find mate in one." in page.data
     assert b"c5f8" not in page.data and b"c5c8" not in page.data
     assert (
-        post(client, "/practice/move", csrf, event=token(page, "event"), move="c5c8").status_code
+        post(
+            client,
+            "/practice/move",
+            csrf,
+            attempt=token(page, "attempt"),
+            item_id=token(page, "item_id"),
+            event=token(page, "event"),
+            move="c5c8",
+        ).status_code
         == 303
     )
     page = client.get("/practice", base_url=ORIGIN, headers=HEADERS)
@@ -223,7 +231,15 @@ def test_start_revalidates_a_stale_recommendation(setup):
     )
     page = client.get("/practice", base_url=ORIGIN, headers=HEADERS)
     assert (
-        post(client, "/practice/move", csrf, event=token(page, "event"), move="c5c8").status_code
+        post(
+            client,
+            "/practice/move",
+            csrf,
+            attempt=token(page, "attempt"),
+            item_id=token(page, "item_id"),
+            event=token(page, "event"),
+            move="c5c8",
+        ).status_code
         == 303
     )
     assert (
@@ -277,7 +293,15 @@ def test_illegal_move_preserves_active_attempt(setup):
         == 303
     )
     page = client.get("/practice", base_url=ORIGIN, headers=HEADERS)
-    response = post(client, "/practice/move", csrf, event=token(page, "event"), move="a1a8")
+    response = post(
+        client,
+        "/practice/move",
+        csrf,
+        attempt=token(page, "attempt"),
+        item_id=token(page, "item_id"),
+        event=token(page, "event"),
+        move="a1a8",
+    )
     assert response.status_code == 303
     page = client.get("/practice", base_url=ORIGIN, headers=HEADERS)
     assert b"not legal" in page.data
@@ -486,3 +510,103 @@ def test_status_displays_release_identity(setup, monkeypatch):
     page = app.test_client().get("/", base_url=ORIGIN, headers=HEADERS)
     assert b"Release:" in page.data and b"a" * 40 in page.data
     assert b"/project/release/venv/module.py" in page.data
+
+
+def test_stale_practice_form_cannot_submit_to_newer_attempt(setup):
+    path, app, _ = setup
+    db = Database(path)
+    db.connection.execute(
+        """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,
+        rating_deviation,themes_json,objective)
+        VALUES ('second',1,?,'','g8h8 b5b8',600,80,'[]','execute')""",
+        ("6k1/8/6K1/1Q6/8/8/8/8 b - - 0 1",),
+    )
+    db.connection.commit()
+    db.close()
+    client = app.test_client()
+    plan = client.get("/plan", base_url=ORIGIN, headers=HEADERS)
+    csrf = token(plan)
+    assert (
+        post(client, "/practice/start", csrf, version="fixture-v1", puzzle_id="puzzle").status_code
+        == 303
+    )
+    old_page = client.get("/practice", base_url=ORIGIN, headers=HEADERS)
+    old_attempt = token(old_page, "attempt")
+    old_item = token(old_page, "item_id")
+    old_event = token(old_page, "event")
+    assert (
+        post(client, "/practice/start", csrf, version="fixture-v1", puzzle_id="second").status_code
+        == 303
+    )
+    new_page = client.get("/practice", base_url=ORIGIN, headers=HEADERS)
+    assert token(new_page, "attempt") != old_attempt
+
+    db = Database(path)
+    before = {
+        "events": db.connection.execute("SELECT COUNT(*) FROM puzzle_session_events").fetchone()[0],
+        "completions": db.connection.execute(
+            "SELECT COUNT(*) FROM training_completions"
+        ).fetchone()[0],
+        "evidence": db.connection.execute("SELECT COUNT(*) FROM evidence_mappings").fetchone()[0],
+        "reviews": db.connection.execute("SELECT COUNT(*) FROM training_attempts").fetchone()[0],
+        "schedule": [
+            tuple(row)
+            for row in db.connection.execute(
+                "SELECT id,due,last_review FROM training_items ORDER BY id"
+            )
+        ],
+    }
+    db.close()
+    response = post(
+        client,
+        "/practice/move",
+        csrf,
+        attempt=old_attempt,
+        item_id=old_item,
+        event=old_event,
+        move="b5b8",
+    )
+    assert response.status_code == 409
+    assert b"attempt has changed" in response.data
+    db = Database(path)
+    assert (
+        db.connection.execute("SELECT COUNT(*) FROM puzzle_session_events").fetchone()[0]
+        == before["events"]
+    )
+    assert (
+        db.connection.execute("SELECT COUNT(*) FROM training_completions").fetchone()[0]
+        == before["completions"]
+    )
+    assert (
+        db.connection.execute("SELECT COUNT(*) FROM evidence_mappings").fetchone()[0]
+        == before["evidence"]
+    )
+    assert (
+        db.connection.execute("SELECT COUNT(*) FROM training_attempts").fetchone()[0]
+        == before["reviews"]
+    )
+    assert [
+        tuple(row)
+        for row in db.connection.execute(
+            "SELECT id,due,last_review FROM training_items ORDER BY id"
+        )
+    ] == before["schedule"]
+    assert (
+        db.connection.execute(
+            "SELECT status FROM puzzle_sessions WHERE attempt_id=?", (token(new_page, "attempt"),)
+        ).fetchone()[0]
+        == "active"
+    )
+    db.close()
+    assert (
+        post(
+            client,
+            "/practice/move",
+            csrf,
+            attempt=token(new_page, "attempt"),
+            item_id=token(new_page, "item_id"),
+            event=token(new_page, "event"),
+            move="b5b8",
+        ).status_code
+        == 303
+    )

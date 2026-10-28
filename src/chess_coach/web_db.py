@@ -1,6 +1,6 @@
 """Open one SQLite connection per browser request."""
 
-from flask import abort, current_app, g, session
+from flask import abort, current_app, g, request, session
 
 from .db import Database
 
@@ -17,3 +17,7 @@ def current_training():
     if not isinstance(attempt, str) or type(item_id) is not int:
         abort(404)
     return attempt, item_id
+
+
+def form_matches(attempt: str, item_id: int) -> bool:
+    return request.form.get("attempt") == attempt and request.form.get("item_id") == str(item_id)

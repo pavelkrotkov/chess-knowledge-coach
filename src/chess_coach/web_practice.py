@@ -18,7 +18,7 @@ from .training import create_training_item
 from .training_feedback import puzzle_training_ref, show_training_puzzle, submit_training_move
 from .web_board import board_rows
 from .web_completion import completion
-from .web_db import current_training, database
+from .web_db import current_training, database, form_matches
 from .web_recommendation import recommended
 
 practice = Blueprint("practice", __name__)
@@ -56,6 +56,7 @@ def show():
     return render_template(
         "practice.html",
         state=state,
+        item_id=item_id,
         board=board_rows(state["fen"]),
         completion=feedback,
         notice=session.pop("notice", None),
@@ -66,6 +67,10 @@ def show():
 @practice.post("/practice/move")
 def move():
     attempt, item_id = current_training()
+    if not form_matches(attempt, item_id):
+        return render_template(
+            "error.html", message="The practice attempt has changed. Return to the daily plan."
+        ), 409
     try:
         result = submit_training_move(
             database(),
