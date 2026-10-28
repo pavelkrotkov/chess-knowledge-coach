@@ -52,7 +52,7 @@ def test_surviving_producer_mapping_and_review_remain_current():
     assert [tuple(row) for row in active] == [(a_id, 1, source_a["fact_ids"][0])]
     assert source_b["fact_ids"][0] != source_a["fact_ids"][0]
     assert mastery_report(db, subject="unassigned")
-    assert db.connection.execute("SELECT COUNT(*) FROM mastery_events").fetchone()[0] == 1
+    assert db.connection.execute("SELECT COUNT(*) FROM mastery_events").fetchone()[0] == 0
 
 
 def test_legacy_combined_scope_moves_to_independent_fact_scopes_without_review_transfer():
@@ -124,7 +124,7 @@ def test_unreviewed_manual_or_mapped_evidence_does_not_hide_mastery():
         "SELECT id FROM evidence_mappings WHERE human_validated=0 ORDER BY id LIMIT 1"
     ).fetchone()[0]
     validate_evidence(db, newly_reviewed, actor="fixture-reviewer")
-    assert mastery_report(db, subject="unassigned") == []
+    assert mastery_report(db, subject="unassigned")[0]["status"] == "insufficient"
 
 
 def test_validating_superseded_evidence_does_not_stale_active_mastery():

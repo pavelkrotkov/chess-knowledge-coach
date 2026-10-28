@@ -1,18 +1,25 @@
-"""Persist mastery conclusions and append their evidence history."""
+"""Persist sufficient estimates and append their evidence history atomically."""
 
 import json
-from datetime import UTC, datetime
+from datetime import datetime
 
 from .db import Database
 
 
 def write_state(
-    db: Database, subject: str, skill: str, operation: str, state, values: dict, version: str
+    db: Database,
+    subject: str,
+    skill: str,
+    operation: str,
+    state,
+    values: dict,
+    version: str,
+    now: datetime,
 ) -> dict:
     previous_ids = _previous_ids(db, state)
-    changed = _changed(state, values, previous_ids)
+    changed = _changed(state, values, previous_ids, version)
     previous = state["mastery"] if state is not None else None
-    now = datetime.now(UTC).isoformat()
+    stamp = now.isoformat()
     db.connection.execute(
         """INSERT INTO mastery_states
         (subject, skill, operation, mastery, uncertainty, evidence_weight, trend_30d,
@@ -28,9 +35,9 @@ def write_state(
             operation,
             values["mastery"],
             values["uncertainty"],
-            values["evidence_weight"],
+            values["effective_weight"],
             values["trend_30d"],
-            now,
+            stamp,
             version,
         ),
     )
@@ -45,14 +52,13 @@ def write_state(
             VALUES (?, ?, ?, ?, ?, ?)""",
             (
                 result["id"],
-                json.dumps(values["evidence_ids"]),
+                json.dumps(values["supporting_evidence_ids"]),
                 previous,
                 values["mastery"],
-                now,
+                stamp,
                 version,
             ),
         )
-    db.connection.commit()
     return dict(result)
 
 
@@ -66,9 +72,21 @@ def _previous_ids(db: Database, state) -> list[int]:
     return json.loads(event["evidence_ids_json"]) if event else []
 
 
-def _changed(state, values: dict, previous_ids: list[int]) -> bool:
-    if state is None or set(previous_ids) != set(values["evidence_ids"]):
+def _changed(state, values: dict, previous_ids: list[int], version: str) -> bool:
+    if state is None or state["is_stale"] or state["model_version"] != version:
         return True
-    return any(
-        abs(state[key] - values[key]) > 1e-12 for key in ("mastery", "uncertainty", "trend_30d")
+    if set(previous_ids) != set(values["supporting_evidence_ids"]):
+        return True
+    pairs = (
+        ("mastery", "mastery"),
+        ("uncertainty", "uncertainty"),
+        ("evidence_weight", "effective_weight"),
+        ("trend_30d", "trend_30d"),
     )
+    return any(_different(state[key], values[value]) for key, value in pairs)
+
+
+def _different(left, right) -> bool:
+    if left is None or right is None:
+        return left is not right
+    return abs(left - right) > 1e-12

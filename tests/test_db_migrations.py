@@ -135,7 +135,7 @@ def test_unknown_time_does_not_enter_trend() -> None:
     db.connection.commit()
     state = update_mastery(db, skill="fork", operation="execute")
     assert state is not None
-    assert state["trend_30d"] == 1.0
+    assert state["status"] == "insufficient" and state["trend_30d"] is None
 
 
 def test_future_schema_and_pending_transactions_are_not_modified() -> None:

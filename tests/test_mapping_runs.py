@@ -88,9 +88,12 @@ def test_replay_replacement_review_and_empty_scope(db):
     )
     assert mapping(db, source["fact_ids"][0])["status"] == "superseded"
     assert evidence_report(db)[0]["failure"] == 1
-    assert mastery_report(db, subject="learner") == []
-    assert update_mastery(db, subject="learner", skill="fork", operation="execute") is None
-    assert db.connection.execute("SELECT COUNT(*) FROM mastery_events").fetchone()[0] == 1
+    assert mastery_report(db, subject="learner")[0]["status"] == "insufficient"
+    assert (
+        update_mastery(db, subject="learner", skill="fork", operation="execute")["status"]
+        == "insufficient"
+    )
+    assert db.connection.execute("SELECT COUNT(*) FROM mastery_events").fetchone()[0] == 0
     empty = mapping(db, None, version="three")
     assert empty["evidence_ids"] == []
     assert evidence_report(db) == []
@@ -121,8 +124,8 @@ def test_detector_supersession_invalidates_linked_evidence_and_history(db):
     update_mastery(db, subject="learner", skill="fork", operation="execute")
     fact(db, version="two")
     assert evidence_report(db) == []
-    assert mastery_report(db, subject="learner") == []
-    assert db.connection.execute("SELECT COUNT(*) FROM mastery_events").fetchone()[0] == 1
+    assert mastery_report(db, subject="learner")[0]["status"] == "insufficient"
+    assert db.connection.execute("SELECT COUNT(*) FROM mastery_events").fetchone()[0] == 0
     assert db.connection.execute("SELECT human_validated FROM evidence_mappings").fetchone()[0] == 1
 
 

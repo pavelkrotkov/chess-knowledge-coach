@@ -313,3 +313,22 @@ That legacy flag remains visible separately after a later review decision.
 Rejected and revoked items are excluded from the aggregate evidence report and
 cannot contribute to mastery. Review changes invalidate existing mastery state.
 The compatibility command `validate-evidence` also requires `--actor`.
+
+## Mastery estimates
+
+`mastery-report --subject learner` recomputes an uncalibrated outcome heuristic
+at access time. Current, explicitly accepted, provenance-linked success and
+failure evidence must identify a learner decision in a game with a known UTC
+observation time. Unassigned, ambiguous, unreviewed, rejected, revoked,
+superseded, legacy-unproven, future, and expired evidence is excluded. The
+report includes exclusion counts and supporting evidence IDs.
+
+A game contributes at most one context, even across moves and producers. At
+least three independent contexts are required for a score. Confidence weights
+decay with a 90-day half-life over whole UTC days; the horizon is 365 days.
+Uncertainty is `1 / (1 + effective weight)`. The 30-day trend is unknown when
+there are not both recent and older contexts. A result with insufficient
+contexts has no score and marks any prior cached score stale while retaining
+its event history. This is a descriptive heuristic, not a calibrated ability
+or centipawn-loss measure. Verified practice completions are not yet included
+in this checkpoint.

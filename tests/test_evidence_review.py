@@ -50,8 +50,10 @@ def test_review_lifecycle_replay_and_mastery_invalidation() -> None:
     assert before["facts"][0]["detector_version"] and before["mapper_version"]
     assert before["reviews"] == []
     assert (
-        update_mastery(db, skill="mate_in_one", operation="execute", subject="syntheticwhite")
-        is None
+        update_mastery(db, skill="mate_in_one", operation="execute", subject="syntheticwhite")[
+            "status"
+        ]
+        == "insufficient"
     )
 
     accepted = review_evidence(
@@ -66,7 +68,7 @@ def test_review_lifecycle_replay_and_mastery_invalidation() -> None:
 
     rejected = review_evidence(db, evidence_id, decision="reject", actor="fixture-reviewer")
     assert rejected["review_status"] == "rejected"
-    assert mastery_report(db, subject="syntheticwhite") == []
+    assert mastery_report(db, subject="syntheticwhite")[0]["exclusions"]["rejected"] == 1
     assert evidence_report(db) == []
     revoked = review_evidence(db, evidence_id, decision="revoke", actor="fixture-reviewer")
     assert revoked["review_status"] == "revoked"
@@ -306,6 +308,18 @@ def test_v8_review_migration_rolls_back_without_losing_legacy_flag(monkeypatch) 
     assert inspect_evidence(db, 1)["review_status"] == "legacy_accepted"
 
 
+def _seed_cached_mastery(db):
+    db.connection.execute(
+        "INSERT INTO mastery_states (subject,skill,operation,mastery,uncertainty,evidence_weight,trend_30d,updated_at,model_version,is_stale) VALUES (?, ?, ?, 0.5, 0.5, 1, NULL, ?, ?, 0)",
+        ("fixture-subject", "fork", "execute", "2026-01-01T00:00:00+00:00", "old"),
+    )
+    db.connection.commit()
+
+
+def _is_stale(db):
+    return db.connection.execute("SELECT is_stale FROM mastery_states").fetchone()[0]
+
+
 def test_only_changed_active_review_eligibility_stales_mastery() -> None:
     db = Database(":memory:")
     db.initialize()
@@ -314,58 +328,44 @@ def test_only_changed_active_review_eligibility_stales_mastery() -> None:
         skill="fork",
         operation="execute",
         outcome="success",
-        confidence=1.0,
+        confidence=1,
         subject="fixture-subject",
     )
     validate_evidence(db, accepted, actor="fixture-reviewer")
-    assert update_mastery(db, skill="fork", operation="execute", subject="fixture-subject")
-    assert mastery_report(db, subject="fixture-subject")
-
+    _seed_cached_mastery(db)
     review_evidence(db, accepted, decision="accept", actor="fixture-reviewer")
-    assert mastery_report(db, subject="fixture-subject")
+    assert _is_stale(db) == 0
     unreviewed = record_evidence(
         db,
         skill="fork",
         operation="execute",
         outcome="failure",
-        confidence=1.0,
+        confidence=1,
         subject="fixture-subject",
     )
-    assert mastery_report(db, subject="fixture-subject")
     review_evidence(db, unreviewed, decision="reject", actor="fixture-reviewer")
-    assert mastery_report(db, subject="fixture-subject")
     review_evidence(db, unreviewed, decision="revoke", actor="fixture-reviewer")
-    assert mastery_report(db, subject="fixture-subject")
+    assert _is_stale(db) == 0
     review_evidence(db, accepted, decision="reject", actor="fixture-reviewer")
-    assert mastery_report(db, subject="fixture-subject") == []
+    assert _is_stale(db) == 1
 
 
 def test_nonstandard_legacy_flag_acceptance_changes_eligibility() -> None:
     db = Database(":memory:")
     db.initialize()
-    first = record_evidence(
-        db,
-        skill="fork",
-        operation="execute",
-        outcome="success",
-        confidence=1.0,
-        subject="fixture-subject",
-    )
-    validate_evidence(db, first, actor="fixture-reviewer")
-    assert update_mastery(db, skill="fork", operation="execute", subject="fixture-subject")
     unusual = record_evidence(
         db,
         skill="fork",
         operation="execute",
         outcome="failure",
-        confidence=1.0,
+        confidence=1,
         subject="fixture-subject",
     )
     db.connection.execute(
         "UPDATE evidence_mappings SET human_validated = 2 WHERE id = ?", (unusual,)
     )
     db.connection.commit()
-    assert mastery_report(db, subject="fixture-subject")
+    _seed_cached_mastery(db)
     assert inspect_evidence(db, unusual)["review_status"] == "legacy_unknown"
     review_evidence(db, unusual, decision="accept", actor="fixture-reviewer")
-    assert mastery_report(db, subject="fixture-subject") == []
+    assert _is_stale(db) == 1
