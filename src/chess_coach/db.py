@@ -3,6 +3,8 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+from .fact_schema import RUN_TABLE
+
 SCHEMA = """
 PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS sync_progress (
@@ -81,7 +83,10 @@ CREATE TABLE IF NOT EXISTS detector_facts (
     id INTEGER PRIMARY KEY,
     position_id INTEGER REFERENCES positions(id) ON DELETE CASCADE,
     detector_version TEXT NOT NULL, fact_type TEXT NOT NULL,
-    payload_json TEXT NOT NULL
+    payload_json TEXT NOT NULL,
+    run_id INTEGER REFERENCES detector_runs(id),
+    fact_key TEXT,
+    produced_at TEXT
 );
 CREATE TABLE IF NOT EXISTS evidence_mappings (
     id INTEGER PRIMARY KEY,
@@ -232,6 +237,8 @@ CREATE TABLE IF NOT EXISTS structure_episodes (
 CREATE INDEX IF NOT EXISTS idx_structure_episodes_game
     ON structure_episodes(game_id, start_ply);
 """
+
+SCHEMA += RUN_TABLE
 
 
 class Database:

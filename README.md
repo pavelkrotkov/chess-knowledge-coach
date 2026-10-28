@@ -139,6 +139,20 @@ separate. A recorded clock is after the move, while the prior clock for the same
 side is supplied separately when available. This context does not itself create
 or validate skill evidence.
 
+## Versioned detector facts
+
+The Python API provides record_fact_run for immutable detector facts scoped
+to a producer and position. Provide deterministic JSON input data and facts as
+objects with fact_type and payload. Exact replays return the same run and
+fact IDs; a new successful run supersedes only its producer/position scope.
+Legacy facts without run provenance retain unknown timestamps and ownership.
+The record_fact_run_in_transaction function supports a caller-owned transaction
+and never commits it.
+
+This storage layer does not yet replace the legacy motif/evidence mapping
+paths. Those paths remain destructive on rerun until issue #75 is complete;
+the layers must be integrated together before release.
+
 ## Database upgrades
 
 Startup applies ordered schema upgrades atomically and records their version in
