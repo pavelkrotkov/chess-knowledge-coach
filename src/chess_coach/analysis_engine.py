@@ -55,12 +55,13 @@ def scan(
     nodes: int,
     depth: int | None,
     multipv: int,
+    time_limit: float | None = None,
 ) -> None:
     from .analysis_positions import decisions
 
     for position, board in decisions(connection, game):
         result = engine.analyse(
-            board, chess.engine.Limit(nodes=nodes, depth=depth), multipv=multipv
+            board, chess.engine.Limit(nodes=nodes, depth=depth, time=time_limit), multipv=multipv
         )
         lines = result if isinstance(result, list) else [result]
         for number, line in enumerate(lines or [{}], start=1):

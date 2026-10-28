@@ -167,6 +167,7 @@ def test_v7_upgrade_preserves_legacy_rows_and_custom_objects(monkeypatch):
     legacy = Database(":memory:")
     with monkeypatch.context() as patch:
         patch.setattr(db_recent, "add_classification_lineage", lambda connection: None)
+        patch.setattr(db_recent, "add_pipeline_stages", lambda connection: None)
         legacy.initialize()
     legacy.connection.execute("PRAGMA user_version=7")
     legacy.connection.execute(
@@ -218,6 +219,7 @@ def test_v8_failed_migration_rolls_back(monkeypatch):
     legacy = Database(":memory:")
     with monkeypatch.context() as patch:
         patch.setattr(db_recent, "add_classification_lineage", lambda connection: None)
+        patch.setattr(db_recent, "add_pipeline_stages", lambda connection: None)
         legacy.initialize()
     legacy.connection.execute("PRAGMA user_version=7")
     legacy.connection.commit()

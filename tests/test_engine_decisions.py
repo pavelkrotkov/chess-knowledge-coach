@@ -214,7 +214,7 @@ def test_upgrade_from_v1_keeps_old_engine_decision_unknown():
         "SELECT score_cp, decision_fen, score_pov FROM engine_outputs"
     ).fetchone()
     assert tuple(output) == (10, None, None)
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 12
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 14
 
 
 @pytest.mark.skipif(not Path("/usr/games/stockfish").is_file(), reason="Stockfish not installed")
@@ -293,3 +293,24 @@ def test_merge_uninitialized_v1_source_preserves_legacy_outputs_and_source(tmp_p
     assert source.connection.execute("PRAGMA user_version").fetchone()[0] == 1
     assert source_path.read_bytes() == before
     source.close()
+
+
+def test_engine_transport_closes_if_quit_fails(monkeypatch):
+    class BrokenQuit(FakeEngine):
+        def __init__(self):
+            super().__init__()
+            self.transport_closed = False
+
+        def quit(self):
+            raise TimeoutError("engine did not exit")
+
+        def close(self):
+            self.transport_closed = True
+
+    db = database()
+    engine = BrokenQuit()
+    with pytest.raises(TimeoutError):
+        run_fake(monkeypatch, db, engine)
+    assert engine.transport_closed
+    assert db.connection.execute("SELECT COUNT(*) FROM analysis_runs").fetchone()[0] == 0
+    assert db.connection.execute("SELECT COUNT(*) FROM engine_outputs").fetchone()[0] == 0

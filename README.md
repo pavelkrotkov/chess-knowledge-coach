@@ -214,6 +214,42 @@ unreadable, or invalid source. This is an early enforcement checkpoint; final
 verification after the remaining release work is tracked in
 [issue #29](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/29).
 
+## Daily practice plan
+
+For scheduled copies of the same canonical prompt, planning uses the schedule with
+the latest valid actual review; known review times outrank unknown ones, and the
+lowest item ID breaks ties. The bounded cross-schedule scan may require a
+continuation before a due item can be offered. Missing or malformed scheduled
+sources prevent that check and produce an actionable repair diagnostic.
+
+`daily-plan` produces a bounded, read-only plan for a runtime learner and
+selected puzzle corpus. It selects supported due items first, then scans puzzles
+in rating and ID order. Every offered puzzle is checked for an immediate legal
+mate by the expected first learner move; themes alone are not proof. Repeated
+prompt positions are included only once in a plan.
+
+```bash
+uv run chess-coach --db coach.sqlite daily-plan corpus-v1 --subject learner --limit 10
+```
+
+The plan reports cold start, insufficient evidence, supported weakness, or no
+supported weakness, along with the eligible supporting evidence IDs once for
+all selections. If evidence exceeds the scan limit, it reports an incomplete
+evidence scan and infers no weakness; the limit can be raised to at most 1,000.
+A mastery score below 0.6 is a transparent planning heuristic, not a calibrated
+diagnosis. Unknown or empty corpora, invalid negative ratings, scan limits, and missing
+new candidates are explicit. A truncated due scan prevents new items from being
+selected until due priority can be resolved. When `next_cursor` is present,
+repeat `daily-plan` with the same subject, corpus, limits and `--cursor` value
+to continue the same bounded plan; combine the incremental items from each page
+until no cursor remains. The cursor retains the original as-of time.
+The cursor is local to this database and must be restarted after source data
+changes. If a scheduled puzzle's prompt cannot be reconstructed, new selection
+stops and identifies the scheduled item to repair or the corpus to restore.
+Selecting a plan changes no schedule or evidence; create an item and complete it
+using the verified practice flow below. Existing ontology edges describe
+containment, not prerequisites.
+
 ## Verified puzzle practice
 
 Import a Lichess puzzle CSV with `import-puzzles`, then select a puzzle ID from
@@ -363,3 +399,50 @@ its event history. This is a descriptive heuristic, not a calibrated ability
 or centipawn-loss measure. Training evidence must be explicitly accepted,
 directly linked to a verified completion, and supported by its immutable
 session and terminal event; a self-rating alone is not mastery evidence.
+
+## Bounded processing pipeline
+
+`process-pipeline` resumes Lichess synchronization and advances pending games
+through complete engine analysis, structure extraction, optional opening
+classification, tactical candidate generation, and a fresh mastery report.
+The worker never accepts evidence on a person’s behalf. Set `LICHESS_USERNAME`
+in the private runtime environment, and set `LICHESS_API_TOKEN` there if the
+export requires a token. An explicit username argument is also supported.
+
+```bash
+uv run chess-coach --db .venv/coach.sqlite process-pipeline \
+  --max-games 10 --max-scan 500 --max-positions 200 \
+  --nodes 10000 --seconds-per-position 1 --threads 1 --hash-mb 64 \
+  --network-requests 25 --network-retries 1 --network-timeout 20 \
+  --network-seconds 120 --network-bytes 8388608 --network-sleep 60
+uv run chess-coach --db .venv/coach.sqlite pipeline-status
+```
+
+Game and scan limits bound the work selected per invocation. Processing-setting
+changes and opening dataset additions restart the bounded game scan, so
+completion requires scanning every game under the current inputs; changing only scheduling or network budgets preserves
+the scan cursor. Engine nodes and
+seconds apply to each position; thread and hash limits apply to each engine.
+The request count, aggregate response bytes, elapsed time, individual request
+timeout and retry-sleep budget bound the network portion. When the server’s
+required retry delay exceeds the remaining budget, synchronization stops with
+pending progress rather than retrying early. Large games receive a
+`position_budget_exceeded` status and do not prevent later games from advancing.
+
+To classify openings, supply both `--opening-version` and `--opening-source`
+for an imported dataset. Missing or unconfigured opening data is shown as a
+skipped stage and does not fabricate a classification. Run status includes
+sanitized sync diagnostics, the scan count, and per-game stage codes; use
+`pipeline-status` to read persisted timestamps and the last sync/run outcome
+without starting work. A `running` status left by an interrupted process is
+resolved by the next invocation. The lock is local to the database host.
+Run the synchronous worker as a dedicated process on its main thread; its
+network deadline uses the process timer and will refuse to replace an active
+timer or run inside a request thread.
+
+Completed stage inputs and configuration versions are checkpointed. A retry
+reuses a pending generation, while a changed configuration or an externally
+superseded output creates a new current generation. Engine outputs and their
+completion checkpoint commit together. Untimed or unassigned decisions do not
+produce learner tactical candidates. Candidate evidence still requires an
+explicit review before it can contribute to mastery.

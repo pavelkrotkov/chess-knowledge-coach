@@ -19,6 +19,7 @@ def extract_game_episodes(
     game_id: int,
     *,
     detector_version: str = DETECTOR_VERSION,
+    pipeline_generation: int | None = None,
 ) -> int:
     """Extract contiguous same-feature episodes for a stored Standard game."""
     if not isinstance(detector_version, str) or not detector_version.strip():
@@ -35,7 +36,7 @@ def extract_game_episodes(
             "SELECT ply, fen FROM positions WHERE game_id = ? ORDER BY ply", (game_id,)
         ).fetchall()
         episodes = _group_episodes(rows)
-        return persist_episodes(db, game_id, detector_version, rows, episodes)
+        return persist_episodes(db, game_id, detector_version, rows, episodes, pipeline_generation)
 
 
 def _group_episodes(rows: list[Row]) -> list[tuple[int, int, dict[str, object]]]:

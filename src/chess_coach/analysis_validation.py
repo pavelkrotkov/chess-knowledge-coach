@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import sqlite3
 from pathlib import Path
@@ -34,3 +35,8 @@ def validate_config(
 ) -> None:
     if nodes < 1 or (depth is not None and depth < 1) or multipv < 1 or threads < 1 or hash_mb < 1:
         raise ValueError("nodes, depth, MultiPV, threads, and hash must be positive")
+
+
+def validate_time(value: float | None) -> None:
+    if value is not None and (not math.isfinite(value) or value <= 0):
+        raise ValueError("engine time limit must be finite and positive")

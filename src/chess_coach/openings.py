@@ -31,9 +31,15 @@ def import_openings(
         if dataset_id is None:
             raise ValueError(f"failed to insert or find dataset {version!r}")
         dataset_id = dataset_id[0]
+        previous_changes = db.connection.total_changes
         rows = _rows(path)
         for row_number, row in enumerate(rows, start=1):
             _import_row(db, dataset_id, row, row_number)
+        if db.connection.total_changes != previous_changes:
+            db.connection.execute(
+                "UPDATE opening_datasets SET content_revision=content_revision+1 WHERE id=?",
+                (dataset_id,),
+            )
         imported = len(rows)
         db.connection.commit()
         return imported
