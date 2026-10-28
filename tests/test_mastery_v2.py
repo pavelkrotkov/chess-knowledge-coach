@@ -210,3 +210,22 @@ def test_superseded_detector_removes_contribution_without_erasing_history():
     assert result["status"] == "insufficient" and result["context_count"] == 2
     assert db.connection.execute("SELECT is_stale FROM mastery_states").fetchone()[0] == 1
     assert db.connection.execute("SELECT COUNT(*) FROM mastery_events").fetchone()[0] == 1
+
+
+def test_underflow_weight_excluded_from_score_and_trend():
+    db = setup_db()
+    for number in range(3):
+        add_game(db, number, 365, outcome="failure")
+    db.connection.execute("UPDATE evidence_mappings SET confidence = ?", (5e-324,))
+    db.connection.commit()
+    result = update_mastery(db, subject="learner", skill="fork", operation="execute", as_of=NOW)
+    assert result["status"] == "insufficient"
+    assert result["context_count"] == 0 and result["effective_weight"] == 0
+    assert result["mastery"] is None and result["trend_30d"] is None
+    assert result["exclusions"] == {"zero_effective_weight": 3}
+    for number in range(3, 6):
+        add_game(db, number, 0)
+    result = update_mastery(db, subject="learner", skill="fork", operation="execute", as_of=NOW)
+    assert result["status"] == "sufficient" and result["context_count"] == 3
+    assert result["mastery"] == 1 and result["trend_30d"] is None
+    assert result["exclusions"] == {"zero_effective_weight": 3}

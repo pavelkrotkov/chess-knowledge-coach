@@ -28,6 +28,9 @@ def update_mastery(
     with mapping_transaction(db):
         items, exclusions = eligible_contexts(db, subject, skill, operation, now)
         values = calculate(items)
+        zero_weight_count = values.pop("zero_weight_count")
+        if zero_weight_count:
+            exclusions["zero_effective_weight"] = zero_weight_count
         state = db.connection.execute(
             "SELECT * FROM mastery_states WHERE subject = ? AND skill = ? AND operation = ?",
             (subject, skill, operation),

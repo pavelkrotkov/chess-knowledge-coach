@@ -11,9 +11,10 @@ POLICY_VERSION = "mastery-v2-90d"
 
 
 def calculate(items: list[dict]) -> dict[str, Any]:
-    weighted = _weighted(items)
+    weighted = [item for item in _weighted(items) if item["weight"] > 0]
     total = sum(item["weight"] for item in weighted)
     return {
+        "zero_weight_count": len(items) - len(weighted),
         "status": "sufficient" if len(weighted) >= MIN_CONTEXTS else "insufficient",
         "context_count": len(weighted),
         "mastery": _score(weighted) if len(weighted) >= MIN_CONTEXTS else None,
