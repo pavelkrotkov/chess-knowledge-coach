@@ -1,0 +1,10 @@
+[Unit]
+Description=Schedule bounded chess coach processing
+
+[Timer]
+OnBootSec=5min
+OnUnitInactiveSec=15min
+Unit=chess-coach-worker.service
+
+[Install]
+WantedBy=timers.target

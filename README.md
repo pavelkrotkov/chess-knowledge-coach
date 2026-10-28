@@ -507,3 +507,6 @@ lifetime lock prevents overlapping browser instances; on Linux a stale owned
 socket is reclaimed only if no process has it bound. Unexpected paths are left
 untouched.
 This command does not configure Tailscale Serve or install a service.
+
+For private service installation, backup, upgrade, and recovery, see the
+[Hermes operations guide](docs/operations.md).
