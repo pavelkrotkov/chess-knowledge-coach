@@ -5,6 +5,7 @@ from . import cli_commands_games as games
 from . import cli_commands_learning as learning
 from . import cli_curriculum as curriculum
 from . import cli_pipeline
+from . import cli_recovery as recovery
 from .cli_parser import build_parser
 from .db import Database
 
@@ -43,6 +44,9 @@ COMMANDS = {
 
 def main() -> None:
     args = build_parser().parse_args()
+    if args.command in recovery.COMMANDS:
+        recovery.COMMANDS[args.command](args)
+        return
     db = Database(args.db)
     db.initialize()
     COMMANDS[args.command](db, args)

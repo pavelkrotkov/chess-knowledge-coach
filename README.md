@@ -191,6 +191,31 @@ legacy evidence record has no observation timestamp, the value is NULL rather
 than a guessed date, and that record is excluded from temporal trend comparisons.
 An unsupported newer database version is rejected without modification.
 
+## Database backup and restore
+
+Before a schema upgrade, create a verified online backup without initializing
+or migrating the source database. From the project root, choose new paths whose
+parent directories already exist:
+
+```bash
+uv run chess-coach backup-db coach.sqlite coach-backup.sqlite --project-root "$PWD"
+uv run chess-coach restore-db coach-backup.sqlite coach-restored.sqlite --project-root "$PWD"
+```
+
+Both paths must be inside the explicitly selected project root. The source is
+opened read-only, and SQLite's online backup API captures a consistent copy
+including committed WAL data. The copy is checked with `integrity_check` and
+`foreign_key_check` before publication; the new file has owner-only permissions.
+An existing destination is never overwritten. Temporary files are created in
+the destination directory and cleaned up after completion or a handled failure.
+Restoring does not replace the original database or run schema migrations. It
+requires a standalone rollback-journal backup, such as one produced by
+`backup-db`; use `backup-db` first for a WAL-mode source.
+
+For a WAL database, keep the database and its SQLite-managed sidecars available
+to the live SQLite connection; copying the main file alone can omit committed
+data. See [SQLite's online backup documentation](https://www.sqlite.org/backup.html).
+
 ## Code quality metrics
 
 `uv run python -m scripts.quality --check` uses pinned Radon 6.0.1 to check all
