@@ -233,7 +233,7 @@ and line are snapshotted so reimporting a corpus cannot change an in-progress
 attempt. Verified results and hints are stored separately from FSRS scheduling:
 use `review-training` only when you choose a separate self-rating.
 
-## Tactical opportunity preview
+## Tactical opportunities
 
 The mate-in-one preview checks legal moves on the learner's reconstructed
 pre-move position. A played mating move is a success; a move that immediately
@@ -254,11 +254,28 @@ from chess_coach.tactical_opportunities import record_game_opportunities
 
 db = Database("coach.sqlite")
 db.initialize()
-seed_tactical_ontology(db, version="tactical-v1")
-candidates = record_game_opportunities(db, game_id=1, learner=os.environ.get("LICHESS_USERNAME"))
+seed_tactical_ontology(db, version="tactical-mate-v1")
+candidates = record_game_opportunities(
+    db,
+    game_id=1,
+    learner=os.environ.get("LICHESS_USERNAME"),
+    ontology_version="tactical-mate-v1",
+)
 ```
 
 The returned candidates include the decision, mating moves, detector and mapper
-versions, source-fact IDs, and a reason for the proposed outcome. Detector facts
-are persisted with lineage; the outcome is a preview, not a stored or validated
-evidence mapping. Unmatched learner identities produce no learner candidates.
+versions, source-fact IDs, and a reason for the outcome. Detector facts and
+scoped evidence mappings are persisted atomically with lineage. New evidence is
+unreviewed; an exact replay keeps the same IDs and any existing review. Confidence
+1.0 describes the deterministic terminal-board observation, not player ability;
+ambiguous observations have confidence 0.0. Unmatched learner identities produce
+no learner candidates. Evidence must be reviewed before it can contribute to
+mastery, and this rule makes no claim about calculation or recognition.
+
+A synthetic fixture report covering both colors, alternative mates, stalemate,
+ambiguous moves, a pinned pseudo-capture, and no opportunity can be inspected
+without using private game data:
+
+```bash
+uv run python examples/tactical_fixture_report.py
+```

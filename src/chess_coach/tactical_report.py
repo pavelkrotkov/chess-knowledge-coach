@@ -6,7 +6,7 @@ from typing import Any
 
 from .db import Database
 
-MAPPER_VERSION = "mate-one-preview-1.0.0"
+MAPPER_VERSION = "mate-one-1.0.0"
 
 
 def assess_fact(db: Database, position_id: int, fact: dict[str, Any]) -> dict[str, object]:
@@ -28,14 +28,16 @@ def assess_fact(db: Database, position_id: int, fact: dict[str, Any]) -> dict[st
         "operation": "execute",
         "outcome": outcome,
         "confidence_rationale": rationale,
-        "engine_conflict_ids": conflicts,
+        "confidence": 0.0 if outcome == "ambiguous" else 1.0,
+        "engine_conflict_ids": [item["id"] for item in conflicts],
+        "engine_conflicts": conflicts,
         "mapper_version": MAPPER_VERSION,
-        "mapping_status": "preview",
-        "human_validated": False,
     }
 
 
-def _engine_conflicts(db: Database, position_id: int, fact: dict[str, Any]) -> list[int]:
+def _engine_conflicts(
+    db: Database, position_id: int, fact: dict[str, Any]
+) -> list[dict[str, object]]:
     turn = "white" if fact["pre_move_fen"].split()[1] == "w" else "black"
     rows = db.connection.execute(
         """SELECT id, best_move FROM engine_outputs
@@ -43,4 +45,8 @@ def _engine_conflicts(db: Database, position_id: int, fact: dict[str, Any]) -> l
           AND multipv = 1 AND best_move IS NOT NULL ORDER BY id""",
         (position_id, fact["pre_move_fen"], turn),
     ).fetchall()
-    return [row["id"] for row in rows if row["best_move"] not in fact["mating_moves"]]
+    return [
+        {"id": row["id"], "best_move": row["best_move"]}
+        for row in rows
+        if row["best_move"] not in fact["mating_moves"]
+    ]

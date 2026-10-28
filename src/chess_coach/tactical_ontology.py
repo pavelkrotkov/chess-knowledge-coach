@@ -15,11 +15,19 @@ def seed_tactical_ontology(db: Database, *, version: str) -> None:
         raise RuntimeError("cannot seed ontology during an existing transaction")
     try:
         db.connection.execute("BEGIN IMMEDIATE")
-        _seed(db, version)
+        seed_tactical_ontology_in_transaction(db, version=version)
         db.connection.commit()
     except BaseException:
         db.connection.rollback()
         raise
+
+
+def seed_tactical_ontology_in_transaction(db: Database, *, version: str) -> None:
+    if not version:
+        raise ValueError("ontology version is required")
+    if not db.connection.in_transaction:
+        raise RuntimeError("ontology seeding requires a transaction")
+    _seed(db, version)
 
 
 def _seed(db: Database, version: str) -> None:
