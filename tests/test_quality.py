@@ -54,3 +54,41 @@ def test_check_fails_for_violations_but_report_only_succeeds(
     assert quality.main() == 1
     monkeypatch.setattr("sys.argv", ["quality.py", "--report-only"])
     assert quality.main() == 0
+
+
+@pytest.mark.parametrize("mode", [[], ["--check"]])
+def test_strict_mode_accepts_boundary_complexity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture, mode: list[str]
+) -> None:
+    source = "def boundary(x):\n    if x and x and x and x and x and x and x: return x\n"
+    mi, functions = measure(source)
+    assert mi > 50
+    assert (1, "boundary", 8) in functions
+
+    package = tmp_path / "src/chess_coach"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("")
+    (package / "fixture.py").write_text(source)
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "quality.py").write_text("")
+    monkeypatch.setattr(quality, "ROOT", tmp_path)
+    monkeypatch.setattr("sys.argv", ["quality.py", *mode])
+    assert quality.main() == 0
+    assert "boundary: CC 8" in capsys.readouterr().out
+
+
+def test_maintainability_at_threshold_is_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    package = tmp_path / "src/chess_coach"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("")
+    (package / "fixture.py").write_text("x = 1")
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "quality.py").write_text("")
+    monkeypatch.setattr(quality, "ROOT", tmp_path)
+    monkeypatch.setattr(quality, "measure", lambda _: (50.0, []))
+    monkeypatch.setattr("sys.argv", ["quality.py", "--check"])
+    assert quality.main() == 1
