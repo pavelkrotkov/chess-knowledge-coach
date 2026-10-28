@@ -3,13 +3,14 @@
 import json
 
 from .evidence import evidence_report, validate_evidence
+from .evidence_review import inspect_evidence, list_evidence, review_evidence
 from .mastery import mastery_report, update_mastery
 from .puzzle_sessions import request_hint, show_attempt, start_attempt, submit_move
 from .training import create_training_item, due_items, review_item
 
 
 def handle_validate_evidence(db, args):
-    validate_evidence(db, args.evidence_id)
+    validate_evidence(db, args.evidence_id, actor=args.actor)
     print(json.dumps({"validated": args.evidence_id}, indent=2))
 
 
@@ -85,3 +86,26 @@ def handle_play_puzzle(db, args):
 
 def handle_hint_puzzle(db, args):
     print(json.dumps(request_hint(db, args.attempt_id, event_id=args.event_id), indent=2))
+
+
+def handle_list_evidence(db, args):
+    print(json.dumps(list_evidence(db, after_id=args.after_id, limit=args.limit), indent=2))
+
+
+def handle_inspect_evidence(db, args):
+    print(json.dumps(inspect_evidence(db, args.evidence_id), indent=2))
+
+
+def handle_review_evidence(db, args):
+    print(
+        json.dumps(
+            review_evidence(
+                db,
+                args.evidence_id,
+                decision=args.decision,
+                actor=args.actor,
+                rationale=args.rationale,
+            ),
+            indent=2,
+        )
+    )

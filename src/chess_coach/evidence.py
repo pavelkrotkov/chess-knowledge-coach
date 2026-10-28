@@ -53,7 +53,9 @@ def evidence_report(db: Database) -> list[dict[str, Any]]:
         """SELECT e.skill, e.operation, e.outcome, COUNT(*) AS count
         FROM evidence_mappings e
         LEFT JOIN mapping_runs r ON r.id = e.mapping_run_id
-        WHERE e.mapping_run_id IS NULL OR r.status = 'active'
+        WHERE (e.mapping_run_id IS NULL OR r.status = 'active')
+        AND COALESCE((SELECT decision FROM evidence_review_events
+             WHERE evidence_id = e.id ORDER BY id DESC LIMIT 1), '') NOT IN ('reject', 'revoke')
         GROUP BY e.skill, e.operation, e.outcome
         ORDER BY e.skill, e.operation, e.outcome"""
     ).fetchall()

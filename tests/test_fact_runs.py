@@ -242,7 +242,7 @@ def test_v5_legacy_fact_and_review_migrate_without_fabricated_lineage():
         == old_evidence
     )
     assert db.connection.execute("SELECT COUNT(*) FROM detector_runs").fetchone()[0] == 0
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 8
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 9
     assert db.connection.execute("PRAGMA foreign_key_check").fetchall() == []
     new = produce(db)
     assert new["fact_ids"]

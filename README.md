@@ -232,3 +232,74 @@ attempt can be resumed by ID after restarting; its puzzle version, checksum,
 and line are snapshotted so reimporting a corpus cannot change an in-progress
 attempt. Verified results and hints are stored separately from FSRS scheduling:
 use `review-training` only when you choose a separate self-rating.
+
+## Tactical opportunities
+
+The mate-in-one preview checks legal moves on the learner's reconstructed
+pre-move position. A played mating move is a success; a move that immediately
+stalemates when mate was available is a narrowly defined failure. Other legal
+moves remain ambiguous, as does a decision with contradictory engine output.
+These are chess observations, not claims about calculation, recognition, or
+mastery. Descriptive fork and hanging-piece labels alone do not establish an
+opportunity or outcome.
+
+To create an explicit ontology version and inspect a game using a learner
+identity supplied at runtime:
+
+```python
+import os
+from chess_coach.db import Database
+from chess_coach.tactical_ontology import seed_tactical_ontology
+from chess_coach.tactical_opportunities import record_game_opportunities
+
+db = Database("coach.sqlite")
+db.initialize()
+seed_tactical_ontology(db, version="tactical-mate-v1")
+candidates = record_game_opportunities(
+    db,
+    game_id=1,
+    learner=os.environ.get("LICHESS_USERNAME"),
+    ontology_version="tactical-mate-v1",
+)
+```
+
+The returned candidates include the decision, mating moves, detector and mapper
+versions, source-fact IDs, and a reason for the outcome. Detector facts and
+scoped evidence mappings are persisted atomically with lineage. New evidence is
+unreviewed; an exact replay keeps the same IDs and any existing review. Confidence
+1.0 describes the deterministic terminal-board observation, not player ability;
+ambiguous observations have confidence 0.0. Unmatched learner identities produce
+no learner candidates. Evidence must be reviewed before it can contribute to
+mastery, and this rule makes no claim about calculation or recognition.
+
+A synthetic fixture report covering both colors, alternative mates, stalemate,
+ambiguous moves, a pinned pseudo-capture, and no opportunity can be inspected
+without using private game data:
+
+```bash
+uv run python examples/tactical_fixture_report.py
+```
+
+## Reviewing evidence
+
+List evidence by stable ID, inspect the decision context and linked facts, then
+record a decision with an explicit operator identity:
+
+```bash
+uv run chess-coach --db coach.sqlite list-evidence --limit 50
+uv run chess-coach --db coach.sqlite inspect-evidence 1
+uv run chess-coach --db coach.sqlite review-evidence 1 --decision accept --actor local-operator
+uv run chess-coach --db coach.sqlite review-evidence 1 --decision reject --actor local-operator --rationale 'Needs another look'
+uv run chess-coach --db coach.sqlite review-evidence 1 --decision revoke --actor local-operator
+```
+
+Use your chosen operator label instead of the example. Each action appends a
+timestamped event; corrections do not erase earlier decisions. Review state
+(unreviewed, accepted, rejected, revoked, legacy accepted, or legacy unknown)
+is separate
+from mapping lifecycle (active, superseded, or unscoped). A legacy validation
+flag has an unknown reviewer and review time; no event is fabricated for it.
+That legacy flag remains visible separately after a later review decision.
+Rejected and revoked items are excluded from the aggregate evidence report and
+cannot contribute to mastery. Review changes invalidate existing mastery state.
+The compatibility command `validate-evidence` also requires `--actor`.

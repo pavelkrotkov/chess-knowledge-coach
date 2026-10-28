@@ -1,26 +1,52 @@
-"""Validate evidence and invalidate mastery only when eligibility changes."""
+"""Review evidence with explicit actors and an append-only decision history."""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
 
 from .db import Database
+from .evidence_review_details import inspect_evidence as inspect_evidence
+from .evidence_review_effects import invalidate_changed_eligibility
+from .evidence_review_state import evidence_row
+from .evidence_review_state import list_evidence as list_evidence
+from .mapping_transaction import mapping_transaction
 
 
-def validate_evidence(db: Database, evidence_id: int) -> None:
-    row = db.connection.execute(
-        """SELECT e.human_validated, e.mapping_run_id, r.status
-        FROM evidence_mappings e LEFT JOIN mapping_runs r ON r.id = e.mapping_run_id
-        WHERE e.id = ?""",
-        (evidence_id,),
-    ).fetchone()
-    if row is None:
-        raise ValueError(f"unknown evidence mapping: {evidence_id}")
-    if row["human_validated"]:
-        return
-    db.connection.execute(
-        "UPDATE evidence_mappings SET human_validated = 1 WHERE id = ?", (evidence_id,)
-    )
-    if row["mapping_run_id"] is None or row["status"] == "active":
+def review_evidence(
+    db: Database,
+    evidence_id: int,
+    *,
+    decision: str,
+    actor: str,
+    rationale: str | None = None,
+) -> dict:
+    _validate_request(decision, actor, rationale)
+    with mapping_transaction(db):
+        row = evidence_row(db, evidence_id)
+        if decision == "revoke" and row["review_decision"] is None and not row["human_validated"]:
+            raise ValueError("unreviewed evidence has no decision to revoke")
         db.connection.execute(
-            """UPDATE mastery_states SET is_stale = 1 WHERE (subject, skill, operation) IN
-            (SELECT subject, skill, operation FROM evidence_mappings WHERE id = ?)""",
-            (evidence_id,),
+            """INSERT INTO evidence_review_events (evidence_id, decision, actor, rationale, reviewed_at)
+            VALUES (?, ?, ?, ?, ?)""",
+            (evidence_id, decision, actor, rationale, datetime.now(UTC).isoformat()),
         )
-    db.connection.commit()
+        db.connection.execute(
+            "UPDATE evidence_mappings SET human_validated = ? WHERE id = ?",
+            (int(decision == "accept"), evidence_id),
+        )
+        invalidate_changed_eligibility(db, row, decision)
+        return inspect_evidence(db, evidence_id)
+
+
+def _validate_request(decision: str, actor: str, rationale: str | None) -> None:
+    if decision not in {"accept", "reject", "revoke"}:
+        raise ValueError("decision must be accept, reject, or revoke")
+    if not isinstance(actor, str) or not actor.strip():
+        raise ValueError("review actor must be nonempty")
+    if rationale is not None and not isinstance(rationale, str):
+        raise ValueError("rationale must be text or unknown")
+
+
+def validate_evidence(db: Database, evidence_id: int, *, actor: str) -> None:
+    """Accept evidence through the audited review path."""
+    review_evidence(db, evidence_id, decision="accept", actor=actor)
