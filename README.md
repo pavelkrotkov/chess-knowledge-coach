@@ -157,8 +157,8 @@ operation combinations are rejected. Historical records with unproven source
 lineage remain visible as unknown. The two existing mappers use the unassigned
 subject until learner attribution supplies one.
 
-Consumers count current evidence and omit stale mastery states. Superseding a
-mapping or its detector input invalidates affected mastery states without
+Mastery reports recompute eligible evidence at access time. Superseding a
+mapping or its detector input invalidates affected cached states without
 deleting their event history. Callers composing fact and mapping writes can use
 the in-transaction mapping primitive in the same transaction as the detector
 primitive; callers own commit and rollback.
@@ -341,17 +341,25 @@ The compatibility command `validate-evidence` also requires `--actor`.
 
 `mastery-report --subject learner` recomputes an uncalibrated outcome heuristic
 at access time. Current, explicitly accepted, provenance-linked success and
-failure evidence must identify a learner decision in a game with a known UTC
-observation time. Unassigned, ambiguous, unreviewed, rejected, revoked,
+failure evidence must identify an attributed learner decision in a game or a
+verified, unhinted practice completion, with a known UTC observation time. Unassigned, ambiguous, unreviewed, rejected, revoked,
 superseded, legacy-unproven, future, and expired evidence is excluded. The
 report includes exclusion counts and supporting evidence IDs.
 
-A game contributes at most one context, even across moves and producers. At
-least three independent contexts are required for a score. Confidence weights
+A game contributes at most one context, even across moves, producers, and
+import routes. Game identity uses the verified starting position, legal moves,
+normalized players, and UTC game time, so indistinguishable games are treated
+conservatively as one. Practice prompts use the verified position after the
+setup move, excluding move counters; repeated prompts use the latest eligible
+completion across attempts and corpus versions. A practice prompt matching an
+eligible game decision counts only through the game, without claiming an
+origin for the practice. At least three independent contexts are required for
+a score. Confidence weights
 decay with a 90-day half-life over whole UTC days; the horizon is 365 days.
 Uncertainty is `1 / (1 + effective weight)`. The 30-day trend is unknown when
 there are not both recent and older contexts. A result with insufficient
 contexts has no score and marks any prior cached score stale while retaining
 its event history. This is a descriptive heuristic, not a calibrated ability
-or centipawn-loss measure. Verified practice completions are not yet included
-in this checkpoint.
+or centipawn-loss measure. Training evidence must be explicitly accepted,
+directly linked to a verified completion, and supported by its immutable
+session and terminal event; a self-rating alone is not mastery evidence.

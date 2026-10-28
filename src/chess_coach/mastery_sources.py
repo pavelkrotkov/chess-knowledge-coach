@@ -7,8 +7,8 @@ from .db import Database
 
 def evidence_rows(db: Database, subject: str, skill: str, operation: str):
     return db.connection.execute(
-        """SELECT e.id, e.position_id, e.subject, e.operation, e.outcome, e.confidence, e.observation_at,
-                  e.human_validated, e.source_provenance, e.mapping_run_id,
+        """SELECT e.id, e.position_id, e.subject, e.skill, e.operation, e.outcome, e.confidence, e.observation_at,
+                  e.human_validated, e.source_provenance, e.mapping_run_id, e.mapper_version,
                   r.status AS mapping_status, r.subject AS mapping_subject,
                   r.operation AS mapping_operation, r.position_id AS mapping_position,
                   p.game_id, p.ply, g.source, g.source_id,

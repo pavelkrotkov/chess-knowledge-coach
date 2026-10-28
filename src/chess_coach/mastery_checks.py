@@ -1,6 +1,6 @@
 """Check review, mapping, and linked-source eligibility."""
 
-from .mastery_provenance import is_pending_training, valid_confidence, valid_links
+from .mastery_provenance import is_pending_training, training_reason, valid_confidence, valid_links
 
 
 def basic_reason(row, subject: str) -> str | None:
@@ -9,7 +9,7 @@ def basic_reason(row, subject: str) -> str | None:
     if row["review_decision"] != "accept" or row["human_validated"] != 1:
         return _review_reason(row)
     if is_pending_training(row):
-        return "training_context_unavailable"
+        return training_reason(row)
     if row["mapping_run_id"] is None or row["mapping_status"] != "active":
         return "superseded_or_unscoped"
     return _content_reason(row)

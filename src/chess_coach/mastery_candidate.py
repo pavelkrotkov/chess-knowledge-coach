@@ -8,7 +8,9 @@ from typing import cast
 from .db import Database
 from .mastery_checks import basic_reason
 from .mastery_game_context import game_context
+from .mastery_provenance import is_pending_training
 from .mastery_time import parse_utc
+from .mastery_training_context import training_context
 
 HORIZON_DAYS = 365
 
@@ -21,7 +23,9 @@ def prepare_candidate(db: Database, row, subject: str, as_of: datetime, cache: d
     reason = _time_reason(observed, as_of)
     if reason is not None:
         return None, reason
-    context, reason = game_context(db, row, cache)
+    context, reason = (
+        training_context(db, row) if is_pending_training(row) else game_context(db, row, cache)
+    )
     if reason is not None:
         return None, reason
     observed = cast(datetime, observed)
@@ -34,7 +38,7 @@ def prepare_candidate(db: Database, row, subject: str, as_of: datetime, cache: d
         "observed_at": observed.isoformat(),
         "age_days": age,
         "context": context,
-        "ply": row["ply"],
+        "ply": row["ply"] if row["ply"] is not None else 0,
     }
     return item, None
 

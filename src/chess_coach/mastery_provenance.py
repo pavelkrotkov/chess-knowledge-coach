@@ -27,3 +27,15 @@ def valid_links(row) -> bool:
 
 def is_pending_training(row) -> bool:
     return row["position_id"] is None and row["source_provenance"] == "training_attempt"
+
+
+def training_reason(row) -> str | None:
+    if row["mapping_run_id"] is not None:
+        return "unproven_source"
+    if row["outcome"] not in {"success", "failure"}:
+        return "ambiguous"
+    if not valid_confidence(row["confidence"]):
+        return "invalid_confidence"
+    if not isinstance(row["review_actor"], str) or not row["review_actor"].strip():
+        return "unproven_source"
+    return None

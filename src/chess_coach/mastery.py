@@ -47,7 +47,7 @@ def update_mastery(
             "horizon_days": 365,
             "heuristic": True,
             "exclusions": exclusions,
-            "training_context_supported": False,
+            "training_context_supported": True,
         }
         if values["status"] == "insufficient":
             if state is not None:

@@ -28,6 +28,8 @@ def game_context(db: Database, row, cache: dict[int, dict[int, dict[str, object]
         return None, "observation_time_mismatch"
     return {
         "kind": "game",
+        "prompt_fen": decision["prompt_fen"],
+        "game_key": decision["game_key"],
         "game_id": game_id,
         "source": row["source"],
         "source_id": row["source_id"],

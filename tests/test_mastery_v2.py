@@ -14,7 +14,7 @@ NOW = datetime(2026, 10, 1, 12, tzinfo=UTC)
 
 
 def add_game(db, number, age, outcome="success", ply=1, subject="learner", producer="detector"):
-    when = NOW - timedelta(days=age)
+    when = NOW - timedelta(days=age, seconds=number)
     pgn = f"""[Event "Synthetic {number}"]
 [White "Learner"]
 [Black "Opponent"]
@@ -174,7 +174,7 @@ def test_multiple_game_plies_and_producers_count_as_one_context():
                     "confidence": 1,
                     "fact_ids": facts["fact_ids"],
                     "context": {},
-                    "observation_at": (NOW - timedelta(days=1)).isoformat(),
+                    "observation_at": (NOW - timedelta(days=1, seconds=1)).isoformat(),
                 }
             ],
         )
