@@ -245,3 +245,51 @@ def test_final_checkmate_board_is_not_an_extra_decision(monkeypatch):
     ).fetchone()[0]
     assert chess.Board(last_fen).is_checkmate()
     assert all(not board.is_game_over() for board in engine.boards)
+
+
+def test_merge_uninitialized_v1_source_preserves_legacy_outputs_and_source(tmp_path):
+    source_path = tmp_path / "legacy.sqlite"
+    legacy = SCHEMA.replace("    decision_fen TEXT, score_pov TEXT\n", "").replace(
+        "    pv TEXT, nodes INTEGER, depth INTEGER,\n",
+        "    pv TEXT, nodes INTEGER, depth INTEGER\n",
+    )
+    setup = Database(source_path)
+    setup.connection.executescript(legacy)
+    setup.connection.execute("PRAGMA user_version = 1")
+    ingest_pgn(setup, PGN)
+    setup.connection.execute(
+        "INSERT INTO analysis_runs (game_id, engine, engine_version, config_json) "
+        "VALUES (1, 'legacy', 'v1', '{}')"
+    )
+    setup.connection.executemany(
+        "INSERT INTO engine_outputs (run_id, position_id, score_cp) VALUES (1, ?, ?)",
+        [(1, 42), (2, -25)],
+    )
+    setup.connection.commit()
+    setup.close()
+    before = source_path.read_bytes()
+    source = Database(source_path)  # A read source need not be migrated.
+    target = database()
+    incomplete_target = database()
+    incomplete_target.connection.execute("DELETE FROM positions WHERE game_id = 1 AND ply = 2")
+    incomplete_target.connection.commit()
+
+    with pytest.raises(ValueError, match="missing ply 2"):
+        merge_analysis_outputs(incomplete_target, source)
+    assert (
+        incomplete_target.connection.execute("SELECT COUNT(*) FROM analysis_runs").fetchone()[0]
+        == 0
+    )
+    assert (
+        incomplete_target.connection.execute("SELECT COUNT(*) FROM engine_outputs").fetchone()[0]
+        == 0
+    )
+
+    assert merge_analysis_outputs(target, source) == 2
+    rows = target.connection.execute(
+        "SELECT score_cp, decision_fen, score_pov FROM engine_outputs ORDER BY id"
+    ).fetchall()
+    assert [tuple(row) for row in rows] == [(42, None, None), (-25, None, None)]
+    assert source.connection.execute("PRAGMA user_version").fetchone()[0] == 1
+    assert source_path.read_bytes() == before
+    source.close()

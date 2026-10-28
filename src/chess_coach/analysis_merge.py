@@ -47,6 +47,7 @@ def merge_analysis_outputs(target: Database, source: Database) -> int:
                 (run["id"],),
             ).fetchall()
             for output in outputs:
+                output_fields = dict(output)
                 position = target.connection.execute(
                     "SELECT id FROM positions WHERE game_id = ? AND ply = ?",
                     (game["id"], output["ply"]),
@@ -70,8 +71,8 @@ def merge_analysis_outputs(target: Database, source: Database) -> int:
                         output["pv"],
                         output["nodes"],
                         output["depth"],
-                        output["decision_fen"],
-                        output["score_pov"],
+                        output_fields.get("decision_fen"),
+                        output_fields.get("score_pov"),
                     ),
                 )
                 imported += 1
