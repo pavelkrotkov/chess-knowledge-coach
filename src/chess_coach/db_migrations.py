@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import sqlite3
 
+from .analysis_schema import add_decision_columns
 from .db_evidence import rebuild_evidence
 
-CURRENT_VERSION = 1
+CURRENT_VERSION = 2
 COLUMNS = {
     "games": {"variant": "TEXT NOT NULL DEFAULT 'Standard'", "termination": "TEXT"},
     "evidence_mappings": {
@@ -61,6 +62,9 @@ def upgrade(connection: sqlite3.Connection, schema: str) -> None:
         if version < 1:
             upgrade_v1(connection, schema)
             connection.execute("PRAGMA user_version = 1")
+        if version < 2:
+            add_decision_columns(connection)
+            connection.execute("PRAGMA user_version = 2")
         connection.commit()
     except Exception:
         connection.rollback()

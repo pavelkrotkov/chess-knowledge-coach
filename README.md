@@ -88,6 +88,18 @@ from chess_coach.db import Database
 
 The GitHub issue tracker contains the implementation issues for the remaining build-order steps, including Lichess API sync, opening/structure datasets, detector validation, puzzle indexing, FSRS training, Maia enrichment, and explanation/publishing adapters.
 
+## Engine decision provenance
+
+Each stored position remains the board after its recorded move. Engine analysis
+reconstructs the board before that move from the game PGN, verifies it against
+the stored position, and records it as decision_fen. The played and best moves
+refer to that same board. The score_cp value is from the mover indicated by
+score_pov (white or black); mate scores use the stored run configuration
+convention (mate_score 100000). An unavailable score or best move is NULL. Older
+outputs whose decision and perspective were not recorded retain NULL provenance
+and should not be treated as corrected analysis. A failed run commits no partial
+outputs. Engine evaluations are not mastery evidence.
+
 ## Database upgrades
 
 Startup applies ordered schema upgrades atomically and records their version in
