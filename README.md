@@ -163,6 +163,15 @@ deleting their event history. Callers composing fact and mapping writes can use
 the in-transaction mapping primitive in the same transaction as the detector
 primitive; callers own commit and rollback.
 
+## Scheduler provenance
+
+Training attempts record the installed FSRS version and actual scheduler
+parameters, including learning steps, retention, interval limit, and fuzzing.
+Review durations are accepted in integer seconds and converted to milliseconds
+for FSRS. Review times must be timezone-aware and cannot precede the previous
+review; they are stored in UTC. Existing records without saved scheduler
+configuration retain an unknown value.
+
 ## Structure and opening history
 
 Structure extraction and opening classification retain immutable generations.
@@ -199,10 +208,11 @@ of source lines. When V or L is zero, Radon returns 100. Multiline strings do
 not count as comments; ordinary comment tokens, including inline comments, do.
 Do not add comments merely to improve the score.
 
-Existing modules exceed the limits. CI and pre-commit use `--report-only` to
-expose the baseline without claiming enforcement; it still fails for unreadable
-or missing source and analysis errors. Global enforcement and remediation remain
-tracked in [issue #29](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/29).
+CI and pre-commit enforce these thresholds with `--check`. The optional
+`--report-only` mode remains available for diagnosis and still fails on missing,
+unreadable, or invalid source. This is an early enforcement checkpoint; final
+verification after the remaining release work is tracked in
+[issue #29](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/29).
 
 ## Verified puzzle practice
 

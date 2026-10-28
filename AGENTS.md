@@ -16,7 +16,7 @@ uv run pytest --cov
 uv run ruff check .
 uv run ruff format --check .
 uv run ty check
-uv run python -m scripts.quality --report-only
+uv run python -m scripts.quality --check
 uv run pip-audit
 uv run pre-commit run --all-files
 ```
@@ -38,6 +38,6 @@ Use `README.md`, `kg.md`, and `docs/adr/ADR.md` for the existing domain and deci
 
 Work in small, reviewable slices on gh-stack layers. The final commit requires
 independent review and passing CI. Production Python must meet CC <= 8 per callable
-and MI > 50 per module; see the metric policy in `README.md`. Until issue #29
-is complete, the shared hook and CI report the baseline rather than enforcing it;
-run `uv run python -m scripts.quality --check` to see the outstanding failures.
+and MI > 50 per module; see the metric policy in `README.md`. CI and pre-commit
+enforce these thresholds. Issue #29 remains open for final verification after the
+remaining release work.
