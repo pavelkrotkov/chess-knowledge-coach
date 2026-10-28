@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 
 from .recovery_copy import copy_database
-from .recovery_paths import recovery_paths
+from .recovery_paths import ensure_no_companions, recovery_paths
 from .recovery_verify import require_standalone
 
 
@@ -50,14 +50,16 @@ def _publish(temporary: Path, target: Path) -> None:
     directory = os.open(target.parent, os.O_RDONLY | os.O_DIRECTORY)
     linked = False
     try:
+        ensure_no_companions(target)
         os.link(temporary, target)
         linked = True
+        ensure_no_companions(target)
         os.fsync(directory)
-    except FileExistsError:
-        raise FileExistsError("destination already exists") from None
-    except BaseException:
+    except BaseException as exc:
         if linked and target.exists() and os.path.samefile(temporary, target):
             target.unlink()
+        if isinstance(exc, FileExistsError):
+            raise FileExistsError("destination or SQLite companion already exists") from None
         raise
     finally:
         os.close(directory)

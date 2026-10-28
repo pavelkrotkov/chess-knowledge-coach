@@ -206,7 +206,10 @@ Both paths must be inside the explicitly selected project root. The source is
 opened read-only, and SQLite's online backup API captures a consistent copy
 including committed WAL data. The copy is checked with `integrity_check` and
 `foreign_key_check` before publication; the new file has owner-only permissions.
-An existing destination is never overwritten. Temporary files are created in
+An existing destination or its SQLite journal, WAL, or shared-memory companion
+is never overwritten. Keep exclusive control of the destination directory while
+the operation runs so another process cannot create a companion afterward.
+Temporary files are created in
 the destination directory and cleaned up after completion or a handled failure.
 Restoring does not replace the original database or run schema migrations. It
 requires a standalone rollback-journal backup, such as one produced by

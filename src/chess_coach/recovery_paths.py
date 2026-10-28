@@ -29,4 +29,12 @@ def _new_target(destination: str | Path) -> Path:
     target = parent / destination_input.name
     if target.exists() or target.is_symlink():
         raise FileExistsError("destination already exists")
+    ensure_no_companions(target)
     return target
+
+
+def ensure_no_companions(target: Path) -> None:
+    for suffix in ("-journal", "-wal", "-shm"):
+        companion = Path(str(target) + suffix)
+        if companion.exists() or companion.is_symlink():
+            raise FileExistsError("destination SQLite companion already exists")

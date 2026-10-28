@@ -342,3 +342,93 @@ def test_restore_rejects_wal_mode_source_without_creating_sidecars(tmp_path):
     assert not Path(str(source) + "-wal").exists()
     assert not Path(str(source) + "-shm").exists()
     assert not target.exists()
+
+
+@pytest.mark.parametrize("operation", [backup_database, restore_database])
+@pytest.mark.parametrize("suffix", ["-journal", "-wal", "-shm"])
+def test_existing_sqlite_companion_blocks_publication(tmp_path, operation, suffix):
+    source = tmp_path / "source.sqlite"
+    with sqlite3.connect(source) as db:
+        db.execute("CREATE TABLE sample(id INTEGER)")
+    target = tmp_path / "restored.sqlite"
+    companion = Path(str(target) + suffix)
+    companion.write_bytes(b"preserve-existing-companion")
+    with pytest.raises(FileExistsError, match="companion"):
+        operation(source, target, project_root=tmp_path)
+    assert companion.read_bytes() == b"preserve-existing-companion"
+    assert not target.exists()
+    assert not list(tmp_path.glob(".chess-recovery-*"))
+
+
+def test_hot_rollback_journal_blocks_restore_without_altering_artifacts(tmp_path):
+    source = tmp_path / "source.sqlite"
+    with sqlite3.connect(source) as db:
+        db.execute("CREATE TABLE safe(value TEXT)")
+        db.execute("INSERT INTO safe VALUES ('backup-data')")
+    target = tmp_path / "restore.sqlite"
+    script = """import os, sqlite3, sys
+db = sqlite3.connect(sys.argv[1])
+db.execute('PRAGMA journal_mode=DELETE')
+db.execute('PRAGMA cache_size=1')
+db.execute('CREATE TABLE previous(data BLOB)')
+db.executemany('INSERT INTO previous VALUES (?)', [(bytes(4000),)] * 100)
+db.commit()
+db.execute('BEGIN IMMEDIATE')
+db.execute('UPDATE previous SET data=randomblob(4000)')
+os._exit(0)
+"""
+    subprocess.run([sys.executable, "-c", script, str(target)], check=True)
+    journal = Path(str(target) + "-journal")
+    original = journal.read_bytes()
+    assert original[:8] == bytes.fromhex("d9d505f920a163d7")
+    target.unlink()  # Remove only the synthetic crashed fixture's main file.
+    before = source.read_bytes()
+    with pytest.raises(FileExistsError, match="companion"):
+        restore_database(source, target, project_root=tmp_path)
+    assert journal.read_bytes() == original and source.read_bytes() == before
+    assert not target.exists()
+
+
+@pytest.mark.parametrize("phase", ["before-link", "after-link"])
+def test_companion_created_during_publication_fails_without_removing_it(
+    tmp_path, monkeypatch, phase
+):
+    from chess_coach import recovery
+
+    source = tmp_path / "source.sqlite"
+    with sqlite3.connect(source) as db:
+        db.execute("CREATE TABLE sample(id INTEGER)")
+    target = tmp_path / "new.sqlite"
+    companion = Path(str(target) + "-journal")
+    original_copy = recovery.copy_database
+    original_link = recovery.os.link
+
+    def racing_copy(source_path, temporary):
+        original_copy(source_path, temporary)
+        companion.write_bytes(b"concurrent journal")
+
+    def racing_link(source_path, destination_path):
+        original_link(source_path, destination_path)
+        companion.write_bytes(b"concurrent journal")
+
+    if phase == "before-link":
+        monkeypatch.setattr(recovery, "copy_database", racing_copy)
+    else:
+        monkeypatch.setattr(recovery.os, "link", racing_link)
+    with pytest.raises(FileExistsError, match="companion"):
+        restore_database(source, target, project_root=tmp_path)
+    assert companion.read_bytes() == b"concurrent journal"
+    assert not target.exists()
+    assert not list(tmp_path.glob(".chess-recovery-*"))
+
+
+def test_dangling_sqlite_companion_symlink_is_not_overwritten(tmp_path):
+    source = tmp_path / "source.sqlite"
+    with sqlite3.connect(source) as db:
+        db.execute("CREATE TABLE sample(id INTEGER)")
+    target = tmp_path / "new.sqlite"
+    companion = Path(str(target) + "-wal")
+    companion.symlink_to(tmp_path / "missing")
+    with pytest.raises(FileExistsError, match="companion"):
+        backup_database(source, target, project_root=tmp_path)
+    assert companion.is_symlink() and not target.exists()
