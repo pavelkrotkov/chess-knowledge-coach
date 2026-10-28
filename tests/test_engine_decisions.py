@@ -214,7 +214,7 @@ def test_upgrade_from_v1_keeps_old_engine_decision_unknown():
         "SELECT score_cp, decision_fen, score_pov FROM engine_outputs"
     ).fetchone()
     assert tuple(output) == (10, None, None)
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 12
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 13
 
 
 @pytest.mark.skipif(not Path("/usr/games/stockfish").is_file(), reason="Stockfish not installed")

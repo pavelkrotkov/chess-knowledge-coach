@@ -3,6 +3,7 @@
 from . import cli_commands_datasets as datasets
 from . import cli_commands_games as games
 from . import cli_commands_learning as learning
+from . import cli_curriculum as curriculum
 from .cli_parser import build_parser
 from .db import Database
 
@@ -29,6 +30,7 @@ COMMANDS = {
     "due-training": learning.handle_due_training,
     "review-training": learning.handle_review_training,
     "evidence-report": learning.handle_evidence_report,
+    "daily-plan": curriculum.handle_daily_plan,
     "start-puzzle": learning.handle_start_puzzle,
     "show-puzzle": learning.handle_show_puzzle,
     "play-puzzle": learning.handle_play_puzzle,

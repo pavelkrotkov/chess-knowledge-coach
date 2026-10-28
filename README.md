@@ -214,6 +214,27 @@ unreadable, or invalid source. This is an early enforcement checkpoint; final
 verification after the remaining release work is tracked in
 [issue #29](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/29).
 
+## Daily practice plan
+
+`daily-plan` produces a bounded, read-only plan for a runtime learner and
+selected puzzle corpus. It selects supported due items first, then scans puzzles
+in rating and ID order. Every offered puzzle is checked for an immediate legal
+mate by the expected first learner move; themes alone are not proof. Repeated
+prompt positions are included only once in a plan.
+
+```bash
+uv run chess-coach --db coach.sqlite daily-plan corpus-v1 --subject learner --limit 10
+```
+
+The plan reports cold start, insufficient evidence, supported weakness, or no
+supported weakness, along with the eligible supporting evidence IDs once for
+all selections. A mastery score below 0.6 is a transparent planning heuristic,
+not a calibrated diagnosis. Unknown or empty corpora, scan limits, and missing
+new candidates are explicit. A truncated due scan prevents new items from being
+selected until due priority can be resolved. Selecting a plan changes no
+schedule or evidence; create an item and complete it using the verified practice
+flow below. Existing ontology edges describe containment, not prerequisites.
+
 ## Verified puzzle practice
 
 Import a Lichess puzzle CSV with `import-puzzles`, then select a puzzle ID from
