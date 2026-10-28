@@ -22,7 +22,9 @@ def _score(rows: list[Any]) -> tuple[float, float]:
     return score, weight
 
 
-def _observation_time(row: Any) -> datetime:
+def _observation_time(row: Any) -> datetime | None:
+    if row["observation_at"] is None:
+        return None
     try:
         value = datetime.fromisoformat(row["observation_at"])
     except ValueError:
@@ -63,8 +65,16 @@ def update_mastery(
     mastery, evidence_weight = _score(rows)
     uncertainty = 1 / (1 + evidence_weight)
     cutoff = datetime.now(UTC) - timedelta(days=30)
-    recent = [row for row in rows if _observation_time(row) >= cutoff]
-    older = [row for row in rows if _observation_time(row) < cutoff]
+    recent = [
+        row
+        for row in rows
+        if (observed := _observation_time(row)) is not None and observed >= cutoff
+    ]
+    older = [
+        row
+        for row in rows
+        if (observed := _observation_time(row)) is not None and observed < cutoff
+    ]
     recent_score, _ = _score(recent)
     older_score, older_weight = _score(older)
     trend = recent_score - older_score if older_weight else 0.0

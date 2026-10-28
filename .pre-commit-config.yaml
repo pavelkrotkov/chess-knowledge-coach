@@ -29,3 +29,9 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+      - id: quality-metrics
+        name: quality metrics baseline (enforcement pending issue 29)
+        entry: uv run python -m scripts.quality --report-only
+        language: system
+        pass_filenames: false
+        always_run: true

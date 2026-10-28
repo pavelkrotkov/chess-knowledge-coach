@@ -82,7 +82,7 @@ CREATE TABLE IF NOT EXISTS evidence_mappings (
     human_validated INTEGER NOT NULL DEFAULT 0,
     context_json TEXT NOT NULL DEFAULT '{}',
     subject TEXT NOT NULL DEFAULT 'default',
-    observation_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    observation_at TEXT DEFAULT CURRENT_TIMESTAMP,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_evidence_skill ON evidence_mappings(skill, operation);
@@ -230,63 +230,9 @@ class Database:
         self.connection.execute("PRAGMA foreign_keys = ON")
 
     def initialize(self) -> None:
-        self.connection.executescript(SCHEMA)
-        columns = {row[1] for row in self.connection.execute("PRAGMA table_info(games)")}
-        if "variant" not in columns:
-            self.connection.execute(
-                "ALTER TABLE games ADD COLUMN variant TEXT NOT NULL DEFAULT 'Standard'"
-            )
-        if "termination" not in columns:
-            self.connection.execute("ALTER TABLE games ADD COLUMN termination TEXT")
-        evidence_columns = {
-            row[1] for row in self.connection.execute("PRAGMA table_info(evidence_mappings)")
-        }
-        if "human_validated" not in evidence_columns:
-            self.connection.execute(
-                "ALTER TABLE evidence_mappings ADD COLUMN human_validated INTEGER NOT NULL DEFAULT 0"
-            )
-        if "context_json" not in evidence_columns:
-            self.connection.execute(
-                "ALTER TABLE evidence_mappings ADD COLUMN context_json TEXT NOT NULL DEFAULT '{}'"
-            )
-        if "subject" not in evidence_columns:
-            self.connection.execute(
-                "ALTER TABLE evidence_mappings ADD COLUMN subject TEXT NOT NULL DEFAULT 'default'"
-            )
-        if "observation_at" not in evidence_columns:
-            self.connection.execute(
-                "ALTER TABLE evidence_mappings ADD COLUMN observation_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP"
-            )
-        analysis_columns = {
-            row[1] for row in self.connection.execute("PRAGMA table_info(analysis_runs)")
-        }
-        for column, definition in {
-            "binary_path": "TEXT NOT NULL DEFAULT ''",
-            "binary_version": "TEXT NOT NULL DEFAULT ''",
-            "nnue": "TEXT NOT NULL DEFAULT ''",
-            "compatibility_json": "TEXT NOT NULL DEFAULT '{}'",
-        }.items():
-            if column not in analysis_columns:
-                if column not in {"binary_path", "binary_version", "nnue", "compatibility_json"}:
-                    raise ValueError(f"unexpected analysis schema column: {column}")
-                self.connection.execute(
-                    f"ALTER TABLE analysis_runs ADD COLUMN {column} {definition}"
-                )
-        output_columns = {
-            row[1] for row in self.connection.execute("PRAGMA table_info(engine_outputs)")
-        }
-        if "multipv" not in output_columns:
-            self.connection.execute(
-                "ALTER TABLE engine_outputs ADD COLUMN multipv INTEGER NOT NULL DEFAULT 1"
-            )
-        maia_columns = {
-            row[1] for row in self.connection.execute("PRAGMA table_info(maia_predictions)")
-        }
-        if "conditioning_elo" not in maia_columns:
-            self.connection.execute(
-                "ALTER TABLE maia_predictions ADD COLUMN conditioning_elo INTEGER"
-            )
-        self.connection.commit()
+        from .db_migrations import upgrade
+
+        upgrade(self.connection, SCHEMA)
 
     def close(self) -> None:
         self.connection.close()

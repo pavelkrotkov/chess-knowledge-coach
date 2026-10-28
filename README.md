@@ -87,3 +87,33 @@ from chess_coach.db import Database
 ## Roadmap / glue work
 
 The GitHub issue tracker contains the implementation issues for the remaining build-order steps, including Lichess API sync, opening/structure datasets, detector validation, puzzle indexing, FSRS training, Maia enrichment, and explanation/publishing adapters.
+
+## Database upgrades
+
+Startup applies ordered schema upgrades atomically and records their version in
+SQLite `user_version`. Existing observation timestamps are retained. When a
+legacy evidence record has no observation timestamp, the value is NULL rather
+than a guessed date, and that record is excluded from temporal trend comparisons.
+An unsupported newer database version is rejected without modification.
+
+## Code quality metrics
+
+`uv run python -m scripts.quality --check` uses pinned Radon 6.0.1 to check all
+production Python, including operational scripts and the checker. It reports
+cyclomatic complexity (CC <= 8) for each callable and maintainability index
+(MI > 50) for each module. Nested and async functions, methods, and lambdas are
+included. Tests, the virtual environment, and Git internals are not production
+code. Missing required source, unreadable files, and parse errors fail either mode.
+
+MI uses Radon `mi_visit(source, multi=False)`: its normalized, clamped 0–100
+formula is `100/171 * (171 - 5.2 ln(V) - 0.23 G - 16.2 ln(L) +
+50 sin(sqrt(2.46 radians(C))))`, where V is Halstead volume, G is total
+Radon complexity, L is logical lines, and C is comment tokens as a percentage
+of source lines. When V or L is zero, Radon returns 100. Multiline strings do
+not count as comments; ordinary comment tokens, including inline comments, do.
+Do not add comments merely to improve the score.
+
+Existing modules exceed the limits. CI and pre-commit use `--report-only` to
+expose the baseline without claiming enforcement; it still fails for unreadable
+or missing source and analysis errors. Global enforcement and remediation remain
+tracked in [issue #29](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/29).
