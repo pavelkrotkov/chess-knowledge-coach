@@ -209,12 +209,21 @@ def test_window_import_failure_rolls_back_all_games_and_resumes(monkeypatch):
     assert db.connection.execute("SELECT COUNT(*) FROM games").fetchone()[0] == 2
 
 
-def test_invalid_game_does_not_log_player_headers(caplog):
+def test_invalid_game_does_not_log_player_headers(caplog, monkeypatch):
+    from chess_coach.lichess_support import headers
+
     invalid = game("invalid1", NOW - 1).replace('[White "A"]', '[White "Sample Player"]')
     invalid = invalid.replace("1. e4 e5", "1. e4 e5 2. Ke3")
-    with pytest.raises(ValueError, match="invalid"):
-        parse_page(invalid)
+    with caplog.at_level("ERROR", logger="chess.pgn"):
+        assert headers(invalid)["White"] == "Sample Player"
+        with pytest.raises(ValueError, match="invalid"):
+            parse_page(invalid)
+        db, _, client = db_and_client(monkeypatch, [(NOW - 1, invalid)])
+        with pytest.raises(LichessError) as error:
+            client.sync_user(db, "learner")
     assert "Sample Player" not in caplog.text
+    assert "Sample Player" not in str(error.value)
+    assert db.connection.execute("SELECT COUNT(*) FROM games").fetchone()[0] == 0
 
 
 def test_progress_conflict_rolls_back_imported_window(monkeypatch):
