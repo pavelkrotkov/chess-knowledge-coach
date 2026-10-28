@@ -4,10 +4,13 @@ from . import cli_commands_datasets as datasets
 from . import cli_commands_games as games
 from . import cli_commands_learning as learning
 from . import cli_curriculum as curriculum
+from . import cli_pipeline
 from .cli_parser import build_parser
 from .db import Database
 
 COMMANDS = {
+    "process-pipeline": cli_pipeline.handle_process_pipeline,
+    "pipeline-status": cli_pipeline.handle_pipeline_status,
     "init-db": games.handle_init_db,
     "ingest-pgn": games.handle_ingest_pgn,
     "analyze-game": games.handle_analyze_game,

@@ -18,6 +18,7 @@ def map_decision(
     detector_run: dict[str, Any],
     fact: dict[str, Any] | None,
     ontology_version: str,
+    pipeline_generation: int | None = None,
 ) -> dict[str, object]:
     assessment = assess_fact(db, decision["position_id"], fact) if fact is not None else None
     if detector_run["status"] != "active":
@@ -33,6 +34,13 @@ def map_decision(
     items = (
         [] if assessment is None else [_mapping_item(decision, detector_run, context, assessment)]
     )
+    input_data = {
+        "context": context,
+        "assessment": assessment,
+        "observation_at": decision["observation_at"],
+    }
+    if pipeline_generation is not None:
+        input_data["pipeline_generation"] = pipeline_generation
     run = record_mapping_run_in_transaction(
         db,
         position_id=decision["position_id"],
@@ -41,11 +49,7 @@ def map_decision(
         subject=decision["subject"],
         operation="execute",
         scope_key=SCOPE,
-        input_data={
-            "context": context,
-            "assessment": assessment,
-            "observation_at": decision["observation_at"],
-        },
+        input_data=input_data,
         mappings=items,
     )
     if assessment is None:

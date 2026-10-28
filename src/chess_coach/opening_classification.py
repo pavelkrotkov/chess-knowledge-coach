@@ -16,13 +16,16 @@ def classify_game(
     version: str,
     source_url: str,
     classifier_version: str = CLASSIFIER_VERSION,
+    pipeline_generation: int | None = None,
 ) -> dict[str, object]:
     if not isinstance(classifier_version, str) or not classifier_version.strip():
         raise ValueError("classifier version must be nonempty")
     with classification_transaction(db):
         dataset_id = _dataset_for_game(db, game_id, version, source_url)
         best = _best_match(db, game_id, dataset_id)
-        return persist_opening(db, game_id, dataset_id, classifier_version, best)
+        return persist_opening(
+            db, game_id, dataset_id, classifier_version, best, pipeline_generation
+        )
 
 
 def _dataset_for_game(db: Database, game_id: int, version: str, source_url: str) -> int:

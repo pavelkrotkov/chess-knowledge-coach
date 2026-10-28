@@ -7,8 +7,19 @@ from .fact_fingerprint import canonical, digest
 from .structure_features import _structure_names
 
 
-def persist_episodes(db: Database, game_id: int, version: str, rows, episodes: list) -> int:
+def persist_episodes(
+    db: Database,
+    game_id: int,
+    version: str,
+    rows,
+    episodes: list,
+    pipeline_generation: int | None = None,
+) -> int:
     input_hash = digest(canonical([list(row) for row in rows]))
+    if pipeline_generation is not None:
+        input_hash = digest(
+            canonical({"base": input_hash, "pipeline_generation": pipeline_generation})
+        )
     output_hash = digest(canonical(episodes))
     old = db.connection.execute(
         """SELECT * FROM structure_runs WHERE game_id = ? AND detector_version = ?
@@ -19,7 +30,7 @@ def persist_episodes(db: Database, game_id: int, version: str, rows, episodes: l
         if old["output_hash"] != output_hash:
             raise ValueError("structure output changed for the same input and detector version")
         return len(episodes)
-    run_id, now = _append_run(db, game_id, version, input_hash, output_hash)
+    run_id, now = _append_run(db, game_id, version, input_hash, output_hash, pipeline_generation)
     for start, end, features in episodes:
         db.connection.execute(
             """INSERT INTO structure_episodes
@@ -40,7 +51,12 @@ def persist_episodes(db: Database, game_id: int, version: str, rows, episodes: l
 
 
 def _append_run(
-    db: Database, game_id: int, version: str, input_hash: str, output_hash: str
+    db: Database,
+    game_id: int,
+    version: str,
+    input_hash: str,
+    output_hash: str,
+    pipeline_generation: int | None,
 ) -> tuple[int, str]:
     old = db.connection.execute(
         "SELECT id FROM structure_runs WHERE game_id = ? AND status = 'active'", (game_id,)
@@ -52,8 +68,16 @@ def _append_run(
     now = datetime.now(UTC).isoformat()
     cursor = db.connection.execute(
         """INSERT INTO structure_runs(game_id, detector_version, input_hash, output_hash,
-        produced_at, status, supersedes_run_id) VALUES (?, ?, ?, ?, ?, 'active', ?)""",
-        (game_id, version, input_hash, output_hash, now, old["id"] if old else None),
+        produced_at, status, supersedes_run_id, pipeline_generation) VALUES (?, ?, ?, ?, ?, 'active', ?, ?)""",
+        (
+            game_id,
+            version,
+            input_hash,
+            output_hash,
+            now,
+            old["id"] if old else None,
+            pipeline_generation,
+        ),
     )
     if cursor.lastrowid is None:
         raise RuntimeError("SQLite did not return a structure run ID")
