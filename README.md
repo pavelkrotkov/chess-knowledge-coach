@@ -502,5 +502,8 @@ strips incoming spoofed identity headers before supplying its own identity;
 the socket directory and its account must remain private because local processes
 with socket access are trusted. Requests with missing or mismatched identity
 or host are rejected, and state changes require the exact origin and a session
-CSRF token. The signing key is process-local, so sessions expire on restart.
+CSRF token. The signing key is process-local, so sessions expire on restart. A private
+lifetime lock prevents overlapping browser instances; on Linux a stale owned
+socket is reclaimed only if no process has it bound. Unexpected paths are left
+untouched.
 This command does not configure Tailscale Serve or install a service.

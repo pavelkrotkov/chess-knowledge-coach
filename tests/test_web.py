@@ -283,3 +283,156 @@ def test_illegal_move_preserves_active_attempt(setup):
     assert db.connection.execute("SELECT status FROM puzzle_sessions").fetchone()[0] == "active"
     assert db.connection.execute("SELECT COUNT(*) FROM training_completions").fetchone()[0] == 0
     db.close()
+
+
+def test_restart_after_process_death_reclaims_only_its_stale_socket():
+    import socket
+    import subprocess
+    import sys
+    import tempfile
+
+    from chess_coach.web_socket import browser_socket
+
+    with tempfile.TemporaryDirectory(prefix="socket-") as directory:
+        path = Path(directory) / "web.sock"
+        script = "import socket,sys,time; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); print('ready',flush=True); time.sleep(60)"
+        proc = subprocess.Popen(
+            [sys.executable, "-c", script, str(path)],
+            stdout=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            assert proc.stdout is not None and proc.stdout.readline().strip() == "ready"
+            with pytest.raises(ValueError, match="already in use"), browser_socket(path):
+                pass
+            assert path.is_socket()
+        finally:
+            proc.kill()
+            proc.wait(timeout=5)
+            if proc.stdout is not None:
+                proc.stdout.close()
+        assert path.is_socket()
+        with browser_socket(path):
+            assert not path.exists()
+            replacement = socket.socket(socket.AF_UNIX)
+            replacement.bind(str(path))
+            replacement.listen(1)
+            try:
+                with pytest.raises(ValueError, match="lock"), browser_socket(path):
+                    pass
+            finally:
+                replacement.close()
+
+
+@pytest.mark.parametrize("kind", ["regular", "symlink", "foreign_socket"])
+def test_existing_unrelated_socket_paths_are_preserved(tmp_path, monkeypatch, kind):
+    import socket
+
+    from chess_coach import web_socket
+
+    path = tmp_path / "web.sock"
+    bound = None
+    if kind == "regular":
+        path.write_bytes(b"preserve")
+    elif kind == "symlink":
+        path.symlink_to(tmp_path / "missing")
+    else:
+        bound = socket.socket(socket.AF_UNIX)
+        bound.bind(str(path))
+        bound.close()
+        monkeypatch.setattr(web_socket.os, "getuid", lambda: -1)
+        monkeypatch.setattr(web_socket, "_lock", lambda descriptor: None)
+    try:
+        with pytest.raises(ValueError), web_socket.browser_socket(path):
+            pass
+        assert path.is_symlink() if kind == "symlink" else path.exists()
+        if kind == "regular":
+            assert path.read_bytes() == b"preserve"
+    finally:
+        if bound is not None:
+            bound.close()
+
+
+def test_status_reports_retry_deadline(setup, monkeypatch):
+    from chess_coach import web_views
+
+    _, app, _ = setup
+    monkeypatch.setattr(
+        web_views,
+        "pipeline_status",
+        lambda db: {
+            "health": {
+                "status": "waiting",
+                "sync_status": "backoff",
+                "retry_until": "2026-10-28T01:00:00+00:00",
+            },
+            "counts": {},
+            "stages": [],
+        },
+    )
+    page = app.test_client().get("/", base_url=ORIGIN, headers=HEADERS)
+    assert b"Sync resumes after 2026-10-28T01:00:00+00:00 UTC" in page.data
+
+
+def test_web_server_restarts_after_sigkill():
+    import os
+    import socket
+    import subprocess
+    import sys
+    import tempfile
+    import time
+
+    with tempfile.TemporaryDirectory(prefix="web-server-") as directory:
+        root = Path(directory)
+        path = root / "web.sock"
+        db_path = root / "coach.sqlite"
+        db = Database(db_path)
+        db.initialize()
+        db.close()
+        env = os.environ | {
+            "CHESS_PROJECT_ROOT": str(root),
+            "CHESS_DB": str(db_path),
+            "CHESS_WEB_SOCKET": str(path),
+            "CHESS_SUBJECT": "learner",
+            "CHESS_REVIEW_ACTOR": "fixture-reviewer",
+            "CHESS_CORPUS": "fixture-v1",
+            "CHESS_TAILSCALE_LOGIN": LOGIN,
+            "CHESS_WEB_ORIGIN": ORIGIN,
+        }
+
+        def start():
+            proc = subprocess.Popen(
+                [sys.executable, "-m", "chess_coach.web_server"],
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            deadline = time.monotonic() + 10
+            while proc.poll() is None and time.monotonic() < deadline:
+                try:
+                    with socket.socket(socket.AF_UNIX) as probe:
+                        probe.connect(str(path))
+                    return proc
+                except OSError:
+                    time.sleep(0.02)
+            proc.kill()
+            proc.wait(timeout=5)
+            raise AssertionError("browser server did not start")
+
+        first = start()
+        first.kill()
+        first.wait(timeout=5)
+        assert path.is_socket()
+        second = start()
+        try:
+            with socket.socket(socket.AF_UNIX) as client:
+                client.settimeout(5)
+                client.connect(str(path))
+                client.sendall(
+                    b"GET / HTTP/1.1\r\nHost: coach.invalid\r\n"
+                    b"Tailscale-User-Login: fixture-login\r\nConnection: close\r\n\r\n"
+                )
+                assert b"HTTP/1.1 200 OK" in client.recv(4096)
+        finally:
+            second.kill()
+            second.wait(timeout=5)

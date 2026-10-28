@@ -27,3 +27,11 @@ def socket_directory(socket: Path) -> None:
     info = socket.parent.stat()
     if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) & 0o077:
         raise ValueError("browser socket directory must be private and owned by the current user")
+
+
+def socket_location(root: Path, value: str) -> Path:
+    path = Path(value)
+    resolved = path.parent.resolve(strict=True) / path.name
+    if not root.is_dir() or not resolved.is_relative_to(root):
+        raise ValueError("browser paths must be within the selected project")
+    return resolved
