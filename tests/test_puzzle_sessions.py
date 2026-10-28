@@ -209,3 +209,29 @@ def test_failed_event_write_rolls_back_state_and_can_be_retried() -> None:
     db.connection.execute("DROP TRIGGER reject_event")
     db.connection.commit()
     assert submit_move(db, "a1", event_id="m1", move="e7e5")["status"] == "active"
+
+
+def test_opponent_mating_line_is_rejected_before_start() -> None:
+    board = chess.Board()
+    board.push_uci("f2f3")
+    db = database(fen=board.fen(), solution="e7e5 g2g4 d8h4")
+    with pytest.raises(ValueError, match="invalid puzzle"):
+        start_attempt(db, attempt_id="a1", version="v1", puzzle_id="p1")
+    assert db.connection.execute("SELECT COUNT(*) FROM puzzle_sessions").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("solution", ["e7e5 g2g4 d8h4", "e7e5 g2g4 d8h4 e2e4"])
+def test_corrupt_snapshot_opponent_mate_cannot_complete_as_solved(solution) -> None:
+    board = chess.Board()
+    board.push_uci("f2f3")
+    db = database(fen=board.fen(), solution="e7e5 g2g4")
+    initial = start_attempt(db, attempt_id="a1", version="v1", puzzle_id="p1")
+    db.connection.execute(
+        "UPDATE puzzle_sessions SET solution = ? WHERE attempt_id = ?",
+        (solution, "a1"),
+    )
+    db.connection.commit()
+    with pytest.raises(ValueError, match="invalid puzzle"):
+        submit_move(db, "a1", event_id="m1", move="g2g4")
+    assert show_attempt(db, "a1") == initial
+    assert db.connection.execute("SELECT COUNT(*) FROM puzzle_session_events").fetchone()[0] == 0
