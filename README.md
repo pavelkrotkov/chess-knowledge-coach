@@ -88,6 +88,14 @@ from chess_coach.db import Database
 
 The GitHub issue tracker contains the implementation issues for the remaining build-order steps, including Lichess API sync, opening/structure datasets, detector validation, puzzle indexing, FSRS training, Maia enrichment, and explanation/publishing adapters.
 
+## Database upgrades
+
+Startup applies ordered schema upgrades atomically and records their version in
+SQLite `user_version`. Existing observation timestamps are retained. When a
+legacy evidence record has no observation timestamp, the value is NULL rather
+than a guessed date, and that record is excluded from temporal trend comparisons.
+An unsupported newer database version is rejected without modification.
+
 ## Code quality metrics
 
 `uv run python -m scripts.quality --check` uses pinned Radon 6.0.1 to check all
