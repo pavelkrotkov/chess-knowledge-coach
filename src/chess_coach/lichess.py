@@ -8,6 +8,7 @@ from typing import cast
 
 import httpx
 
+from . import __version__
 from .db import Database
 from .lichess_http import HttpClient, fetch_page
 from .lichess_http import LichessError as LichessError
@@ -55,7 +56,13 @@ class LichessClient:
             params["since"] = since
         if until is not None:
             params["until"] = until
-        headers = {"Accept": "application/x-chess-pgn"}
+        headers = {
+            "Accept": "application/x-chess-pgn",
+            "User-Agent": (
+                f"chess-knowledge-coach/{__version__} "
+                "(+https://github.com/pavelkrotkov/chess-knowledge-coach)"
+            ),
+        }
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
         return fetch_page(

@@ -53,6 +53,8 @@ def test_sync_preserves_lichess_metadata_and_is_idempotent() -> None:
 
 
 def test_token_is_sent_only_as_http_header() -> None:
+    from chess_coach import __version__
+
     fake = FakeClient(PGN)
     client = LichessClient(token="secret", client=fake)
 
@@ -62,6 +64,10 @@ def test_token_is_sent_only_as_http_header() -> None:
     assert request["headers"] == {
         "Accept": "application/x-chess-pgn",
         "Authorization": "Bearer secret",
+        "User-Agent": (
+            f"chess-knowledge-coach/{__version__} "
+            "(+https://github.com/pavelkrotkov/chess-knowledge-coach)"
+        ),
     }
     params = request["params"]
     assert isinstance(params, dict)

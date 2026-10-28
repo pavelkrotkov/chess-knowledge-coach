@@ -424,3 +424,39 @@ def test_populated_v3_upgrade_preserves_cursors_and_defaults_fair_turn():
     assert db.connection.execute("SELECT COUNT(*) FROM puzzle_sessions").fetchone()[0] == 0
     assert db.connection.execute("SELECT COUNT(*) FROM puzzle_session_events").fetchone()[0] == 0
     assert db.connection.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+@pytest.mark.parametrize("use_default_client", [True, False])
+def test_export_identifies_application_for_default_and_injected_clients(
+    monkeypatch, use_default_client
+):
+    from importlib.metadata import version
+    from typing import cast
+
+    from chess_coach import __version__
+    from chess_coach.lichess_http import HttpClient
+
+    requests = []
+
+    def handle(request):
+        requests.append(request)
+        return httpx.Response(200, text="")
+
+    http = httpx.Client(transport=httpx.MockTransport(handle))
+    if use_default_client:
+        monkeypatch.setattr("chess_coach.lichess.httpx.Client", lambda **kwargs: http)
+    client = (
+        LichessClient(token="synthetic-token")
+        if use_default_client
+        else LichessClient(token="synthetic-token", client=cast(HttpClient, http))
+    )
+    assert client.export_page("learner") == []
+    assert __version__ == version("chess-knowledge-coach")
+    assert requests[0].headers["user-agent"] == (
+        f"chess-knowledge-coach/{__version__} (+https://github.com/pavelkrotkov/chess-knowledge-coach)"
+    )
+    assert requests[0].headers["accept"] == "application/x-chess-pgn"
+    assert requests[0].headers["authorization"] == "Bearer synthetic-token"
+    assert "learner" not in requests[0].headers["user-agent"]
+    assert "synthetic-token" not in requests[0].headers["user-agent"]
+    http.close()
