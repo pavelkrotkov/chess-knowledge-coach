@@ -477,3 +477,30 @@ superseded output creates a new current generation. Engine outputs and their
 completion checkpoint commit together. Untimed or unassigned decisions do not
 produce learner tactical candidates. Candidate evidence still requires an
 explicit review before it can contribute to mastery.
+
+
+## Private browser tutor
+
+The browser process reuses the existing evidence review, curriculum, puzzle,
+and scheduler services. It requires a pre-existing database and does not run
+the background worker. Configure these environment variables in a private
+runtime environment (not in the repository):
+
+- `CHESS_PROJECT_ROOT`: selected project folder.
+- `CHESS_DB`: existing SQLite database inside that folder.
+- `CHESS_WEB_SOCKET`: new Unix socket path inside a user-owned directory with
+  mode 0700; the socket is created with mode 0600.
+- `CHESS_SUBJECT`, `CHESS_REVIEW_ACTOR`, `CHESS_CORPUS`: the configured
+  learner, explicit review actor, and imported puzzle corpus version.
+- `CHESS_TAILSCALE_LOGIN`: the single allowed exact Tailscale login.
+- `CHESS_WEB_ORIGIN`: the exact externally served HTTPS origin, including
+  the port if present, without a trailing slash.
+
+Run `uv run python -m chess_coach.web_server` with those values configured.
+Proxy the Unix socket with Tailscale Serve, not a TCP listener or Funnel. Serve
+strips incoming spoofed identity headers before supplying its own identity;
+the socket directory and its account must remain private because local processes
+with socket access are trusted. Requests with missing or mismatched identity
+or host are rejected, and state changes require the exact origin and a session
+CSRF token. The signing key is process-local, so sessions expire on restart.
+This command does not configure Tailscale Serve or install a service.

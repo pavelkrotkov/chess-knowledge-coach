@@ -1,0 +1,40 @@
+"""Create a private browser application over the existing domain services."""
+
+import secrets
+from pathlib import Path
+
+from flask import Flask, g
+
+from .web_config import validate_config
+from .web_practice import practice
+from .web_security import install_security
+from .web_views import views
+
+
+def create_app(
+    *, db_path: str | Path, subject: str, actor: str, corpus: str, login: str, origin: str
+) -> Flask:
+    host = validate_config(subject, actor, corpus, login, origin)
+    app = Flask(__name__)
+    app.config.update(
+        SECRET_KEY=secrets.token_bytes(32),
+        SESSION_COOKIE_SECURE=True,
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Strict",
+        MAX_CONTENT_LENGTH=16384,
+        DB_PATH=str(db_path),
+        SUBJECT=subject,
+        ACTOR=actor,
+        CORPUS=corpus,
+    )
+    install_security(app, login, origin, host)
+    app.register_blueprint(views)
+    app.register_blueprint(practice)
+
+    @app.teardown_appcontext
+    def close_database(error):
+        db = g.pop("db", None)
+        if db is not None:
+            db.close()
+
+    return app
