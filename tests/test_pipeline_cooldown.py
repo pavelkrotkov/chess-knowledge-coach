@@ -384,3 +384,127 @@ def test_interrupt_during_deadline_transaction_retries_before_exit(
     assert health["sync_status"] == "waiting" and health["sync_detail"] == "server_backoff"
     resumed = process_pipeline(reopened, config, transport=transport, clock=clock)
     assert resumed["sync"]["status"] == "waiting" and len(calls) == 1
+
+
+def test_due_retry_runs_during_analysis_and_survives_reopen(tmp_path, monkeypatch):
+    import threading
+
+    from chess_coach.pipeline_sync import sync_result
+    from chess_coach.pipeline_work import run_analysis
+
+    db, config, clock = setup(tmp_path, monkeypatch)
+    add_game(db, 1, clock())
+    started = threading.Event()
+    release = threading.Event()
+    errors = []
+
+    class SlowEngine(Engine):
+        def analyse(self, board, limit, multipv):
+            started.set()
+            assert release.wait(20)
+            return super().analyse(board, limit, multipv)
+
+    def analyze():
+        worker_db = Database(db.path)
+        try:
+            result = run_analysis(worker_db, 1, "fixture", config, "fixture")
+            assert result["status"] == "complete"
+        except BaseException as exc:
+            errors.append(exc)
+        finally:
+            worker_db.close()
+
+    limited = httpx.MockTransport(lambda request: httpx.Response(429))
+    first = process_pipeline(db, config, transport=limited, clock=clock)
+    assert first["sync"]["status"] == "waiting"
+    monkeypatch.setattr(chess.engine.SimpleEngine, "popen_uci", lambda _: SlowEngine())
+    db.close()
+    db = Database(tmp_path / "coach.sqlite")
+    calls = []
+
+    def success(request):
+        calls.append(request)
+        return httpx.Response(200, text="")
+
+    transport = httpx.MockTransport(success)
+    assert sync_result(db, config, None, transport, clock, retry_only=True) is None
+    clock.advance(60)
+    worker = threading.Thread(target=analyze)
+    worker.start()
+    try:
+        assert started.wait(20)
+        result = sync_result(db, config, None, transport, clock, retry_only=True)
+        assert result["status"] in {"complete", "partial"}
+        assert calls and worker.is_alive()
+        assert pipeline_status(db)["health"]["retry_until"] is None
+        assert sync_result(db, config, None, transport, clock, retry_only=True) is None
+    finally:
+        release.set()
+        worker.join(20)
+    assert not worker.is_alive() and not errors
+
+
+def test_retry_only_respects_extended_deadline_and_keeps_new_backoff(tmp_path, monkeypatch):
+    from chess_coach.pipeline_sync import sync_result
+
+    db, config, clock = setup(tmp_path, monkeypatch)
+    calls = []
+
+    def limited(request):
+        calls.append(request)
+        return httpx.Response(429, headers={"Retry-After": "120"})
+
+    transport = httpx.MockTransport(limited)
+    process_pipeline(db, config, transport=transport, clock=clock)
+    clock.advance(60)
+    assert sync_result(db, config, None, transport, clock, retry_only=True) is None
+    assert len(calls) == 1
+    clock.advance(60)
+    result = sync_result(db, config, None, transport, clock, retry_only=True)
+    assert result["retry_until"] == (clock() + timedelta(seconds=120)).isoformat()
+    assert len(calls) == 2
+    assert sync_result(db, config, None, transport, clock, retry_only=True) is None
+    assert len(calls) == 2
+
+
+def test_interrupted_due_retry_keeps_deadline(tmp_path, monkeypatch):
+    from chess_coach.pipeline_sync import sync_result
+
+    db, config, clock = setup(tmp_path, monkeypatch)
+    transport = httpx.MockTransport(lambda request: httpx.Response(429))
+    first = process_pipeline(db, config, transport=transport, clock=clock)
+    deadline = first["sync"]["retry_until"]
+    clock.advance(60)
+
+    def interrupted(*args, **kwargs):
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr("chess_coach.pipeline_sync.sync_games", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        sync_result(db, config, None, transport, clock, retry_only=True)
+    db.close()
+    reopened = Database(tmp_path / "coach.sqlite")
+    assert pipeline_status(reopened)["health"]["retry_until"] == deadline
+
+
+def test_sync_lock_serializes_retry_and_regular_sync(tmp_path):
+    import threading
+
+    from chess_coach.pipeline_lock import pipeline_lock
+
+    path = tmp_path / "coach.sqlite"
+    acquired = threading.Event()
+    waiting = threading.Event()
+
+    def retry():
+        waiting.set()
+        with pipeline_lock(path, sync=True):
+            acquired.set()
+
+    with pipeline_lock(path, sync=True):
+        worker = threading.Thread(target=retry)
+        worker.start()
+        assert waiting.wait(5)
+        assert not acquired.wait(0.2)
+    worker.join(5)
+    assert acquired.is_set() and not worker.is_alive()

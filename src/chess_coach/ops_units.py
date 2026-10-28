@@ -6,7 +6,13 @@ from pathlib import Path
 
 from .ops_paths import private_directory
 
-NAMES = ("chess-coach-web.service", "chess-coach-worker.service", "chess-coach-worker.timer")
+NAMES = (
+    "chess-coach-web.service",
+    "chess-coach-worker.service",
+    "chess-coach-worker.timer",
+    "chess-coach-retry.service",
+    "chess-coach-retry.timer",
+)
 
 
 def render_units(root: Path, release: Path, commit: str) -> Path:

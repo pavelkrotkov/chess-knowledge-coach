@@ -65,6 +65,9 @@ def test_stage_archives_exact_commit_and_renders_fixed_release_units(tmp_path, m
     assert f"CHESS_RELEASE_SHA={commit}" in web
     assert "Restart=on-failure" in web and "Restart=no" in worker
     assert "OnUnitInactiveSec=15min" in timer
+    retry = (units / "chess-coach-retry.timer").read_text()
+    assert "OnBootSec=5s" in retry and "OnUnitInactiveSec=10s" in retry
+    assert "chess_coach.ops_retry" in (units / "chess-coach-retry.service").read_text()
     assert "PYTHONPATH PYTHONHOME" in web and "PYTHONPATH PYTHONHOME" in worker
     assert all(stat.S_IMODE(path.stat().st_mode) == 0o600 for path in units.iterdir())
     assert not (root / ".runtime" / "current").exists()
@@ -337,3 +340,30 @@ def test_redaction_expansion_remains_bounded(tmp_path):
     output = (release / "prepare-error.log").read_bytes()
     assert len(output) <= MAX_DIAGNOSTIC_BYTES + 100
     assert b"[output truncated]" in output
+
+
+@pytest.mark.parametrize(
+    "result", [None, {"status": "complete"}, {"status": "waiting"}, {"status": "failed"}]
+)
+def test_retry_service_reports_failed_sync_and_closes_database(monkeypatch, result):
+    from chess_coach import ops_retry
+
+    closed = []
+
+    class FakeDatabase:
+        def __init__(self, path):
+            pass
+
+        def close(self):
+            closed.append(True)
+
+    monkeypatch.setenv("LICHESS_USERNAME", "fixture")
+    monkeypatch.setattr(ops_retry, "database_path", lambda: Path("fixture.sqlite"))
+    monkeypatch.setattr(ops_retry, "Database", FakeDatabase)
+    monkeypatch.setattr(ops_retry, "sync_result", lambda *args, **kwargs: result)
+    if result is not None and result["status"] == "failed":
+        with pytest.raises(SystemExit, match="cooldown retry synchronization failed"):
+            ops_retry.main()
+    else:
+        ops_retry.main()
+    assert closed == [True]

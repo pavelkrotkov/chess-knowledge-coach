@@ -8,7 +8,7 @@ from pathlib import Path
 
 import chess.engine
 
-from .analysis_output import save_line
+from .analysis_output import line_fields
 
 
 def create_run(
@@ -49,8 +49,8 @@ def create_run(
 def scan(
     connection: sqlite3.Connection,
     engine: chess.engine.SimpleEngine,
-    run_id: int,
     game: sqlite3.Row,
+    spool,
     *,
     nodes: int,
     depth: int | None,
@@ -65,4 +65,5 @@ def scan(
         )
         lines = result if isinstance(result, list) else [result]
         for number, line in enumerate(lines or [{}], start=1):
-            save_line(connection, run_id, position, board, number, dict(line))
+            json.dump(line_fields(position, board, number, dict(line)), spool)
+            spool.write("\n")

@@ -456,7 +456,7 @@ timeout and retry-sleep budget bound the network portion. When the server’s
 required retry delay exceeds the remaining budget, synchronization records a
 UTC retry deadline and stops rather than retrying early. Later scheduled runs
 make no Lichess requests until that deadline; they can still advance local
-work. `pipeline-status` exposes the deadline and waiting status. Unrelated
+work. The deployed retry timer checks every 10 seconds and runs synchronization alone when the deadline is due, even during analysis; it resumes after restart and serializes synchronization with the regular worker. `pipeline-status` exposes the deadline and waiting status. Unrelated
 network budget failures do not create a cooldown. Large games receive a
 `position_budget_exceeded` status and do not prevent later games from advancing.
 
