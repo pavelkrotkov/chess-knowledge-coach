@@ -61,7 +61,7 @@ the source tree:
 
 ```sh
 cd .runtime
-./releases/<reviewed-full-sha>/venv/bin/python -I -c 'import chess_coach; print(chess_coach.__file__)'
+./releases/<reviewed-full-sha>/venv/bin/python -I -B -c 'import chess_coach; print(chess_coach.__file__)'
 cd ..
 ```
 
@@ -73,8 +73,8 @@ puzzle corpus with that same reviewed release:
 
 ```sh
 release="$PWD/.runtime/releases/<reviewed-full-sha>/venv/bin/python"
-"$release" -I -m chess_coach.cli --db "$PWD/.runtime/data/coach.sqlite" init-db
-"$release" -I -m chess_coach.cli --db "$PWD/.runtime/data/coach.sqlite" import-puzzles <project-local-csv> --version <version>
+"$release" -I -B -m chess_coach.cli --db "$PWD/.runtime/data/coach.sqlite" init-db
+"$release" -I -B -m chess_coach.cli --db "$PWD/.runtime/data/coach.sqlite" import-puzzles <project-local-csv> --version <version>
 ```
 
 Use the imported version for `CHESS_CORPUS`.

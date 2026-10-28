@@ -14,7 +14,7 @@ Environment=XDG_CACHE_HOME=@ROOT@/.runtime/cache
 Environment=PYTHONDONTWRITEBYTECODE=1
 UnsetEnvironment=PYTHONPATH PYTHONHOME
 UMask=0077
-ExecStart=@RELEASE@/venv/bin/python -I -m chess_coach.web_server
+ExecStart=@RELEASE@/venv/bin/python -I -B -m chess_coach.web_server
 Restart=on-failure
 RestartSec=5s
 StandardOutput=append:@ROOT@/.runtime/logs/web.log

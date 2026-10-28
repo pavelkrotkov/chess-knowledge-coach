@@ -60,8 +60,8 @@ def test_stage_archives_exact_commit_and_renders_fixed_release_units(tmp_path, m
     web = (units / "chess-coach-web.service").read_text()
     worker = (units / "chess-coach-worker.service").read_text()
     timer = (units / "chess-coach-worker.timer").read_text()
-    assert f"ExecStart={release}/venv/bin/python -I" in web
-    assert f"ExecStart={release}/venv/bin/python -I" in worker
+    assert f"ExecStart={release}/venv/bin/python -I -B" in web
+    assert f"ExecStart={release}/venv/bin/python -I -B" in worker
     assert f"CHESS_RELEASE_SHA={commit}" in web
     assert "Restart=on-failure" in web and "Restart=no" in worker
     assert "OnUnitInactiveSec=15min" in timer

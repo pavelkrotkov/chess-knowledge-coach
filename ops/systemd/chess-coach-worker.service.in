@@ -12,7 +12,7 @@ Environment=XDG_CACHE_HOME=@ROOT@/.runtime/cache
 Environment=PYTHONDONTWRITEBYTECODE=1
 UnsetEnvironment=PYTHONPATH PYTHONHOME
 UMask=0077
-ExecStart=@RELEASE@/venv/bin/python -I -m chess_coach.ops_worker
+ExecStart=@RELEASE@/venv/bin/python -I -B -m chess_coach.ops_worker
 TimeoutStartSec=30min
 Restart=no
 StandardOutput=append:@ROOT@/.runtime/logs/worker.log

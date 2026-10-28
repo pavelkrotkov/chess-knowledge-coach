@@ -54,7 +54,7 @@ def _verify(release: Path, runtime: Path) -> None:
         "assert files('chess_coach').joinpath('static/coach.css').is_file()"
     )
     subprocess.run(
-        [str(release / "venv/bin/python"), "-I", "-c", script],
+        [str(release / "venv/bin/python"), "-I", "-B", "-c", script],
         cwd=runtime,
         check=True,
         stdout=subprocess.DEVNULL,
