@@ -102,7 +102,7 @@ def opening_stage_input(db: Database, game_id: int, config: PipelineConfig, game
     ), dataset
 
 
-def scan_input(config: PipelineConfig, engine_hash: str | None) -> str:
+def scan_input(db: Database, config: PipelineConfig, engine_hash: str | None) -> str:
     # Scheduling and network budgets do not change processing outputs.
     names = (
         "max_positions",
@@ -118,4 +118,15 @@ def scan_input(config: PipelineConfig, engine_hash: str | None) -> str:
         "tactical_version",
     )
     settings = {name: getattr(config, name) for name in names}
-    return fingerprint({"settings": settings, "engine": engine_hash, "mapper": MAPPER_VERSION})
+    dataset = db.connection.execute(
+        "SELECT id,content_revision FROM opening_datasets WHERE version=? AND source_url=?",
+        (config.opening_version, config.opening_source),
+    ).fetchone()
+    return fingerprint(
+        {
+            "settings": settings,
+            "engine": engine_hash,
+            "mapper": MAPPER_VERSION,
+            "dataset": list(dataset) if dataset else None,
+        }
+    )

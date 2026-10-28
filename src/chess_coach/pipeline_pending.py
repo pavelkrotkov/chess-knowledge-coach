@@ -8,7 +8,7 @@ from .pipeline_scan_item import pending_game
 
 
 def pending_games(db: Database, config: PipelineConfig, engine_hash: str | None):
-    scan_hash = scan_input(config, engine_hash)
+    scan_hash = scan_input(db, config, engine_hash)
     account, games = scan_from(db, config.learner, config.max_scan, scan_hash)
     pending = []
     scanned = 0

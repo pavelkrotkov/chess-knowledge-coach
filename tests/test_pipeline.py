@@ -767,6 +767,10 @@ def test_v13_upgrade_preserves_curriculum_cursor_revision_and_indexes(monkeypatc
         db.initialize()
     db.connection.execute("PRAGMA user_version=13")
     db.connection.execute(
+        "INSERT INTO opening_datasets(version,source_url) VALUES (?,?)",
+        ("legacy", "fixture://legacy"),
+    )
+    db.connection.execute(
         'INSERT INTO games(pgn,white,black,result) VALUES ("fixture","A","B","*")'
     )
     db.connection.commit()
@@ -786,6 +790,7 @@ def test_v13_upgrade_preserves_curriculum_cursor_revision_and_indexes(monkeypatc
     token = encode_cursor(db, state)
     db.initialize()
     assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 14
+    assert db.connection.execute("SELECT content_revision FROM opening_datasets").fetchone()[0] == 0
     assert (
         tuple(
             db.connection.execute(
@@ -1005,11 +1010,12 @@ def test_pipeline_cli_exit_status_matches_failure(tmp_path, monkeypatch, capsys,
     assert json.loads(capsys.readouterr().out) == {"status": status}
 
 
-def test_scan_fingerprint_tracks_output_settings_but_not_worker_budgets():
+def test_scan_fingerprint_tracks_output_settings_but_not_worker_budgets(tmp_path, monkeypatch):
     from chess_coach.pipeline_inputs import scan_input
 
+    db, _, _, _ = setup(tmp_path, monkeypatch, count=0)
     config = PipelineConfig(learner="learner")
-    original = scan_input(config, "engine-a")
+    original = scan_input(db, config, "engine-a")
     changes = {
         "max_positions": 10,
         "nodes": 11,
@@ -1024,11 +1030,99 @@ def test_scan_fingerprint_tracks_output_settings_but_not_worker_budgets():
         "tactical_version": "v2",
     }
     assert all(
-        scan_input(replace(config, **{key: value}), "engine-a") != original
+        scan_input(db, replace(config, **{key: value}), "engine-a") != original
         for key, value in changes.items()
     )
-    assert scan_input(config, "engine-b") != original
+    assert scan_input(db, config, "engine-b") != original
     assert (
-        scan_input(replace(config, max_games=1, max_scan=2, network_requests=3), "engine-a")
+        scan_input(db, replace(config, max_games=1, max_scan=2, network_requests=3), "engine-a")
         == original
     )
+
+
+def test_opening_dataset_append_restarts_bounded_scan(tmp_path, monkeypatch):
+    from chess_coach.ingest import ingest_pgn
+    from chess_coach.openings import import_openings
+
+    db, config, _, _ = setup(tmp_path, monkeypatch, count=0)
+    now = int(time.time())
+    ingest_pgn(db, game("fixture01", now - 10))
+    ingest_pgn(db, game("fixture02", now - 20))
+    openings = tmp_path / "openings.tsv"
+    openings.write_text("eco\tname\tmoves\nC20\tOpen\te4 e5\n")
+    import_openings(db, openings, version="fixture", source_url="fixture://opening")
+    config = replace(
+        config,
+        max_games=1,
+        max_scan=1,
+        opening_version="fixture",
+        opening_source="fixture://opening",
+    )
+    network = httpx.MockTransport(lambda request: httpx.Response(200, text=""))
+    first = process_pipeline(db, config, transport=network)
+    assert first["games"][0]["game_id"] == 1 and first["status"] == "partial"
+    prior_revision = db.connection.execute(
+        "SELECT content_revision FROM opening_datasets"
+    ).fetchone()[0]
+    import_openings(db, openings, version="fixture", source_url="fixture://opening")
+    assert (
+        db.connection.execute("SELECT content_revision FROM opening_datasets").fetchone()[0]
+        == prior_revision
+    )
+    openings.write_text("eco\tname\tmoves\nC20\tOther\td4 d5\n")
+    import_openings(db, openings, version="fixture", source_url="fixture://opening")
+    assert (
+        db.connection.execute("SELECT content_revision FROM opening_datasets").fetchone()[0]
+        > prior_revision
+    )
+    second = process_pipeline(db, config, transport=network)
+    assert second["games"][0]["game_id"] == 1 and second["status"] == "partial"
+    third = process_pipeline(db, config, transport=network)
+    assert third["games"][0]["game_id"] == 2 and third["status"] == "complete"
+
+
+def test_opening_revision_rolls_back_with_failed_import(tmp_path, monkeypatch):
+    from chess_coach.openings import import_openings
+
+    db, _, _, _ = setup(tmp_path, monkeypatch, count=0)
+    openings = tmp_path / "openings.tsv"
+    openings.write_text("eco\tname\tmoves\nC20\tOpen\te4 e5\n")
+    import_openings(db, openings, version="fixture", source_url="fixture://opening")
+    before = db.connection.execute("SELECT content_revision FROM opening_datasets").fetchone()[0]
+    nodes = db.connection.execute("SELECT COUNT(*) FROM opening_nodes").fetchone()[0]
+    openings.write_text("eco\tname\tmoves\nC20\tOther\td4 d5\nC20\t\te4 e5\n")
+    with pytest.raises(ValueError):
+        import_openings(db, openings, version="fixture", source_url="fixture://opening")
+    assert (
+        db.connection.execute("SELECT content_revision FROM opening_datasets").fetchone()[0]
+        == before
+    )
+    assert db.connection.execute("SELECT COUNT(*) FROM opening_nodes").fetchone()[0] == nodes
+
+
+def test_opening_dataset_change_during_scan_prevents_false_completion(tmp_path, monkeypatch):
+    from chess_coach import pipeline
+    from chess_coach.ingest import ingest_pgn
+    from chess_coach.openings import import_openings
+
+    db, config, _, _ = setup(tmp_path, monkeypatch, count=0)
+    ingest_pgn(db, game("fixture01", int(time.time()) - 10))
+    openings = tmp_path / "openings.tsv"
+    openings.write_text("eco\tname\tmoves\nC20\tOpen\te4 e5\n")
+    import_openings(db, openings, version="fixture", source_url="fixture://opening")
+    config = replace(config, opening_version="fixture", opening_source="fixture://opening")
+    original = pipeline.process_game
+
+    def process_then_import(*args):
+        result = original(*args)
+        openings.write_text("eco\tname\tmoves\nC20\tOther\td4 d5\n")
+        import_openings(db, openings, version="fixture", source_url="fixture://opening")
+        return result
+
+    network = httpx.MockTransport(lambda request: httpx.Response(200, text=""))
+    with monkeypatch.context() as patch:
+        patch.setattr(pipeline, "process_game", process_then_import)
+        result = process_pipeline(db, config, transport=network)
+    assert result["status"] == "partial" and result["scan"]["has_more"]
+    replay = process_pipeline(db, config, transport=network)
+    assert replay["games"][0]["game_id"] == 1 and replay["status"] == "complete"

@@ -6,7 +6,7 @@ from .pipeline_config import PipelineConfig
 from .pipeline_cursor import save_cursor
 from .pipeline_game import process_game
 from .pipeline_health import finish_run, record_sync, run_status, start_run
-from .pipeline_inputs import engine_identity
+from .pipeline_inputs import engine_identity, scan_input
 from .pipeline_lock import pipeline_lock
 from .pipeline_pending import pending_games
 from .pipeline_report import public_report
@@ -43,6 +43,7 @@ def _run_pipeline(db, config, token, transport):
         games.append(process_game(db, game_id, game_hash, config, engine_hash))
         save_cursor(db, account, game_id, scan_hash)
     save_cursor(db, account, last_scanned, scan_hash)
+    scan["has_more"] |= scan_input(db, config, engine_hash) != scan_hash
     reports = mastery_report(db, subject=config.learner)
     status = run_status(db, sync, games, scan)
     return {

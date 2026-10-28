@@ -21,6 +21,11 @@ def add_pipeline_stages(connection: sqlite3.Connection) -> None:
         finished_at TEXT, last_success_at TEXT, sync_status TEXT NOT NULL,
         sync_detail TEXT, sync_at TEXT, last_sync_success_at TEXT
     )""")
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(opening_datasets)")}
+    if "content_revision" not in columns:
+        connection.execute(
+            "ALTER TABLE opening_datasets ADD COLUMN content_revision INTEGER NOT NULL DEFAULT 0"
+        )
     for table in ("opening_runs", "structure_runs"):
         columns = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
         if "pipeline_generation" not in columns:
