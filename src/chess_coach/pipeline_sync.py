@@ -1,7 +1,6 @@
 """Translate sync results to bounded, sanitized worker status."""
 
-from .mastery_time import parse_utc
-from .pipeline_cooldown import active_deadline, stored_deadline, utc_now
+from .pipeline_cooldown import active_deadline, stored_deadline
 from .pipeline_cooldown_expiry import clear_expired
 from .pipeline_health import record_sync
 from .pipeline_lock import pipeline_lock
@@ -13,7 +12,7 @@ from .pipeline_sync_summary import sync_summary
 def sync_result(db, config, token, transport, clock, *, retry_only=False):
     with pipeline_lock(db.path, sync=True):
         deadline = stored_deadline(db)
-        if retry_only and (deadline is None or parse_utc(deadline) > utc_now(clock)):
+        if retry_only and (deadline is None or active_deadline(db, clock) is not None):
             return None
         result = _sync_result(db, config, token, transport, clock)
         clear_expired(db, clock, deadline, result)

@@ -53,7 +53,7 @@ def scan(
     depth: int | None,
     multipv: int,
     time_limit: float | None = None,
-) -> None:
+) -> list[tuple[sqlite3.Row, chess.Board, int, dict]]:
     from .analysis_positions import decisions
 
     outputs = []
