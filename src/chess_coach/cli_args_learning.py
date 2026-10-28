@@ -45,6 +45,7 @@ def configure(sub):
     plan.add_argument("--subject", required=True)
     plan.add_argument("--limit", type=int, default=10)
     plan.add_argument("--scan-limit", type=int, default=200)
+    plan.add_argument("--cursor")
     start = sub.add_parser("start-puzzle", help="Start or resume a versioned puzzle attempt")
     start.add_argument("version")
     start.add_argument("puzzle_id")

@@ -14,6 +14,7 @@ def handle_daily_plan(db, args):
                 corpus_version=args.version,
                 limit=args.limit,
                 scan_limit=args.scan_limit,
+                cursor=args.cursor,
             ),
             indent=2,
         )

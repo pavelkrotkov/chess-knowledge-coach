@@ -12,8 +12,12 @@ def validate_plan_request(
     learner = normalize_identity(subject) if isinstance(subject, str) else None
     if learner is None:
         raise ValueError("an explicit learner subject is required")
-    if not isinstance(corpus_version, str) or not corpus_version.strip():
-        raise ValueError("corpus version is required")
+    if (
+        not isinstance(corpus_version, str)
+        or not corpus_version.strip()
+        or len(corpus_version) > 256
+    ):
+        raise ValueError("corpus version must be nonempty and at most 256 characters")
     _bounds(limit, scan_limit)
     return learner, as_utc(as_of)
 

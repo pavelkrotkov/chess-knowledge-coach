@@ -7,6 +7,8 @@ from .puzzle_session_validate import legal_move, solution_moves, validate_line
 
 def verified_candidate(row) -> dict | None:
     try:
+        if len(row["solution"].split(maxsplit=2)) != 2:
+            return None
         prompt = validate_line(row["fen"], row["solution"])
         board = chess.Board(prompt)
         move = legal_move(board, solution_moves(row["solution"])[1])

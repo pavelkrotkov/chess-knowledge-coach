@@ -30,4 +30,6 @@ def _reason(candidate: dict, summary: dict) -> str:
         return "Verified practice for a cold start; no weakness is inferred."
     if summary["state"] == "insufficient_evidence":
         return "Verified practice while reviewed evidence is insufficient."
+    if summary["state"] == "evidence_scan_incomplete":
+        return "Verified practice; the bounded evidence scan is incomplete."
     return "Verified practice; no supported weakness is inferred."

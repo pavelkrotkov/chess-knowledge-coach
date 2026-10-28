@@ -228,12 +228,21 @@ uv run chess-coach --db coach.sqlite daily-plan corpus-v1 --subject learner --li
 
 The plan reports cold start, insufficient evidence, supported weakness, or no
 supported weakness, along with the eligible supporting evidence IDs once for
-all selections. A mastery score below 0.6 is a transparent planning heuristic,
-not a calibrated diagnosis. Unknown or empty corpora, scan limits, and missing
+all selections. If evidence exceeds the scan limit, it reports an incomplete
+evidence scan and infers no weakness; the limit can be raised to at most 1,000.
+A mastery score below 0.6 is a transparent planning heuristic, not a calibrated
+diagnosis. Unknown or empty corpora, invalid negative ratings, scan limits, and missing
 new candidates are explicit. A truncated due scan prevents new items from being
-selected until due priority can be resolved. Selecting a plan changes no
-schedule or evidence; create an item and complete it using the verified practice
-flow below. Existing ontology edges describe containment, not prerequisites.
+selected until due priority can be resolved. When `next_cursor` is present,
+repeat `daily-plan` with the same subject, corpus, limits and `--cursor` value
+to continue the same bounded plan; combine the incremental items from each page
+until no cursor remains. The cursor retains the original as-of time.
+The cursor is local to this database and must be restarted after source data
+changes. If a scheduled puzzle's prompt cannot be reconstructed, new selection
+stops and identifies the scheduled item to repair or the corpus to restore.
+Selecting a plan changes no schedule or evidence; create an item and complete it
+using the verified practice flow below. Existing ontology edges describe
+containment, not prerequisites.
 
 ## Verified puzzle practice
 
