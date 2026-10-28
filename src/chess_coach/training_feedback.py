@@ -2,10 +2,11 @@
 
 from .db import Database
 from .puzzle_session_events import apply_event_in_transaction
-from .puzzle_session_state import _session
+from .puzzle_session_state import _session, _view
 from .training_feedback_finish import complete_feedback
 from .training_feedback_item import puzzle_training_ref as puzzle_training_ref
 from .training_feedback_item import training_item
+from .training_feedback_prompt import training_objective
 from .training_feedback_request import validate_request
 from .training_feedback_storage import previous_completion
 from .training_transaction import training_transaction
@@ -33,3 +34,10 @@ def submit_training_move(
         if result["status"] == "active":
             return result
         return complete_feedback(db, session, item, result, move, normalized, request_hash)
+
+
+def show_training_puzzle(db: Database, attempt_id: str, *, item_id: int) -> dict:
+    """Show the requested task without revealing any solution moves."""
+    session = _session(db, attempt_id)
+    item = training_item(db, item_id, session)
+    return {**_view(session), "training_objective": training_objective(session, item)}

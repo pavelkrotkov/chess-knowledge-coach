@@ -11,7 +11,11 @@ from chess_coach.db import Database
 from chess_coach.evidence_review import inspect_evidence, review_evidence
 from chess_coach.puzzle_sessions import request_hint, start_attempt
 from chess_coach.training import create_training_item
-from chess_coach.training_feedback import puzzle_training_ref, submit_training_move
+from chess_coach.training_feedback import (
+    puzzle_training_ref,
+    show_training_puzzle,
+    submit_training_move,
+)
 
 MATE_FEN = "6k1/8/6K1/2Q5/8/8/8/8 b - - 0 1"
 MATE_LINE = "g8h8 c5f8"
@@ -305,3 +309,51 @@ def test_invalid_item_id_is_rejected_before_any_event(bad_item):
             db, "a1", event_id="move", move="c5c8", item_id=bad_item, subject="learner"
         )
     assert db.connection.execute("SELECT COUNT(*) FROM puzzle_session_events").fetchone()[0] == 0
+
+
+def test_declared_mate_task_nonmate_failure_is_unreviewed_evidence():
+    db, item = setup_attempt()
+    prompt = show_training_puzzle(db, "a1", item_id=item)
+    assert prompt["training_objective"] == "Find mate in one."
+    assert "c5f8" not in json.dumps(prompt) and "c5c8" not in json.dumps(prompt)
+    result = submit(db, item, move="c5a5")
+    assert result["status"] == "failed"
+    assert result["training"]["evidence_reason"] == "missed_mate_in_one"
+    assert result["training"]["rating"] == "again"
+    evidence = db.connection.execute("SELECT * FROM evidence_mappings").fetchone()
+    assert (evidence["skill"], evidence["operation"], evidence["outcome"]) == (
+        "mate_in_one",
+        "execute",
+        "failure",
+    )
+    assert evidence["human_validated"] == 0 and evidence["source_provenance"] == "training_attempt"
+    assert evidence["position_id"] is None and evidence["mapping_run_id"] is None
+    context = json.loads(evidence["context_json"])
+    assert context["played_checkmate"] is False and context["mating_moves"]
+    assert context["training_objective"] == "Find mate in one."
+    assert context["mapper_version"] == "verified-puzzle-mate-v2"
+    assert submit(db, item, move="c5a5") == result
+    assert inspect_evidence(db, evidence["id"])["review_status"] == "unreviewed"
+    review_evidence(db, evidence["id"], decision="accept", actor="fixture-reviewer")
+    assert submit(db, item, move="c5a5") == result
+    assert inspect_evidence(db, evidence["id"])["review_status"] == "accepted"
+    assert db.connection.execute("SELECT COUNT(*) FROM evidence_mappings").fetchone()[0] == 1
+
+
+def test_hint_followed_by_failed_mate_does_not_produce_failure_evidence():
+    db, item = setup_attempt()
+    request_hint(db, "a1", event_id="hint")
+    result = submit(db, item, move="c5a5")
+    assert result["status"] == "failed"
+    assert result["training"]["evidence_reason"] == "hint_used"
+    assert result["training"]["evidence_id"] is None
+
+
+def test_multistep_failure_is_not_inferred_from_mate_prompt():
+    db, item = setup_attempt(fen=chess.STARTING_FEN, solution="e2e4 e7e5 g1f3 b8c6")
+    assert show_training_puzzle(db, "a1", item_id=item)["training_objective"] is None
+    assert submit(db, item, move="e7e5")["status"] == "active"
+    result = submit(db, item, move="g8f6", event="move2")
+    assert result["status"] == "failed"
+    assert result["training"]["evidence_reason"] == "unsupported_puzzle_decision"
+    assert result["training"]["evidence_id"] is None

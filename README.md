@@ -247,6 +247,7 @@ and the learner subject when playing:
 
 ```bash
 uv run chess-coach --db coach.sqlite create-puzzle-training corpus-v1 puzzle-id mate_in_one execute
+uv run chess-coach --db coach.sqlite show-puzzle attempt-1 --training-item-id 1
 uv run chess-coach --db coach.sqlite play-puzzle attempt-1 c5c8 --event-id move-1 --training-item-id 1 --subject learner
 ```
 
@@ -254,9 +255,13 @@ Use the ID returned by the create command and a subject supplied at runtime.
 The terminal move, completion, and FSRS review commit together. The scheduling
 policy uses `good` for an unhinted solve, `hard` for a hinted solve, and `again`
 for a failure. Active duration is unknown, rather than inferred from elapsed
-wall time. An unhinted legal checkmate on the first puzzle decision can create
-unreviewed `mate_in_one/execute` success evidence. Hinted, failed, and unsupported
-decisions record an explicit reason instead of guessing skill evidence.
+wall time. When the training item explicitly requests mate in one and the prompt contains
+an immediate mate, the training-aware view says Find mate in one without
+revealing moves. An unhinted first-decision checkmate creates unreviewed
+`mate_in_one/execute` success evidence. An unhinted legal nonmating move that
+ends the explicitly requested task as incorrect creates unreviewed failure
+evidence. Hinted and unsupported decisions record a reason instead of guessing
+skill evidence.
 Evidence remains subject to the ordinary human-review policy. Retrying the same
 terminal event returns the stored result; conflicting retries are rejected.
 Use `play-puzzle` without training options for a standalone practice attempt.

@@ -46,6 +46,7 @@ def configure(sub):
     start.add_argument("attempt_id")
     show = sub.add_parser("show-puzzle", help="Show the current position for an attempt")
     show.add_argument("attempt_id")
+    show.add_argument("--training-item-id", type=int)
     play = sub.add_parser("play-puzzle", help="Submit a UCI move")
     play.add_argument("attempt_id")
     play.add_argument("move")

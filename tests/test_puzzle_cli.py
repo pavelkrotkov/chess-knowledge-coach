@@ -90,6 +90,9 @@ def test_puzzle_cli_can_complete_verified_training_feedback(tmp_path) -> None:
     run("import-puzzles", str(csv), "--version", "v1")
     run("start-puzzle", "v1", "p1", "attempt")
     item = run("create-puzzle-training", "v1", "p1", "mate_in_one", "execute")["id"]
+    prompt = run("show-puzzle", "attempt", "--training-item-id", str(item))
+    assert prompt["training_objective"] == "Find mate in one."
+    assert "c5f8" not in json.dumps(prompt) and "c5c8" not in json.dumps(prompt)
     args = (
         "play-puzzle",
         "attempt",

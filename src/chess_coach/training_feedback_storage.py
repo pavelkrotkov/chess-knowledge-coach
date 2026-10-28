@@ -8,9 +8,16 @@ from .training_feedback_rules import MAPPER_VERSION, POLICY_VERSION
 
 
 def record_evidence(db: Database, subject: str, timestamp: str, fact: dict) -> int:
+    outcome = "success" if fact["played_checkmate"] else "failure"
+    rationale = (
+        "An unhinted legal move checkmates on the verified prompt board."
+        if outcome == "success"
+        else "An unhinted legal move did not checkmate when mate in one was requested and available."
+    )
     context = {
         "source": "verified_puzzle",
-        "confidence_rationale": "Unhinted legal move checkmates on the verified prompt board.",
+        "training_objective": "Find mate in one.",
+        "confidence_rationale": rationale,
         "policy_version": POLICY_VERSION,
         "mapper_version": MAPPER_VERSION,
         **fact,
@@ -19,8 +26,8 @@ def record_evidence(db: Database, subject: str, timestamp: str, fact: dict) -> i
         """INSERT INTO evidence_mappings
         (position_id, skill, operation, outcome, confidence, source_facts_json,
          mapper_version, context_json, subject, observation_at, mapping_run_id, source_provenance)
-        VALUES (NULL, 'mate_in_one', 'execute', 'success', 1.0, '[]', ?, ?, ?, ?, NULL, 'training_attempt')""",
-        (MAPPER_VERSION, json.dumps(context, sort_keys=True), subject, timestamp),
+        VALUES (NULL, 'mate_in_one', 'execute', ?, 1.0, '[]', ?, ?, ?, ?, NULL, 'training_attempt')""",
+        (outcome, MAPPER_VERSION, json.dumps(context, sort_keys=True), subject, timestamp),
     )
     return cast(int, cursor.lastrowid)
 
