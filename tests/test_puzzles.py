@@ -83,3 +83,35 @@ def test_empty_rating_cell_is_rejected(tmp_path) -> None:
         assert "Rating" in str(exc)
     else:
         raise AssertionError("expected ValueError for empty rating")
+
+
+def test_malformed_reimport_rolls_back_after_replacing_rows(tmp_path) -> None:
+    import hashlib
+
+    import pytest
+
+    source = tmp_path / "puzzles.csv"
+    source.write_text(
+        "PuzzleId,FEN,Moves,Rating,RatingDeviation\noriginal,fen,e2e4,1200,80\n",
+        encoding="utf-8",
+    )
+    db = Database(":memory:")
+    db.initialize()
+    import_puzzles(db, source, version="v")
+    source.write_text(
+        "PuzzleId,FEN,Moves,Rating,RatingDeviation\n"
+        "replacement,fen,e2e4,1300,80\n"
+        "bad,,e2e4,1300,80\n",
+        encoding="utf-8",
+    )
+    checksum = hashlib.sha256(source.read_bytes()).hexdigest()
+    db.connection.execute(
+        "UPDATE puzzle_corpora SET checksum = ? WHERE version = ?", (checksum, "v")
+    )
+    db.connection.commit()
+
+    with pytest.raises(ValueError, match=r"puzzle row 3.*FEN"):
+        import_puzzles(db, source, version="v")
+
+    assert [row["puzzle_id"] for row in query_puzzles(db, version="v")] == ["original"]
+    assert db.connection.execute("SELECT imported_rows FROM puzzle_corpora").fetchone()[0] == 1
