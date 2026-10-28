@@ -1,0 +1,41 @@
+"""Validate parsed games and any raw PGN override before persistence."""
+
+from __future__ import annotations
+
+import io
+
+import chess.pgn
+
+from .ingest_reader import SilentGameBuilder
+from .ingest_result import last_mainline_token
+from .ingest_syntax import validate_syntax
+
+
+def raw_game(game: chess.pgn.Game, override: str | None) -> str:
+    """Keep the existing normalized default and preserve explicit overrides exactly."""
+    if override is None:
+        return str(game)
+    validate_syntax(override)
+    stream = io.StringIO(override)
+    original = chess.pgn.read_game(stream, Visitor=SilentGameBuilder)
+    if original is None or original.errors or str(original) != str(game):
+        raise ValueError("raw PGN override does not match the parsed game")
+    if chess.pgn.read_game(stream, Visitor=SilentGameBuilder) is not None:
+        raise ValueError("raw PGN override supports one game")
+    return override
+
+
+def validate_game(game: chess.pgn.Game, source: str, raw: str) -> None:
+    if game.errors:
+        raise ValueError("invalid PGN: parser reported errors")
+    if source != "lichess":
+        return
+    result = game.headers.get("Result")
+    if game.headers.get("Variant", "Standard") != "Standard" or result not in {
+        "1-0",
+        "0-1",
+        "1/2-1/2",
+    }:
+        raise ValueError("unsupported or unfinished Lichess game")
+    if last_mainline_token(raw) != result:
+        raise ValueError("incomplete Lichess game PGN")

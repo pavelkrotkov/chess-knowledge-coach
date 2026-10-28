@@ -47,9 +47,28 @@ uv run chess-coach --db coach.sqlite sync-lichess username --max-games 100
 LICHESS_API_TOKEN=... uv run chess-coach --db coach.sqlite sync-lichess username --page-size 100
 ```
 
-The adapter requests clocks and opening headers, uses bounded exponential-backoff
-retries for rate limits and server errors, and pages backward by UTC timestamps.
-Game IDs from Lichess are used as stable source IDs, so re-syncing is idempotent.
+The adapter requests clocks, opening headers, and finished games, using bounded
+requests and retries. New-game and new-position counts exclude identical
+replays. A conflicting PGN for an existing Lichess game ID is rejected without
+changing the stored game.
+
+Sync keeps separate private SQLite progress for recent polling and historical
+reconciliation. Recent polling overlaps by one day; a rotating historical sweep
+revisits the configured range, so games that finish long after they start can be
+found in a later sweep. The next kind of work is persisted so even a one-game
+budget gives both queues a turn. The status distinguishes completed bootstrap,
+the current recent and history windows, and a saturated window. A saturated one-second window
+is left incomplete; increase the game limit and retry. A one-second window with
+1,000 or more games cannot be completed automatically. A first --since sets the
+earliest creation timestamp for that account in milliseconds, rounded down to
+the nearest second; later calls must use the same value or omit it. A bounded
+invocation may need to be run again to complete its windows.
+
+Lichess orders exports by game creation time. See the
+[export API](https://github.com/lichess-org/api/blob/master/doc/specs/tags/games/api-games-user-username.yaml)
+and [API rate-limit guidance](https://lichess.org/page/api-tips). HTTP 429
+retries wait at least one minute; retryable responses honor valid Retry-After
+seconds or HTTP dates. Errors do not advance the current window.
 
 Maia is optional and can run in a separate environment behind a small JSON
 subprocess adapter. Without a configured command, offline mode returns no Maia
@@ -99,6 +118,26 @@ convention (mate_score 100000). An unavailable score or best move is NULL. Older
 outputs whose decision and perspective were not recorded retain NULL provenance
 and should not be treated as corrected analysis. A failed run commits no partial
 outputs. Engine evaluations are not mastery evidence.
+
+## Learner decision context
+
+The Python API exposes per-move context without storing an account identifier
+in the source tree:
+
+    import os
+    from chess_coach.learner_context import decision_contexts
+
+    for context in decision_contexts(db, game_id=1, learner=os.environ.get("LICHESS_USERNAME")):
+        if context["subject"] is not None:
+            print({key: context[key] for key in ("game_id", "ply", "mover")})
+
+Only a uniquely matched, case-insensitive learner side receives a subject on
+its own moves. Opponent moves and unknown or inconsistent identities have no
+subject. The context uses the PGN UTC game-start time when both UTC date and
+time are available; otherwise observation time is unknown. Processing time is
+separate. A recorded clock is after the move, while the prior clock for the same
+side is supplied separately when available. This context does not itself create
+or validate skill evidence.
 
 ## Database upgrades
 
