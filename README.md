@@ -498,12 +498,16 @@ runtime environment (not in the repository):
 
 Run `uv run python -m chess_coach.web_server` with those values configured.
 Proxy the Unix socket with Tailscale Serve, not a TCP listener or Funnel. Serve
-strips incoming spoofed identity headers before supplying its own identity;
-the socket directory and its account must remain private because local processes
-with socket access are trusted. Requests with missing or mismatched identity
-or host are rejected, and state changes require the exact origin and a session
-CSRF token. The signing key is process-local, so sessions expire on restart. A private
-lifetime lock prevents overlapping browser instances; on Linux a stale owned
+strips incoming spoofed identity headers before supplying its own identity.
+The Unix server checks that identity against the exact configured login and
+requires the backend `Host: localhost` supplied by Serve. It does not validate
+the original public Host. State changes require the exact configured public
+HTTPS Origin and a session CSRF token. `X-Forwarded-Host` is caller-spoofable
+in this setup and is not an authority for identity or origin. The socket
+directory must remain mode 0700 and the socket mode 0600: local processes with
+socket access are trusted. The signing key is process-local, so sessions expire
+on restart. A private lifetime lock prevents overlapping browser instances; on
+Linux a stale owned
 socket is reclaimed only if no process has it bound. Unexpected paths are left
 untouched.
 This command does not configure Tailscale Serve or install a service.

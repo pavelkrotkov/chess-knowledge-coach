@@ -112,9 +112,28 @@ tailscale serve --bg --https=8448 "unix:$PWD/.runtime/web.sock"
 
 Do not use Funnel or expose a TCP backend. Confirm the resulting route and
 tailnet ACLs, access for the allowed operator, denial for a different identity,
-and absence of a direct backend TCP listener. The browser rejects missing or
-incorrect Serve identity and cross-origin POSTs; its private socket is trusted
-only to the local service account.
+and absence of a direct backend TCP listener. Serve supplies `Host: localhost`
+to the Unix backend and the browser requires that exact backend Host and the
+exact configured Tailscale login. This is not validation of the original public
+Host. For state-changing requests, the browser separately requires the exact
+configured public HTTPS Origin and a valid session CSRF token.
+
+`X-Forwarded-Host` can be supplied by a caller in this setup; the browser does
+not use it to establish identity or origin. Keep the socket directory mode 0700
+and its socket mode 0600. Processes with access to that socket are trusted to
+supply the identity header, so the service account and directory must remain
+private.
+
+If the browser returns 403, first check privately that the request uses the
+intended private Serve route and that the allowed login matches the signed-in
+Tailscale identity. Check the configured HTTPS origin, including its port,
+against the browser address. For a failed state change, reload the page and
+retry so the browser obtains a current session and CSRF token; sessions expire
+when the server restarts. A 403 on a read can indicate an identity or backend
+Host mismatch; a 403 on a state change can also indicate an Origin or CSRF
+mismatch. Do not print, copy, or share identity headers, credentials, or private
+configuration while troubleshooting. Never use a forwarded Host header to
+bypass these checks.
 
 ## Health, backup, upgrade, and rollback
 
