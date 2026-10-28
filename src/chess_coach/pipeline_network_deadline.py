@@ -15,12 +15,16 @@ def _expired(signum, frame) -> None:
     raise BudgetExceeded("network deadline exceeded")
 
 
-@contextmanager
-def network_deadline(seconds: float):
+def validate_worker_context() -> None:
     if threading.current_thread() is not threading.main_thread():
         raise WorkerContextError("network worker requires a dedicated process main thread")
     if any(signal.getitimer(signal.ITIMER_REAL)):
         raise WorkerContextError("network worker cannot replace an active process timer")
+
+
+@contextmanager
+def network_deadline(seconds: float):
+    validate_worker_context()
     previous = signal.getsignal(signal.SIGALRM)
     signal.signal(signal.SIGALRM, _expired)
     try:

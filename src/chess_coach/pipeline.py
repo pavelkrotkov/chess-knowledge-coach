@@ -3,6 +3,7 @@
 from .db import Database
 from .mastery import mastery_report
 from .pipeline_config import PipelineConfig
+from .pipeline_cooldown import utc_now
 from .pipeline_cursor import save_cursor
 from .pipeline_game import process_game
 from .pipeline_health import finish_run, record_sync, run_status, start_run
@@ -14,15 +15,17 @@ from .pipeline_sync import sync_result
 
 
 def process_pipeline(
-    db: Database, config: PipelineConfig, *, token: str | None = None, transport=None
+    db: Database, config: PipelineConfig, *, token: str | None = None, transport=None, clock=None
 ) -> dict:
     config.validate()
+    if clock is not None:
+        utc_now(clock)
     if db.connection.in_transaction:
         raise RuntimeError("pipeline requires an idle database connection")
     with pipeline_lock(db.path):
         start_run(db)
         try:
-            result = _run_pipeline(db, config, token, transport)
+            result = _run_pipeline(db, config, token, transport, clock)
         except Exception:
             finish_run(db, "failed")
             return {"status": "failed", "detail": "processing_failed"}
@@ -30,8 +33,8 @@ def process_pipeline(
         return result
 
 
-def _run_pipeline(db, config, token, transport):
-    sync = sync_result(db, config, token, transport)
+def _run_pipeline(db, config, token, transport, clock):
+    sync = sync_result(db, config, token, transport, clock)
     record_sync(db, sync)
     if sync.get("detail") == "worker_process_required":
         return {"status": "failed", "sync": sync, "games": [], "mastery": []}

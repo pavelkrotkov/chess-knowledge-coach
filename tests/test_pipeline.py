@@ -4,7 +4,7 @@ import json
 import sys
 import time
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import chess
 import chess.engine
@@ -192,7 +192,9 @@ def test_lock_and_retry_after_budget(tmp_path, monkeypatch):
     result = process_pipeline(
         db, replace(config, network_sleep=1), transport=httpx.MockTransport(rate_limited)
     )
-    assert result["sync"] == {"status": "partial", "detail": "network_budget_exhausted"}
+    assert result["sync"]["status"] == "waiting"
+    assert result["sync"]["detail"] == "server_backoff"
+    assert result["sync"]["retry_until"]
     assert len(calls) == 1
 
 
@@ -394,12 +396,13 @@ def test_v12_migration_adds_pipeline_without_losing_existing_history(monkeypatch
     db = Database(":memory:")
     with monkeypatch.context() as patch:
         patch.setattr(db_recent, "add_pipeline_stages", lambda connection: None)
+        patch.setattr(db_recent, "add_pipeline_cooldown", lambda connection: None)
         db.initialize()
     db.connection.execute("PRAGMA user_version=12")
     db.connection.execute('INSERT INTO games(pgn,white,black,result) VALUES ("raw","A","B","*")')
     db.connection.commit()
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 14
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 15
     assert db.connection.execute("SELECT pgn FROM games").fetchone()[0] == "raw"
     for table in ("opening_runs", "structure_runs"):
         assert "pipeline_generation" in {
@@ -548,7 +551,17 @@ def test_sync_failure_and_interruption_health_survive_restart(tmp_path, monkeypa
 def test_retry_after_is_honored_and_request_count_is_actual(tmp_path, monkeypatch):
     db, config, _, _ = setup(tmp_path, monkeypatch, count=0)
     sleeps = []
-    monkeypatch.setattr("chess_coach.pipeline_network_budget.time.sleep", sleeps.append)
+    now = datetime.now(UTC)
+
+    def clock():
+        return now
+
+    def sleep(seconds):
+        nonlocal now
+        sleeps.append(seconds)
+        now += timedelta(seconds=seconds)
+
+    monkeypatch.setattr("chess_coach.pipeline_network_budget.time.sleep", sleep)
     calls = []
 
     def response(request):
@@ -561,10 +574,15 @@ def test_retry_after_is_honored_and_request_count_is_actual(tmp_path, monkeypatc
         db,
         replace(config, network_sleep=120, network_seconds=180),
         transport=httpx.MockTransport(response),
+        clock=clock,
     )
     assert sleeps == [120]
     assert result["sync"]["requests"] == len(calls)
     assert result["sync"]["requests"] > result["sync"]["windows"]
+    assert (
+        db.connection.execute("SELECT retry_until FROM pipeline_health WHERE id=1").fetchone()[0]
+        is None
+    )
 
 
 def test_game_selection_error_is_sanitized_and_other_games_continue(tmp_path, monkeypatch):
@@ -618,6 +636,7 @@ def test_schema_upgrade_failure_rolls_back_pipeline_migration(monkeypatch):
     db = Database(":memory:")
     with monkeypatch.context() as patch:
         patch.setattr(db_recent, "add_pipeline_stages", lambda connection: None)
+        patch.setattr(db_recent, "add_pipeline_cooldown", lambda connection: None)
         db.initialize()
     db.connection.execute("PRAGMA user_version=12")
     db.connection.commit()
@@ -764,6 +783,7 @@ def test_v13_upgrade_preserves_curriculum_cursor_revision_and_indexes(monkeypatc
     db = Database(":memory:")
     with monkeypatch.context() as patch:
         patch.setattr(db_recent, "add_pipeline_stages", lambda connection: None)
+        patch.setattr(db_recent, "add_pipeline_cooldown", lambda connection: None)
         db.initialize()
     db.connection.execute("PRAGMA user_version=13")
     db.connection.execute(
@@ -789,7 +809,7 @@ def test_v13_upgrade_preserves_curriculum_cursor_revision_and_indexes(monkeypatc
     state = new_state(db, "learner", "fixture", 10, 10, datetime.now(UTC))
     token = encode_cursor(db, state)
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 14
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 15
     assert db.connection.execute("SELECT content_revision FROM opening_datasets").fetchone()[0] == 0
     assert (
         tuple(
@@ -815,33 +835,33 @@ def test_v13_upgrade_preserves_curriculum_cursor_revision_and_indexes(monkeypatc
     assert db.connection.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
-def test_real_slow_stream_is_cancelled_at_total_deadline(tmp_path, monkeypatch):
+@pytest.mark.parametrize("enforce", [True, False])
+def test_real_slow_stream_is_cancelled_at_total_deadline(tmp_path, monkeypatch, enforce):
     import signal
     import socket
     import threading
+    from contextlib import nullcontext
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-    from chess_coach.lichess import LichessClient
+    from chess_coach import pipeline_network
+    from chess_coach.lichess import LichessClient, LichessError
     from chess_coach.pipeline_network import BudgetExceeded, sync_games
 
     disconnected = threading.Event()
-    started = threading.Event()
-    sent = threading.Event()
+    received = threading.Event()
+    waiting = threading.Event()
 
     class SlowStream(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
         def do_GET(self):
-            started.set()
             self.send_response(200)
             self.send_header("Content-Length", "2")
             self.end_headers()
-            time.sleep(0.65)
             try:
                 self.wfile.write(b"x")
                 self.wfile.flush()
-                sent.set()
-                self.connection.settimeout(2)
+                self.connection.settimeout(10)
                 if self.connection.recv(1, socket.MSG_PEEK) == b"":
                     disconnected.set()
             except OSError:
@@ -850,6 +870,18 @@ def test_real_slow_stream_is_cancelled_at_total_deadline(tmp_path, monkeypatch):
         def log_message(self, format, *args):
             pass
 
+    original_iter = httpx.Response.iter_raw
+
+    def observed_iter(response, *args, **kwargs):
+        for chunk in original_iter(response, *args, **kwargs):
+            received.set()
+            yield chunk
+            time.sleep(1.5)
+            waiting.set()
+
+    monkeypatch.setattr(httpx.Response, "iter_raw", observed_iter)
+    if not enforce:
+        monkeypatch.setattr(pipeline_network, "network_deadline", lambda seconds: nullcontext())
     server = ThreadingHTTPServer(("127.0.0.1", 0), SlowStream)
     server.daemon_threads = True
     thread = threading.Thread(
@@ -864,14 +896,14 @@ def test_real_slow_stream_is_cancelled_at_total_deadline(tmp_path, monkeypatch):
         db = Database(tmp_path / "slow.sqlite")
         db.initialize()
         config = PipelineConfig(
-            learner="synthetic", network_seconds=1.0, network_timeout=2, network_retries=0
+            learner="synthetic", network_seconds=4.0, network_timeout=10, network_retries=0
         )
         start = time.monotonic()
-        with pytest.raises(BudgetExceeded):
+        with pytest.raises(BudgetExceeded if enforce else LichessError):
             sync_games(db, config)
         elapsed = time.monotonic() - start
-        assert 0.65 <= elapsed < 1.45
-        assert started.is_set() and sent.is_set() and disconnected.wait(1)
+        assert received.is_set() and waiting.is_set() and disconnected.wait(1)
+        assert (elapsed < 5.0) if enforce else (elapsed > 4.8)
         assert not db.connection.in_transaction
         assert db.connection.execute("SELECT COUNT(*) FROM games").fetchone()[0] == 0
         assert signal.getsignal(signal.SIGALRM) == old_handler

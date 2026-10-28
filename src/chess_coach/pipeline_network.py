@@ -6,13 +6,15 @@ import httpx
 
 from .lichess import LichessClient
 from .pipeline_config import PipelineConfig
+from .pipeline_cooldown import active_deadline
+from .pipeline_cooldown_response import observe_response
 from .pipeline_network_budget import BoundedClient, BoundedSleep
 from .pipeline_network_budget import BudgetExceeded as BudgetExceeded
 from .pipeline_network_deadline import network_deadline
 from .pipeline_network_privacy import private_network_logs
 
 
-def sync_games(db, config: PipelineConfig, *, token: str | None = None, transport=None):
+def sync_games(db, config: PipelineConfig, *, token: str | None = None, transport=None, clock=None):
     deadline = time.monotonic() + config.network_seconds
     with (
         private_network_logs(),
@@ -24,7 +26,13 @@ def sync_games(db, config: PipelineConfig, *, token: str | None = None, transpor
         ) as client,
     ):
         bounded = BoundedClient(
-            client, config.network_requests, deadline, config.network_bytes, config.network_timeout
+            client,
+            config.network_requests,
+            deadline,
+            config.network_bytes,
+            config.network_timeout,
+            lambda: _guard(db, clock),
+            lambda response: observe_response(db, response, clock),
         )
         lichess = LichessClient(
             token=token,
@@ -38,3 +46,8 @@ def sync_games(db, config: PipelineConfig, *, token: str | None = None, transpor
         result["http_requests"] = config.network_requests - bounded.remaining
         result["http_bytes"] = config.network_bytes - bounded.byte_limit
         return result
+
+
+def _guard(db, clock):
+    if active_deadline(db, clock) is not None:
+        raise BudgetExceeded("server backoff is active")

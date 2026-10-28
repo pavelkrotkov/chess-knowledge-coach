@@ -1,29 +1,31 @@
 """Translate sync results to bounded, sanitized worker status."""
 
+from .pipeline_cooldown import active_deadline
 from .pipeline_network import BudgetExceeded, sync_games
-from .pipeline_network_deadline import WorkerContextError
+from .pipeline_network_deadline import WorkerContextError, validate_worker_context
+from .pipeline_sync_summary import sync_summary
 
 
-def sync_result(db, config, token, transport):
+def sync_result(db, config, token, transport, clock):
     try:
-        result = sync_games(db, config, token=token, transport=transport)
-        return {
-            "status": "complete"
-            if result["recent_complete"]
-            and result["history_complete"]
-            and not result["blocked_saturated"]
-            else "partial",
-            "games": result["games"],
-            "requests": result["http_requests"],
-            "bytes": result["http_bytes"],
-            "windows": result["requests"],
-            "recent_complete": result["recent_complete"],
-            "history_complete": result["history_complete"],
-            "blocked_saturated": result["blocked_saturated"],
-        }
+        validate_worker_context()
+        waiting = _waiting(db, clock)
+        if waiting is not None:
+            return waiting
+        result = sync_games(db, config, token=token, transport=transport, clock=clock)
+        return sync_summary(result)
     except WorkerContextError:
         return {"status": "failed", "detail": "worker_process_required"}
     except BudgetExceeded:
-        return {"status": "partial", "detail": "network_budget_exhausted"}
+        return _waiting(db, clock) or {"status": "partial", "detail": "network_budget_exhausted"}
     except Exception:
-        return {"status": "failed", "detail": "sync_failed"}
+        return _waiting(db, clock) or {"status": "failed", "detail": "sync_failed"}
+
+
+def _waiting(db, clock):
+    deadline = active_deadline(db, clock)
+    return (
+        {"status": "waiting", "detail": "server_backoff", "retry_until": deadline}
+        if deadline
+        else None
+    )
