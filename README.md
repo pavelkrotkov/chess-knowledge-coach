@@ -157,8 +157,8 @@ operation combinations are rejected. Historical records with unproven source
 lineage remain visible as unknown. The two existing mappers use the unassigned
 subject until learner attribution supplies one.
 
-Consumers count current evidence and omit stale mastery states. Superseding a
-mapping or its detector input invalidates affected mastery states without
+Mastery reports recompute eligible evidence at access time. Superseding a
+mapping or its detector input invalidates affected cached states without
 deleting their event history. Callers composing fact and mapping writes can use
 the in-transaction mapping primitive in the same transaction as the detector
 primitive; callers own commit and rollback.
@@ -240,8 +240,31 @@ Choose a new attempt ID for each attempt and a new event ID for each move or
 hint. To safely retry a request, reuse its event ID with the same input. The
 attempt can be resumed by ID after restarting; its puzzle version, checksum,
 and line are snapshotted so reimporting a corpus cannot change an in-progress
-attempt. Verified results and hints are stored separately from FSRS scheduling:
-use `review-training` only when you choose a separate self-rating.
+attempt.
+
+To connect a terminal move to training, create a puzzle item and provide its ID
+and the learner subject when playing:
+
+```bash
+uv run chess-coach --db coach.sqlite create-puzzle-training corpus-v1 puzzle-id mate_in_one execute
+uv run chess-coach --db coach.sqlite show-puzzle attempt-1 --training-item-id 1
+uv run chess-coach --db coach.sqlite play-puzzle attempt-1 c5c8 --event-id move-1 --training-item-id 1 --subject learner
+```
+
+Use the ID returned by the create command and a subject supplied at runtime.
+The terminal move, completion, and FSRS review commit together. The scheduling
+policy uses `good` for an unhinted solve, `hard` for a hinted solve, and `again`
+for a failure. Active duration is unknown, rather than inferred from elapsed
+wall time. When the training item explicitly requests mate in one and the prompt contains
+an immediate mate, the training-aware view says Find mate in one without
+revealing moves. An unhinted first-decision checkmate creates unreviewed
+`mate_in_one/execute` success evidence. An unhinted legal nonmating move that
+ends the explicitly requested task as incorrect creates unreviewed failure
+evidence. Hinted and unsupported decisions record a reason instead of guessing
+skill evidence.
+Evidence remains subject to the ordinary human-review policy. Retrying the same
+terminal event returns the stored result; conflicting retries are rejected.
+Use `play-puzzle` without training options for a standalone practice attempt.
 
 ## Tactical opportunities
 
@@ -313,3 +336,30 @@ That legacy flag remains visible separately after a later review decision.
 Rejected and revoked items are excluded from the aggregate evidence report and
 cannot contribute to mastery. Review changes invalidate existing mastery state.
 The compatibility command `validate-evidence` also requires `--actor`.
+
+## Mastery estimates
+
+`mastery-report --subject learner` recomputes an uncalibrated outcome heuristic
+at access time. Current, explicitly accepted, provenance-linked success and
+failure evidence must identify an attributed learner decision in a game or a
+verified, unhinted practice completion, with a known UTC observation time. Unassigned, ambiguous, unreviewed, rejected, revoked,
+superseded, legacy-unproven, future, and expired evidence is excluded. The
+report includes exclusion counts and supporting evidence IDs.
+
+A game contributes at most one context, even across moves, producers, and
+import routes. Game identity uses the verified starting position, legal moves,
+normalized players, and UTC game time, so indistinguishable games are treated
+conservatively as one. Practice prompts use the verified position after the
+setup move, excluding move counters; repeated prompts use the latest eligible
+completion across attempts and corpus versions. A practice prompt matching an
+eligible game decision counts only through the game, without claiming an
+origin for the practice. At least three independent contexts are required for
+a score. Confidence weights
+decay with a 90-day half-life over whole UTC days; the horizon is 365 days.
+Uncertainty is `1 / (1 + effective weight)`. The 30-day trend is unknown when
+there are not both recent and older contexts. A result with insufficient
+contexts has no score and marks any prior cached score stale while retaining
+its event history. This is a descriptive heuristic, not a calibrated ability
+or centipawn-loss measure. Training evidence must be explicitly accepted,
+directly linked to a verified completion, and supported by its immutable
+session and terminal event; a self-rating alone is not mastery evidence.

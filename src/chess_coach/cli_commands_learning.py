@@ -2,10 +2,13 @@
 
 import json
 
+from .cli_training_feedback import handle_create_puzzle_training as handle_create_puzzle_training
+from .cli_training_feedback import handle_play_puzzle as handle_play_puzzle
+from .cli_training_feedback import handle_show_puzzle as handle_show_puzzle
 from .evidence import evidence_report, validate_evidence
 from .evidence_review import inspect_evidence, list_evidence, review_evidence
 from .mastery import mastery_report, update_mastery
-from .puzzle_sessions import request_hint, show_attempt, start_attempt, submit_move
+from .puzzle_sessions import request_hint, start_attempt
 from .training import create_training_item, due_items, review_item
 
 
@@ -68,18 +71,6 @@ def handle_start_puzzle(db, args):
                 db, attempt_id=args.attempt_id, version=args.version, puzzle_id=args.puzzle_id
             ),
             indent=2,
-        )
-    )
-
-
-def handle_show_puzzle(db, args):
-    print(json.dumps(show_attempt(db, args.attempt_id), indent=2))
-
-
-def handle_play_puzzle(db, args):
-    print(
-        json.dumps(
-            submit_move(db, args.attempt_id, event_id=args.event_id, move=args.move), indent=2
         )
     )
 

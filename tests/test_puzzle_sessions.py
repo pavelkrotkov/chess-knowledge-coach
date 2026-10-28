@@ -192,7 +192,7 @@ def test_schema_v4_upgrade_preserves_cursor_and_creates_session_tables(monkeypat
 
     db.initialize()
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 10
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 12
     assert db.connection.execute("SELECT pgn FROM games").fetchone()[0] == "existing"
     row = db.connection.execute("SELECT * FROM sync_progress").fetchone()
     assert (row["revision"], row["next_kind"], row["history_windows"]) == (
@@ -260,6 +260,8 @@ def test_corrupt_snapshot_opponent_mate_cannot_complete_as_solved(solution) -> N
     board.push_uci("f2f3")
     db = database(fen=board.fen(), solution="e7e5 g2g4")
     initial = start_attempt(db, attempt_id="a1", version="v1", puzzle_id="p1")
+    # Simulate a damaged database despite the snapshot immutability guard.
+    db.connection.execute("DROP TRIGGER puzzle_session_snapshot_no_update")
     db.connection.execute(
         "UPDATE puzzle_sessions SET solution = ? WHERE attempt_id = ?",
         (solution, "a1"),

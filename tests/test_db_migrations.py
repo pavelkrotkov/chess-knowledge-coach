@@ -75,7 +75,7 @@ def test_populated_legacy_upgrade_is_repeatable_and_preserves_history(
     }
     db.initialize()
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 10
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 12
     for table, old_rows in preserved.items():
         new_rows = rows(db, table)
         assert [
@@ -135,7 +135,7 @@ def test_unknown_time_does_not_enter_trend() -> None:
     db.connection.commit()
     state = update_mastery(db, skill="fork", operation="execute")
     assert state is not None
-    assert state["trend_30d"] == 1.0
+    assert state["status"] == "insufficient" and state["trend_30d"] is None
 
 
 def test_future_schema_and_pending_transactions_are_not_modified() -> None:
