@@ -8,8 +8,6 @@ from pathlib import Path
 
 import chess.engine
 
-from .analysis_output import save_line
-
 
 def create_run(
     connection: sqlite3.Connection,
@@ -49,7 +47,6 @@ def create_run(
 def scan(
     connection: sqlite3.Connection,
     engine: chess.engine.SimpleEngine,
-    run_id: int,
     game: sqlite3.Row,
     *,
     nodes: int,
@@ -59,10 +56,12 @@ def scan(
 ) -> None:
     from .analysis_positions import decisions
 
+    outputs = []
     for position, board in decisions(connection, game):
         result = engine.analyse(
             board, chess.engine.Limit(nodes=nodes, depth=depth, time=time_limit), multipv=multipv
         )
         lines = result if isinstance(result, list) else [result]
         for number, line in enumerate(lines or [{}], start=1):
-            save_line(connection, run_id, position, board, number, dict(line))
+            outputs.append((position, board, number, dict(line)))
+    return outputs

@@ -6,7 +6,7 @@ from .pipeline_config import PipelineConfig
 from .pipeline_cooldown import utc_now
 from .pipeline_cursor import save_cursor
 from .pipeline_game import process_game
-from .pipeline_health import finish_run, record_sync, run_status, start_run
+from .pipeline_health import finish_run, run_status, start_run
 from .pipeline_inputs import engine_identity, scan_input
 from .pipeline_lock import pipeline_lock
 from .pipeline_pending import pending_games
@@ -35,7 +35,6 @@ def process_pipeline(
 
 def _run_pipeline(db, config, token, transport, clock):
     sync = sync_result(db, config, token, transport, clock)
-    record_sync(db, sync)
     if sync.get("detail") == "worker_process_required":
         return {"status": "failed", "sync": sync, "games": [], "mastery": []}
     engine_hash = engine_identity(config.engine_path)

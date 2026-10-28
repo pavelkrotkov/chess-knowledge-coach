@@ -65,6 +65,9 @@ def test_stage_archives_exact_commit_and_renders_fixed_release_units(tmp_path, m
     assert f"CHESS_RELEASE_SHA={commit}" in web
     assert "Restart=on-failure" in web and "Restart=no" in worker
     assert "OnUnitInactiveSec=15min" in timer
+    retry = (units / "chess-coach-retry.timer").read_text()
+    assert "OnBootSec=5s" in retry and "OnUnitInactiveSec=10s" in retry
+    assert "chess_coach.ops_retry" in (units / "chess-coach-retry.service").read_text()
     assert "PYTHONPATH PYTHONHOME" in web and "PYTHONPATH PYTHONHOME" in worker
     assert all(stat.S_IMODE(path.stat().st_mode) == 0o600 for path in units.iterdir())
     assert not (root / ".runtime" / "current").exists()

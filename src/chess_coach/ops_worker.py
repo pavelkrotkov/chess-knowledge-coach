@@ -8,7 +8,7 @@ from .cli import main as cli_main
 from .web_paths import inside
 
 
-def main() -> None:
+def database_path() -> Path:
     root = Path(os.environ["CHESS_PROJECT_ROOT"]).resolve(strict=True)
     if root != _release_root():
         raise ValueError("worker project root does not match its installed release")
@@ -16,7 +16,11 @@ def main() -> None:
     if not data.is_relative_to(root):
         raise ValueError("worker data directory must be within the selected project")
     database = inside(data, os.environ["CHESS_DB"], existing=True)
-    sys.argv = ["chess-coach", "--db", str(database), "process-pipeline"]
+    return database
+
+
+def main() -> None:
+    sys.argv = ["chess-coach", "--db", str(database_path()), "process-pipeline"]
     cli_main()
 
 

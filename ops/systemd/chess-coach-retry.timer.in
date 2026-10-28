@@ -1,0 +1,11 @@
+[Unit]
+Description=Check for due chess coach cooldown retries
+
+[Timer]
+OnBootSec=5s
+OnUnitInactiveSec=10s
+AccuracySec=1s
+Unit=chess-coach-retry.service
+
+[Install]
+WantedBy=timers.target

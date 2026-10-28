@@ -89,18 +89,18 @@ running them. Linger is already enabled; do not change it.
 
 Inspect existing user unit names and `tailscale serve status --json`. If any
 unit name or HTTPS port 8448 route conflicts, stop and resolve the conflict
-without replacing it. After authorization, link the three reviewed units
+without replacing it. After authorization, link the five reviewed units
 without overwriting existing files, reload the manager, and enable the browser
-and worker timer:
+and both timers:
 
 ```sh
 unitdir="$PWD/.runtime/units/<reviewed-full-sha>"
 mkdir -p "$HOME/.config/systemd/user"
-for unit in chess-coach-web.service chess-coach-worker.service chess-coach-worker.timer; do
+for unit in chess-coach-web.service chess-coach-worker.service chess-coach-worker.timer chess-coach-retry.service chess-coach-retry.timer; do
   ln -s "$unitdir/$unit" "$HOME/.config/systemd/user/$unit"
 done
 systemctl --user daemon-reload
-systemctl --user enable --now chess-coach-web.service chess-coach-worker.timer
+systemctl --user enable --now chess-coach-web.service chess-coach-worker.timer chess-coach-retry.timer
 ```
 
 After checking port 8448 is unused and receiving authorization, configure
@@ -148,15 +148,15 @@ bypass these checks.
 ## Health, backup, upgrade, and rollback
 
 Use `systemctl --user status chess-coach-web.service
-chess-coach-worker.timer` and the browser status page to inspect recent
+chess-coach-worker.timer chess-coach-retry.timer` and the browser status page to inspect recent
 processing, failures, and any server-requested retry deadline. Worker runs are
-bounded and serialized, and the timer does not immediately restart a failed
+bounded; the retry timer checks persisted deadlines every 10 seconds and runs only synchronization when one is due. Synchronization is serialized across both services, and the timer does not immediately restart a failed
 run. Logs remain private and project-local. Stop the timer, any already-running worker, and the browser; then verify
 each is inactive before backup, upgrade, or rollback:
 
 ```sh
-systemctl --user stop chess-coach-worker.timer chess-coach-worker.service chess-coach-web.service
-for unit in chess-coach-worker.timer chess-coach-worker.service chess-coach-web.service; do
+systemctl --user stop chess-coach-worker.timer chess-coach-worker.service chess-coach-retry.timer chess-coach-retry.service chess-coach-web.service
+for unit in chess-coach-worker.timer chess-coach-worker.service chess-coach-retry.timer chess-coach-retry.service chess-coach-web.service; do
   if systemctl --user is-active --quiet "$unit"; then
     printf 'Still active: %s\n' "$unit"
     exit 1
@@ -167,7 +167,7 @@ done
 Stopping the timer alone does not stop a running oneshot worker. Do not
 remove data.
 
-Before an upgrade, stop and verify all three units as above, run `backup-db` to a new path under
+Before an upgrade, stop and verify all five units as above, run `backup-db` to a new path under
 `.runtime/backups`, and `restore-db` that backup to a separate new path
 under `.runtime/data`; both require `--project-root "$PWD"`. The commands
 verify integrity and foreign keys and refuse existing destinations and SQLite
