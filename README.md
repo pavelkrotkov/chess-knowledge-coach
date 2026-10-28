@@ -502,14 +502,17 @@ strips incoming spoofed identity headers before supplying its own identity.
 The Unix server checks that identity against the exact configured login and
 requires the backend `Host: localhost` supplied by Serve. It does not validate
 the original public Host. State changes require the exact configured public
-HTTPS Origin and a session CSRF token. `X-Forwarded-Host` is caller-spoofable
-in this setup and is not an authority for identity or origin. The socket
+HTTPS Origin and a session CSRF token; missing, `null`, and incorrect Origins
+are rejected. The response uses `Referrer-Policy: same-origin` so ordinary
+same-origin HTTPS forms retain their Origin while cross-origin requests carry no
+referrer information. Same-origin requests may include the page URL as a
+referrer. `X-Forwarded-Host` is caller-spoofable in this setup and is not an
+authority for identity or origin. The socket
 directory must remain mode 0700 and the socket mode 0600: local processes with
 socket access are trusted. The signing key is process-local, so sessions expire
 on restart. A private lifetime lock prevents overlapping browser instances; on
-Linux a stale owned
-socket is reclaimed only if no process has it bound. Unexpected paths are left
-untouched.
+Linux a stale owned socket is reclaimed only if no process has it bound.
+Unexpected paths are left untouched.
 This command does not configure Tailscale Serve or install a service.
 
 For private service installation, backup, upgrade, and recovery, see the
