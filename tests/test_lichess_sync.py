@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from email.utils import format_datetime
 
 import httpx
 import pytest
@@ -250,7 +251,7 @@ def test_v2_upgrade_preserves_games_and_adds_sync_progress():
     db.connection.commit()
     db.initialize()
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 3
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 4
     assert db.connection.execute("SELECT pgn FROM games").fetchone()[0] == "existing"
     assert db.connection.execute("SELECT COUNT(*) FROM sync_progress").fetchone()[0] == 0
     assert db.connection.execute("PRAGMA foreign_key_check").fetchall() == []
@@ -284,3 +285,140 @@ def test_zero_since_retains_account_start_compatibility(monkeypatch):
     result = client.sync_user(db, "learner", since=0)
     assert result["games"] == 1
     assert db.connection.execute("SELECT history_start FROM sync_progress").fetchone()[0] == 0
+
+
+def test_history_progress_is_fair_with_one_game_budget_after_reopen(monkeypatch, tmp_path):
+    clock = {"now": NOW}
+    monkeypatch.setattr("chess_coach.lichess.time.time", lambda: clock["now"])
+    path = tmp_path / "fair.sqlite"
+    db = Database(path)
+    db.initialize()
+    service = Export([])
+    client = LichessClient(client=service, retries=0)
+    initial = client.sync_user(db, "learner", max_games=1, page_size=10)
+    assert initial["bootstrap_complete"]
+    service.entries.append((NOW - 200_000, game("late0001", NOW - 200_000)))
+    for week in range(1, 100):
+        clock["now"] = NOW + week * 7 * 86400
+        created = clock["now"] - 2 * 86400
+        service.entries.append((created, game(f"week{week:04}", created)))
+        db.close()
+        db = Database(path)
+        db.initialize()
+        result = client.sync_user(db, "learner", max_games=1, page_size=10)
+        assert result["games"] <= 1
+        if db.connection.execute(
+            "SELECT 1 FROM games WHERE source_id = ?", ("late0001",)
+        ).fetchone():
+            break
+    else:
+        pytest.fail("history was starved despite repeated bounded calls")
+
+
+@pytest.mark.parametrize("maximum", [1, 2, 100])
+def test_iterator_handles_tied_seconds_with_small_page_size(monkeypatch, maximum):
+    entries = [(NOW - 1, game(f"tie{i:05}", NOW - 1)) for i in range(2)]
+    _, _, client = db_and_client(monkeypatch, entries)
+    results = list(
+        client.iter_user_games("learner", max_games=maximum, page_size=1, since=(NOW - 2) * 1000)
+    )
+    assert len(results) == min(maximum, 2)
+    assert len(set(results)) == len(results)
+
+
+def test_iterator_reports_true_saturation_if_requested_count_cannot_be_satisfied(monkeypatch):
+    from chess_coach.lichess_iterator import iterate
+
+    class Saturated:
+        def export_page(self, username, *, max_games=100, since=None, until=None):
+            return ["record"] * min(max_games, 1000)
+
+    monkeypatch.setattr("chess_coach.lichess_iterator_window.supported", lambda _: True)
+    with pytest.raises(LichessError, match="saturated"):
+        list(
+            iterate(
+                Saturated(),
+                "learner",
+                max_games=1001,
+                page_size=999,
+                since=(NOW - 1) * 1000,
+                now=NOW,
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    ("status", "header", "expected"),
+    [
+        (429, "120", 120.0),
+        (503, "75", 75.0),
+        (429, "5", 60.0),
+        (503, "invalid", 2.0),
+        (429, "invalid", 60.0),
+        (503, None, 2.0),
+    ],
+)
+def test_retry_after_numeric_and_fallback_delays(status, header, expected):
+    from chess_coach.lichess_retry import retry_delay
+
+    headers = {"Retry-After": header} if header is not None else {}
+    response = httpx.Response(status, headers=headers)
+    assert retry_delay(response, 1, 1.0, now=NOW) == expected
+
+
+@pytest.mark.parametrize(
+    ("status", "seconds", "expected"), [(429, 180, 180), (503, 90, 90), (429, -5, 60)]
+)
+def test_retry_after_http_date_uses_injected_clock(status, seconds, expected):
+    from chess_coach.lichess_retry import retry_delay
+
+    when = datetime.fromtimestamp(NOW, UTC) + timedelta(seconds=seconds)
+    response = httpx.Response(status, headers={"Retry-After": format_datetime(when, usegmt=True)})
+    assert retry_delay(response, 0, 1.0, now=NOW) == expected
+
+
+def test_503_honors_retry_after_through_http_adapter():
+    class RetryOnce:
+        def __init__(self):
+            self.calls = 0
+
+        def get(self, url, **kwargs):
+            self.calls += 1
+            request = httpx.Request("GET", url)
+            if self.calls == 1:
+                return httpx.Response(503, headers={"Retry-After": "75"}, request=request)
+            return httpx.Response(200, text=game("valid001", NOW - 1), request=request)
+
+    delays = []
+    service = RetryOnce()
+    client = LichessClient(client=service, retries=1, sleeper=delays.append)
+    assert len(client.export_page("learner")) == 1
+    assert service.calls == 2
+    assert delays == [75.0]
+
+
+def test_populated_v3_upgrade_preserves_cursors_and_defaults_fair_turn():
+    from chess_coach.db import SCHEMA
+
+    db = Database(":memory:")
+    old = SCHEMA.replace(
+        "    next_kind TEXT NOT NULL DEFAULT 'recent' CHECK(next_kind IN ('recent', 'history')),\n",
+        "",
+    )
+    db.connection.executescript(old)
+    db.connection.execute(
+        """INSERT INTO sync_progress
+        (account_key, revision, history_start, history_windows, history_cycles,
+         recent_windows, recent_end, recent_target)
+        VALUES ('synthetic', 7, 20, '[[20,30]]', 2, '[[25,30]]', 25, 30)"""
+    )
+    db.connection.execute("PRAGMA user_version = 3")
+    db.connection.commit()
+    db.initialize()
+    db.initialize()
+    row = db.connection.execute("SELECT * FROM sync_progress").fetchone()
+    assert (row["revision"], row["history_windows"], row["history_cycles"]) == (7, "[[20,30]]", 2)
+    assert (row["recent_windows"], row["recent_end"], row["recent_target"]) == ("[[25,30]]", 25, 30)
+    assert row["next_kind"] == "recent"
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 4
+    assert db.connection.execute("PRAGMA foreign_key_check").fetchall() == []

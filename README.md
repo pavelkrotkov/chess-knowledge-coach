@@ -55,8 +55,9 @@ changing the stored game.
 Sync keeps separate private SQLite progress for recent polling and historical
 reconciliation. Recent polling overlaps by one day; a rotating historical sweep
 revisits the configured range, so games that finish long after they start can be
-found in a later sweep. The status distinguishes completed bootstrap, the current
-recent and history windows, and a saturated window. A saturated one-second window
+found in a later sweep. The next kind of work is persisted so even a one-game
+budget gives both queues a turn. The status distinguishes completed bootstrap,
+the current recent and history windows, and a saturated window. A saturated one-second window
 is left incomplete; increase the game limit and retry. A one-second window with
 1,000 or more games cannot be completed automatically. A first --since sets the
 earliest creation timestamp for that account in milliseconds, rounded down to
@@ -66,7 +67,8 @@ invocation may need to be run again to complete its windows.
 Lichess orders exports by game creation time. See the
 [export API](https://github.com/lichess-org/api/blob/master/doc/specs/tags/games/api-games-user-username.yaml)
 and [API rate-limit guidance](https://lichess.org/page/api-tips). HTTP 429
-retries wait at least one minute, and errors do not advance the current window.
+retries wait at least one minute; retryable responses honor valid Retry-After
+seconds or HTTP dates. Errors do not advance the current window.
 
 Maia is optional and can run in a separate environment behind a small JSON
 subprocess adapter. Without a configured command, offline mode returns no Maia

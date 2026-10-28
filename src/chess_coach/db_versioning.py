@@ -3,9 +3,9 @@
 import sqlite3
 
 from .analysis_schema import add_decision_columns
-from .lichess_schema import add_sync_progress
+from .lichess_schema import add_sync_progress, add_sync_turn
 
-CURRENT_VERSION = 3
+CURRENT_VERSION = 4
 
 
 def upgrade(connection: sqlite3.Connection, schema: str) -> None:
@@ -27,6 +27,9 @@ def upgrade(connection: sqlite3.Connection, schema: str) -> None:
         if version < 3:
             add_sync_progress(connection)
             connection.execute("PRAGMA user_version = 3")
+        if version < 4:
+            add_sync_turn(connection)
+            connection.execute("PRAGMA user_version = 4")
         connection.commit()
     except Exception:
         connection.rollback()

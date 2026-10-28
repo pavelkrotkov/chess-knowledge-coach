@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from .db import Database
 from .lichess_import import import_records
-from .lichess_state import read_state, save_state
+from .lichess_state import advance_turn, read_state, save_state
 
 
 def apply_window(db: Database, state: dict, field: str, records: list[str]) -> dict[str, int]:
@@ -19,6 +19,7 @@ def apply_window(db: Database, state: dict, field: str, records: list[str]) -> d
             state["history_cycles"] += 1
         if not state[field] and field == "recent_windows":
             state["recent_end"] = state["recent_target"]
+        state["next_kind"] = "history" if field == "recent_windows" else "recent"
         save_state(db.connection, state)
         db.connection.commit()
         return totals
@@ -28,11 +29,5 @@ def apply_window(db: Database, state: dict, field: str, records: list[str]) -> d
 
 
 def split_progress(db: Database, state: dict, field: str, children: list[list[int]]) -> None:
-    try:
-        db.connection.execute("BEGIN IMMEDIATE")
-        state[field][:1] = children
-        save_state(db.connection, state)
-        db.connection.commit()
-    except BaseException:
-        db.connection.rollback()
-        raise
+    state[field][:1] = children
+    advance_turn(db.connection, state, field)

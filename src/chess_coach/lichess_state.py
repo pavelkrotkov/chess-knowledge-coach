@@ -24,7 +24,7 @@ def read_state(connection: sqlite3.Connection, key: str) -> dict:
 def save_state(connection: sqlite3.Connection, state: dict) -> None:
     cursor = connection.execute(
         """UPDATE sync_progress SET history_windows = ?, recent_windows = ?, history_cycles = ?,
-        recent_end = ?, recent_target = ?, revision = revision + 1
+        recent_end = ?, recent_target = ?, next_kind = ?, revision = revision + 1
         WHERE account_key = ? AND revision = ?""",
         (
             json.dumps(state["history_windows"]),
@@ -32,6 +32,7 @@ def save_state(connection: sqlite3.Connection, state: dict) -> None:
             state["history_cycles"],
             state["recent_end"],
             state["recent_target"],
+            state["next_kind"],
             state["account_key"],
             state["revision"],
         ),
@@ -39,3 +40,14 @@ def save_state(connection: sqlite3.Connection, state: dict) -> None:
     if cursor.rowcount != 1:
         raise RuntimeError("synchronization progress changed concurrently")
     state["revision"] += 1
+
+
+def advance_turn(connection: sqlite3.Connection, state: dict, field: str) -> None:
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        state["next_kind"] = "history" if field == "recent_windows" else "recent"
+        save_state(connection, state)
+        connection.commit()
+    except BaseException:
+        connection.rollback()
+        raise

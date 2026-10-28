@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-from .lichess_http import LichessError
+from .lichess_iterator_window import refetch_tied
 from .lichess_support import supported
 from .lichess_windows import Exporter, fetch_window, split_window
 
@@ -20,7 +20,11 @@ def iterate(
         if len(records) >= limit:
             children = split_window(windows[0])
             if children is None:
-                raise LichessError("saturated export window; increase the page limit")
+                eligible = refetch_tied(client, username, windows[0], max_games - count)
+                yield from eligible
+                count += len(eligible)
+                windows.pop(0)
+                continue
             windows[:1] = children
             continue
         windows.pop(0)

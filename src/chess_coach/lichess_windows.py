@@ -34,10 +34,10 @@ def split_window(window: list[int]) -> list[list[int]] | None:
     return [[midpoint, end], [start, midpoint]]
 
 
-def choose_field(state: dict, index: int) -> str | None:
+def choose_field(state: dict) -> str | None:
     fields = (
         ("recent_windows", "history_windows")
-        if index % 2 == 0
+        if state["next_kind"] == "recent"
         else ("history_windows", "recent_windows")
     )
     return next((field for field in fields if state[field]), None)

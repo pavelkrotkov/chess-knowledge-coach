@@ -5,6 +5,7 @@ from __future__ import annotations
 from .db import Database
 from .lichess_commit import apply_window, split_progress
 from .lichess_progress import prepare_progress
+from .lichess_state import advance_turn
 from .lichess_step import fetch_step, validate_limits
 from .lichess_windows import Exporter, choose_field
 
@@ -25,10 +26,10 @@ def sync(
     budget = min(50, max(4, max_games))
     requests = 0
     blocked = False
-    for index in range(budget):
+    for _ in range(budget):
         if totals["games"] >= max_games:
             break
-        field = choose_field(state, index)
+        field = choose_field(state)
         if field is None:
             break
         remaining = max_games - totals["games"]
@@ -37,6 +38,7 @@ def sync(
         )
         requests += calls
         if blocked:
+            advance_turn(db.connection, state, field)
             break
         if children is not None:
             split_progress(db, state, field, children)
