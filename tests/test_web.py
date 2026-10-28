@@ -88,6 +88,7 @@ def test_private_access_and_csrf(setup):
     assert "Secure" in cookie and "HttpOnly" in cookie and "SameSite=Strict" in cookie
     assert "Path=/" in cookie and "Domain=" not in cookie
     assert page.headers["Cache-Control"] == "no-store"
+    assert page.headers["Referrer-Policy"] == "same-origin"
     csrf = token(page)
     endpoint = f"/evidence/{evidence_id}/review"
     assert (
@@ -101,6 +102,15 @@ def test_private_access_and_csrf(setup):
             endpoint,
             base_url=ORIGIN,
             headers={**HEADERS, "Origin": "https://other.invalid"},
+            data={"csrf": csrf, "decision": "accept"},
+        ).status_code
+        == 403
+    )
+    assert (
+        client.post(
+            endpoint,
+            base_url=ORIGIN,
+            headers={**HEADERS, "Origin": "null"},
             data={"csrf": csrf, "decision": "accept"},
         ).status_code
         == 403
@@ -691,6 +701,7 @@ def test_real_unix_server_enforces_identity_origin_and_csrf(setup):
                 },
             )
             assert status == 200 and headers.get("Access-Control-Allow-Origin") is None
+            assert headers["Referrer-Policy"] == "same-origin"
             cookie = headers["Set-Cookie"]
             assert cookie.startswith("__Host-chess_coach_session=")
             assert (
@@ -718,6 +729,12 @@ def test_real_unix_server_enforces_identity_origin_and_csrf(setup):
                 == 403
             )
             assert request("POST", post_route, headers=authenticated, data=form)[0] == 403
+            assert (
+                request("POST", post_route, headers={**authenticated, "Origin": "null"}, data=form)[
+                    0
+                ]
+                == 403
+            )
             assert (
                 request(
                     "POST",
