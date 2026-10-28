@@ -314,3 +314,43 @@ def test_engine_transport_closes_if_quit_fails(monkeypatch):
     assert engine.transport_closed
     assert db.connection.execute("SELECT COUNT(*) FROM analysis_runs").fetchone()[0] == 0
     assert db.connection.execute("SELECT COUNT(*) FROM engine_outputs").fetchone()[0] == 0
+
+
+def test_analysis_spools_only_required_fields_beside_database(tmp_path, monkeypatch):
+    import os
+    from contextlib import contextmanager
+
+    from chess_coach import analysis_transaction
+
+    db = Database(tmp_path / "engine.sqlite")
+    db.initialize()
+    ingest_pgn(db, PGN)
+    original = analysis_transaction.TemporaryFile
+    sizes = []
+
+    @contextmanager
+    def inspect_spool(*args, **kwargs):
+        assert kwargs["dir"] == tmp_path
+        with original(*args, **kwargs) as spool:
+            assert os.fstat(spool.fileno()).st_mode & 0o777 == 0o600
+            yield spool
+            sizes.append(os.fstat(spool.fileno()).st_size)
+
+    class ExtraEngine(FakeEngine):
+        def analyse(self, board, limit, multipv):
+            lines = super().analyse(board, limit, multipv)
+            lines[0]["unused"] = object()
+            lines[0]["large_unused"] = "x" * 1_000_000
+            return lines
+
+    monkeypatch.setattr(analysis_transaction, "TemporaryFile", inspect_spool)
+    before = set(tmp_path.iterdir())
+    run_id = run_fake(monkeypatch, db, ExtraEngine())
+    assert sizes and sizes[0] < 4096
+    assert set(tmp_path.iterdir()) == before
+    assert (
+        db.connection.execute(
+            "SELECT COUNT(*) FROM engine_outputs WHERE run_id=?", (run_id,)
+        ).fetchone()[0]
+        == 2
+    )

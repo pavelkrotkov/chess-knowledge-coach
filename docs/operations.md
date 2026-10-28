@@ -151,7 +151,7 @@ Use `systemctl --user status chess-coach-web.service
 chess-coach-worker.timer chess-coach-retry.timer` and the browser status page to inspect recent
 processing, failures, and any server-requested retry deadline. Worker runs are
 bounded; the retry timer checks persisted deadlines every 10 seconds and runs only synchronization when one is due. Synchronization is serialized across both services, and the timer does not immediately restart a failed
-run. Logs remain private and project-local. Stop the timer, any already-running worker, and the browser; then verify
+run. Logs remain private and project-local. Analysis temporarily spools engine output fields to a private file beside the database and closes it on completion or failure; allow disk space for this bounded-memory staging. Stop the timer, any already-running worker, and the browser; then verify
 each is inactive before backup, upgrade, or rollback:
 
 ```sh

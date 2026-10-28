@@ -14,7 +14,7 @@ def main() -> None:
         raise SystemExit("LICHESS_USERNAME is required")
     db = Database(database_path())
     try:
-        sync_result(
+        result = sync_result(
             db,
             PipelineConfig(learner=learner),
             os.environ.get("LICHESS_API_TOKEN"),
@@ -22,6 +22,8 @@ def main() -> None:
             None,
             retry_only=True,
         )
+        if result is not None and result.get("status") == "failed":
+            raise SystemExit("cooldown retry synchronization failed")
     finally:
         db.close()
 

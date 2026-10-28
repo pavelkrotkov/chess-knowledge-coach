@@ -8,6 +8,8 @@ from pathlib import Path
 
 import chess.engine
 
+from .analysis_output import line_fields
+
 
 def create_run(
     connection: sqlite3.Connection,
@@ -48,20 +50,20 @@ def scan(
     connection: sqlite3.Connection,
     engine: chess.engine.SimpleEngine,
     game: sqlite3.Row,
+    spool,
     *,
     nodes: int,
     depth: int | None,
     multipv: int,
     time_limit: float | None = None,
-) -> list[tuple[sqlite3.Row, chess.Board, int, dict]]:
+) -> None:
     from .analysis_positions import decisions
 
-    outputs = []
     for position, board in decisions(connection, game):
         result = engine.analyse(
             board, chess.engine.Limit(nodes=nodes, depth=depth, time=time_limit), multipv=multipv
         )
         lines = result if isinstance(result, list) else [result]
         for number, line in enumerate(lines or [{}], start=1):
-            outputs.append((position, board, number, dict(line)))
-    return outputs
+            json.dump(line_fields(position, board, number, dict(line)), spool)
+            spool.write("\n")

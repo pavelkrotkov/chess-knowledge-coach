@@ -7,35 +7,31 @@ import sqlite3
 import chess
 
 
-def save_line(
-    connection: sqlite3.Connection,
-    run_id: int,
-    position: sqlite3.Row,
-    board: chess.Board,
-    number: int,
-    line: dict,
-) -> None:
+def line_fields(position: sqlite3.Row, board: chess.Board, number: int, line: dict) -> tuple:
     best_move, pv = line_moves(line, board)
     score = line.get("score")
     score_cp = score.pov(board.turn).score(mate_score=100000) if score is not None else None
+    return (
+        position["id"],
+        score_cp,
+        best_move,
+        position["uci"],
+        number,
+        pv,
+        line.get("nodes"),
+        line.get("depth"),
+        board.fen(),
+        "white" if board.turn else "black",
+    )
+
+
+def save_fields(connection: sqlite3.Connection, run_id: int, fields: list) -> None:
     connection.execute(
         """INSERT INTO engine_outputs
         (run_id, position_id, score_cp, best_move, played_move, multipv, pv, nodes, depth,
          decision_fen, score_pov)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (
-            run_id,
-            position["id"],
-            score_cp,
-            best_move,
-            position["uci"],
-            number,
-            pv,
-            line.get("nodes"),
-            line.get("depth"),
-            board.fen(),
-            "white" if board.turn else "black",
-        ),
+        (run_id, *fields),
     )
 
 
