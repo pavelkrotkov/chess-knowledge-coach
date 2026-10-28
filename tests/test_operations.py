@@ -181,3 +181,159 @@ def test_seal_rejects_hardlinks_without_changing_other_files(tmp_path):
         seal_release(release)
     assert stat.S_IMODE(outside.stat().st_mode) == 0o600
     assert outside.read_text() == "preserve"
+
+
+def test_install_failure_saves_private_sanitized_diagnostics(tmp_path, monkeypatch):
+    from chess_coach.ops_install import _install
+    from chess_coach.ops_private_env import environment_and_secrets
+
+    monkeypatch.setenv("CHESS_SUBJECT", "fixture-learner-secret")
+    monkeypatch.setenv("LICHESS_USERNAME", "fixture-account-secret")
+    monkeypatch.setenv("LICHESS_API_TOKEN", "fixture-token-secret")
+    environment, secrets = environment_and_secrets()
+    assert all(
+        key not in environment for key in ("CHESS_SUBJECT", "LICHESS_USERNAME", "LICHESS_API_TOKEN")
+    )
+    binary = tmp_path / "bin"
+    binary.mkdir()
+    uv = binary / "uv"
+    uv.write_text(
+        "#!/bin/sh\nprintf '%s\\n' 'fixture build failed' 'fixture-learner-secret fixture-account-secret fixture-token-secret' >&2\nexit 7\n"
+    )
+    uv.chmod(0o700)
+    environment["PATH"] = str(binary)
+    release = tmp_path / "release"
+    release.mkdir(mode=0o700)
+    with pytest.raises(
+        RuntimeError, match=r"installation failed; see .runtime/releases/release/prepare-error.log"
+    ):
+        _install(tmp_path, environment, release, secrets)
+    log = release / "prepare-error.log"
+    text = log.read_text()
+    assert "fixture build failed" in text and "status: 7" in text
+    assert "[redacted]" in text
+    assert all(
+        secret not in text
+        for secret in ("fixture-learner-secret", "fixture-account-secret", "fixture-token-secret")
+    )
+    assert stat.S_IMODE(log.stat().st_mode) == 0o600
+
+
+@pytest.mark.parametrize("message", ["fixture import failed", "missing practice template"])
+def test_verification_failures_have_private_explanations(tmp_path, message):
+    from chess_coach.ops_install import _verify
+
+    release = tmp_path / "release"
+    binary = release / "venv" / "bin"
+    binary.mkdir(parents=True, mode=0o700)
+    python = binary / "python"
+    python.write_text(f"#!/bin/sh\nprintf '%s\\n' '{message}' >&2\nexit 9\n")
+    python.chmod(0o700)
+    with pytest.raises(RuntimeError, match="verification failed"):
+        _verify(release, tmp_path, {"PATH": "/usr/bin:/bin"}, [])
+    log = release / "prepare-error.log"
+    assert message in log.read_text() and "status: 9" in log.read_text()
+    assert stat.S_IMODE(log.stat().st_mode) == 0o600
+
+
+def test_diagnostics_bound_output_and_hide_truncated_secret(tmp_path):
+    import sys
+
+    from chess_coach.ops_diagnostics import MAX_DIAGNOSTIC_BYTES, run_checked
+
+    release = tmp_path / "release"
+    release.mkdir(mode=0o700)
+    secret = b"fixture-secret-crossing-boundary"
+    code = (
+        "import sys; sys.stdout.buffer.write(b'x' * 65525 + "
+        "b'fixture-secret-crossing-boundary' + b'z' * 100000); sys.exit(3)"
+    )
+    with pytest.raises(RuntimeError, match="installation failed"):
+        run_checked(
+            [sys.executable, "-I", "-B", "-c", code],
+            cwd=tmp_path,
+            environment={},
+            release=release,
+            stage="installation",
+            secrets=[secret],
+        )
+    contents = (release / "prepare-error.log").read_bytes()
+    assert len(contents) < MAX_DIAGNOSTIC_BYTES + 200
+    assert b"[output truncated]" in contents
+    assert secret not in contents and b"fixture-sec" not in contents
+
+
+@pytest.mark.parametrize("kind", ["file", "symlink"])
+def test_existing_diagnostic_path_is_preserved(tmp_path, kind):
+    import sys
+
+    from chess_coach.ops_diagnostics import run_checked
+
+    release = tmp_path / "release"
+    release.mkdir(mode=0o700)
+    log = release / "prepare-error.log"
+    victim = tmp_path / "existing"
+    victim.write_text("preserve")
+    if kind == "file":
+        log.write_text("preserve")
+    else:
+        log.symlink_to(victim)
+    with pytest.raises(RuntimeError, match="could not create private diagnostics"):
+        run_checked(
+            [sys.executable, "-I", "-B", "-c", "raise SystemExit(1)"],
+            cwd=tmp_path,
+            environment={},
+            release=release,
+            stage="installation",
+            secrets=[],
+        )
+    assert (log.read_text() if kind == "file" else victim.read_text()) == "preserve"
+    if kind == "symlink":
+        assert log.is_symlink()
+
+
+def test_proxy_credentials_are_redacted_from_diagnostics(tmp_path, monkeypatch):
+    import sys
+
+    from chess_coach.ops_diagnostics import run_checked
+    from chess_coach.ops_private_env import environment_and_secrets
+
+    monkeypatch.setenv("HTTPS_PROXY", "http://fixture-proxy-user:fixture-proxy-pass@proxy.invalid")
+    environment, secrets = environment_and_secrets()
+    release = tmp_path / "release"
+    release.mkdir(mode=0o700)
+    code = "import sys; print('fixture-proxy-user fixture-proxy-pass'); sys.exit(2)"
+    with pytest.raises(RuntimeError):
+        run_checked(
+            [sys.executable, "-I", "-B", "-c", code],
+            cwd=tmp_path,
+            environment=environment,
+            release=release,
+            stage="installation",
+            secrets=secrets,
+        )
+    text = (release / "prepare-error.log").read_text()
+    assert "fixture-proxy-user" not in text and "fixture-proxy-pass" not in text
+    assert "[redacted]" in text
+
+
+def test_redaction_expansion_remains_bounded(tmp_path):
+    import sys
+
+    from chess_coach.ops_diagnostics import MAX_DIAGNOSTIC_BYTES, run_checked
+
+    release = tmp_path / "release"
+    release.mkdir(mode=0o700)
+    code = "import sys; print('x' * 30000); sys.exit(1)"
+    with pytest.raises(RuntimeError):
+        run_checked(
+            [sys.executable, "-I", "-B", "-c", code],
+            cwd=tmp_path,
+            environment={},
+            release=release,
+            stage="installation",
+            secrets=[b"x"],
+        )
+    output = (release / "prepare-error.log").read_bytes()
+    assert len(output) <= MAX_DIAGNOSTIC_BYTES + 100
+    assert b"[output truncated]" in output

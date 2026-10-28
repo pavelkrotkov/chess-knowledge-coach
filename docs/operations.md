@@ -44,7 +44,8 @@ installs its frozen lock non-editably in `.runtime/releases/<sha>/venv`,
 checks installed imports and browser assets with isolated Python, and renders
 units in `.runtime/units/<sha>`. It seals the release against accidental
 writes but does not activate anything. An incomplete release is retained for
-inspection.
+inspection. Installation or verification failures write bounded, sanitized
+diagnostics to its private `prepare-error.log`; existing paths are preserved.
 
 ```sh
 export UV_PROJECT_ENVIRONMENT="$PWD/.venv/env"
