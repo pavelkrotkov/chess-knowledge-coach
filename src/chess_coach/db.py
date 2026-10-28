@@ -5,6 +5,16 @@ from pathlib import Path
 
 SCHEMA = """
 PRAGMA foreign_keys = ON;
+CREATE TABLE IF NOT EXISTS sync_progress (
+    account_key TEXT PRIMARY KEY,
+    revision INTEGER NOT NULL DEFAULT 0,
+    history_start INTEGER NOT NULL,
+    history_windows TEXT NOT NULL,
+    history_cycles INTEGER NOT NULL DEFAULT 0,
+    recent_windows TEXT NOT NULL,
+    recent_end INTEGER NOT NULL,
+    recent_target INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS games (
     id INTEGER PRIMARY KEY,
     source TEXT NOT NULL DEFAULT 'local',
