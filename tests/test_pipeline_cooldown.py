@@ -225,6 +225,10 @@ def test_v14_upgrade_preserves_existing_health_and_adds_unknown_deadline(monkeyp
         "INSERT INTO pipeline_cursors(account_key,last_game_id,updated_at,scan_hash) VALUES (?,?,?,?)",
         ("synthetic-key", 42, "2026-01-01T00:00:00+00:00", "synthetic-hash"),
     )
+    db.connection.execute(
+        "INSERT INTO opening_datasets(version,source_url,content_revision) VALUES (?,?,?)",
+        ("fixture", "fixture://opening", 17),
+    )
     db.connection.commit()
     before_cursor = tuple(db.connection.execute("SELECT * FROM pipeline_cursors").fetchone())
     before = tuple(db.connection.execute("SELECT * FROM pipeline_health").fetchone())
@@ -232,6 +236,9 @@ def test_v14_upgrade_preserves_existing_health_and_adds_unknown_deadline(monkeyp
     assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 15
     after = tuple(db.connection.execute("SELECT * FROM pipeline_health").fetchone())
     assert after[:-1] == before and after[-1] is None
+    assert (
+        db.connection.execute("SELECT content_revision FROM opening_datasets").fetchone()[0] == 17
+    )
     assert (
         tuple(db.connection.execute("SELECT * FROM pipeline_cursors").fetchone()) == before_cursor
     )
