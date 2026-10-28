@@ -43,7 +43,7 @@ def test_v9_upgrade_preserves_mastery_identity_history_and_nullable_trend() -> N
     before_event = tuple(db.connection.execute("SELECT * FROM mastery_events").fetchone())
     db.initialize()
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 10
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 11
     assert tuple(db.connection.execute("SELECT * FROM mastery_states").fetchone()) == before_state
     assert tuple(db.connection.execute("SELECT * FROM mastery_events").fetchone()) == before_event
     assert (
@@ -101,3 +101,30 @@ def test_mastery_migration_failure_rolls_back_tables_and_history(monkeypatch) ->
         ).fetchone()[0]
         == 0
     )
+
+
+def test_v10_to_v11_preserves_scheduler_configuration_and_history() -> None:
+    from chess_coach.training_schema import add_training_scheduler_config
+
+    db = legacy_db()
+    add_training_scheduler_config(db.connection)
+    db.connection.execute("""INSERT INTO training_items
+        (source_type,source_ref,skill,operation,due,scheduler_version,scheduler_config_json)
+        VALUES (\"puzzle\",\"fixture\",\"fork\",\"execute\",\"2026-01-01\",\"v1\",\"config\")""")
+    db.connection.execute("""INSERT INTO training_attempts
+        (item_id,rating,reviewed_at,scheduler_version,scheduler_config_json)
+        VALUES (1,\"good\",\"2026-01-01\",\"v1\",\"config\")""")
+    db.connection.execute("PRAGMA user_version = 10")
+    db.connection.commit()
+    db.initialize()
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 11
+    assert (
+        db.connection.execute("SELECT scheduler_config_json FROM training_items").fetchone()[0]
+        == "config"
+    )
+    assert (
+        db.connection.execute("SELECT scheduler_config_json FROM training_attempts").fetchone()[0]
+        == "config"
+    )
+    assert db.connection.execute("SELECT id FROM mastery_events").fetchone()[0] == 11
+    assert db.connection.execute("PRAGMA foreign_key_check").fetchall() == []
