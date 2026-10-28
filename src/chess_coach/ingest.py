@@ -9,7 +9,7 @@ import chess.pgn
 
 from .db import Database
 from .ingest_game import insert_game
-from .ingest_reader import RecordingReader
+from .ingest_reader import RecordingReader, SilentGameBuilder
 from .ingest_syntax import validate_syntax
 from .ingest_validation import raw_game, validate_game
 
@@ -44,8 +44,10 @@ def ingest_in_transaction(
     stream = RecordingReader(source_stream)
     totals = {"games": 0, "positions": 0}
     seen = 0
-    while game := chess.pgn.read_game(cast(TextIO, stream)):
-        validate_syntax(stream.take())
+    while game := chess.pgn.read_game(cast(TextIO, stream), Visitor=SilentGameBuilder):
+        record = stream.take()
+        validate_syntax(record)
+        validate_game(game, source, record)
         seen += 1
         if raw_pgn_override is not None and seen > 1:
             raise ValueError("raw PGN override supports one game")

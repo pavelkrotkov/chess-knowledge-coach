@@ -134,3 +134,49 @@ def test_unrecognized_trailing_text_is_not_silently_ignored() -> None:
     with pytest.raises(ValueError, match="invalid PGN"):
         ingest_pgn(db, PGN + "\nnot-a-game", source="lichess")
     assert db.connection.execute("SELECT COUNT(*) FROM games").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("batched", [False, True])
+def test_truncated_lichess_record_is_rejected_without_override(batched: bool) -> None:
+    db = database()
+    incomplete = PGN.removesuffix("1-0\n")
+    preceding = PGN.replace("abc12345", "abc12346") + "\n" if batched else ""
+
+    with pytest.raises(ValueError, match="incomplete Lichess game PGN"):
+        ingest_pgn(db, preceding + incomplete, source="lichess")
+
+    assert db.connection.execute("SELECT COUNT(*) FROM games").fetchone()[0] == 0
+    assert db.connection.execute("SELECT COUNT(*) FROM positions").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("bad_override", [False, True])
+def test_malformed_pgn_does_not_log_player_headers(caplog, bad_override: bool) -> None:
+    db = database()
+    good = PGN.replace('[White "A"]', '[White "SyntheticPrivateWhite"]').replace(
+        '[Black "B"]', '[Black "SyntheticPrivateBlack"]'
+    )
+    bad = good.replace("2. Nf3", "2. Ke3")
+    source = good if bad_override else bad
+    override = bad if bad_override else None
+
+    with caplog.at_level("ERROR", logger="chess.pgn"), pytest.raises(ValueError):
+        ingest_pgn(db, source, source="lichess", raw_pgn_override=override)
+
+    assert "SyntheticPrivateWhite" not in caplog.text
+    assert "SyntheticPrivateBlack" not in caplog.text
+    assert db.connection.execute("SELECT COUNT(*) FROM games").fetchone()[0] == 0
+
+
+def test_default_storage_is_normalized_but_explicit_override_remains_exact() -> None:
+    import io
+
+    import chess.pgn
+
+    no_override, with_override = database(), database()
+    ingest_pgn(no_override, PGN, source="lichess")
+    ingest_pgn(with_override, PGN, source="lichess", raw_pgn_override=PGN)
+
+    assert no_override.connection.execute("SELECT pgn FROM games").fetchone()[0] == str(
+        chess.pgn.read_game(io.StringIO(PGN))
+    )
+    assert with_override.connection.execute("SELECT pgn FROM games").fetchone()[0] == PGN

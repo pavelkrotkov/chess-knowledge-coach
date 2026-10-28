@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TextIO
 
+import chess.pgn
+
 
 class RecordingReader:
     def __init__(self, source: TextIO) -> None:
@@ -19,3 +21,10 @@ class RecordingReader:
         result = "".join(self.lines)
         self.lines.clear()
         return result
+
+
+class SilentGameBuilder(chess.pgn.GameBuilder):
+    """Record parser errors without logging game headers."""
+
+    def handle_error(self, error: Exception) -> None:
+        self.game.errors.append(error)

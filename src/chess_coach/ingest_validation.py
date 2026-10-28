@@ -6,18 +6,20 @@ import io
 
 import chess.pgn
 
+from .ingest_reader import SilentGameBuilder
 from .ingest_syntax import validate_syntax
 
 
 def raw_game(game: chess.pgn.Game, override: str | None) -> str:
+    """Keep the existing normalized default and preserve explicit overrides exactly."""
     if override is None:
         return str(game)
     validate_syntax(override)
     stream = io.StringIO(override)
-    original = chess.pgn.read_game(stream)
+    original = chess.pgn.read_game(stream, Visitor=SilentGameBuilder)
     if original is None or original.errors or str(original) != str(game):
         raise ValueError("raw PGN override does not match the parsed game")
-    if chess.pgn.read_game(stream) is not None:
+    if chess.pgn.read_game(stream, Visitor=SilentGameBuilder) is not None:
         raise ValueError("raw PGN override supports one game")
     return override
 
