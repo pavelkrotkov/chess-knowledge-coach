@@ -110,3 +110,38 @@ def test_missing_name_error_includes_row_number(tmp_path) -> None:
         assert "opening row 2" in str(exc)
     else:
         raise AssertionError("expected ValueError for missing name")
+
+
+def test_failed_opening_import_rolls_back_all_rows(tmp_path) -> None:
+    import pytest
+
+    source = tmp_path / "openings.tsv"
+    source.write_text(
+        "eco\tname\tmoves\nC20\tOpen Game\te4 e5\nA00\tBad\td4 invalid\n",
+        encoding="utf-8",
+    )
+    db = Database(":memory:")
+    db.initialize()
+    with pytest.raises(ValueError, match="opening row 2"):
+        import_openings(db, source, version="bad", source_url="cc0://test")
+    for table in ("opening_datasets", "opening_edges", "opening_nodes"):
+        assert db.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0
+
+
+def test_classification_uses_requested_dataset_version_and_source(tmp_path) -> None:
+    import pytest
+
+    source = tmp_path / "openings.tsv"
+    db = Database(":memory:")
+    db.initialize()
+    ingest_pgn(db, PGN)
+    game_id = db.connection.execute("SELECT id FROM games").fetchone()[0]
+    source.write_text("eco\tname\tmoves\nD00\tFirst\td4 d5 Nf3 Nf6\n", encoding="utf-8")
+    import_openings(db, source, version="v1", source_url="cc0://first")
+    source.write_text("eco\tname\tmoves\nD00\tSecond\td4 d5 Nf3 Nf6\n", encoding="utf-8")
+    import_openings(db, source, version="v2", source_url="cc0://second")
+
+    assert classify_game(db, game_id, version="v1", source_url="cc0://first")["name"] == "First"
+    assert classify_game(db, game_id, version="v2", source_url="cc0://second")["name"] == "Second"
+    with pytest.raises(ValueError, match="not imported"):
+        classify_game(db, game_id, version="v1", source_url="cc0://second")

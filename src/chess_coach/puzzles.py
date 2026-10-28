@@ -2,71 +2,14 @@
 
 from __future__ import annotations
 
-import csv
-import hashlib
-import json
-import subprocess
-from collections.abc import Sequence
-from itertools import chain
 from pathlib import Path
-from typing import TextIO, cast
+from subprocess import Popen
+from typing import TextIO
 
 from .db import Database
-
-_FIELDS = [
-    "PuzzleId",
-    "FEN",
-    "Moves",
-    "Rating",
-    "RatingDeviation",
-    "Popularity",
-    "NbPlays",
-    "Themes",
-    "GameUrl",
-    "OpeningTags",
-]
-_OBJECTIVES = {"fork": "execute", "backRankMate": "prevent", "mate": "calculate"}
-
-
-def _checksum(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _open_csv(path: Path) -> tuple[TextIO, subprocess.Popen[str] | None]:
-    if path.suffix == ".zst":
-        try:
-            process = subprocess.Popen(
-                ["zstd", "--decompress", "--stdout", str(path)],
-                stdout=subprocess.PIPE,
-                text=True,
-            )
-        except OSError as exc:
-            raise RuntimeError(f"zstd command not found or failed to start: {exc}") from exc
-        if process.stdout is None:
-            raise RuntimeError("zstd did not provide a readable stream")
-        return cast(TextIO, process.stdout), process
-    return path.open(encoding="utf-8", newline=""), None
-
-
-def _objective(themes: Sequence[str]) -> str:
-    for theme in themes:
-        if theme in _OBJECTIVES:
-            return _OBJECTIVES[theme]
-    return "recognize"
-
-
-def _reader(stream: TextIO) -> csv.DictReader[str]:
-    first = stream.readline()
-    if not first:
-        return csv.DictReader([], fieldnames=_FIELDS)
-    lines = chain([first], stream)
-    if first.split(",", 1)[0].strip() == "PuzzleId":
-        return csv.DictReader(lines)
-    return csv.DictReader(lines, fieldnames=_FIELDS)
+from .puzzle_csv import _checksum, _open_csv
+from .puzzle_query import query_puzzles as query_puzzles
+from .puzzle_rows import import_rows
 
 
 def import_puzzles(db: Database, path: str | Path, *, version: str, batch_size: int = 1000) -> int:
@@ -91,36 +34,7 @@ def import_puzzles(db: Database, path: str | Path, *, version: str, batch_size: 
     imported = 0
     stream, process = _open_csv(path)
     try:
-        reader = _reader(stream)
-        required = {"PuzzleId", "FEN", "Moves", "Rating", "RatingDeviation"}
-        if reader.fieldnames is None or not required.issubset(reader.fieldnames):
-            raise ValueError(f"CSV missing required columns: {sorted(required)}")
-        for row in reader:
-            missing = [f for f in sorted(required) if not (row.get(f) or "").strip()]
-            if missing:
-                raise ValueError(
-                    f"puzzle row {reader.line_num} is missing required fields: {missing}"
-                )
-            themes_raw = row.get("Themes") or ""
-            themes = list(themes_raw.split())
-            db.connection.execute(
-                """INSERT INTO puzzles
-                (puzzle_id, corpus_id, fen, source, solution, rating, rating_deviation, opening, themes_json, objective)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    row["PuzzleId"],
-                    corpus_id,
-                    row["FEN"],
-                    row.get("GameUrl") or "",
-                    row["Moves"],
-                    int(row["Rating"]),
-                    int(row["RatingDeviation"]),
-                    row.get("OpeningTags") or None,
-                    json.dumps(themes),
-                    _objective(themes),
-                ),
-            )
-            imported += 1
+        imported = import_rows(db, stream, corpus_id)
         if process is not None and process.wait() != 0:
             raise RuntimeError("zstd decompression failed")
         db.connection.execute(
@@ -145,52 +59,13 @@ def import_puzzles(db: Database, path: str | Path, *, version: str, batch_size: 
         db.connection.commit()
         raise
     finally:
-        try:
-            stream.close()
-        finally:
-            if process is not None and process.poll() is None:
-                process.kill()
-                process.wait()
+        _close_stream(stream, process)
 
 
-def query_puzzles(
-    db: Database,
-    *,
-    version: str,
-    theme: str | None = None,
-    operation: str | None = None,
-    min_rating: int | None = None,
-    max_rating: int | None = None,
-    limit: int = 100,
-    offset: int = 0,
-) -> list[dict[str, object]]:
-    if limit < 1 or limit > 1000 or offset < 0:
-        raise ValueError("limit must be 1..1000 and offset must be non-negative")
-    query = "SELECT puzzle_id, rating, rating_deviation, themes_json, opening, objective FROM puzzles WHERE corpus_id = (SELECT id FROM puzzle_corpora WHERE version = ?)"
-    params: list[object] = [version]
-    if theme is not None:
-        query += " AND EXISTS (SELECT 1 FROM json_each(puzzles.themes_json) WHERE value = ?)"
-        params.append(theme)
-    if operation is not None:
-        query += " AND objective = ?"
-        params.append(operation)
-    if min_rating is not None:
-        query += " AND rating >= ?"
-        params.append(min_rating)
-    if max_rating is not None:
-        query += " AND rating <= ?"
-        params.append(max_rating)
-    rows = db.connection.execute(
-        query + " ORDER BY rating, puzzle_id LIMIT ? OFFSET ?", [*params, limit, offset]
-    ).fetchall()
-    return [
-        {
-            "puzzle_id": row["puzzle_id"],
-            "rating": row["rating"],
-            "rating_deviation": row["rating_deviation"],
-            "themes": json.loads(row["themes_json"]),
-            "opening": row["opening"],
-            "objective": row["objective"],
-        }
-        for row in rows
-    ]
+def _close_stream(stream: TextIO, process: Popen[str] | None) -> None:
+    try:
+        stream.close()
+    finally:
+        if process is not None and process.poll() is None:
+            process.kill()
+            process.wait()
