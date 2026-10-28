@@ -163,6 +163,17 @@ deleting their event history. Callers composing fact and mapping writes can use
 the in-transaction mapping primitive in the same transaction as the detector
 primitive; callers own commit and rollback.
 
+## Structure and opening history
+
+Structure extraction and opening classification retain immutable generations.
+The current results are available in `current_structure_episodes` and
+`current_game_openings`; the underlying tables retain prior and legacy rows.
+Runs record production time and the detector or classifier version. Opening
+runs also identify the imported dataset and fingerprint its contents. A
+no-match opening is stored as a current classification with a NULL opening
+node and zero confidence. Old rows whose production time and run identity were
+never recorded retain NULLs and are not guessed into the current views.
+
 ## Database upgrades
 
 Startup applies ordered schema upgrades atomically and records their version in

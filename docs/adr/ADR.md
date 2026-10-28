@@ -23,8 +23,8 @@ Mastery conclusions are gated behind evidence:
   issues 1–10 build this is the intended gate, not a fully enforced one: the
   current implementation can produce mastery state from a single validated
   evidence record and does not yet recency-weight the mastery value itself.
-- Every evidence fact carries provenance: detector version, mapper version, context,
-  observation time.
+- New linked evidence carries detector and mapper identity, context, and an
+  observation time when known. Legacy unproven lineage remains explicitly unknown.
 
 ## Consequences
 
@@ -128,13 +128,16 @@ queryable.
 
 Not every derived table meets the full standard yet:
 
-- `detector_facts` and `structure_episodes` have version columns but no
-  production timestamp.
-- `game_openings` stores the dataset version but neither a classification
-  timestamp nor a classifier-algorithm version.
-
-Extending these schemas is follow-up work; until then, lineage for those records
-is partial.
+- Older detector facts, mappings, structure episodes, and opening classifications
+  may lack known run ownership or production time. Migration leaves these fields
+  unknown; it does not reconstruct lineage.
+- New detector and mapping runs record their versions and production times.
+  Structure runs record the detector version, and opening runs record the
+  classifier version, dataset identity, input fingerprint, and production time.
+  Active-run views expose current structure and opening results. Legacy rows
+  remain available in the underlying tables rather than being guessed current.
+- Other derived tables still need individual provenance review before claiming
+  the full standard above.
 
 ## Consequences
 

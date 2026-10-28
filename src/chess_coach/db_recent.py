@@ -2,6 +2,7 @@
 
 import sqlite3
 
+from .classification_schema import add_classification_lineage
 from .evidence_schema import add_evidence_lineage
 from .fact_schema import add_fact_lineage
 from .lichess_schema import add_sync_turn
@@ -21,3 +22,6 @@ def upgrade_recent(connection: sqlite3.Connection, version: int) -> None:
     if version < 7:
         add_evidence_lineage(connection)
         connection.execute("PRAGMA user_version = 7")
+    if version < 8:
+        add_classification_lineage(connection)
+        connection.execute("PRAGMA user_version = 8")
