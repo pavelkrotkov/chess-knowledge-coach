@@ -3,9 +3,10 @@
 from collections import Counter
 
 from .db import Database
+from .pipeline_deep_status import deep_status
 
 
-def pipeline_status(db: Database) -> dict:
+def pipeline_status(db: Database, learner: str | None = None) -> dict:
     rows = db.connection.execute("""SELECT game_id,stage,status,detail,updated_at
         FROM pipeline_stages ORDER BY game_id,stage""").fetchall()
     stages = [dict(row) for row in rows]
@@ -14,6 +15,7 @@ def pipeline_status(db: Database) -> dict:
     ).fetchone()
     return {
         "health": dict(health) if health is not None else None,
+        "deep": deep_status(db, learner),
         "stages": stages,
         "counts": dict(sorted(Counter(row["status"] for row in rows).items())),
     }

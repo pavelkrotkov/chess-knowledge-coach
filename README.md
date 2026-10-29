@@ -125,8 +125,8 @@ are recorded without converting score loss into mastery. Limits apply per
 search, so analysis can take approximately twice the earlier scan budget.
 `uv run chess-coach --db coach.sqlite inspect-decision POSITION_ID` or the
 private evidence page shows SAN continuations and run provenance. Legacy runs
-show comparison data as unavailable. Automatic deep verification remains future
-work; a bounded point score is an engine estimate, not proof.
+show comparison data as unavailable. Automatic deep searches are bounded engine
+estimates, not proof of a skill or chess claim.
 
 
 ## Learner decision context
@@ -581,14 +581,37 @@ eligible, missing, overlapping, capped-out and omitted critical candidates,
 plus category targets and allocations. Static motifs are observations, and
 engine scores do not create mastery evidence. The private browser’s Deep
 selection page shows pending candidates and their immutable selection history.
-Selection and deeper engine execution are manual; automatic scheduling remains
-planned. Currentness is
+Selection and deeper execution also run automatically within independent worker
+budgets, and manual commands remain available. Currentness is
 relative to the completed cheap checkpoint and its recorded engine/configuration
 provenance. Selection does not rehash the executable or infer unrun configuration
 changes. If source data or its cheap checkpoint changes, a selection becomes
 stale. Analysis handoff rejects
 source databases containing selection or deep history until a provenance-aware
 merge is implemented; it never silently drops that history.
+
+## Automatic selective deep analysis
+
+The regular worker rotates through games with current cheap analysis, selects up
+to four learner decisions per game, and processes at most four deep decisions in
+one invocation. The automatic scan examines at most 100 games and selects at
+most four games each time. Unfinished selections remain available on later scans;
+changing deep limits creates new job configurations without re-running cheap
+analysis. The automatic and manual deep defaults use one thread, 50,000 nodes and two
+seconds per search, with up to three best alternatives. The earlier cheap pass defaults to
+10,000 nodes and one second per search, with one best line; these settings do
+not imply a known difference in accuracy. Best MultiPV shares one work count;
+the played move is a separate bounded search. Source or cheap-analysis changes
+supersede stale selections. The private status page and `pipeline-status` show
+current selected, pending, capped-out, insufficient and unstable counts, scoped
+to the configured learner and bounded to 25 current selections (with a truncation indicator).
+
+Use `process-pipeline --help` for limits or `--no-deep` to disable automatic
+deep work for an invocation. Independent sync retry retains its own deadline
+and lock while deep search runs. See [synthetic proxy benchmark](docs/deep-analysis-proxy-benchmark.md)
+for achieved work, timing, disagreements and the limits of this small experiment.
+An unavailable external NNUE file hash makes score comparisons incomparable;
+file contents are not independently reconciled by this automatic scheduler.
 
 ## Bounded deep execution
 

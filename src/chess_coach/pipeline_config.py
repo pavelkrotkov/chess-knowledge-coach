@@ -30,8 +30,20 @@ class PipelineConfig:
     classifier_version: str = "1.1.0"
     ontology_version: str = "tactical-mate-v1"
     tactical_version: str = "1.0.0"
+    deep_enabled: bool = True
+    deep_max_scan: int = 100
+    deep_max_games: int = 4
+    deep_per_game: int = 4
+    deep_max_jobs: int = 4
+    deep_nodes: int = 50000
+    deep_seconds: float = 2.0
+    deep_multipv: int = 3
 
     def validate(self) -> None:
         validate_learner(self.learner)
         validate_integer_limits(self)
         validate_other_limits(self)
+        from .pipeline_deep_config import deep_options, validate_deep_config
+
+        validate_deep_config(self)
+        deep_options(self)

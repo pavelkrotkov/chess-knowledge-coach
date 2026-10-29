@@ -123,7 +123,7 @@ The following 47 issues implement the mandatory phases; the parent issue records
 - [#161: Operate the complete coaching and course pipeline within private Hermes budgets](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/161)
 - [#162: Verify and deploy the complete personalized coach and private Lichess courses](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/162)
 
-Issues #167 and #168 implement the selection and execution needed by #122; issues #169 and #170 implement staging and acquisition needed by #138. The integration issues retain the original end-to-end acceptance outcomes.
+Issues #167 and #168 implement selection and execution; #122 integrates those bounded queues into the automatic worker and documents a synthetic budget proxy. Issues #169 and #170 implement staging and acquisition needed by #138. The integration issues retain the original end-to-end acceptance outcomes.
 
 Earlier related issues [#46](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/46), [#47](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/47), [#48](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/48), [#49](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/49), [#52](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/52) and [#53](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/53) remain relevant product history.
 

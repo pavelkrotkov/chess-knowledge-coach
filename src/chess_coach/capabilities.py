@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.10.0"
+REGISTRY_VERSION = "1.11.0"
 
 CAPABILITIES = (
     {
@@ -60,21 +60,28 @@ CAPABILITIES = (
         "area": "Analysis",
         "name": "Manual selection for deep analysis",
         "status": "supported",
-        "details": "A bounded manual selector records possible opportunities and control samples; automatic scheduling remains planned.",
+        "details": "A bounded selector records possible opportunities and control samples; automatic worker scheduling and manual commands are available.",
     },
     {
         "id": "manual_deep_execution",
         "area": "Analysis",
         "name": "Manual bounded deep analysis",
         "status": "supported",
-        "details": "Selected positions can be analyzed with bounded best, played and MultiPV searches; automatic scheduling remains planned.",
+        "details": "Selected positions can be analyzed with bounded best, played and MultiPV searches, manually or by the automatic worker.",
+    },
+    {
+        "id": "automatic_deep_analysis",
+        "area": "Analysis",
+        "name": "Automatic bounded deep analysis",
+        "status": "supported",
+        "details": "A rotating worker selects bounded decisions and resumes limited deep searches; estimates and incomplete results are not proof of skill.",
     },
     {
         "id": "decision_comparison",
         "area": "Analysis",
         "name": "Best versus played decision analysis",
         "status": "supported",
-        "details": "Two bounded searches compare the best and forced played move on the same decision board; manual selective deep searches are available; automatic scheduling remains planned.",
+        "details": "Two bounded searches compare best and forced played moves on the same decision board; selective deep searches are available manually and automatically.",
     },
     {
         "id": "corpus_mate_practice",
