@@ -8,7 +8,7 @@ from . import cli_commands_learning as learning
 from . import cli_curriculum as curriculum
 from . import cli_deep_execution as deep_execution
 from . import cli_deep_selection as deep_selection
-from . import cli_pipeline
+from . import cli_pipeline, cli_recurrence
 from . import cli_public_training as public_training
 from . import cli_recovery as recovery
 from . import cli_related_capture as related_capture
@@ -58,6 +58,7 @@ COMMANDS = {
     "corpus-status": datasets.handle_corpus_status,
     "query-puzzles": datasets.handle_query_puzzles,
     "style-choices": learning.handle_style_choices,
+    "recurrence": cli_recurrence.handle,
     "validate-evidence": learning.handle_validate_evidence,
     "list-evidence": learning.handle_list_evidence,
     "inspect-evidence": learning.handle_inspect_evidence,
