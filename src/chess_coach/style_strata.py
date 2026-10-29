@@ -9,6 +9,7 @@ def strata(items, dimension):
     groups = defaultdict(list)
     keys = (
         "color",
+        "in_check",
         "rating",
         "opponent_rating",
         "time_control",

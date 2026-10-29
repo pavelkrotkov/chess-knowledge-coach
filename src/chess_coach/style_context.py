@@ -28,6 +28,7 @@ def describe_context(db, context, opening):
     clock = context["clock_before_seconds"]
     return {
         "color": context["learner_color"],
+        "in_check": board.is_check(),
         "rating": _band(context["mover_rating"]),
         "opponent_rating": _band(context["other_rating"]),
         "time_control": context["time_control"] or "unknown",

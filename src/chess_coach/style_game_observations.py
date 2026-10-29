@@ -5,7 +5,7 @@ from .style_observation_detail import observation
 from .style_opening import current_opening
 
 
-def collect(db, learner, game, selected, by_id, counts, observations):
+def collect(db, learner, game, selected, by_id, counts, observations, budget):
     opening = current_opening(db, game["game_id"])
     boards = selected_boards(db, game["game_id"], by_id.keys())
     for context in game["contexts"]:
@@ -13,7 +13,14 @@ def collect(db, learner, game, selected, by_id, counts, observations):
         if item is None:
             continue
         status, result, covered, completed = observation(
-            db, learner, context, item, selected, opening, boards.get(context["position_id"])
+            db,
+            learner,
+            context,
+            item,
+            selected,
+            opening,
+            boards.get(context["position_id"]),
+            budget,
         )
         counts[status] += 1
         counts["played_root_covered"] += covered

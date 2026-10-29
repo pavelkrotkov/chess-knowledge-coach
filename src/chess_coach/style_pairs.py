@@ -9,8 +9,11 @@ SCORE_BAND = 50
 
 def pairs(board, chosen, chosen_board, lines):
     pairs = []
-    root_metrics = metrics(board, board.turn)
-    played_metrics = {**metrics(chosen_board, board.turn), "center_events": events(board, chosen)}
+    root_metrics = {**metrics(board, board.turn), "in_check": board.is_check()}
+    played_metrics = {
+        **metrics(chosen_board, board.turn),
+        "center_events": events(board, chosen),
+    }
     for line in lines:
         if line["root_move"] == chosen["root_move"]:
             continue

@@ -7,7 +7,8 @@ from .style_selection import selection
 from .style_sources import source_games
 from .style_summary import summarize
 
-VERSION = "style-choices-v4"
+VERSION = "style-choices-v5"
+MATE_SEARCH_LIMIT = 100
 
 
 def style_report(db, learner):
@@ -28,11 +29,20 @@ def style_report(db, learner):
         }
     )
     allocations, observations = Counter(), []
+    budget = {
+        "limit": MATE_SEARCH_LIMIT,
+        "examined": 0,
+        "completed": 0,
+        "unsupported": 0,
+        "skipped": 0,
+    }
     for game in source["games"]:
         selected = selection(db, game["game_id"], learner)
         if selected is None:
             counts["games_without_selection"] += 1
-        game_counts, game_allocations, items = game_observations(db, learner, game, selected)
+        game_counts, game_allocations, items = game_observations(
+            db, learner, game, selected, budget
+        )
         counts.update(game_counts)
         allocations.update(game_allocations)
         observations.extend(items)
@@ -60,6 +70,20 @@ def style_report(db, learner):
             "universal open or closed centers, actual outcomes or learner intent. Opposing "
             "contrasts are ambiguous and no contrast is not evidence of preference."
         ),
+        "checking_method": (
+            "Checks are legal moves, with all legal evasions listed when the 100-move "
+            "budget permits. Root-check choices exclude positions already in check. "
+            "A third-ply learner check and any legal immediate-mate witness are conditional "
+            "on the specific opponent reply at ply two, not forced threats or actual future "
+            "moves. Positions already in check, draw-sensitive histories, promotions and "
+            "exhausted budgets are unsupported for the conditional mate witness. Each report "
+            "examines at most 100 candidate continuation boards in descending local game-ID "
+            "order; additional candidates are unknown, not negative. Root and third-ply "
+            "checking counts are unaffected by this cap. Opponent "
+            "checks are recorded separately. These observations do not establish initiative, "
+            "attacking intent, skill or causal game outcomes; broader king threats remain "
+            "unsupported. Existing same-search, same-depth CP gates are unchanged."
+        ),
         "familiarity_note": (
             "Familiarity is unknown: game-start timestamps do not date individual decisions. "
             "Earlier-started games may reach the position later; this count is not prior exposure."
@@ -69,6 +93,7 @@ def style_report(db, learner):
         ),
         "coverage": {key: value for key, value in source.items() if key != "games"},
         "selection_counts": dict(counts),
+        "checking_coverage": budget,
         "allocations": dict(allocations),
         "dimensions": summarize(observations),
         "observations": observations,
