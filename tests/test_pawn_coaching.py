@@ -400,3 +400,81 @@ def test_pawn_runs_do_not_supersede_another_producer(game, monkeypatch):
         "SELECT status FROM detector_runs WHERE id=?", (other["run_id"],)
     ).fetchone()
     assert row["status"] == "active"
+
+
+def test_browser_conceals_own_game_source_until_terminal_and_accounts_reveal(game):
+    from tests.test_unified_sessions import token
+
+    evidence_id = process_decision(game, 1, "fixture_a")["evidence_ids"][0]
+    tables = (
+        "evidence_mappings",
+        "mastery_events",
+        "mastery_states",
+        "training_items",
+        "training_attempts",
+    )
+    before = {
+        name: game.connection.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0]
+        for name in tables
+    }
+    origin = "https://coach.invalid"
+    headers = {"Tailscale-User-Login": "fixture"}
+
+    def app(subject):
+        return create_app(
+            db_path=game.path,
+            subject=subject,
+            actor="operator",
+            corpus="test",
+            login="fixture",
+            origin=origin,
+        )
+
+    client = app("fixture_a").test_client()
+    library = client.get("/library", base_url=origin, headers=headers)
+    csrf = token(library, "csrf")
+    started = client.post(
+        "/unified/start",
+        base_url=origin,
+        headers=headers | {"Origin": origin},
+        data={"csrf": csrf, "source_type": "own-game", "version": VERSION, "key": str(evidence_id)},
+    )
+    assert started.status_code == 303
+    url = started.headers["Location"]
+    page = client.get(url, base_url=origin, headers=headers)
+    assert b"Your game" in page.data and b"provisional" in page.data
+    assert b"View source evidence" not in page.data and b"Ke4" not in page.data
+    assert b"View source evidence" not in client.get(url, base_url=origin, headers=headers).data
+    assert (
+        app("fixture_b").test_client().get(url, base_url=origin, headers=headers).status_code == 404
+    )
+    detail = client.get(f"/evidence/{evidence_id}", base_url=origin, headers=headers)
+    assert detail.status_code == 200 and b"Ke4" in detail.data
+    fields = {"csrf": csrf, "attempt": token(page, "attempt"), "event": token(page, "event")}
+    for _ in range(2):
+        revealed = client.post(
+            "/unified/reveal", base_url=origin, headers=headers | {"Origin": origin}, data=fields
+        )
+        assert revealed.status_code == 200 and b"Ke4" in revealed.data
+    assert game.connection.execute("SELECT hints_used FROM unified_sessions").fetchone()[0] == 1
+    assert game.connection.execute("SELECT COUNT(*) FROM unified_session_events").fetchone()[0] == 1
+    page = client.get(url, base_url=origin, headers=headers)
+    assert b"View source evidence" not in page.data
+    moved = client.post(
+        "/unified/move",
+        base_url=origin,
+        headers=headers | {"Origin": origin},
+        data={
+            "csrf": csrf,
+            "attempt": token(page, "attempt"),
+            "event": token(page, "event"),
+            "move": "e3e4",
+        },
+    )
+    assert moved.status_code == 303
+    assert b"View source evidence" in client.get(url, base_url=origin, headers=headers).data
+    after = {
+        name: game.connection.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0]
+        for name in tables
+    }
+    assert after == before
