@@ -30,12 +30,13 @@ def test_automatic_miss_replay_mastery_and_owned_practice(tmp_path, monkeypatch)
     evidence = inspect_evidence(db, evidence_id)
     assert evidence["mate_source_currentness"] == "current"
     assert evidence["context"]["observation"]["immediate_mate_not_played"]
+    assert evidence["skill"] == "calculation" and evidence["outcome"] == "success"
     review_evidence(db, evidence_id, decision="accept", actor="reviewer")
-    row = evidence_rows(db, "fixture_a", "mate_in_one", "execute")[0]
+    row = evidence_rows(db, "fixture_a", "calculation", "execute")[0]
     assert not mastery_allowed(db, row)
     from chess_coach.mastery import update_mastery
 
-    mastery = update_mastery(db, skill="mate_in_one", operation="execute", subject="fixture_a")
+    mastery = update_mastery(db, skill="calculation", operation="execute", subject="fixture_a")
     assert mastery["status"] == "insufficient"
     assert mastery["exclusions"]["mate_family_unvalidated"] == 1
     candidates = list_candidates(db, "fixture_a")["candidates"]

@@ -4,6 +4,7 @@ from .fact_runs import record_fact_run_in_transaction
 from .mapping_runs import record_mapping_run_in_transaction
 from .mate_contract import MAPPER, MAPPER_VERSION, PRODUCER, VERSION
 from .mate_inspection_source import still_current
+from .mate_selection import mapping_skill as _skill
 
 
 def publish(db, position, learner, fingerprint, fact, context):
@@ -75,10 +76,3 @@ def _mapping(db, position, fingerprint, fact, run, context):
             }
         ],
     )
-
-
-def _skill(fact):
-    immediate_result = fact["immediate_mates"] and (
-        fact["outcome"] != "success" or fact["played_checkmate"]
-    )
-    return "mate_in_one" if immediate_result else "calculation"

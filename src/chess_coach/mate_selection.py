@@ -14,3 +14,10 @@ def _candidate(line, position_id):
         and value is not None
         and 0 < value <= 2
     )
+
+
+def mapping_skill(fact):
+    immediate_result = fact["immediate_mates"] and (
+        fact["outcome"] != "success" or fact["played_checkmate"]
+    )
+    return "mate_in_one" if immediate_result else "calculation"
