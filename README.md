@@ -767,7 +767,9 @@ The current family describes limited non-pawn captures and immediate material
 protection, using legal recaptures on one square and short recorded engine lines.
 It cannot prove an opportunity is safe against every forcing move or later
 compensation. Checking captures are used only when every legal immediate evasion passes a
-bounded material check; other unresolved checks, en passant, promotion, direct
+bounded material check; capture version 1.1.0 can replay a checking reply in
+the played line when it legally resolves within eight plies. Checking played
+roots and unresolved checks, en passant, promotion, direct
 pawn-capture claims, pins, unclear exchanges and conflicting lines remain ambiguous
 or outside coverage. A pawn can protect a piece by capturing an unrecapturable
 attacker. A score difference only vetoes a potentially misleading failure; it

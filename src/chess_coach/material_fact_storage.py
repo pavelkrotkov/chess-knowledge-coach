@@ -3,7 +3,7 @@
 import json
 
 from .fact_runs import record_fact_run_in_transaction
-from .material_contract import PRODUCER, VERSION
+from .material_contract import PRODUCER, detector_version
 
 
 def fact_run(db, position_id, inputs, fact):
@@ -20,7 +20,7 @@ def fact_run(db, position_id, inputs, fact):
         db,
         position_id=position_id,
         producer=PRODUCER,
-        detector_version=VERSION,
+        detector_version=detector_version(fact),
         input_data=inputs,
         facts=facts,
     )
@@ -33,7 +33,7 @@ def fact_run(db, position_id, inputs, fact):
             db,
             position_id=position_id,
             producer=PRODUCER,
-            detector_version=VERSION,
+            detector_version=detector_version(fact),
             input_data={**inputs, "reactivation": latest},
             facts=facts,
         )

@@ -882,3 +882,28 @@ def test_exercise_fen_is_reconstructed_from_source_not_mapping_context(tmp_path,
     detail = inspect_material_opportunity(db, evidence_id, learner=LEARNER)
     assert detail["eligible_for_exercise_candidate"]
     assert detail["decision_fen"] == "4k3/8/8/2b5/3R4/8/P7/7K w - - 0 1"
+
+
+def test_new_capture_version_supersedes_old_without_deleting_review(tmp_path, monkeypatch):
+    from chess_coach import material_contract
+
+    db = make_game(tmp_path / "upgrade.sqlite", monkeypatch)
+    monkeypatch.setattr(material_contract, "CAPTURE_VERSION", "1.0.0")
+    first = process_decision(db, 1, LEARNER)
+    old = first["evidence_ids"][0]
+    review_evidence(db, old, decision="accept", actor="fixture_reviewer")
+    monkeypatch.setattr(material_contract, "CAPTURE_VERSION", "1.1.0")
+    second = process_decision(db, 1, LEARNER)
+    assert second["evidence_ids"] != [old]
+    assert inspect_evidence(db, old)["lifecycle_status"] == "superseded"
+    assert inspect_evidence(db, old)["review_status"] == "accepted"
+    assert inspect_evidence(db, second["evidence_ids"][0])["review_status"] == "unreviewed"
+    assert process_decision(db, 1, LEARNER)["evidence_ids"] == second["evidence_ids"]
+
+
+def test_replay_rejects_malformed_fact_payload():
+    from chess_coach.material_replay_rows import current_version
+
+    row = {"detector_version": "1.1.0"}
+    assert not current_version(row, [{"payload_json": "null"}])
+    assert not current_version(row, [{"payload_json": "not-json"}])
