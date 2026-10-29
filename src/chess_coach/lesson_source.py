@@ -8,6 +8,7 @@ from .lesson_source_policy import supported
 from .recurrence_review import review
 
 STATES = {
+    "discovery-opportunity-mapper": "discovery_currentness",
     "pin-execute-mapper": "pin_source_currentness",
     "pin-prevent-mapper": "pin_source_currentness",
     "material-opportunity-mapper": "material_source_currentness",

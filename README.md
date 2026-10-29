@@ -855,6 +855,26 @@ then displays legally replayed proof or unresolved-geometry lines, with practica
 questions that distinguish the recorded move from tested alternatives. It does not
 establish overall safety, compensation, intent or mastery.
 
+## Provisional discovered-attack execution
+
+A bounded rotating worker inspects current owned decisions and records one scoped
+observation per decision. It checks the vacating piece and the newly exposed
+bishop, rook or queen line, and identifies double checks from the legal resulting
+position. A supported witness is either immediate mate with the revealed slider checking, or a material gain of at
+least three pawns: every legal immediate defense must leave the exposed slider a
+legal target capture, with bounded immediate replies. Captures by the vacating
+piece can be included. Draw claims, repetition, terminal positions, unsupported
+counterplay and insufficient source lines are excluded or ambiguous. A missed
+immediate mate can be a failure; other alternatives are unresolved. The worker
+reports scan limits, ambiguous observations and unavailable decisions.
+
+Evidence and source-linked recurrence lessons preserve the tested best and
+played roots and a legal witness; multiple proved lines share one decision
+observation. Current owned examples can be verified and practiced as prepared
+lines; unlisted legal moves need verification. These observations do not establish
+intent, ability or mastery. Independent held-out validation and an explicit policy
+are required before mastery eligibility. Prevention is a separate required slice.
+
 ## Provisional fork observations
 
 The automatic worker scans a separate rotating bounded set of decisions, using

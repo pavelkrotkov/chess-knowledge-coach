@@ -1,5 +1,6 @@
 """Run bounded endgame workers and extend the existing pipeline report."""
 
+from .discovery_pipeline import process_discoveries
 from .king_safety_worker import process_king_safety_lessons
 from .mate_worker import process_mates
 from .pawn_coach_worker import process_pawns
@@ -11,6 +12,7 @@ from .rook_plan_worker import process_rook_plans
 
 
 def worker_report(db, config, sync, scan, games, deep, material, forks, defenses):
+    discoveries = process_discoveries(db, config)
     structures = process_structure_lessons(db, config)
     rooks = process_rook_plans(db, config)
     king_safety = process_king_safety_lessons(db, config)
@@ -28,5 +30,7 @@ def worker_report(db, config, sync, scan, games, deep, material, forks, defenses
         pins = process_pins(db, config, operation)
         result["status"] = combined_status(result["status"], pins)
         result[f"pin_{operation}"] = pins
+    result["status"] = combined_status(result["status"], discoveries)
+    result["discoveries"] = discoveries
     result["mate"] = mate
     return result

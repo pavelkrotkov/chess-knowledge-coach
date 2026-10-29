@@ -3,9 +3,16 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.36.0"
+REGISTRY_VERSION = "1.37.0"
 
 CAPABILITIES = (
+    {
+        "id": "discovery_execution",
+        "area": "Skill coverage",
+        "name": "Bounded discovered-attack execution",
+        "status": "observation-only",
+        "details": "Owned legal decisions may show a newly revealed slider line with immediate mate or a target capture after every legal defense. Other consequences and alternatives are unresolved. The worker, grounded lessons and provisional own-game lines do not establish mastery; independent qualification is pending.",
+    },
     {
         "id": "rook_plans",
         "area": "Skill coverage",

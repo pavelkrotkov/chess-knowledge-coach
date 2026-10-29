@@ -1,6 +1,7 @@
 """Validate reviewed evidence content and detector-family eligibility."""
 
 from .back_rank_mastery import closed as back_rank_closed
+from .discovery_mastery import closed as discovery_closed
 from .fork_family_policy import family_reason
 from .king_safety_mastery import closed as king_safety_closed
 from .mastery_provenance import valid_confidence, valid_links
@@ -12,6 +13,8 @@ from .pin_mastery import closed as pin_closed
 
 
 def _family_reason(db, row):
+    if discovery_closed(row):
+        return "discovery_family_unvalidated"
     if pin_closed(row):
         return "pin_family_unvalidated"
     if king_safety_closed(row):

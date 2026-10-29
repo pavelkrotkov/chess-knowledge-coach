@@ -21,6 +21,10 @@ def evidence_rows(db: Database, subject: str, skill: str, operation: str):
                    WHERE l.evidence_id = e.id) AS link_count,
                   (SELECT COUNT(*) FROM evidence_fact_links l
                    JOIN detector_facts f ON f.id=l.fact_id JOIN detector_runs d ON d.id=f.run_id
+                   WHERE l.evidence_id=e.id AND (d.producer='discovery-opportunity' OR f.fact_type='discovery_opportunity'))
+                   AS discovery_fact_count,
+                  (SELECT COUNT(*) FROM evidence_fact_links l
+                   JOIN detector_facts f ON f.id=l.fact_id JOIN detector_runs d ON d.id=f.run_id
                    WHERE l.evidence_id=e.id AND (d.producer=? OR f.fact_type='material_opportunity'))
                    AS material_fact_count,
                   (SELECT COUNT(*) FROM evidence_fact_links l

@@ -1,6 +1,7 @@
 """Compose a source-linked lesson example."""
 
 from .lesson_backrank import back_rank
+from .lesson_discovery import describe as discovery
 from .lesson_king_safety import king_safety
 from .lesson_lines import legal_san
 from .lesson_material import _material as material
@@ -13,6 +14,7 @@ from .lesson_tactics import _defense as defense
 from .lesson_tactics import _fork as fork
 
 ADAPTERS = {
+    "discovery-opportunity-mapper": discovery,
     "pin-execute-mapper": pin,
     "pin-prevent-mapper": pin,
     "material-opportunity-mapper": material,

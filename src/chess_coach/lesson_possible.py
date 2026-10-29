@@ -1,6 +1,7 @@
 """Mechanisms to investigate, separated from observations and diagnosis."""
 
 MECHANISMS = {
+    "discovery-opportunity-mapper": "A moving piece can uncover a slider, combining its newly revealed attack with the moving piece and its threats.",
     "pin-execute-mapper": "A possible mechanism is a slider restricting a piece because a king or more valuable piece lies behind it; verify the legal replies.",
     "pin-prevent-mapper": "A possible mechanism is a piece constrained by a slider, or a valuable piece exposed when it moves; verify the tested capture and defense.",
     "rook-plan-lesson-mapper": "A rook may use an open or half-open file for entry or pressure, but the position alone does not establish the best plan.",

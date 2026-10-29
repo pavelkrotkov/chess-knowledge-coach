@@ -8,6 +8,12 @@ from .competency_seed import EDGES, GRAPH_VERSION, SKILLS
 
 # Fixture references are test node names, not examples of inferred mastery.
 COVERAGE: dict[str, dict[str, Any]] = {
+    "discovered_attack": {
+        "operation": "execute",
+        "capabilities": ["discovery_execution"],
+        "detector": "chess_coach.discovery_observation.observe",
+        "limits": "Only a legal newly revealed slider with immediate mate or universal bounded material capture is proved. Other consequences and prevention are unsupported or ambiguous. Family mastery remains closed.",
+    },
     "mate_in_one": {
         "operation": "execute",
         "capabilities": ["mate_in_one_execute", "corpus_mate_practice"],

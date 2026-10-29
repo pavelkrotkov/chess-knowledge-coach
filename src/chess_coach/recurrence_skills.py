@@ -1,6 +1,7 @@
 """Skill and operation pairs with supported candidate producers."""
 
 PAIRS = (
+    ("discovered_attack", "execute"),
     ("hanging_piece", "execute"),
     ("hanging_piece", "prevent"),
     ("fork", "execute"),

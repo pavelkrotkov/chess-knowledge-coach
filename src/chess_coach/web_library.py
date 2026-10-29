@@ -3,6 +3,7 @@
 from flask import abort, current_app, render_template, request
 
 from .back_rank_practice import list_candidates as back_rank_candidates
+from .discovery_practice import list_candidates as discovery_candidates
 from .mate_practice import list_candidates as mate_candidates
 from .pawn_practice_list import list_candidates as list_pawn_candidates
 from .public_training_query import library_groups
@@ -23,6 +24,7 @@ def render_library():
     return render_template(
         "library.html",
         own_game=list_candidates(database(), current_app.config["SUBJECT"]),
+        discovery_game=discovery_candidates(database(), current_app.config["SUBJECT"]),
         mate_game=mate_candidates(database(), current_app.config["SUBJECT"]),
         pawn_game=pawn_game,
         pawn_before=request.args.get("pawn_before"),

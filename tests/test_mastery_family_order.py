@@ -17,6 +17,7 @@ from chess_coach import mastery_content
     ],
 )
 def test_family_gate_priority(monkeypatch, back_rank, mate, pawn, fork, material, expected):
+    monkeypatch.setattr(mastery_content, "discovery_closed", lambda _row: False)
     monkeypatch.setattr(mastery_content, "pin_closed", lambda _row: False)
     monkeypatch.setattr(mastery_content, "king_safety_closed", lambda _row: False)
     monkeypatch.setattr(mastery_content, "back_rank_closed", lambda _row: back_rank)
