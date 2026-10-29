@@ -1,13 +1,15 @@
 """Bounded, resumable import of decoded, checksum-pinned puzzle CSV files."""
 
-import sqlite3
 from pathlib import Path
 
 from .db import Database
-from .puzzle_import_csv import header, read_batch
-from .puzzle_import_input import check_digest, import_lock, snapshot_path, verify_snapshot
-from .puzzle_import_state import corpus_report, fail, initialize
-from .puzzle_import_store import finish, save_batch
+from .puzzle_import_budget import validate_reserve
+from .puzzle_import_csv import header
+from .puzzle_import_input import check_digest
+from .puzzle_import_lock import import_lock
+from .puzzle_import_run import run
+from .puzzle_import_source import configure_wal, source_snapshot, unchanged
+from .puzzle_import_state import initialize
 
 OFFICIAL_SOURCE = "https://database.lichess.org/lichess_db_puzzle.csv.zst"
 
@@ -23,17 +25,31 @@ def stage_puzzles(
     source_url: str | None = None,
     max_rows: int = 1000,
     batch_size: int = 100,
+    enable_wal: bool = False,
+    min_free_bytes: int = 10 * 1024**3,
 ) -> dict:
     """Process at most max_rows records (zero means through EOF) in bounded commits."""
     _validate(db, version, csv_sha256, archive_sha256, source_url, max_rows, batch_size)
+    validate_reserve(min_free_bytes)
     with import_lock(db.path, project_root):
-        source = snapshot_path(path, project_root)
-        verify_snapshot(source, csv_sha256)
+        configure_wal(db, enable_wal)
+        source, source_signature = source_snapshot(db, path, project_root, version, csv_sha256)
         fields, offset = header(source)
+        unchanged(source, source_signature)
         corpus_id = initialize(
             db, version, str(source), csv_sha256, archive_sha256, source_url, fields, offset
         )
-        return _run(db, source, corpus_id, csv_sha256, fields, max_rows, batch_size)
+        return run(
+            db,
+            source,
+            corpus_id,
+            csv_sha256,
+            fields,
+            max_rows,
+            batch_size,
+            source_signature,
+            min_free_bytes,
+        )
 
 
 def _validate(db, version, csv_sha256, archive_sha256, source_url, max_rows, batch_size):
@@ -49,42 +65,3 @@ def _validate(db, version, csv_sha256, archive_sha256, source_url, max_rows, bat
         raise ValueError("only the official puzzle archive URL is supported")
     if not 0 <= max_rows <= 100_000_000 or not 1 <= batch_size <= 500:
         raise ValueError("invalid import bounds")
-
-
-def _run(db, source, corpus_id, digest, fields, max_rows, batch_size):
-    row = db.connection.execute(
-        """SELECT c.state,i.byte_offset FROM puzzle_corpora c
-        JOIN puzzle_imports i ON i.corpus_id=c.id WHERE c.id=?""",
-        (corpus_id,),
-    ).fetchone()
-    if row["state"] == "ready":
-        return _single_report(db, corpus_id)
-    offset = row["byte_offset"]
-    remaining = max_rows
-    try:
-        while not max_rows or remaining > 0:
-            limit = min(batch_size, remaining) if max_rows else batch_size
-            rows, next_offset, eof = read_batch(source, offset, fields, limit)
-            if rows:
-                save_batch(db, corpus_id, offset, next_offset, rows)
-                remaining -= len(rows)
-                offset = next_offset
-            if eof:
-                verify_snapshot(source, digest)
-                finish(db, corpus_id, offset)
-                break
-            if not rows:
-                raise ValueError("CSV checkpoint did not advance")
-    except (ValueError, OSError, sqlite3.IntegrityError):
-        fail(db, corpus_id, "source is invalid, changed, or contains duplicate IDs")
-        raise ValueError(
-            "corpus import stopped; source is invalid, changed, or has duplicate IDs"
-        ) from None
-    return _single_report(db, corpus_id)
-
-
-def _single_report(db: Database, corpus_id: int) -> dict:
-    version = db.connection.execute(
-        "SELECT version FROM puzzle_corpora WHERE id=?", (corpus_id,)
-    ).fetchone()[0]
-    return next(item for item in corpus_report(db) if item["version"] == version)

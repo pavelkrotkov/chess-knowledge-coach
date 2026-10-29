@@ -9,6 +9,7 @@ from .decision_inspection import inspect_decision
 from .deep_selection_views import list_selections, show_selection
 from .evidence_review import inspect_evidence, list_evidence, review_evidence
 from .pipeline_status import pipeline_status
+from .puzzle_import_report import corpus_report
 from .web_board import board_rows
 from .web_db import database
 from .web_release import release_info
@@ -117,3 +118,8 @@ def deep_selection_detail(game_id: int):
     except ValueError:
         abort(404)
     return render_template("deep_selection.html", selection=result)
+
+
+@views.get("/library")
+def library():
+    return render_template("library.html", corpora=corpus_report(database()))

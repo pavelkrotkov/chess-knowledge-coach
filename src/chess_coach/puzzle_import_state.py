@@ -31,6 +31,8 @@ def initialize(
                 (version, source_url or "local-decoded-csv", digest),
             )
             corpus_id = cursor.lastrowid
+            if corpus_id is None:
+                raise RuntimeError("SQLite did not return a corpus ID")
             db.connection.execute(
                 """INSERT INTO puzzle_imports
                 (corpus_id,csv_path,csv_sha256,archive_sha256,source_url,importer_version,header_json,byte_offset)
@@ -76,44 +78,3 @@ def _resume(db: Database, old, path, digest, archive, source_url, fields):
             "UPDATE puzzle_imports SET error=NULL WHERE corpus_id=?", (old["id"],)
         )
     return old["id"]
-
-
-def fail(db: Database, corpus_id: int, reason: str) -> None:
-    try:
-        db.connection.execute("BEGIN IMMEDIATE")
-        db.connection.execute(
-            "UPDATE puzzle_corpora SET state='failed' WHERE id=? AND state='staging'", (corpus_id,)
-        )
-        db.connection.execute(
-            "UPDATE puzzle_imports SET error=? WHERE corpus_id=?", (reason, corpus_id)
-        )
-        db.connection.commit()
-    except BaseException:
-        db.connection.rollback()
-        raise
-
-
-def corpus_report(db: Database) -> list[dict]:
-    rows = db.connection.execute(
-        """SELECT c.id,c.version,c.state,c.source,c.checksum,c.imported_rows,
-        i.csv_sha256,i.archive_sha256,i.importer_version,i.byte_offset,i.row_number,
-        i.accepted,i.rejected,i.error FROM puzzle_corpora c
-        LEFT JOIN puzzle_imports i ON i.corpus_id=c.id ORDER BY c.version"""
-    ).fetchall()
-    return [_report(db, row) for row in rows]
-
-
-def _report(db: Database, row) -> dict:
-    result = dict(row)
-    result["themes"] = {
-        item["theme"]: item["count"]
-        for item in db.connection.execute(
-            "SELECT theme,count FROM puzzle_theme_counts WHERE corpus_id=? ORDER BY theme",
-            (row["id"],),
-        )
-    }
-    result["rejected_reason"] = (
-        "invalid position or illegal solution" if result["rejected"] else None
-    )
-    result.pop("id")
-    return result

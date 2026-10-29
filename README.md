@@ -570,3 +570,42 @@ changes. If source data or its cheap checkpoint changes, a selection becomes
 stale. Analysis handoff rejects
 source databases containing selection history until selection-aware merge is
 implemented; it never silently drops that history.
+
+
+## Staged puzzle corpus
+
+The existing `import-puzzles` command preserves legacy behavior and labels those
+corpora **legacy_ready**; that label does not claim complete line validation.
+For a decoded UTF-8 CSV already inside the project, compute its SHA-256 and run:
+
+```sh
+uv run chess-coach --db PROJECT_DB stage-puzzles PROJECT_CSV --project-root PROJECT_ROOT \
+  --version SNAPSHOT --csv-sha256 DECODED_SHA256 --max-rows 1000
+uv run chess-coach --db PROJECT_DB corpus-status
+```
+
+Repeat the same command to resume. `--max-rows 0` processes through EOF in
+transactions of at most 100 records by default; `--batch-size` may be 1–500.
+The default 10 GiB free-space reserve pauses import before another batch; the
+operator may set `--min-free-bytes`. `--enable-wal` explicitly enables SQLite
+WAL for a supported local filesystem; it changes the database journal mode.
+The importer verifies the decoded digest again before publication. Optional
+`--archive-sha256` and `--source-url` record source metadata separately;
+this importer does not verify an archive or perform a download. The later
+acquisition and activation work remains required.
+
+Only **ready** and **legacy_ready** corpora are available for practice.
+A ready version is immutable; a conflicting source identity is rejected.
+Malformed CSV stops the import; illegal chess records are quarantined and
+reported, and cannot be practiced. Theme names and `unknown` objectives are
+content metadata, not skill evidence. The private **Library** page and
+`corpus-status` show state, counts, checkpoint and bounded error examples.
+For published versions, `query-puzzles --theme THEME` uses a normalized index;
+after 1,000 offsets use `--after-rating R --after-id ID` from the last row.
+
+A 20,000-row synthetic Hermes fixture using local WAL and 100-row batches
+measured 22.16 seconds import, 0.37 ms p95 database reads, 28.34 ms p95
+concurrent training writes, 141.5 ms p95 batch transactions (826.63 ms max),
+and 4.46 ms p95 indexed theme queries. This is a fixture measurement, not a
+full-corpus or browser-response guarantee; the real corpus and disk budget
+must be measured during #138.

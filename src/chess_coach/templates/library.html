@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Library — Chess coach{% endblock %}
+{% block content %}
+<h2>Puzzle library</h2>
+<p>Only ready and legacy-ready versions are available for practice. Legacy imports have not been revalidated by the new importer.</p>
+{% for corpus in corpora %}
+<section>
+<h3>{{ corpus.version }}</h3>
+<p>State: {{ corpus.state }} · Available rows: {{ corpus.imported_rows }}</p>
+{% if corpus.importer_version %}
+<p>Decoded CSV SHA-256: {{ corpus.csv_sha256 }}</p>
+{% if corpus.archive_sha256 %}<p>Archive SHA-256 (source metadata): {{ corpus.archive_sha256 }}</p>{% endif %}
+<p>Importer: {{ corpus.importer_version }} · Decoded bytes processed: {{ corpus.byte_offset }} · Accepted: {{ corpus.accepted }} · Rejected: {{ corpus.rejected }}</p>
+{% if corpus.error %}<p>Import error: {{ corpus.error }}</p>{% endif %}
+{% for item in corpus.rejections %}<p>Skipped record {{ item.record_number }} ({{ item.puzzle_id }}): {{ item.reason }}</p>{% endfor %}
+{% if corpus.themes_truncated %}<p>Showing the first 200 themes.</p>{% endif %}
+{% if corpus.themes %}<p>Theme coverage: {% for theme, count in corpus.themes.items() %}{{ theme }} ({{ count }}){% if not loop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+{% endif %}
+</section>
+{% else %}
+<p>No puzzle corpora are registered.</p>
+{% endfor %}
+{% endblock %}

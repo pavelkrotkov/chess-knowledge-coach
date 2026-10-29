@@ -32,6 +32,8 @@ COMMANDS = {
     "extract-structures": datasets.handle_extract_structures,
     "record-motifs": datasets.handle_record_motifs,
     "import-puzzles": datasets.handle_import_puzzles,
+    "stage-puzzles": datasets.handle_stage_puzzles,
+    "corpus-status": datasets.handle_corpus_status,
     "query-puzzles": datasets.handle_query_puzzles,
     "validate-evidence": learning.handle_validate_evidence,
     "list-evidence": learning.handle_list_evidence,

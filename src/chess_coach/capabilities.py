@@ -3,9 +3,16 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.3.0"
+REGISTRY_VERSION = "1.4.0"
 
 CAPABILITIES = (
+    {
+        "id": "staged_puzzle_corpus",
+        "area": "Training",
+        "name": "Staged local puzzle corpus",
+        "status": "supported",
+        "details": "Decoded local CSV snapshots import in bounded batches; only legally validated, completed versions become available. Official download and broad activation remain planned.",
+    },
     {
         "id": "competency_graph",
         "area": "Skill coverage",
