@@ -32,8 +32,8 @@ def configure(sub):
     parser.add_argument("--deep-max-games", type=int, default=4)
     parser.add_argument("--deep-per-game", type=int, default=4)
     parser.add_argument("--deep-max-jobs", type=int, default=4)
-    parser.add_argument("--deep-nodes", type=int, default=20000)
-    parser.add_argument("--deep-seconds", type=float, default=1.0)
+    parser.add_argument("--deep-nodes", type=int, default=50000)
+    parser.add_argument("--deep-seconds", type=float, default=2.0)
     parser.add_argument("--deep-multipv", type=int, default=3)
 
     sub.add_parser("pipeline-status", help="Read durable processing status")

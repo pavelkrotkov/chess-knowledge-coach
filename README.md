@@ -597,8 +597,8 @@ to four learner decisions per game, and processes at most four deep decisions in
 one invocation. The automatic scan examines at most 100 games and selects at
 most four games each time. Unfinished selections remain available on later scans;
 changing deep limits creates new job configurations without re-running cheap
-analysis. The default search uses one thread, 20,000 nodes and one second per
-search, with up to three best alternatives. The earlier cheap pass defaults to
+analysis. The automatic and manual deep defaults use one thread, 50,000 nodes and two
+seconds per search, with up to three best alternatives. The earlier cheap pass defaults to
 10,000 nodes and one second per search, with one best line; these settings do
 not imply a known difference in accuracy. Best MultiPV shares one work count;
 the played move is a separate bounded search. Source or cheap-analysis changes

@@ -25,7 +25,7 @@ early. Each entry is `best nodes / played nodes / seconds / disagrees`, where
 | Middlegame, Black | 5,001 / 5,001 / 0.107 / yes | 20,001 / 20,005 / 0.633 / no | 50,033 / 50,036 / 1.462 / no | 200,188 / 200,011 / 6.800 |
 | Endgame | 5,002 / 5,000 / 0.173 / no | 20,020 / 20,005 / 0.273 / yes | 50,028 / 50,012 / 0.510 / no | 200,083 / 200,171 / 0.952 |
 
-The automatic worker defaults to 20,000 nodes and one second **per search**,
+The automatic worker defaults to 50,000 nodes and two seconds **per search**,
 three alternatives, one thread, at most four decisions and four selected games
 per invocation, and up to 100 scanned games. The earlier cheap pass defaults to
 10,000 nodes and one second per search with one best line; both tiers also use a
@@ -33,7 +33,8 @@ separate forced-played search. Their settings do not establish relative accuracy
 This modest starting point limits
 work and preserves responsiveness; it is not an accuracy guarantee. Three of
 six 20,000-node best roots disagreed with this longer reference, while none of
-the 50,000-node roots did in this sample. The longer result can itself be wrong.
+the 50,000-node roots did in this sample. The 50,000-node paired searches took
+0.294–1.462 seconds in this run; four decisions are allowed per invocation. The longer result can itself be wrong.
 Engine startup, move reconstruction and database work add overhead beyond the
 two search limits. The engine controls node/time enforcement; these are not
 hard process deadlines. Search results remain estimates and create no mastery

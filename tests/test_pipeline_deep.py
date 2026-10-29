@@ -272,3 +272,14 @@ def test_timeout_leaves_pending_distinct_from_budget_cap(tmp_path, monkeypatch):
     assert resumed["deep"]["processed"] == 2
     assert resumed["deep"]["insufficient"] == 1 and resumed["deep"]["pending"] == 0
     assert db.connection.execute("SELECT COUNT(*) FROM deep_analysis_attempts").fetchone()[0] == 3
+
+
+def test_automatic_deep_defaults_match_cli():
+    from chess_coach.cli_parser import build_parser
+
+    defaults = PipelineConfig(learner=LEARNER)
+    args = build_parser().parse_args(["process-pipeline"])
+    assert defaults.deep_nodes == args.deep_nodes == 50000
+    assert defaults.deep_seconds == args.deep_seconds == 2.0
+    assert defaults.deep_max_jobs == args.deep_max_jobs == 4
+    assert defaults.deep_multipv == args.deep_multipv == 3

@@ -35,8 +35,8 @@ class PipelineConfig:
     deep_max_games: int = 4
     deep_per_game: int = 4
     deep_max_jobs: int = 4
-    deep_nodes: int = 20000
-    deep_seconds: float = 1.0
+    deep_nodes: int = 50000
+    deep_seconds: float = 2.0
     deep_multipv: int = 3
 
     def validate(self) -> None:
