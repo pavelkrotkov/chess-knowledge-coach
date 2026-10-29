@@ -12,11 +12,13 @@ from chess_coach.web import create_app
 def test_registry_is_scoped_unique_and_defensive():
     report = capability_report()
     entries = report["capabilities"]
-    assert report["version"] == "1.8.0"
+    assert report["version"] == "1.9.0"
     assert len({item["id"] for item in entries}) == len(entries)
     assert {item["status"] for item in entries} == {"supported", "observation-only", "planned"}
     states = {item["id"]: item["status"] for item in entries}
     assert states["staged_puzzle_corpus"] == "supported"
+    staged = next(item for item in entries if item["id"] == "staged_puzzle_corpus")
+    assert "subset provenance" in staged["details"]
     assert states["manual_deep_selection"] == "supported"
     assert states["manual_deep_execution"] == "supported"
     structures = next(item for item in entries if item["id"] == "structures")
