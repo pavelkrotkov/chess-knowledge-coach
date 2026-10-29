@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.25.0"
+REGISTRY_VERSION = "1.26.0"
 
 CAPABILITIES = (
     {
@@ -12,6 +12,13 @@ CAPABILITIES = (
         "name": "Bounded pawn-endgame choices",
         "status": "observation-only",
         "details": "The worker records provisional pawn observations; success or failure requires both a proved preserving and a worse legal alternative. Prepared own-game practice follows supplied moves; mastery remains closed pending independent validation.",
+    },
+    {
+        "id": "related_capture_practice",
+        "area": "Training",
+        "name": "Related capture practice",
+        "status": "supported",
+        "details": "Current learner-owned capture failures can retrieve bounded unfamiliar examples matching direct-capture line features. Other operations remain planned; supplied lines do not prove all alternatives.",
     },
     {
         "id": "accessible_practice_board",

@@ -465,7 +465,7 @@ def test_new_keys_resolve_only_newest_eligible_evidence_per_private_objective(mo
 
 def test_reviewed_capture_practice_retains_subject_and_review_gates(tmp_path, monkeypatch):
     db = make_game(tmp_path / "reviewed-capture.sqlite", monkeypatch)
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 23
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 24
     evidence = process_decision(db, 1, LEARNER)["evidence_ids"][0]
     review_evidence(db, evidence, decision="accept", actor="fixture_reviewer")
     choices = list_candidates(db, LEARNER)["candidates"]

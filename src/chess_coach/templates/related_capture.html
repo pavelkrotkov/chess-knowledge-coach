@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Related capture practice — Chess coach{% endblock %}
+{% block content %}
+<h2>Practice this capture pattern</h2>
+{% if result.scanned is defined %}
+<p>Source observation: {{ "reviewed" if result.review_status == "accepted" else "provisional" }}. Matching describes the supplied lines, not a general proof of all alternatives.</p>
+<p>{{ result.status }}. Searched {{ result.scanned }} corpus items in a bounded, rating-bucketed pool{% if result.bounds %} ({{ result.bounds[0] }}–{{ result.bounds[1] }}){% endif %}. {% if result.selection %}This is a declared, nonrepresentative source-order prefix of {{ result.selection.fullsource_count }} records.{% else %}Corpus selection metadata is unavailable.{% endif %} Up to 100 items per rating bucket and 100 per public collection (500 total) are inspected; results are not exhaustive.</p>
+{% if result.baseline %}<p>The source game recorded a learner rating of {{ result.baseline }}. It sets a rough content filter, not a calibrated puzzle skill rating.</p>{% else %}<p>Cold start: no source-game rating is available. The displayed bounds are a broad content filter and the midpoint 1400 is a sorting anchor, not an estimate of learner skill.</p>{% endif %}
+<p>Among compatible scanned examples: {{ result.excluded.exact_source }} exact source-position duplicates, {{ result.excluded.familiar }} known familiar positions, and {{ result.excluded.duplicate }} duplicate prompts or source games were excluded.</p>
+{% else %}<p>{{ result.status }}</p>{% endif %}
+{% for item in result['items'] %}
+<section><h3>Transfer example {{ loop.index }}</h3>
+<p>Same supplied-line direct-capture mechanism; {% if item.same_material %}same material counts{% else %}different material counts{% endif %}{% if item.shared_phase %}; both {{ item.shared_phase }} positions{% endif %}{% if item.shared_opening %}; matching opening-family labels{% endif %}. The prompt differs from known familiar positions.</p>
+<p>Source: {{ item.type }} · version {{ item.version }}{% if item.rating is not none %} · content rating {{ item.rating }} (deviation {{ item.rating_deviation }}){% else %} · content rating unavailable{% endif %}</p>
+{% set board = item.board %}{% set board_label = "Transfer position; side to move at the bottom" %}{% include "board.html" %}
+<form method="post" action="{{ url_for('related_capture.begin', position=position) }}">
+<input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="reference" value="{{ item.reference }}"><button>Start this example</button></form></section>
+{% endfor %}
+{% if result.next_cursor %}<p><a href="{{ url_for('related_capture.show', position=position, cursor=result.next_cursor) }}">More examples</a></p>{% endif %}
+{% endblock %}

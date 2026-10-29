@@ -870,3 +870,47 @@ source and distinguishes a legal counterfactual from the played line. Version
 contribute to mastery after explicit review and current source checks. Other
 fork-defense evidence remains visible but ineligible; fork exercise access
 remains closed. Existing fork execution and material policies are separate.
+
+## Related capture practice
+
+From a decision with a current learner-owned material-capture failure, the private
+browser offers **Practice this capture pattern**. The matching operation is an
+immediate, bounded capture of non-pawn material in the supplied legal line;
+other material, fork, mate and endgame operations remain outside this slice.
+Unreviewed source observations are provisional, and rejection, revocation or
+source changes invalidate previews and cued sessions. A transfer attempt keeps
+its originating evidence, source fingerprint, review event, matching version
+and pattern-cued status in immutable session provenance; it does not itself
+create learning evidence.
+
+The selected ready corpus is searched using its theme/rating index: up to 100
+entries from each of five content-rating buckets, plus up to 100 tasks from
+each of the first 100 public collections and 500 public tasks total. Only the
+post-setup Lichess learner position and the replayed legal supplied line are
+compared. Matching roles and capture geometry, material, phase, available
+opening labels and content rating/deviation rank the results. This bounded pool
+is not an exhaustive search; a declared source-order prefix is not
+representative. Known own-game positions, known source games, and previous
+practice prompts are excluded conservatively. Legacy puzzle attempts have no
+subject, so all are treated as familiar. If the bounded familiarity scan is
+exceeded, transfer is unavailable rather than claiming unfamiliarity.
+
+A source-game rating, if recorded, is a rough content-filter reference and is
+not a calibrated puzzle skill estimate. With no rating, the explicit 600–2200
+content range and its 1400 sorting midpoint are a cold-start convention.
+Matched supplied lines do not establish that every other legal move loses.
+
+The same preview and guarded start are available through the CLI (replace the
+uppercase placeholders with locally available values):
+
+```bash
+uv run chess-coach --db PROJECT_DB related-captures --subject LEARNER --position POSITION_ID --corpus CORPUS_VERSION
+uv run chess-coach --db PROJECT_DB start-related-capture --subject LEARNER --position POSITION_ID --corpus CORPUS_VERSION --attempt ATTEMPT_ID --reference OPAQUE_REFERENCE
+```
+
+The preview returns an opaque reference per example and an optional cursor;
+pass `--cursor CURSOR` to continue. References and cursors must be regenerated
+when the source, review, corpus, public collections, familiarity or baseline
+changes. `show-unified`, `move-unified`, and `hint-unified` use the existing
+legal session and reveal paths. Other operation-specific transfer adapters
+remain required release work.
