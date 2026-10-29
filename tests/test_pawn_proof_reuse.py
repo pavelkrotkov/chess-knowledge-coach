@@ -107,11 +107,13 @@ def test_four_distinct_sources_cold_warm_pages_and_session(tmp_path, monkeypatch
         t = perf_counter()
         page = list_candidates(db, "fixture_a", before=before)
         cold = perf_counter() - t
-        assert page["scanned"] == 1 and len(calls) == index + 1
+        assert page["scanned"] == 1 and len(calls) == index
+        assert "objective" not in page["candidates"][0]
         key = page["candidates"][0]["key"]
         seen.append(key)
         t = perf_counter()
         assert list_candidates(db, "fixture_a", before=before) == page
+        assert len(calls) == index
         warm = perf_counter() - t
         t = perf_counter()
         begin(db, key, f"attempt-{index}")
@@ -144,6 +146,9 @@ def test_four_distinct_sources_cold_warm_pages_and_session(tmp_path, monkeypatch
     response = client.get("/library", base_url="https://coach.invalid", headers=headers)
     http_warm = perf_counter() - t
     assert response.status_code == 200 and b"Next pawn source" in response.data
+    assert b"Verify and start pawn exercise" in response.data
+    assert b"not yet verified for practice" in response.data
+    assert b"preserving a win" not in response.data
     cursor = None
     for key in seen:
         url = "/library" + (f"?pawn_before={cursor}" if cursor else "")
@@ -317,3 +322,63 @@ def test_key_distinguishes_same_fen_with_different_histories_and_cache_is_bounde
     assert pawn_proof_cache.get((32,)) == {"result": 32}
     assert len(pawn_proof_cache._reports) == 32
     clear_cache()
+
+
+def test_coherent_forged_record_is_only_a_reference_and_cannot_start(tmp_path, monkeypatch):
+    from chess_coach.fact_fingerprint import canonical, digest
+
+    db = games(tmp_path, monkeypatch, count=1)
+    evidence = db.connection.execute(
+        "SELECT id,context_json,mapping_run_id FROM evidence_mappings"
+    ).fetchone()
+    fact = db.connection.execute("SELECT id,run_id,payload_json FROM detector_facts").fetchone()
+    detector = db.connection.execute(
+        "SELECT input_json FROM detector_runs WHERE id=?", (fact["run_id"],)
+    ).fetchone()
+    mapping = db.connection.execute(
+        "SELECT input_json FROM mapping_runs WHERE id=?", (evidence["mapping_run_id"],)
+    ).fetchone()
+    payload = json.loads(fact["payload_json"])
+    payload["proof"]["nodes"] += 1
+    inputs = json.loads(detector["input_json"])
+    inputs["detector_input"]["proof_digest"] = digest(canonical(payload["proof"]))
+    context = json.loads(evidence["context_json"])
+    context["pawn_observation"] = payload
+    mapping_input = json.loads(mapping["input_json"])
+    mapping_input["source"] = inputs["detector_input"]
+    mapping_input["context"] = context
+    db.connection.execute(
+        "UPDATE detector_facts SET payload_json=? WHERE id=?", (json.dumps(payload), fact["id"])
+    )
+    db.connection.execute(
+        "UPDATE detector_runs SET input_json=? WHERE id=?", (json.dumps(inputs), fact["run_id"])
+    )
+    db.connection.execute(
+        "UPDATE evidence_mappings SET context_json=? WHERE id=?",
+        (json.dumps(context), evidence["id"]),
+    )
+    db.connection.execute(
+        "UPDATE mapping_runs SET input_json=? WHERE id=?",
+        (json.dumps(mapping_input), evidence["mapping_run_id"]),
+    )
+    db.connection.commit()
+    clear_cache()
+    calls = []
+    original = pawn_proof.report
+
+    def counted(*args):
+        calls.append(1)
+        return original(*args)
+
+    monkeypatch.setattr(pawn_proof, "report", counted)
+    references = list_candidates(db, "fixture_a")["candidates"]
+    assert references == [
+        {"key": str(evidence["id"]), "review_status": "unreviewed", "verification": "required"}
+    ]
+    assert calls == []
+    with pytest.raises(ValueError):
+        begin(db, str(evidence["id"]), "forged")
+    assert len(calls) == 1
+    assert db.connection.execute("SELECT COUNT(*) FROM unified_sessions").fetchone()[0] == 0
+    assert db.connection.execute("SELECT COUNT(*) FROM training_attempts").fetchone()[0] == 0
+    db.close()

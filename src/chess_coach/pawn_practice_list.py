@@ -4,8 +4,9 @@ from collections import Counter
 
 from .learner_identity import normalize_identity
 from .pawn_coach_contract import MAPPER
-from .pawn_practice import VERSION, _objective, _view
+from .pawn_practice import VERSION
 from .pawn_practice_keys import evidence_id
+from .pawn_practice_preview import preview
 
 
 def _rows(db, subject, before):
@@ -34,14 +35,7 @@ def list_candidates(db, subject, *, before=None):
     candidates, excluded = [], Counter()
     if rows:
         try:
-            evidence = _view(db, rows[0]["id"], identity)
-            candidates.append(
-                {
-                    "key": str(rows[0]["id"]),
-                    "objective": _objective(evidence),
-                    "review_status": evidence["review_status"],
-                }
-            )
+            candidates.append(preview(db, rows[0]["id"], identity))
         except ValueError:
             excluded["stale, rejected, or unavailable"] += 1
     return {

@@ -38,13 +38,15 @@ and four supported decisions per invocation, configurable with
 `--pawn-max-scan`, `--pawn-max-decisions`, and `--no-pawn`. Each decision has
 the proof's shared 6,000-node, five-ply ceiling; no wall-clock guarantee is
 implied. Worker output contains counts and sanitized statuses, not game
-contents. The private library verifies at most one recent evidence source per
-page and links to the next page; the CLI exposes the same cursor through
+contents. The private library checks at most one recent source reference per
+page without rerunning its mathematical proof and links to the next page; each
+reference remains provisional until explicitly verified at session start. The
+CLI exposes the same cursor through
 `list-pawn-practice --subject SUBJECT --before ID`. A bounded in-process cache
 reuses only a verified mathematical proof for identical position history, limits,
 version and manifest. Every access rechecks the local resource bytes, subject,
 source, fact lineage and current review; restarting a process clears the cache.
-The first proof on a page can still take seconds.
+The first verification when starting or reopening an uncached session can take seconds.
 
 Own-game exercises are available provisionally when the proof and source are
 current and review is unreviewed or accepted. Rejected, revoked, changed or
