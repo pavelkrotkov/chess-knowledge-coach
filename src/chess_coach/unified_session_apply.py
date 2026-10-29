@@ -2,7 +2,7 @@
 
 import json
 
-from .objective_assistance_policy import objective_assistance
+from .objective_promotion_assistance import assistance
 from .unified_session_moves import apply_move
 from .unified_session_state import now, session_row, view
 
@@ -24,7 +24,7 @@ def record_event(db, row, event_id, kind, move):
             if move == "reveal"
             else {"feedback": "hint", "hint": square}
         )
-        if objective_assistance(row):
+        if assistance(row):
             detail["assistance_kind"] = "revealed" if move == "reveal" else "hinted"
     else:
         detail = apply_move(row, lines, candidates, move)

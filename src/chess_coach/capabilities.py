@@ -3,9 +3,16 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.48.0"
+REGISTRY_VERSION = "1.49.0"
 
 CAPABILITIES = (
+    {
+        "id": "explicit_promotion_objectives",
+        "area": "Training",
+        "name": "Explicit public promotion objectives",
+        "status": "observation-only",
+        "details": "A project-authored CC0 collection declares immediate or forced-within-two promotion tasks. Legal promotion and every supported opponent reply are checked within bounds; promotion does not establish a win or mastery.",
+    },
     {
         "id": "bounded_pawn_result_objectives",
         "area": "Training",

@@ -11,6 +11,7 @@ from .objective_defense_source import OBJECTIVE as DEFENSE_OBJECTIVE
 from .objective_defense_source import VERSION as DEFENSE_VERSION
 from .objective_pawn_contract import OBJECTIVE as PAWN_OBJECTIVE
 from .objective_pawn_contract import VERSION as PAWN_VERSION
+from .objective_promotion_binding import public_binding, public_scope
 from .objective_protection_contract import OBJECTIVE as PROTECTION_OBJECTIVE
 from .objective_protection_contract import VERSION as PROTECTION_VERSION
 from .objective_short_source import OBJECTIVE as SHORT_OBJECTIVE
@@ -18,7 +19,9 @@ from .objective_short_source import VERSION as SHORT_VERSION
 
 
 def matches(session, data, request):
-    return _scope(session, request) and _binding(session, data, request)
+    return (public_scope(session, request) and public_binding(data, request)) or (
+        _scope(session, request) and _binding(session, data, request)
+    )
 
 
 def _scope(session, request):

@@ -14,6 +14,7 @@ from flask import (
 
 from .objective_contract import VERSION as MATE_ONE_VERSION
 from .objective_pawn_continue import append_reply as append_pawn_reply
+from .objective_promotion_continue import append_reply as append_promotion_reply
 from .objective_short_history import append_reply
 from .unified_session_events import show
 from .unified_session_state import session_row
@@ -50,6 +51,7 @@ def show_page(attempt):
         steps = unified_history(database(), attempt, current_app.config["SUBJECT"])
         steps = append_reply(database(), attempt, current_app.config["SUBJECT"], steps)
         steps = append_pawn_reply(database(), attempt, current_app.config["SUBJECT"], steps)
+        steps = append_promotion_reply(database(), attempt, current_app.config["SUBJECT"], steps)
         index = selected_step(steps, request.args.get("step"))
     except ValueError:
         return _unavailable(attempt)

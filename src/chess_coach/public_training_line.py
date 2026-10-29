@@ -2,6 +2,8 @@
 
 import chess
 
+from .objective_promotion_line import validate as validate_promotion
+
 
 def validate_line(initial, line, objective):
     if not isinstance(line, str) or not 1 <= len(line.split()) <= 64:
@@ -19,6 +21,7 @@ def validate_line(initial, line, objective):
         board.push(move)
         moves.append(move.uci())
     _outcome(board, initial, mover, promoted, objective)
+    validate_promotion(moves, objective)
     return " ".join(moves)
 
 

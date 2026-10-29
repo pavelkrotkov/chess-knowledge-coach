@@ -2,6 +2,7 @@
 
 import json
 
+from .objective_promotion_admission import admit as admit_promotion
 from .related_session_filter import apply_filter
 from .unified_session_state import now, session_row, view
 from .unified_source_current import require_current, snapshot_hash
@@ -54,6 +55,8 @@ def _create(
 ):
     snapshot = resolve_source(db, source_type, version, key, subject=subject)
     apply_filter(snapshot, provenance, provenance_key, line_filter)
+    if source_type == "public":
+        admit_promotion(snapshot)
     if provenance is not None:
         snapshot["provenance"][provenance_key] = provenance
     fingerprint = snapshot_hash(snapshot)

@@ -6,6 +6,8 @@ from .objective_defense_judge import VERSION as DEFENSE_VERIFIER
 from .objective_defense_source import OBJECTIVE as DEFENSE_OBJECTIVE
 from .objective_pawn_contract import OBJECTIVE as PAWN_OBJECTIVE
 from .objective_pawn_contract import VERIFIER as PAWN_VERIFIER
+from .objective_promotion_contract import VERIFIER as PROMOTION_VERIFIER
+from .objective_promotion_contract import VERSION as PROMOTION_VERSION
 from .objective_protection_contract import OBJECTIVE as PROTECTION_OBJECTIVE
 from .objective_protection_judge import VERSION as PROTECTION_VERIFIER
 from .objective_short_source import OBJECTIVE as SHORT_OBJECTIVE
@@ -14,6 +16,7 @@ from .pawn_proof import MAX_PLIES as PAWN_MAX_PLIES
 VERSION = "mate-one-verifier-v1"
 SECONDS = 5.0
 VERIFIERS = {
+    PROMOTION_VERSION: PROMOTION_VERIFIER,
     PAWN_OBJECTIVE: PAWN_VERIFIER,
     PROTECTION_OBJECTIVE: PROTECTION_VERIFIER,
     TARGET_OBJECTIVE: CAPTURE_VERIFIER,
@@ -23,6 +26,7 @@ VERIFIERS = {
 }
 
 PLIES = {
+    PROMOTION_VERSION: 3,
     PAWN_OBJECTIVE: PAWN_MAX_PLIES,
     PROTECTION_OBJECTIVE: 3,
     SHORT_OBJECTIVE: 3,
