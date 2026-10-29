@@ -2,42 +2,22 @@
 
 from functools import partial
 
-from .discovery_contract import FACT, MAPPER, PRODUCER, SCOPE, VERSION
+from .discovery_contract import MAPPER
+from .discovery_evidence_identity import belongs as _belongs
+from .discovery_evidence_identity import run_matches as _run_matches
+from .discovery_evidence_policy import valid as _valid
 from .discovery_observation import observe
 from .fork_evidence_current import current_fork
 from .fork_evidence_verify import verified_fen
 
 
-def _valid(evidence, fact):
-    payload = fact.get("payload")
-    return (
-        _mapping(evidence)
-        and _source(fact)
-        and isinstance(payload, dict)
-        and (payload.get("kind"), payload.get("outcome"))
-        == ("discovered_attack", evidence["outcome"])
-    )
-
-
-def _mapping(evidence):
-    return (
-        evidence["lifecycle_status"] == "active"
-        and evidence["skill"] == "discovered_attack"
-        and evidence["operation"] == "execute"
-        and evidence["mapper_version"] == VERSION
-        and evidence["mapping_scope"] == SCOPE
-    )
-
-
-def _source(fact):
-    return (
-        fact["producer"] == PRODUCER
-        and fact["fact_type"] == FACT
-        and fact["detector_status"] == "active"
-        and fact["detector_version"] == fact["run_detector_version"] == VERSION
-    )
-
-
 def current(db, evidence):
+    if not _belongs(evidence):
+        return None, None, None
+    if not _run_matches(db, evidence):
+        return {}, "stale", None
     verify = partial(verified_fen, observer=observe)
-    return current_fork(db, evidence, mapper=MAPPER, validator=_valid, verify=verify)
+    result = current_fork(db, evidence, mapper=MAPPER, validator=_valid, verify=verify)
+    if result[1] == "current" and not _run_matches(db, evidence):
+        return {}, "stale", None
+    return result
