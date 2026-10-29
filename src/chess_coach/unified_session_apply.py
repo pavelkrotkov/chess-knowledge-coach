@@ -12,17 +12,24 @@ def record_event(db, row, event_id, kind, move):
     lines = json.loads(row["lines_json"])
     candidates = json.loads(row["candidates_json"])
     if kind == "hint":
-        square = lines[candidates[0]][row["next_index"]][:2]
+        remaining = lines[candidates[0]][row["next_index"] :]
+        square = remaining[0][:2]
         db.connection.execute(
             "UPDATE unified_sessions SET hints_used=hints_used+1 WHERE attempt_id=?",
             (row["attempt_id"],),
         )
-        detail = {"feedback": "hint", "hint": square}
+        detail = (
+            {"feedback": "revealed", "revealed_line": " ".join(remaining)}
+            if move == "reveal"
+            else {"feedback": "hint", "hint": square}
+        )
     else:
         detail = apply_move(row, lines, candidates, move)
         _save_move(db, row, detail)
     result = view(session_row(db, row["attempt_id"], row["subject"])) | {
-        key: value for key, value in detail.items() if key in {"feedback", "hint", "opponent_move"}
+        key: value
+        for key, value in detail.items()
+        if key in {"feedback", "hint", "opponent_move", "revealed_line"}
     }
     db.connection.execute(
         "INSERT INTO unified_session_events VALUES(?,?,?,?,?,?)",

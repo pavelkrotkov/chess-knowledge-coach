@@ -3,6 +3,7 @@
 from .db import Database
 from .fork_defense_worker import process_defenses
 from .fork_worker import process_forks
+from .mate_worker import process_mates
 from .material_worker import process_material
 from .pipeline_config import PipelineConfig
 from .pipeline_cooldown import utc_now
@@ -13,8 +14,8 @@ from .pipeline_health import finish_run, start_run
 from .pipeline_inputs import engine_identity, scan_input
 from .pipeline_lock import pipeline_lock
 from .pipeline_pending import pending_games
-from .pipeline_report import pipeline_report
 from .pipeline_sync import sync_result
+from .pipeline_worker_report import worker_report
 
 
 def process_pipeline(
@@ -53,4 +54,5 @@ def _run_pipeline(db, config, token, transport, clock):
     material = process_material(db, config)
     forks = process_forks(db, config)
     defenses = process_defenses(db, config)
-    return pipeline_report(db, config, sync, scan, games, deep, material, forks, defenses)
+    mate = process_mates(db, config)
+    return worker_report(db, config, sync, scan, games, deep, material, forks, defenses, mate)

@@ -17,6 +17,10 @@ def hint(db, attempt_id, subject, *, event_id):
     return _event(db, attempt_id, subject, event_id, "hint", None)
 
 
+def reveal(db, attempt_id, subject, *, event_id):
+    return _event(db, attempt_id, subject, event_id, "hint", "reveal")
+
+
 def show(db, attempt_id, subject):
     row = session_row(db, attempt_id, subject)
     require_current(db, row)

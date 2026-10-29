@@ -38,6 +38,9 @@ class PipelineConfig:
     deep_nodes: int = 50000
     deep_seconds: float = 2.0
     deep_multipv: int = 3
+    mate_enabled: bool = True
+    mate_max_scan: int = 40
+    mate_max_decisions: int = 4
     material_enabled: bool = True
     material_max_scan: int = 40
     material_max_decisions: int = 4
@@ -53,3 +56,6 @@ class PipelineConfig:
         from .material_worker_config import validate_material_config
 
         validate_material_config(self)
+        from .mate_worker_config import validate_mate_config
+
+        validate_mate_config(self)

@@ -24,9 +24,6 @@ is disproved only when a legal defense refutes that bounded objective; an
 exhausted node or reply budget is unknown. When any root is proved, the overall
 result is proved even if other alternatives are unknown; inspect each root's
 status to see whether the alternative search completed. Proofs are not engine
-scores or principal variations. This is an on-demand CPU-bound search, not a
-wall-clock deadline, automatic backfill, exercise grader, or evidence producer.
+scores or principal variations. This inspection is an on-demand CPU-bound search, not a wall-clock deadline or exercise grader. A separate bounded worker publishes its own versioned observations; see [automatic mate observations](mate-automatic-observations.md).
 
-Family eligibility, automatic coaching and back-rank integration remain pending
-independent validation under #130. Alternative-aware session grading belongs to
-#144. No short-mate observation from this tool updates mastery or training.
+New-family mastery eligibility remains closed pending independent validation. Back-rank integration remains under #130, and alternative-aware session grading belongs to #144. No on-demand inspection updates mastery or training.

@@ -80,6 +80,7 @@ def setup(tmp_path, monkeypatch, count=3):
     monkeypatch.setattr(chess.engine.SimpleEngine, "popen_uci", lambda _: FakeEngine())
     config = PipelineConfig(
         learner="learner",
+        mate_enabled=False,
         max_games=10,
         page_size=10,
         nodes=100,

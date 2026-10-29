@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.22.0"
+REGISTRY_VERSION = "1.23.0"
 
 CAPABILITIES = (
     {
@@ -25,7 +25,14 @@ CAPABILITIES = (
         "area": "Analysis",
         "name": "Private bounded mate inspection",
         "status": "observation-only",
-        "details": "An owned current decision can be inspected for legal immediate mates and bounded three-ply forced mate proofs. Automatic coaching, practice grading and mastery eligibility remain planned.",
+        "details": "An owned current decision can be inspected for legal immediate mates and bounded three-ply forced mate proofs. Automatic bounded observations and provisional own-game prepared lines are separate; general alternative grading and new-family mastery eligibility remain planned.",
+    },
+    {
+        "id": "automatic_bounded_mate",
+        "area": "Skill coverage",
+        "name": "Automatic bounded mate observations",
+        "status": "observation-only",
+        "details": "A rotating worker enumerates immediate mates and selectively proves short mates within explicit limits. Unselected or exhausted searches are unknown; current provisional own-game lines are playable, while new-family mastery remains closed.",
     },
     {
         "id": "direct_source_practice",
@@ -151,7 +158,7 @@ CAPABILITIES = (
         "area": "Training",
         "name": "Own-game exercises",
         "status": "observation-only",
-        "details": "Own-game material practice requires a current verified witness and eligible review state. Protection version 1.0.0 and capture version 1.1.0 have scoped validation; unreviewed sources remain provisional.",
+        "details": "Own-game material practice requires a current verified witness and eligible review state. Protection version 1.0.0 and capture version 1.1.0 have scoped validation; bounded mate prepared lines are provisional and do not update mastery. Unreviewed sources remain provisional.",
     },
     {
         "id": "broader_practice",

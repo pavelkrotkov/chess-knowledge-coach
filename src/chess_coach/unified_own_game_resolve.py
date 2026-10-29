@@ -25,6 +25,10 @@ def _current(db, subject, rows, kind, evidence_id):
 
 
 def resolve(db, version, key, subject):
+    if version == "mate-own-v1":
+        from .mate_practice import resolve as resolve_mate
+
+        return resolve_mate(db, version, key, subject)
     position, kind, suffix = _parts(key)
     rows = _rows(db, subject, position)
     if version == LEGACY_VERSION:
