@@ -9,6 +9,7 @@ from .enrichment import SubprocessMaiaAdapter, UnavailableMaiaAdapter, predict_m
 from .ingest import ingest_pgn
 from .lichess import LichessClient
 from .mate_inspection import inspect_mate
+from .pawn_inspection import inspect_pawn
 
 
 def handle_init_db(db, args):
@@ -54,6 +55,20 @@ def handle_inspect_mate(db, args):
     print(
         json.dumps(
             inspect_mate(
+                db,
+                args.position_id,
+                learner=os.environ.get("LICHESS_USERNAME"),
+                expected_fingerprint=args.source_fingerprint,
+            ),
+            indent=2,
+        )
+    )
+
+
+def handle_inspect_pawn(db, args):
+    print(
+        json.dumps(
+            inspect_pawn(
                 db,
                 args.position_id,
                 learner=os.environ.get("LICHESS_USERNAME"),

@@ -21,6 +21,11 @@ def configure(sub):
     mate = sub.add_parser("inspect-mate", help="Inspect bounded mate proof for an owned decision")
     mate.add_argument("position_id", type=int)
     mate.add_argument("--source-fingerprint")
+    pawn = sub.add_parser(
+        "inspect-pawn", help="Inspect a bounded pawn endgame for an owned decision"
+    )
+    pawn.add_argument("position_id", type=int)
+    pawn.add_argument("--source-fingerprint")
     maia = sub.add_parser("predict-maia")
     maia.add_argument("position_id", type=int)
     maia.add_argument("--command", dest="maia_command")

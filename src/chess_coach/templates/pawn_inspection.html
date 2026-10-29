@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Pawn-endgame inspection — Chess coach{% endblock %}
+{% block content %}
+<h2>Pawn-endgame inspection</h2>
+<p>Status: {{ pawn.status }}.</p>
+{% if pawn.status == "current" %}
+<p>Game {{ pawn.game_id }}, ply {{ pawn.ply }}. Played {{ pawn.played }}. Current analysis run {{ pawn.analysis_run_id }}.</p>
+<p>Proof: {{ pawn.proof.status }} ({{ pawn.proof.reason }}). Values are from the mover’s perspective: −1 loss, 0 draw, +1 win; differing bounds mean unknown.</p>
+{% if pawn.proof.geometry %}<p>Kings: White {{ pawn.proof.geometry.white_king }}, Black {{ pawn.proof.geometry.black_king }}. Direct opposition: {{ pawn.proof.geometry.direct_opposition }}; {{ pawn.proof.geometry.side_to_move }} to move. This alignment is descriptive, not proof of an outcome.</p>{% endif %}
+{% if pawn.proof.alternatives %}
+<p>Outcome bounds {{ pawn.proof.lower }} to {{ pawn.proof.upper }}; {{ pawn.proof.nodes }} of {{ pawn.proof.node_limit }} nodes, up to {{ pawn.proof.max_plies }} plies before a verified reset. {{ pawn.proof.claim_policy }}. Native WDL counts: {{ pawn.proof.native_wdl_counts }}; each native value is from the probed side-to-move perspective.</p>
+<ul>{% for alternative in pawn.proof.alternatives %}<li>{{ alternative.move.san }}: {{ alternative.lower }} to {{ alternative.upper }} ({{ alternative.reason }})</li>{% endfor %}</ul>
+{% endif %}
+<p>Promotion alone does not prove a win. These results are not skill or mastery assessments. Proof manifest SHA-256: {{ pawn.proof_manifest_sha256 }}. Source fingerprint: {{ pawn.source_fingerprint }}.</p>
+{% else %}<p>The owned current source is unavailable or changed; no proof is shown.</p>{% endif %}
+{% endblock %}
