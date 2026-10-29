@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 
 from .pipeline_limits import validate_integer_limits, validate_other_limits
 from .pipeline_versions import validate_learner
+from .pipeline_worker_config import validate_worker_config
 
 
 @dataclass(frozen=True)
@@ -52,16 +53,4 @@ class PipelineConfig:
         validate_learner(self.learner)
         validate_integer_limits(self)
         validate_other_limits(self)
-        from .pipeline_deep_config import deep_options, validate_deep_config
-
-        validate_deep_config(self)
-        deep_options(self)
-        from .material_worker_config import validate_material_config
-
-        validate_material_config(self)
-        from .mate_worker_config import validate_mate_config
-
-        validate_mate_config(self)
-        from .pawn_coach_config import validate_pawn_config
-
-        validate_pawn_config(self)
+        validate_worker_config(self)
