@@ -6,7 +6,7 @@ from .classification_transaction import classification_transaction
 from .db import Database
 from .opening_history import persist_opening
 
-CLASSIFIER_VERSION = "1.0.0"
+CLASSIFIER_VERSION = "1.1.0"
 
 
 def classify_game(
@@ -54,6 +54,6 @@ def _best_match(db: Database, game_id: int, dataset_id: int):
             WHERE dataset_id = ? AND position_key = ? ORDER BY ply DESC, id LIMIT 1""",
             (dataset_id, key),
         ).fetchone()
-        if node is not None and (best is None or node["ply"] > best["ply"]):
+        if node is not None:
             best = node
     return best

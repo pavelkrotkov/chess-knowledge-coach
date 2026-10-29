@@ -4,10 +4,12 @@ import json
 
 from .motifs import record_motif_opportunities
 from .named_structure_report import structure_report
+from .opening_snapshot import import_snapshot
 from .openings import classify_game, import_openings
 from .puzzle_import import stage_puzzles
 from .puzzle_import_report import corpus_report
 from .puzzles import import_puzzles, query_puzzles
+from .repertoire import repertoire_report
 from .structures import extract_game_episodes
 
 
@@ -112,3 +114,11 @@ def handle_corpus_status(db, args):
 
 def handle_structure_history(db, args):
     print(json.dumps(structure_report(db, args.learner, version=args.matcher_version), indent=2))
+
+
+def handle_import_lichess_openings(db, args):
+    print(json.dumps({"rows": import_snapshot(db)}, indent=2))
+
+
+def handle_repertoire(db, args):
+    print(json.dumps(repertoire_report(db, args.learner), indent=2))

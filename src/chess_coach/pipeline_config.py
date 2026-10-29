@@ -27,7 +27,7 @@ class PipelineConfig:
     opening_version: str | None = None
     opening_source: str | None = None
     structure_version: str = "0.1.0"
-    classifier_version: str = "1.0.0"
+    classifier_version: str = "1.1.0"
     ontology_version: str = "tactical-mate-v1"
     tactical_version: str = "1.0.0"
 
