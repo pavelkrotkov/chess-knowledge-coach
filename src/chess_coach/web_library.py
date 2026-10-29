@@ -8,6 +8,7 @@ from .mate_practice import list_candidates as mate_candidates
 from .objective_capture_list import candidates as capture_candidates
 from .objective_defense_list import candidates as defense_candidates
 from .objective_mate_list import candidates as mate_one_candidates
+from .objective_pawn_contract import VERSION as PAWN_OBJECTIVE_VERSION
 from .objective_protection_list import candidates as protection_candidates
 from .objective_short_list import candidates as short_mate_candidates
 from .pawn_practice_list import list_candidates as list_pawn_candidates
@@ -37,6 +38,7 @@ def render_library():
         short_mate_game=short_mate_candidates(database(), current_app.config["SUBJECT"]),
         mate_game=mate_candidates(database(), current_app.config["SUBJECT"]),
         pawn_game=pawn_game,
+        pawn_objective_version=PAWN_OBJECTIVE_VERSION,
         pawn_before=request.args.get("pawn_before"),
         back_rank_game=back_rank_candidates(database(), current_app.config["SUBJECT"]),
         corpora=corpus_choices(database(), corpus_report(database())),

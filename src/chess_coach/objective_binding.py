@@ -9,6 +9,8 @@ from .objective_capture_contract import (
 from .objective_contract import OBJECTIVE, VERSION
 from .objective_defense_source import OBJECTIVE as DEFENSE_OBJECTIVE
 from .objective_defense_source import VERSION as DEFENSE_VERSION
+from .objective_pawn_contract import OBJECTIVE as PAWN_OBJECTIVE
+from .objective_pawn_contract import VERSION as PAWN_VERSION
 from .objective_protection_contract import OBJECTIVE as PROTECTION_OBJECTIVE
 from .objective_protection_contract import VERSION as PROTECTION_VERSION
 from .objective_short_source import OBJECTIVE as SHORT_OBJECTIVE
@@ -24,6 +26,8 @@ def _scope(session, request):
         session["source_type"] == "own-game"
         and (session["source_version"], session["objective"])
         in {
+            (PAWN_VERSION, "preserve_pawn_win"),
+            (PAWN_VERSION, "preserve_pawn_draw"),
             (PROTECTION_VERSION, "protect_threatened_piece"),
             (TARGET_VERSION, "capture_named_target"),
             (GAIN_VERSION, "bounded_material_gain"),
@@ -42,6 +46,7 @@ def _binding(session, data, request):
         data.get("objective_version") == request["objective_version"]
         and (session["source_version"], data.get("objective_version"))
         in {
+            (PAWN_VERSION, PAWN_OBJECTIVE),
             (PROTECTION_VERSION, PROTECTION_OBJECTIVE),
             (TARGET_VERSION, TARGET_OBJECTIVE),
             (GAIN_VERSION, GAIN_OBJECTIVE),

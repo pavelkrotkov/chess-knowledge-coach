@@ -3,9 +3,16 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.47.0"
+REGISTRY_VERSION = "1.48.0"
 
 CAPABILITIES = (
+    {
+        "id": "bounded_pawn_result_objectives",
+        "area": "Training",
+        "name": "Owned pawn-ending result objectives",
+        "status": "observation-only",
+        "details": "Current owned pawn sources bind a proven win or draw; local bounded WDL intervals verify alternative moves. Unknown intervals and history stay unresolved. Promotion is not a win, and these results do not establish mastery.",
+    },
     {
         "id": "bounded_protection_objectives",
         "area": "Training",

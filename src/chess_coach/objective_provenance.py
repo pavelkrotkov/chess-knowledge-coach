@@ -4,13 +4,17 @@ from .objective_capture_contract import GAIN_OBJECTIVE, TARGET_OBJECTIVE
 from .objective_capture_judge import VERSION as CAPTURE_VERIFIER
 from .objective_defense_judge import VERSION as DEFENSE_VERIFIER
 from .objective_defense_source import OBJECTIVE as DEFENSE_OBJECTIVE
+from .objective_pawn_contract import OBJECTIVE as PAWN_OBJECTIVE
+from .objective_pawn_contract import VERIFIER as PAWN_VERIFIER
 from .objective_protection_contract import OBJECTIVE as PROTECTION_OBJECTIVE
 from .objective_protection_judge import VERSION as PROTECTION_VERIFIER
 from .objective_short_source import OBJECTIVE as SHORT_OBJECTIVE
+from .pawn_proof import MAX_PLIES as PAWN_MAX_PLIES
 
 VERSION = "mate-one-verifier-v1"
 SECONDS = 5.0
 VERIFIERS = {
+    PAWN_OBJECTIVE: PAWN_VERIFIER,
     PROTECTION_OBJECTIVE: PROTECTION_VERIFIER,
     TARGET_OBJECTIVE: CAPTURE_VERIFIER,
     GAIN_OBJECTIVE: CAPTURE_VERIFIER,
@@ -18,12 +22,17 @@ VERIFIERS = {
     SHORT_OBJECTIVE: "mate-two-verifier-v1",
 }
 
+PLIES = {
+    PAWN_OBJECTIVE: PAWN_MAX_PLIES,
+    PROTECTION_OBJECTIVE: 3,
+    SHORT_OBJECTIVE: 3,
+    TARGET_OBJECTIVE: 2,
+    GAIN_OBJECTIVE: 2,
+    DEFENSE_OBJECTIVE: 2,
+}
+
 
 def provenance(request, seconds=SECONDS):
-    protection = request["objective_version"] == PROTECTION_OBJECTIVE
-    capture = request["objective_version"] in {TARGET_OBJECTIVE, GAIN_OBJECTIVE}
-    short = request["objective_version"] == SHORT_OBJECTIVE
-    defense = request["objective_version"] == DEFENSE_OBJECTIVE
     verifier = VERIFIERS.get(request["objective_version"], VERSION)
     return {
         "verifier": verifier,
@@ -33,7 +42,7 @@ def provenance(request, seconds=SECONDS):
         "event_prefix_hash": request["event_prefix_hash"],
         "source_hash": request["source_hash"],
         "limits": {
-            "plies": 3 if protection or short else 2 if capture or defense else 1,
+            "plies": PLIES.get(request["objective_version"], 1),
             "compute_timeout_seconds": seconds,
         },
         "learning_eligible": False,

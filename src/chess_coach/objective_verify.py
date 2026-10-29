@@ -4,6 +4,8 @@ from .objective_contract import OWNED_HISTORY, UNAVAILABLE
 from .objective_current import current
 from .objective_events import assistance
 from .objective_history import before_answer
+from .objective_pawn_contract import OBJECTIVE as PAWN_OBJECTIVE
+from .objective_pawn_history import before_answer as pawn_before_answer
 from .objective_provenance import SECONDS as SECONDS
 from .objective_provenance import VERSION as VERSION
 from .objective_provenance import provenance as provenance
@@ -23,7 +25,10 @@ def compute(db, request, clock, *, seconds=SECONDS):
     if request["history_mode"] != OWNED_HISTORY:
         return {**base, "status": "unresolved", "reason": "history_mode_not_supported"}
     try:
-        board, move = before_answer(db, session, events)
+        replay = (
+            pawn_before_answer if request["objective_version"] == PAWN_OBJECTIVE else before_answer
+        )
+        board, move = replay(db, session, events)
     except (ValueError, KeyError, TypeError, IndexError):
         return {**base, "status": "unresolved", "reason": "history_unavailable"}
     return verify(board, move, request, events, clock, start, seconds, base, session)

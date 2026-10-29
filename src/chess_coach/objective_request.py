@@ -7,6 +7,7 @@ from .objective_capture_contract import VERSIONS as CAPTURE_VERSIONS
 from .objective_contract import VERSION
 from .objective_defense_source import VERSION as DEFENSE_VERSION
 from .objective_events import prefix, prefix_hash
+from .objective_pawn_contract import VERSION as PAWN_VERSION
 from .objective_protection_contract import VERSION as PROTECTION_VERSION
 from .objective_short_source import VERSION as SHORT_VERSION
 from .unified_session_state import now
@@ -16,6 +17,7 @@ def enqueue(db, session, event_id, result):
     if session["source_type"] != "own-game" or session["source_version"] not in {
         *CAPTURE_VERSIONS,
         PROTECTION_VERSION,
+        PAWN_VERSION,
         VERSION,
         SHORT_VERSION,
         DEFENSE_VERSION,
