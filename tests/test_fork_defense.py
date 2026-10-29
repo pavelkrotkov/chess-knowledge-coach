@@ -130,3 +130,13 @@ def test_exhausted_anchor_budget_does_not_claim_prevention(monkeypatch):
     monkeypatch.setattr(fork_defense_anchor, "MAX_ANCHOR_MOVES", 0)
     result = observe(board, "a1b1", best, best)
     assert result["outcome"] == "ambiguous" and result["reason"] == "anchor_move_budget_exhausted"
+
+
+def test_real_repetition_history_blocks_counterfactual_outcome():
+    board = chess.Board("7k/6p1/8/8/1n6/8/7P/R3K3 w - - 0 1")
+    for move in ("e1f1", "h8g8", "f1e1", "g8h8"):
+        board.push_uci(move)
+    assert board.is_repetition(2)
+    best = line(["a1b1", "h8g8", "e1f1", "g7g6"], 500)
+    result = observe(board, "a1b1", best, best)
+    assert result["outcome"] == "ambiguous" and result["reason"] == "hypothetical_probe_unavailable"

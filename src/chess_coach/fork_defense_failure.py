@@ -1,4 +1,4 @@
-"""Verify the recorded fork loss and a distinct legal safe alternative."""
+"""Verify an engine continuation and a distinct legal defensive alternative."""
 
 import chess
 
@@ -24,7 +24,7 @@ def failure(board, actual, best_line, played_line, candidates, following):
         "fork": proof,
         "threat_origin": _origin(proof, candidates),
         **lines,
-        "boundary": "actual recorded fork line and bounded immediate defenses; initial standstill probe is positional only",
+        "boundary": "recorded engine continuation rooted at the played move and bounded immediate defenses; not actual subsequent game moves",
     }
 
 

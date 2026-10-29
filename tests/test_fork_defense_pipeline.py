@@ -143,7 +143,8 @@ def test_worker_source_review_replay_and_private_explanation(tmp_path, monkeypat
     assert page.status_code == 200 and b"Fork-defense source: current" in page.data
     assert b"standstill threat probe is positional" in page.data
     if failure:
-        assert b"recorded fork" in page.data
+        assert b"recorded engine continuation" in page.data
+        assert b"does not assert the opponent played this move" in page.data
     else:
         assert b"counterfactual line" in page.data
     db.connection.execute(

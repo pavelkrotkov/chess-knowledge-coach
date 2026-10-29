@@ -852,8 +852,10 @@ opponent-to-move position only as a positional candidate filter; it does not
 insert a null move or make a historical claim from that position. An existing
 threat is reported only when a legal alternative learner move retains it and the
 fork has a bounded proof using the original game history. A newly exposed fork
-may be reported only from the actual legal played continuation with its concrete
-material consequence and a verified alternative. Equivalent quiet defenses can
+may be reported only from a recorded engine continuation rooted at the legal
+played move, with its concrete material consequence and a verified alternative.
+The engine continuation is hypothetical; it does not claim the opponent actually
+played the fork or intended it. Equivalent quiet defenses can
 be successes. All legal in-scope immediate opponent fork candidates are checked
 within caps of 128 legal moves and 16 fork candidates per scan. The legal anchor
 search considers at most 64 learner moves and 32 fork proofs; exhausted anchor

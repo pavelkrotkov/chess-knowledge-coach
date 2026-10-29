@@ -1,4 +1,4 @@
-"""Check actual fork-loss evidence and a verified defensive alternative."""
+"""Check a recorded engine-line consequence and a verified defensive alternative."""
 
 from .material_lines import continuation, unopposed_material_loss
 
