@@ -154,7 +154,7 @@ def test_review_practice_completion_and_followup_plan(setup):
     )
     page = client.get("/practice", base_url=ORIGIN, headers=HEADERS)
     assert (
-        b"solved" in page.data
+        b"Solved" in page.data
         and b"Next due:" in page.data
         and b"verified_mate_in_one" in page.data
     )

@@ -186,7 +186,7 @@ def test_private_browser_starts_and_completes_direct_prompt(tmp_path):
     assert posted.status_code == 303
     page = client.get(posted.headers["Location"], base_url="https://coach.invalid", headers=headers)
     assert (
-        b"objective_verified" in page.data
+        b"Checkmate verified" in page.data
         and b"stated checkmate objective was verified" in page.data
     )
 
@@ -280,13 +280,13 @@ def test_private_browser_multimove_and_corpus_sources(tmp_path):
 
     page = begin_page("public", "public", "multi")
     page = play(page, "e2e4")
-    assert b"line_match" in page.data and b"g1f3" not in page.data
+    assert b"Move played; continue from this position." in page.data and b"g1f3" not in page.data
     page = play(page, "g1f3")
-    assert b"line_completed" in page.data
+    assert b"Line complete" in page.data
     page = begin_page("corpus", "legacy", "old")
     assert b"c5f8" not in page.data
     page = play(page, "c5f8")
-    assert b"line_completed" in page.data
+    assert b"Line complete" in page.data
 
 
 def test_backup_restore_preserves_session_snapshot_and_legacy_attempt(tmp_path):

@@ -16,6 +16,7 @@ from .unified_session_events import show
 from .unified_sessions import start
 from .web_board import board_rows
 from .web_db import database
+from .web_practice_history import selected_step, unified_history
 from .web_unified_actions import unified_practice
 
 
@@ -41,13 +42,18 @@ def begin():
 def show_page(attempt):
     try:
         state = show(database(), attempt, current_app.config["SUBJECT"])
+        steps = unified_history(database(), attempt, current_app.config["SUBJECT"])
+        index = selected_step(steps, request.args.get("step"))
     except ValueError:
         abort(404)
     session["unified_attempt"] = attempt
     return render_template(
         "unified_practice.html",
         state=state,
-        board=board_rows(state["fen"], state["learner_color"]),
+        board=board_rows(steps[index]["fen"], state["learner_color"]),
+        steps=steps,
+        step=index,
+        at_current=index == len(steps) - 1,
         board_label="Chess position; learner plays " + state["learner_color"] + " at the bottom",
         event=secrets.token_urlsafe(24),
         notice=session.pop("unified_notice", None),

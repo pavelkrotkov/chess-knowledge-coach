@@ -1,0 +1,12 @@
+<p>Enter a move in chess notation or as source and destination squares.</p>
+<p data-board-help hidden>Choose a starting square and a destination. Use arrow keys to move between squares; press Enter or Space to select, and Escape to clear.</p>
+<p id="board-announcement" role="status" aria-live="polite"></p>
+<form method="post" action="{{ move_url }}">
+<input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="attempt" value="{{ state.attempt_id }}"><input type="hidden" name="event" value="{{ event }}">{% if item_id is defined %}<input type="hidden" name="item_id" value="{{ item_id }}">{% endif %}
+<label for="move">Your move</label> <input id="move" name="move" required maxlength="12" autocomplete="off">
+<label for="promotion">Promotion</label> <select id="promotion" name="promotion"><option value="">Not a promotion</option><option value="q">Queen</option><option value="r">Rook</option><option value="b">Bishop</option><option value="n">Knight</option></select>
+<button>Play move</button>
+</form>
+<form method="post" action="{{ hint_url }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="attempt" value="{{ state.attempt_id }}"><input type="hidden" name="event" value="{{ event }}">{% if item_id is defined %}<input type="hidden" name="item_id" value="{{ item_id }}">{% endif %}<button>Hint</button></form>
+<form method="post" action="{{ reveal_url }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="attempt" value="{{ state.attempt_id }}"><input type="hidden" name="event" value="{{ event }}">{% if item_id is defined %}<input type="hidden" name="item_id" value="{{ item_id }}">{% endif %}<button>Reveal a line</button></form>
+<script src="{{ url_for('static', filename='board.js') }}" defer></script>

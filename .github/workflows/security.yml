@@ -27,6 +27,18 @@ jobs:
       - run: uv sync --dev
       - run: uv run pip-audit
 
+  npm-audit:
+    name: JavaScript Dependency Vulnerability Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - run: npm audit --ignore-scripts --audit-level=low
+
   actionlint:
     name: GitHub Actions Lint
     runs-on: ubuntu-latest

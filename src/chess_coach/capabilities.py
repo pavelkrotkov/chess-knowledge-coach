@@ -3,9 +3,16 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.17.0"
+REGISTRY_VERSION = "1.19.0"
 
 CAPABILITIES = (
+    {
+        "id": "accessible_practice_board",
+        "area": "Training",
+        "name": "Accessible browser practice board",
+        "status": "supported",
+        "details": "Private practice supports square selection, keyboard and text move entry, promotion, played-position navigation and explicit hints or line reveal; move validation remains server-side.",
+    },
     {
         "id": "manual_mate_proof",
         "area": "Analysis",
@@ -18,7 +25,7 @@ CAPABILITIES = (
         "area": "Training",
         "name": "Corpus and direct-source practice",
         "status": "supported",
-        "details": "Versioned corpus and licensed direct prompts support legal sessions. Unlisted legal moves need verification; own-game protection uses eligible evidence and generalized grading remains planned.",
+        "details": "Versioned corpus and licensed direct prompts support legal sessions. Unlisted legal moves need verification; own-game material uses eligible evidence and generalized grading remains planned.",
     },
     {
         "id": "licensed_public_collections",

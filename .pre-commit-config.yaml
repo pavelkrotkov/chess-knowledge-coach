@@ -35,3 +35,9 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+      - id: javascript-metrics
+        name: enforce JavaScript quality metrics
+        entry: node scripts/js-quality.cjs
+        language: system
+        pass_filenames: false
+        always_run: true

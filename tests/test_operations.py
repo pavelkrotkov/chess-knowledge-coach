@@ -222,7 +222,9 @@ def test_install_failure_saves_private_sanitized_diagnostics(tmp_path, monkeypat
     assert stat.S_IMODE(log.stat().st_mode) == 0o600
 
 
-@pytest.mark.parametrize("message", ["fixture import failed", "missing practice template"])
+@pytest.mark.parametrize(
+    "message", ["fixture import failed", "missing practice template", "missing board script"]
+)
 def test_verification_failures_have_private_explanations(tmp_path, message):
     from chess_coach.ops_install import _verify
 
@@ -367,3 +369,54 @@ def test_retry_service_reports_failed_sync_and_closes_database(monkeypatch, resu
     else:
         ops_retry.main()
     assert closed == [True]
+
+
+def test_release_verifier_requires_installed_board_script(tmp_path):
+    import subprocess
+    import sys
+
+    from chess_coach.ops_install import _verify
+
+    release = tmp_path / "release"
+    environment = release / "venv"
+    subprocess.run(
+        ["uv", "venv", "--offline", "--python", sys.executable, str(environment)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    site = (
+        environment
+        / "lib"
+        / f"python{sys.version_info.major}.{sys.version_info.minor}"
+        / "site-packages"
+    )
+    package = site / "chess_coach"
+    (package / "templates").mkdir(parents=True)
+    (package / "static").mkdir()
+    (package / "__init__.py").write_text("")
+    for name in (
+        "practice.html",
+        "board.html",
+        "practice_move_form.html",
+        "practice_navigation.html",
+        "practice_reveal.html",
+    ):
+        (package / "templates" / name).write_text("synthetic")
+    (package / "static" / "coach.css").write_text("synthetic")
+    with pytest.raises(RuntimeError, match="verification failed"):
+        _verify(release, tmp_path, {"PATH": "/usr/bin:/bin"}, [])
+    assert "missing board script" in (release / "prepare-error.log").read_text()
+    (package / "static" / "board.js").write_text("synthetic")
+    _verify(release, tmp_path, {"PATH": "/usr/bin:/bin"}, [])
+
+
+def test_board_script_is_declared_for_wheel():
+    import fnmatch
+    import tomllib
+
+    project = Path(__file__).resolve().parents[1]
+    config = tomllib.loads((project / "pyproject.toml").read_text())
+    patterns = config["tool"]["setuptools"]["package-data"]["chess_coach"]
+    assert any(fnmatch.fnmatch("static/board.js", pattern) for pattern in patterns)
+    assert (project / "src/chess_coach/static/board.js").is_file()

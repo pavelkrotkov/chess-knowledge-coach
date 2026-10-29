@@ -1,4 +1,6 @@
-{% if board %}<table class="board" aria-label="{{ board_label or "Chess position; side to move at the bottom" }}">
-<tbody>{% for row in board %}<tr>{% for square in row %}<td class="{{ square.color }}" aria-label="{{ square.name }} {{ square.description }}" title="{{ square.name }} {{ square.description }}">{{ square.piece }}<span class="coordinate">{{ square.name }}</span>
+{% if board %}<table class="board" aria-label="{{ board_label or "Chess position; side to move at the bottom" }}"{% if board_interactive %} data-move-board{% endif %}>
+<tbody>{% for row in board %}<tr>{% for square in row %}<td class="{{ square.color }}" aria-label="{{ square.name }} {{ square.description }}" title="{{ square.name }} {{ square.description }}">
+<span data-square-static>{{ square.piece }}<span class="coordinate">{{ square.name }}</span></span>
+{% if board_interactive %}<button type="button" class="board-square" data-square="{{ square.name }}" aria-label="{{ square.name }} {{ square.description }}" aria-pressed="false" tabindex="-1" hidden><span aria-hidden="true">{{ square.piece }}<span class="coordinate">{{ square.name }}</span></span></button>{% endif %}
 </td>{% endfor %}</tr>{% endfor %}</tbody>
 </table>{% else %}<p>Position unavailable.</p>{% endif %}
