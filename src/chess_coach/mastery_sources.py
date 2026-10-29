@@ -18,13 +18,8 @@ def evidence_rows(db: Database, subject: str, skill: str, operation: str):
                    WHERE l.evidence_id = e.id) AS link_count,
                   (SELECT COUNT(*) FROM evidence_fact_links l
                    JOIN detector_facts f ON f.id=l.fact_id JOIN detector_runs d ON d.id=f.run_id
-                   WHERE l.evidence_id=e.id AND d.producer=?) AS material_fact_count,
-                  (SELECT MIN(f.detector_version) FROM evidence_fact_links l
-                   JOIN detector_facts f ON f.id=l.fact_id JOIN detector_runs d ON d.id=f.run_id
-                   WHERE l.evidence_id=e.id AND d.producer=?) AS material_min_version,
-                  (SELECT MAX(f.detector_version) FROM evidence_fact_links l
-                   JOIN detector_facts f ON f.id=l.fact_id JOIN detector_runs d ON d.id=f.run_id
-                   WHERE l.evidence_id=e.id AND d.producer=?) AS material_max_version,
+                   WHERE l.evidence_id=e.id AND (d.producer=? OR f.fact_type='material_opportunity'))
+                   AS material_fact_count,
                   (SELECT COUNT(*) FROM evidence_fact_links l
                    LEFT JOIN detector_facts f ON f.id = l.fact_id
                    LEFT JOIN detector_runs d ON d.id = f.run_id
@@ -41,5 +36,5 @@ def evidence_rows(db: Database, subject: str, skill: str, operation: str):
             SELECT id FROM evidence_review_events WHERE evidence_id = e.id ORDER BY id DESC LIMIT 1
         )
         WHERE e.subject = ? AND e.skill = ? AND e.operation = ? ORDER BY e.id""",
-        (PRODUCER, PRODUCER, PRODUCER, subject, skill, operation),
+        (PRODUCER, subject, skill, operation),
     ).fetchall()

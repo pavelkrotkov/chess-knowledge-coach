@@ -1,12 +1,12 @@
 """Validate reviewed evidence content and detector-family eligibility."""
 
 from .mastery_provenance import valid_confidence, valid_links
+from .material_mastery_policy import mastery_allowed
 from .material_mastery_source import source_reason
-from .material_policy import mastery_allowed
 
 
-def content_reason(row) -> str | None:
-    if not mastery_allowed(row):
+def content_reason(db, row) -> str | None:
+    if not mastery_allowed(db, row):
         return "material_family_unvalidated"
     if row["outcome"] not in {"success", "failure"}:
         return "ambiguous"
@@ -18,5 +18,5 @@ def content_reason(row) -> str | None:
 
 
 def final_reason(db, row):
-    reason = content_reason(row)
+    reason = content_reason(db, row)
     return reason if reason else source_reason(db, row)

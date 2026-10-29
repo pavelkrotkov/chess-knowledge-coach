@@ -67,7 +67,7 @@ CAPABILITIES = (
         "area": "Skill coverage",
         "name": "Bounded material observations",
         "status": "observation-only",
-        "details": "Direct non-pawn captures and target-specific protection use bounded legal replies and current engine lines. Checking captures require every legal evasion to pass; unresolved checks, en passant, promotions and compensation remain ambiguous. Independent validation is required before mastery eligibility.",
+        "details": "Direct non-pawn captures and target-specific protection use bounded legal replies and current engine lines. Checking captures require every legal evasion to pass; unresolved checks, en passant, promotions and compensation remain ambiguous. Protection version 1.0.0 has scoped validation and may qualify after review and currentness checks; capture remains ineligible pending separate validation.",
     },
     {
         "id": "manual_deep_selection",

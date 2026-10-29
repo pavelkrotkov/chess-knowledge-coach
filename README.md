@@ -745,11 +745,13 @@ The current family describes limited non-pawn captures and immediate material
 protection, using legal recaptures on one square and short recorded engine lines.
 It cannot prove an opportunity is safe against every forcing move or later
 compensation. Checking captures are used only when every legal immediate evasion passes a
-bounded material check; other unresolved checks, en passant, promotion, pawn
-captures, pins, unclear exchanges and conflicting lines remain ambiguous or
-outside coverage. A score difference only vetoes a potentially misleading failure; it
+bounded material check; other unresolved checks, en passant, promotion, direct
+pawn-capture claims, pins, unclear exchanges and conflicting lines remain ambiguous
+or outside coverage. A pawn can protect a piece by capturing an unrecapturable
+attacker. A score difference only vetoes a potentially misleading failure; it
 never creates an observation on its own. The private evidence page displays
 SAN lines, source context and the boundary. Outcomes do not imply recognition
-or intent, mappings start unreviewed, and even accepted mappings remain excluded
-from mastery until the independent held-out validation and decision described in
-[material validation](docs/material-observation-validation.md) are complete.
+or intent, and mappings start unreviewed. Independently validated protection
+version 1.0.0 can qualify for mastery only after review and all existing context
+and currentness checks. Capture remains ineligible pending the separate
+[material validation](docs/material-observation-validation.md) continuation.

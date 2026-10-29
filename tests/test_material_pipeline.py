@@ -246,8 +246,8 @@ def test_automatic_worker_records_provisional_material_and_browser_explains(tmp_
     )
     assert page.status_code == 200
     assert b"tested best continuation captures material" in page.data
-    assert b"Rxd4" in page.data and b"awaiting independent validation" in page.data
-    assert b"Pawn captures" in page.data and b"en passant" in page.data
+    assert b"Rxd4" in page.data and b"captures remain provisional" in page.data
+    assert b"pawn-capture claims" in page.data and b"en passant" in page.data
     assert b"Material source: current" in page.data
     assert inspect_evidence(db, evidence_id)["review_status"] == "unreviewed"
     process_pipeline(db, config, transport=network)
@@ -367,7 +367,7 @@ def test_automatic_worker_attributes_black_learner_decision(tmp_path, monkeypatc
 
 
 def test_private_opportunity_contract_rechecks_owner_source_and_witness(tmp_path, monkeypatch):
-    from chess_coach import material_opportunities, material_opportunity_view
+    from chess_coach import material_opportunities
 
     db = make_game(tmp_path / "contract.sqlite", monkeypatch)
     created = process_decision(db, 1, LEARNER)
@@ -383,11 +383,6 @@ def test_private_opportunity_contract_rechecks_owner_source_and_witness(tmp_path
     assert detail["lineage"]["fact_id"] == created["fact_ids"][0]
     assert detail["lineage"]["analysis"]["kind"] == "cheap"
     assert not detail["eligible_for_exercise_candidate"] and not detail["family_validated"]
-    monkeypatch.setattr(
-        material_opportunity_view, "MASTERY_ELIGIBLE_VERSIONS", frozenset({"1.0.0"})
-    )
-    eligible = material_opportunities.inspect_material_opportunity(db, evidence_id, learner=LEARNER)
-    assert eligible["eligible_for_exercise_candidate"]
     review_evidence(db, evidence_id, decision="reject", actor="fixture_reviewer")
     rejected = material_opportunities.inspect_material_opportunity(db, evidence_id, learner=LEARNER)
     assert (
@@ -418,7 +413,7 @@ def test_material_gate_follows_detector_facts_across_mapper_scopes(tmp_path, mon
         "outcome": "failure",
         "confidence": 0.5,
         "fact_ids": [fact_id],
-        "context": {},
+        "context": {"material_observation": {"kind": "material_protection"}},
         "observation_at": "2026-01-01T12:00:00+00:00",
     }
     with mapping_transaction(db):
@@ -438,25 +433,33 @@ def test_material_gate_follows_detector_facts_across_mapper_scopes(tmp_path, mon
         db, LEARNER, "hanging_piece", "prevent", datetime.now(UTC)
     )
     assert eligible == [] and excluded["material_family_unvalidated"] == 1
+    # Changing a run's producer cannot disguise a material fact as another family.
+    db.connection.execute(
+        "UPDATE detector_runs SET producer=? WHERE id=?",
+        ("fixture_spoof", created["detector_run_id"]),
+    )
+    db.connection.commit()
+    eligible, excluded = eligible_contexts(
+        db, LEARNER, "hanging_piece", "prevent", datetime.now(UTC)
+    )
+    assert eligible == [] and excluded["material_family_unvalidated"] == 1
 
 
 def test_even_approved_material_evidence_is_excluded_when_source_changes(tmp_path, monkeypatch):
-    from chess_coach import material_policy
     from chess_coach.mastery_checks import basic_reason
     from chess_coach.mastery_sources import evidence_rows
 
-    db = make_game(tmp_path / "currentness.sqlite", monkeypatch)
+    db = make_protection_game(tmp_path / "currentness.sqlite", monkeypatch)
     created = process_decision(db, 1, LEARNER)
     review_evidence(db, created["evidence_ids"][0], decision="accept", actor="fixture_reviewer")
-    monkeypatch.setattr(material_policy, "MASTERY_ELIGIBLE_VERSIONS", frozenset({"1.0.0"}))
-    row = evidence_rows(db, LEARNER, "hanging_piece", "execute")[0]
+    row = evidence_rows(db, LEARNER, "hanging_piece", "prevent")[0]
     assert basic_reason(db, row, LEARNER) is None
     db.connection.execute(
         "UPDATE decision_analysis_lines SET score_value=score_value+1 WHERE position_id=1 AND role=?",
         ("best",),
     )
     db.connection.commit()
-    row = evidence_rows(db, LEARNER, "hanging_piece", "execute")[0]
+    row = evidence_rows(db, LEARNER, "hanging_piece", "prevent")[0]
     assert basic_reason(db, row, LEARNER) == "material_source_stale"
 
 
@@ -558,16 +561,13 @@ def test_real_stockfish_bounded_worker_records_nonmate_observation(tmp_path):
 
 
 def test_unknown_observation_time_stays_unknown_even_if_family_is_approved(tmp_path, monkeypatch):
-    from chess_coach import material_policy
-
-    db = make_game(tmp_path / "untimed.sqlite", monkeypatch, timed=False)
+    db = make_protection_game(tmp_path / "untimed.sqlite", monkeypatch, timed=False)
     created = process_decision(db, 1, LEARNER)
     evidence_id = created["evidence_ids"][0]
     assert inspect_evidence(db, evidence_id)["observation_at"] is None
     review_evidence(db, evidence_id, decision="accept", actor="fixture_reviewer")
-    monkeypatch.setattr(material_policy, "MASTERY_ELIGIBLE_VERSIONS", frozenset({"1.0.0"}))
     eligible, excluded = eligible_contexts(
-        db, LEARNER, "hanging_piece", "execute", datetime.now(UTC)
+        db, LEARNER, "hanging_piece", "prevent", datetime.now(UTC)
     )
     assert eligible == [] and excluded["unknown_or_invalid_time"] == 1
 
@@ -669,3 +669,216 @@ def test_current_incomplete_deep_attempt_can_prove_only_its_valid_played_line(
     evidence = inspect_evidence(db, result["evidence_ids"][0])
     assert evidence["context"]["provenance"]["job_status"] == "insufficient"
     assert evidence["context"]["material_observation"]["best"] is None
+
+
+def make_protection_game(path, monkeypatch, *, timed=True, played="a2a3", color="white"):
+    board = chess.Board("4k3/8/8/2b5/3R4/8/P7/7K w - - 0 1")
+
+    def orient(uci):
+        move = chess.Move.from_uci(uci)
+        if color == "black":
+            move = chess.Move(
+                chess.square_mirror(move.from_square), chess.square_mirror(move.to_square)
+            )
+        return move.uci()
+
+    if color == "black":
+        board = board.mirror()
+    game = chess.pgn.Game()
+    game.setup(board)
+    game.headers["White"] = LEARNER if color == "white" else "fixture_opponent"
+    game.headers["Black"] = LEARNER if color == "black" else "fixture_opponent"
+    game.headers["Result"] = "*"
+    if timed:
+        game.headers["UTCDate"] = "2026.01.01"
+        game.headers["UTCTime"] = "12:00:00"
+    node = game.add_variation(board.parse_uci(orient(played)))
+    board.push_uci(orient(played))
+    reply = "c5d4" if played == "a2a3" else "e8f8"
+    node.add_variation(board.parse_uci(orient(reply)))
+
+    class ProtectionEngine(Engine):
+        def analyse(self, board, limit, multipv, root_moves=None):
+            if board.move_stack:
+                return [
+                    {
+                        "score": chess.engine.PovScore(chess.engine.Cp(0), board.turn),
+                        "pv": [root_moves[0] if root_moves else next(iter(board.legal_moves))],
+                        "nodes": 100,
+                        "depth": 5,
+                    }
+                ]
+            move = root_moves[0] if root_moves else chess.Move.from_uci(orient("d4d5"))
+            reply = chess.Move.from_uci(orient("c5d4" if move.uci() == orient("a2a3") else "e8f8"))
+            score = 0 if root_moves else 500
+            return [
+                {
+                    "score": chess.engine.PovScore(chess.engine.Cp(score), board.turn),
+                    "pv": [move, reply],
+                    "nodes": 100,
+                    "depth": 5,
+                }
+            ]
+
+    db = Database(path)
+    db.initialize()
+    ingest_pgn(db, str(game))
+    monkeypatch.setattr(chess.engine.SimpleEngine, "popen_uci", lambda _: ProtectionEngine())
+    config = PipelineConfig(learner=LEARNER, engine_path=sys.executable, nodes=100)
+    result = run_analysis(db, 1, game_input(db, 1), config, engine_identity(sys.executable))
+    assert result["status"] == "complete"
+    return db
+
+
+@pytest.mark.parametrize("played,outcome", [("a2a3", "failure"), ("d4d5", "success")])
+@pytest.mark.parametrize("color", ["white", "black"])
+def test_validated_protection_requires_real_review_for_mastery_and_labels_practice(
+    tmp_path, monkeypatch, played, outcome, color
+):
+    from chess_coach.material_opportunities import inspect_material_opportunity
+
+    db = make_protection_game(
+        tmp_path / "protection.sqlite", monkeypatch, played=played, color=color
+    )
+    created = process_decision(db, 1, LEARNER)
+    assert created["outcome"] == outcome
+    evidence_id = created["evidence_ids"][0]
+    view = inspect_material_opportunity(db, evidence_id, learner=LEARNER)
+    assert view["objective"]["kind"] == "material_protection" and view["learner_color"] == color
+    assert view["family_validated"] and view["eligible_for_exercise_candidate"]
+    assert view["review_status"] == "unreviewed" and view["exercise_qualification"] == "provisional"
+    eligible, excluded = eligible_contexts(
+        db, LEARNER, "hanging_piece", "prevent", datetime.now(UTC)
+    )
+    assert not eligible and excluded["unreviewed_or_invalid_review"] == 1
+    review_evidence(db, evidence_id, decision="accept", actor="fixture_reviewer")
+    eligible, _ = eligible_contexts(db, LEARNER, "hanging_piece", "prevent", datetime.now(UTC))
+    assert len(eligible) == 1 and eligible[0]["outcome"] == outcome
+    view = inspect_material_opportunity(db, evidence_id, learner=LEARNER)
+    assert view["review_status"] == "accepted" and view["exercise_qualification"] == "reviewed"
+    review_evidence(db, evidence_id, decision="reject", actor="fixture_reviewer")
+    view = inspect_material_opportunity(db, evidence_id, learner=LEARNER)
+    assert (
+        not view["eligible_for_exercise_candidate"]
+        and view["exercise_qualification"] == "unavailable"
+    )
+
+
+def test_capture_fact_cannot_be_promoted_by_spoofed_mapping(tmp_path, monkeypatch):
+    from chess_coach.mapping_runs import record_mapping_run_in_transaction
+    from chess_coach.mapping_transaction import mapping_transaction
+    from chess_coach.material_opportunities import inspect_material_opportunity
+    from chess_coach.material_policy import MAPPER
+
+    db = make_game(tmp_path / "spoof.sqlite", monkeypatch)
+    original = process_decision(db, 1, LEARNER)
+    item = {
+        "skill": "hanging_piece",
+        "outcome": "failure",
+        "confidence": 0.5,
+        "fact_ids": original["fact_ids"],
+        "context": {"material_observation": {"kind": "material_protection"}},
+        "observation_at": "2026-01-01T12:00:00+00:00",
+    }
+    with mapping_transaction(db):
+        fake = record_mapping_run_in_transaction(
+            db,
+            position_id=1,
+            producer=MAPPER,
+            mapper_version="1.0.0",
+            subject=LEARNER,
+            operation="prevent",
+            scope_key="spoof",
+            input_data={},
+            mappings=[item],
+        )
+    evidence_id = fake["evidence_ids"][0]
+    review_evidence(db, evidence_id, decision="accept", actor="fixture_reviewer")
+    eligible, excluded = eligible_contexts(
+        db, LEARNER, "hanging_piece", "prevent", datetime.now(UTC)
+    )
+    assert not eligible and excluded["material_family_unvalidated"] == 1
+    detail = inspect_material_opportunity(db, evidence_id, learner=LEARNER)
+    assert detail["objective"]["kind"] == "material_capture"
+    assert not detail["family_validated"] and not detail["eligible_for_exercise_candidate"]
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "missing_kind",
+        "unknown_kind",
+        "wrong_version",
+        "run_mismatch",
+        "wrong_outcome",
+        "malformed_kind",
+        "wrong_type",
+    ],
+)
+def test_invalid_source_fact_never_becomes_eligible(tmp_path, monkeypatch, change):
+    import json
+
+    from chess_coach.material_opportunities import inspect_material_opportunity
+
+    db = make_protection_game(tmp_path / "invalid.sqlite", monkeypatch)
+    created = process_decision(db, 1, LEARNER)
+    evidence_id = created["evidence_ids"][0]
+    review_evidence(db, evidence_id, decision="accept", actor="fixture_reviewer")
+    fact_id = created["fact_ids"][0]
+    row = db.connection.execute(
+        "SELECT payload_json FROM detector_facts WHERE id=?", (fact_id,)
+    ).fetchone()
+    payload = json.loads(row[0])
+    if change == "missing_kind":
+        payload.pop("kind")
+    if change == "unknown_kind":
+        payload["kind"] = "future_kind"
+    if change == "malformed_kind":
+        payload["kind"] = []
+    if change == "wrong_outcome":
+        payload["outcome"] = "success"
+    if change == "wrong_type":
+        db.connection.execute(
+            "UPDATE detector_facts SET fact_type=? WHERE id=?", ("other_fact", fact_id)
+        )
+    if change in {"wrong_version", "run_mismatch"}:
+        db.connection.execute(
+            "UPDATE detector_facts SET detector_version=? WHERE id=?", ("9.0.0", fact_id)
+        )
+        if change == "wrong_version":
+            db.connection.execute(
+                "UPDATE detector_runs SET detector_version=? WHERE id=?",
+                ("9.0.0", created["detector_run_id"]),
+            )
+    db.connection.execute(
+        "UPDATE detector_facts SET payload_json=? WHERE id=?", (json.dumps(payload), fact_id)
+    )
+    db.connection.commit()
+    eligible, excluded = eligible_contexts(
+        db, LEARNER, "hanging_piece", "prevent", datetime.now(UTC)
+    )
+    assert not eligible and excluded["material_family_unvalidated"] == 1
+    detail = inspect_material_opportunity(db, evidence_id, learner=LEARNER)
+    assert not detail["family_validated"] and not detail["eligible_for_exercise_candidate"]
+
+
+def test_exercise_fen_is_reconstructed_from_source_not_mapping_context(tmp_path, monkeypatch):
+    import json
+
+    from chess_coach.material_opportunities import inspect_material_opportunity
+
+    db = make_protection_game(tmp_path / "fen.sqlite", monkeypatch)
+    created = process_decision(db, 1, LEARNER)
+    evidence_id = created["evidence_ids"][0]
+    row = db.connection.execute(
+        "SELECT context_json FROM evidence_mappings WHERE id=?", (evidence_id,)
+    ).fetchone()
+    context = json.loads(row[0])
+    context["pre_move_fen"] = chess.STARTING_FEN
+    db.connection.execute(
+        "UPDATE evidence_mappings SET context_json=? WHERE id=?", (json.dumps(context), evidence_id)
+    )
+    db.connection.commit()
+    detail = inspect_material_opportunity(db, evidence_id, learner=LEARNER)
+    assert detail["eligible_for_exercise_candidate"]
+    assert detail["decision_fen"] == "4k3/8/8/2b5/3R4/8/P7/7K w - - 0 1"

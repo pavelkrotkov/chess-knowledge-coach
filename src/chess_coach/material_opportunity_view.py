@@ -1,6 +1,6 @@
 """Present safe material objective and lineage fields."""
 
-from .material_policy import MASTERY_ELIGIBLE_VERSIONS
+from .material_policy import fact_allowed
 
 
 def build_view(evidence, fact, source):
@@ -24,7 +24,13 @@ def build_view(evidence, fact, source):
         "witness_lines": {"best": payload.get("best"), "played": payload.get("played")},
         "objective_witness": None,
         "eligible_for_exercise_candidate": False,
-        "family_validated": fact["detector_version"] in MASTERY_ELIGIBLE_VERSIONS,
+        "exercise_qualification": "unavailable",
+        "family_validated": fact_allowed(
+            fact,
+            skill=evidence["skill"],
+            operation=evidence["operation"],
+            outcome=evidence["outcome"],
+        ),
         "source_fingerprint": source.get("source_marker"),
         "lineage": {
             "fact_id": fact["id"],

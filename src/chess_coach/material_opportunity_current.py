@@ -22,12 +22,21 @@ def verify_current(db, learner, evidence, fact, source, result):
         return
     result["currentness"] = "current"
     result["learner_color"] = prepared["context"]["learner_color"]
+    result["decision_fen"] = prepared["context"]["pre_move_fen"]
     result["objective_witness"] = witness
+    _qualify(result, evidence, witness)
+
+
+def _qualify(result, evidence, witness):
     result["eligible_for_exercise_candidate"] = bool(
         witness
         and result["family_validated"]
-        and evidence["review_status"] not in {"rejected", "revoked"}
+        and evidence["review_status"] in {"unreviewed", "accepted"}
     )
+    if result["eligible_for_exercise_candidate"]:
+        result["exercise_qualification"] = (
+            "reviewed" if evidence["review_status"] == "accepted" else "provisional"
+        )
 
 
 def _same_source(prepared, source):
