@@ -44,6 +44,9 @@ class PipelineConfig:
     material_enabled: bool = True
     material_max_scan: int = 40
     material_max_decisions: int = 4
+    pawn_enabled: bool = True
+    pawn_max_scan: int = 40
+    pawn_max_decisions: int = 4
 
     def validate(self) -> None:
         validate_learner(self.learner)
@@ -59,3 +62,6 @@ class PipelineConfig:
         from .mate_worker_config import validate_mate_config
 
         validate_mate_config(self)
+        from .pawn_coach_config import validate_pawn_config
+
+        validate_pawn_config(self)

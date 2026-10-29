@@ -29,6 +29,11 @@ def resolve(db, version, key, subject):
         from .mate_practice import resolve as resolve_mate
 
         return resolve_mate(db, version, key, subject)
+    from .pawn_practice import VERSION as PAWN_VERSION
+    from .pawn_practice import resolve as resolve_pawn
+
+    if version == PAWN_VERSION:
+        return resolve_pawn(db, key, subject)
     position, kind, suffix = _parts(key)
     rows = _rows(db, subject, position)
     if version == LEGACY_VERSION:

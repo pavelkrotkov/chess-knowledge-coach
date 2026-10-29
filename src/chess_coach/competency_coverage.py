@@ -21,6 +21,11 @@ COVERAGE: dict[str, dict[str, Any]] = {
         },
         "limits": "Game outcomes require review; hinted puzzle attempts add no skill evidence.",
     },
+    "king_pawn_endgame": {
+        "capabilities": ["manual_pawn_proof", "pawn_opportunities"],
+        "detector": "chess_coach.pawn_coach_observation.observe",
+        "limits": "Only proof-backed meaningful choices are mapped; family mastery remains closed pending independent validation. Practice completes supplied lines without general alternative grading.",
+    },
     "fork": {
         "capabilities": ["tactical_geometry", "fork_opportunities", "fork_defense"],
         "detector": "chess_coach.fork_observation.observe",

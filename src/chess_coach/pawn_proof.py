@@ -5,7 +5,7 @@ from .pawn_proof_report import report
 from .pawn_scope import history_known, supported
 from .pawn_tables import open_verified
 
-VERSION = "pawn-proof-v1"
+VERSION = "pawn-proof-v2"
 MAX_NODES = 6000
 MAX_PLIES = 5
 

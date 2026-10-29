@@ -21,6 +21,7 @@ from .db import Database
 
 COMMANDS = {
     "list-own-game-practice": unified_practice.handle_list,
+    "list-pawn-practice": unified_practice.handle_list_pawn,
     "start-unified": unified_practice.handle_start,
     "show-unified": unified_practice.handle_show,
     "move-unified": unified_practice.handle_move,

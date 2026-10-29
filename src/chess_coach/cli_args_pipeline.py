@@ -42,4 +42,8 @@ def configure(sub):
     parser.add_argument("--material-max-scan", type=int, default=40)
     parser.add_argument("--material-max-decisions", type=int, default=4)
 
+    parser.add_argument("--no-pawn", dest="pawn_enabled", action="store_false")
+    parser.add_argument("--pawn-max-scan", type=int, default=40)
+    parser.add_argument("--pawn-max-decisions", type=int, default=4)
+
     sub.add_parser("pipeline-status", help="Read durable processing status")
