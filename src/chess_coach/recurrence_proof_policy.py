@@ -27,3 +27,16 @@ def pawn_ok(row, fact):
         )
     except (KeyError, TypeError):
         return False
+
+
+def backrank_ok(row, fact):
+    from .back_rank_outcomes import outcomes
+
+    try:
+        return (
+            row["mapper_version"] == "1.0.0"
+            and row["skill"] == "back_rank"
+            and (row["operation"], row["outcome"]) in outcomes(fact["payload"])
+        )
+    except (KeyError, TypeError):
+        return False

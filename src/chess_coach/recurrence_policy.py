@@ -1,5 +1,7 @@
 """Validate active mapping ownership and linked detector facts."""
 
+from .recurrence_scopes import valid_scope
+
 
 def mapping_ok(row):
     return (
@@ -9,6 +11,7 @@ def mapping_ok(row):
         and row["mapping_operation"] == row["operation"]
         and row["mapper_version"] == row["run_mapper_version"]
         and row["source_provenance"] == "linked"
+        and valid_scope(row)
     )
 
 
@@ -25,7 +28,12 @@ def fact_ok(db, row, fact):
     if not fact or fact["detector_status"] != "active":
         return False
     payload = fact["payload"]
-    if not isinstance(payload, dict) or payload.get("outcome") != row["outcome"]:
+    if not isinstance(payload, dict):
+        return False
+    if (
+        row["mapping_producer"] != "back-rank-observation-mapper"
+        and payload.get("outcome") != row["outcome"]
+    ):
         return False
     positions = db.connection.execute(
         """SELECT f.position_id,d.position_id FROM detector_facts f JOIN detector_runs d

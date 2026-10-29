@@ -7,18 +7,6 @@ from .learner_identity import learner_color, normalize_identity
 from .mastery_game_lookup import decisions_for_game
 from .repertoire_sources import games_for_learner
 
-PAIRS = (
-    ("hanging_piece", "execute"),
-    ("hanging_piece", "prevent"),
-    ("fork", "execute"),
-    ("fork", "prevent"),
-    ("mate_in_one", "execute"),
-    ("calculation", "execute"),
-    ("king_pawn_endgame", "execute"),
-    ("king_pawn_endgame", "prevent"),
-    ("king_pawn_endgame", "evaluate"),
-    ("back_rank", "prevent"),
-)
 MAX_EVIDENCE = 300
 
 
@@ -57,21 +45,21 @@ def load_game(db, learner, game_id):
     return {"row": game, "color": color, "decisions": decisions, "key": identity}
 
 
-def evidence(db, learner, skill, operation):
+def evidence(db, learner, skill, operation, before):
     subject = normalize_identity(learner)
     rows = db.connection.execute(
         """SELECT e.*, p.game_id, p.ply, r.status AS mapping_status,
         r.producer AS mapping_producer, r.subject AS mapping_subject,
         r.position_id AS mapping_position, r.operation AS mapping_operation,
-        r.mapper_version AS run_mapper_version,
+        r.mapper_version AS run_mapper_version, r.scope_key AS mapping_scope,
         v.decision AS review_decision, v.actor AS review_actor
         FROM evidence_mappings e INDEXED BY idx_curriculum_evidence
         LEFT JOIN positions p ON p.id=e.position_id
         LEFT JOIN mapping_runs r ON r.id=e.mapping_run_id
         LEFT JOIN evidence_review_events v ON v.id=(SELECT id FROM evidence_review_events
             WHERE evidence_id=e.id ORDER BY id DESC LIMIT 1)
-        WHERE e.subject=? AND e.skill=? AND e.operation=? ORDER BY e.id DESC LIMIT ?""",
-        (subject, skill, operation, MAX_EVIDENCE + 1),
+        WHERE e.subject=? AND e.skill=? AND e.operation=? AND e.id < ? ORDER BY e.id DESC LIMIT ?""",
+        (subject, skill, operation, before, MAX_EVIDENCE + 1),
     ).fetchall()
     return rows[:MAX_EVIDENCE], len(rows) > MAX_EVIDENCE
 

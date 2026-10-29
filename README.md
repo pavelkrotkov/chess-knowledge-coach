@@ -914,3 +914,42 @@ when the source, review, corpus, public collections, familiarity or baseline
 changes. `show-unified`, `move-unified`, and `hint-unified` use the existing
 legal session and reveal paths. Other operation-specific transfer adapters
 remain required release work.
+
+
+### Recurring-pattern candidates
+
+`chess-coach --db PATH recurrence --learner NAME` and the private **Recurring
+patterns** page compare the previous and current 30-day game-start windows.
+Supply timezone-aware `--compare-start`, `--start`, and `--end` values to choose
+other adjacent, half-open windows. The browser fields accept the same ISO 8601
+values. To page older records, select both `--skill` and `--operation`, then pass
+the returned `--cursor` with the same learner, database and explicit windows.
+The browser offers next, previous and reset links. Pages use live data and are
+partial; changes between requests can affect them, and independent games should
+not be summed across pages. Page history is capped at 100 continuations.
+Game-start dates do not establish the order of decisions in overlapping
+games. Unknown game dates cannot be placed in a period.
+
+The report reads at most 300 newest mapping records for each listed skill and
+operation, then reconstructs at most 20 evidence-bearing games in fixed skill
+order, newest evidence first. Raw active mapping counts are a separate,
+non-deduplicated and unverified cohort; they are not a denominator for the
+inspected examples. The game analysis-stage counts sample the 100 most recent
+attributable games among 1,000 game records and are not the candidate cohort.
+Limits and exclusions are displayed. Candidate counts represent detector-selected
+positions, not every opportunity in a game; an unprocessed or inconclusive
+position is never assumed to be a non-opportunity. Import aliases are collapsed
+when their independently replayed game identity and decision match. Game-start
+metadata may be unavailable, as may exact clock, rating and opening familiarity.
+Familiarity remains unavailable rather than using later games as prior knowledge.
+
+Material source markers are compared against the same consumed game and analysis
+rows as `material_source_marker`, sharing the game portion within each report;
+fork-family markers are checked when present. Matching markers establish input
+identity, not a fresh detector proof. Other family currentness is unverified;
+a source can have changed since its recorded observation. All counts are
+provisional descriptive candidates, not claims of confirmed weakness or mastery.
+Rejected, revoked and known-stale evidence is excluded. The linked individual
+evidence page performs its existing deeper source checks. No review, training,
+or mastery state is created by this report. Practice/game progress and grounded
+lessons are separate release work.

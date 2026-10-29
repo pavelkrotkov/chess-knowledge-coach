@@ -14,13 +14,30 @@ def recurrence():
     start = request.args.get("start") or defaults[0]
     end = request.args.get("end") or defaults[1]
     previous = request.args.get("compare_start") or defaults[2]
+    skill = request.args.get("skill") or None
+    operation = request.args.get("operation") or None
+    cursor = request.args.get("cursor") or None
     try:
-        result, error = (
-            report(database(), current_app.config["SUBJECT"], start, end, previous),
-            None,
+        result = report(
+            database(),
+            current_app.config["SUBJECT"],
+            start,
+            end,
+            previous,
+            skill=skill,
+            operation=operation,
+            cursor=cursor,
         )
+        error = None
     except ValueError as exc:
         result, error = None, str(exc)
     return render_template(
-        "recurrence.html", report=result, error=error, start=start, end=end, previous=previous
+        "recurrence.html",
+        report=result,
+        error=error,
+        start=start,
+        end=end,
+        previous=previous,
+        skill=skill,
+        operation=operation,
     )

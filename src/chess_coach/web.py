@@ -10,8 +10,8 @@ from .web_mate import mate_views
 from .web_pawn import pawn_views
 from .web_practice import practice
 from .web_practice_tools import practice_tools
-from .web_related_capture import related_capture
 from .web_recurrence import recurrence_views
+from .web_related_capture import related_capture
 from .web_repertoire import repertoire_views
 from .web_security import install_security
 from .web_style import style_views

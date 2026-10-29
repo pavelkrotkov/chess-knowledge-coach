@@ -4,15 +4,19 @@ from datetime import UTC, datetime, timedelta
 
 from .mastery_time import parse_utc
 from .recurrence_collect import collect, deduplicate
+from .recurrence_page import navigation, select
+from .recurrence_snapshot import read_snapshot
 from .recurrence_sources import games
 from .recurrence_summary import summarize
 
 
 def windows(start, end, compare_start):
-    values = [parse_utc(value) for value in (start, end, compare_start)]
-    if any(value is None for value in values) or not values[2] < values[0] < values[1]:
+    begin, finish, previous = parse_utc(start), parse_utc(end), parse_utc(compare_start)
+    if begin is None or finish is None or previous is None:
         raise ValueError("use timezone-aware compare-start < start < end")
-    return values
+    if not previous < begin < finish:
+        raise ValueError("use timezone-aware compare-start < start < end")
+    return begin, finish, previous
 
 
 def default_windows():
@@ -22,11 +26,21 @@ def default_windows():
     )
 
 
-def report(db, learner, start, end, compare_start):
+def report(db, learner, start, end, compare_start, *, skill=None, operation=None, cursor=None):
+    with read_snapshot(db):
+        return _report(
+            db, learner, start, end, compare_start, skill=skill, operation=operation, cursor=cursor
+        )
+
+
+def _report(db, learner, start, end, compare_start, *, skill, operation, cursor):
     begin, finish, previous = windows(start, end, compare_start)
+    pairs, before, history, key = select(
+        db, learner, begin, finish, previous, skill, operation, cursor
+    )
     source, coverage = games(db, learner)
-    found, exclusions, limited, cache, recorded = collect(
-        db, learner, source, begin, finish, previous
+    found, exclusions, limited, cache, recorded, next_before = collect(
+        db, learner, source, begin, finish, previous, pairs, before
     )
     selected = deduplicate(found, exclusions)
     coverage.update(
@@ -49,4 +63,7 @@ def report(db, learner, start, end, compare_start):
         "compare_start": previous.isoformat(),
         "coverage": coverage,
         "recorded_mappings": recorded,
+        "skill": skill,
+        "operation": operation,
+        "navigation": navigation(before, history, next_before, key, bool(skill)),
     }

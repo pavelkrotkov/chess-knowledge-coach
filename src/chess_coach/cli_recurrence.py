@@ -11,6 +11,9 @@ def configure(sub):
     parser.add_argument("--start")
     parser.add_argument("--end")
     parser.add_argument("--compare-start")
+    parser.add_argument("--skill")
+    parser.add_argument("--operation")
+    parser.add_argument("--cursor")
 
 
 def handle(db, args):
@@ -20,4 +23,18 @@ def handle(db, args):
         args.end or defaults[1],
         args.compare_start or defaults[2],
     )
-    print(json.dumps(report(db, args.learner, start, end, previous), indent=2))
+    print(
+        json.dumps(
+            report(
+                db,
+                args.learner,
+                start,
+                end,
+                previous,
+                skill=args.skill,
+                operation=args.operation,
+                cursor=args.cursor,
+            ),
+            indent=2,
+        )
+    )

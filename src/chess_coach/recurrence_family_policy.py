@@ -6,7 +6,7 @@ from .fork_contract import VERSION as FORK_VERSION
 from .fork_defense_contract import MAPPER as DEFENSE_MAPPER
 from .fork_defense_contract import PRODUCER as DEFENSE_PRODUCER
 from .fork_defense_contract import VERSION as DEFENSE_VERSION
-from .recurrence_proof_policy import mate_ok, pawn_ok
+from .recurrence_proof_policy import backrank_ok, mate_ok, pawn_ok
 
 FAMILIES = {
     FORK_MAPPER: (FORK_PRODUCER, FORK_VERSION, "fork_opportunity"),
@@ -41,4 +41,6 @@ def family_ok(row, fact):
         return mate_ok(row, fact)
     if family == "pawn-endgame-mapper":
         return pawn_ok(row, fact)
+    if family == "back-rank-observation-mapper":
+        return backrank_ok(row, fact)
     return False
