@@ -14,6 +14,7 @@
 {% else %}<p>Unavailable for this run.</p>{% endif %}</section>{% endfor %}
 <p><a href="{{ url_for('mate.detail', position_id=decision.position_id) }}">Inspect bounded mate proof</a></p>
 <p><a href="{{ url_for('pawn.detail', position_id=decision.position_id) }}">Inspect pawn-endgame proof</a></p>
+<p><a href="{{ url_for('related_capture.show', position=decision.position_id) }}">Practice this capture pattern</a></p>
 <h3>Deep analysis</h3>
 {% if decision.deep %}<p>Status: {{ decision.deep.status }}. Comparison: {{ decision.deep.comparison or "unknown" }}. {{ decision.deep.detail }}.</p>
 <p>These are bounded search results, not proof of a chess claim.</p>

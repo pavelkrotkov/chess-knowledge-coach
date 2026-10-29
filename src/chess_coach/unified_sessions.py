@@ -40,8 +40,10 @@ def start(db, *, attempt_id, subject, source_type, version, key):
         raise
 
 
-def _create(db, attempt_id, subject, source_type, version, key):
+def _create(db, attempt_id, subject, source_type, version, key, provenance=None):
     snapshot = resolve_source(db, source_type, version, key, subject=subject)
+    if provenance is not None:
+        snapshot["provenance"]["related_capture"] = provenance
     fingerprint = snapshot_hash(snapshot)
     lines = [line.split() for line in snapshot["lines"]]
     db.connection.execute(

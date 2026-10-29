@@ -10,6 +10,7 @@ from .web_mate import mate_views
 from .web_pawn import pawn_views
 from .web_practice import practice
 from .web_practice_tools import practice_tools
+from .web_related_capture import related_capture
 from .web_repertoire import repertoire_views
 from .web_security import install_security
 from .web_style import style_views
@@ -45,6 +46,7 @@ def create_app(
         CORPUS=corpus,
     )
     install_security(app, login, origin, host if backend_host is None else backend_host)
+    app.register_blueprint(related_capture)
     app.register_blueprint(views)
     app.register_blueprint(mate_views)
     app.register_blueprint(pawn_views)

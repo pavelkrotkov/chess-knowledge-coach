@@ -2,7 +2,7 @@
 {% block title %}Mate inspection — Chess coach{% endblock %}
 {% block content %}
 <p>Automatic bounded observation: {{ automatic.status }}{% if automatic.reason %} ({{ automatic.reason | replace('_', ' ') }}){% endif %}. A skipped or exhausted search is unknown, not a negative finding.{% if automatic.evidence_id %} <a href="{{ url_for('views.evidence_detail', evidence_id=automatic.evidence_id) }}">Review observation</a>.{% endif %}</p>
-<h2>Bounded mate inspection</h2>
+<p>Back-rank observation: {{ back_rank.status }}. {% if back_rank.observation %}Attack: {{ back_rank.observation.attack.status }}{% if back_rank.observation.attack.reason %} ({{ back_rank.observation.attack.reason | replace("_", " ") }}){% endif %}; defense: {{ back_rank.observation.defense.status }}{% if back_rank.observation.defense.reason %} ({{ back_rank.observation.defense.reason | replace("_", " ") }}){% endif %}.{% endif %} Unknown is not a negative finding. {% for item in back_rank.evidence %}<a href="{{ url_for('views.evidence_detail', evidence_id=item.id) }}">Review {{ item.operation }}</a>.{% endfor %}</p><h2>Bounded mate inspection</h2>
 <p>Status: {{ mate.status }}.</p>
 {% if mate.status == "current" %}
 <p>Game {{ mate.game_id }}, ply {{ mate.ply }}. Played {{ mate.played.san }}. Current analysis run {{ mate.analysis_run_id }}.</p>

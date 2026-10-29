@@ -11,6 +11,7 @@ from . import cli_deep_selection as deep_selection
 from . import cli_pipeline
 from . import cli_public_training as public_training
 from . import cli_recovery as recovery
+from . import cli_related_capture as related_capture
 from . import cli_snapshot as snapshot
 from . import cli_unified_practice as unified_practice
 from .capabilities import capability_report
@@ -20,6 +21,8 @@ from .competency_graph import seed_competency_graph
 from .db import Database
 
 COMMANDS = {
+    "related-captures": related_capture.listing,
+    "start-related-capture": related_capture.begin,
     "list-own-game-practice": unified_practice.handle_list,
     "list-pawn-practice": unified_practice.handle_list_pawn,
     "start-unified": unified_practice.handle_start,

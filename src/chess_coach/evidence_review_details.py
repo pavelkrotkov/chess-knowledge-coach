@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .back_rank_evidence import currentness as back_rank_currentness
 from .db import Database
 from .evidence_review_facts import facts_for_evidence
 from .evidence_review_json import decode
@@ -42,6 +43,7 @@ def inspect_evidence(db: Database, evidence_id: int) -> dict:
     result["pawn_explanation"] = explain_pawn(pawn) if pawn else None
     if pawn:
         result["decision_fen"] = pawn["report"]["decision_fen"]
+    result["back_rank_source_currentness"] = back_rank_currentness(db, result)
     result["reviews"] = _reviews(db, evidence_id)
     return result
 

@@ -12,6 +12,7 @@ def snapshot_hash(snapshot):
 
 
 def require_current(db, row):
+    _require_related_current(db, row)
     if row["source_type"] != "own-game":
         return
     try:
@@ -21,4 +22,18 @@ def require_current(db, row):
         if snapshot_hash(snapshot) != row["snapshot_hash"]:
             raise ValueError
     except ValueError:
+        raise ValueError("practice source unavailable or stale") from None
+
+
+def _require_related_current(db, row):
+    binding = json.loads(row["provenance_json"]).get("related_capture")
+    if binding is None:
+        return
+    from .related_capture_source import source_for_position
+
+    try:
+        source = source_for_position(db, row["subject"], binding["position_id"])
+        if snapshot_hash(source) != binding["source_snapshot_hash"]:
+            raise ValueError
+    except (ValueError, TypeError, KeyError):
         raise ValueError("practice source unavailable or stale") from None

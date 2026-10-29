@@ -45,6 +45,7 @@ def upgrade_recent(connection: sqlite3.Connection, version: int) -> None:
         (21, add_public_training),
         (22, add_unified_sessions),
         (23, add_engine_output_index),
+        (24, add_position_fen_index),
     )
     for target, apply_upgrade in upgrades:
         if version < target:
@@ -56,4 +57,10 @@ def add_engine_output_index(connection: sqlite3.Connection) -> None:
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_engine_outputs_run_position_multipv "
         "ON engine_outputs(run_id, position_id, multipv)"
+    )
+
+
+def add_position_fen_index(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_positions_fen_game ON positions(fen, game_id)"
     )

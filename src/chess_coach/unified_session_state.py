@@ -31,12 +31,14 @@ def view(row):
         "started_at": row["started_at"],
         "finished_at": row["finished_at"],
     }
+    if row["status"] == "active":
+        result.pop("source_key")
     if row["source_type"] == "own-game":
         provenance = json.loads(row["provenance_json"])
         result["review_status"] = provenance["review_status"]
         result["evidence_id"] = provenance["evidence_id"]
         result["position_id"] = provenance["position_id"]
-        result.pop("source_key")
+        result.pop("source_key", None)
     return result
 
 
@@ -48,6 +50,6 @@ def recent(db, subject):
     ).fetchall()
     result = [dict(row) for row in rows]
     for item in result:
-        if item["source_type"] == "own-game":
+        if item["source_type"] == "own-game" or item["status"] == "active":
             item.pop("source_key")
     return result

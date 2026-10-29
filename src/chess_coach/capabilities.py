@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.24.0"
+REGISTRY_VERSION = "1.26.0"
 
 CAPABILITIES = (
     {
@@ -12,6 +12,13 @@ CAPABILITIES = (
         "name": "Bounded pawn-endgame choices",
         "status": "observation-only",
         "details": "The worker records provisional pawn observations; success or failure requires both a proved preserving and a worse legal alternative. Prepared own-game practice follows supplied moves; mastery remains closed pending independent validation.",
+    },
+    {
+        "id": "related_capture_practice",
+        "area": "Training",
+        "name": "Related capture practice",
+        "status": "supported",
+        "details": "Current learner-owned capture failures can retrieve bounded unfamiliar examples matching direct-capture line features. Other operations remain planned; supplied lines do not prove all alternatives.",
     },
     {
         "id": "accessible_practice_board",
@@ -40,6 +47,13 @@ CAPABILITIES = (
         "name": "Automatic bounded mate observations",
         "status": "observation-only",
         "details": "A rotating worker enumerates immediate mates and selectively proves short mates within explicit limits. Unselected or exhausted searches are unknown; current provisional own-game lines are playable, while new-family mastery remains closed.",
+    },
+    {
+        "id": "back_rank_observations",
+        "area": "Skill coverage",
+        "name": "Bounded back-rank observations",
+        "status": "observation-only",
+        "details": "Current owned games can show legal back-rank mates and immediate defensive alternatives within explicit budgets. Incomplete searches and other immediate mates remain unresolved; prepared lines do not establish overall safety or mastery. Independent family validation is pending.",
     },
     {
         "id": "direct_source_practice",
