@@ -39,7 +39,7 @@ CAPABILITIES = (
         "area": "Skill coverage",
         "name": "Pawn structures and board features",
         "status": "observation-only",
-        "details": "Atomic episodes and conservative IQP, Carlsbad, French-like, Caro-Kann-like and Benoni-like history describe positions; they do not establish positional skill failures. Other named families remain planned.",
+        "details": "Atomic episodes and conservative IQP, Carlsbad, French-like, Caro-Kann-like, Benoni-like, Maróczy-like, Hedgehog-like, Scheveningen-like and Boleslavsky-like history describe positions; they do not establish positional skill failures. Other named families remain planned.",
     },
     {
         "id": "tactical_decisions",
