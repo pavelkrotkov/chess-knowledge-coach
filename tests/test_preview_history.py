@@ -244,3 +244,188 @@ def test_preview_in_existing_transaction_preserves_pending_changes(tmp_path, mon
     db.connection.rollback()
     assert len(list_candidates(db, LEARNER)["candidates"]) == 1
     db.close()
+
+
+def test_lru_eviction_rewalks_only_the_evicted_game(tmp_path, monkeypatch):
+    import chess_coach.preview_history as module
+
+    db = games_db(tmp_path)
+    for number in range(3, 6):
+        ingest_pgn(db, GAMES.split("\n\n[Event")[0].replace("synthetic one", f"synthetic {number}"))
+    rows = list(
+        db.connection.execute(
+            "SELECT game_id, MIN(id) AS id FROM positions GROUP BY game_id ORDER BY game_id"
+        )
+    )
+    assert len(rows) == 5
+    calls = []
+    original = module.decision_context_boards
+
+    def counted(db, game_id, *, learner):
+        calls.append(game_id)
+        return original(db, game_id, learner=learner)
+
+    monkeypatch.setattr(module, "decision_context_boards", counted)
+    with preview_history(db, LEARNER) as history:
+        history.targets(row["id"] for row in rows)
+        for index in (0, 1, 2, 3, 0, 4, 0, 1):
+            row = rows[index]
+            assert history.context(row["game_id"], row["id"])["game_id"] == row["game_id"]
+        assert calls == [rows[i]["game_id"] for i in (0, 1, 2, 3, 4, 1)]
+    db.close()
+
+
+def test_missing_target_exhausts_history_but_keeps_prior_entries(tmp_path):
+    db = games_db(tmp_path)
+    first = db.connection.execute(
+        "SELECT id FROM positions WHERE game_id=1 ORDER BY ply"
+    ).fetchone()[0]
+    with preview_history(db, LEARNER) as history:
+        history.targets([first, 99999])
+        context = history.context(1, first)
+        context["subject"] = "tampered"
+        for _ in range(2):
+            with pytest.raises(ValueError, match="decision is not in game history"):
+                history.board(1, 99999)
+        assert history.context(1, first)["subject"] == LEARNER
+        with pytest.raises(ValueError, match="position outside preview"):
+            history.board(1, first + 1)
+        db.connection.execute("PRAGMA query_only=OFF")
+        with pytest.raises(ValueError, match="snapshot is not read-only"):
+            history.board(1, first)
+        db.connection.execute("PRAGMA query_only=ON")
+    db.close()
+
+
+@pytest.mark.parametrize("corruption", ["pgn", "variant", "missing_ply"])
+def test_corrupt_history_excludes_candidate_and_does_not_survive_next_request(
+    tmp_path, monkeypatch, corruption
+):
+    db, _ = fixture(tmp_path, monkeypatch)
+    assert len(list_candidates(db, LEARNER)["candidates"]) == 1
+    db.connection.execute("SAVEPOINT corrupt")
+    if corruption == "pgn":
+        db.connection.execute("UPDATE games SET pgn=? WHERE id=1", ("[broken",))
+    elif corruption == "variant":
+        db.connection.execute("UPDATE games SET variant=? WHERE id=1", ("Chess960",))
+    else:
+        db.connection.execute(
+            "DELETE FROM positions WHERE game_id=1 AND ply=(SELECT MAX(ply) FROM positions WHERE game_id=1)"
+        )
+    result = list_candidates(db, LEARNER)
+    assert not result["candidates"]
+    assert result["excluded"]
+    db.connection.execute("ROLLBACK TO corrupt")
+    db.connection.execute("RELEASE corrupt")
+    assert len(list_candidates(db, LEARNER)["candidates"]) == 1
+    db.close()
+
+
+def test_changed_source_marker_fails_closed_during_snapshot(tmp_path, monkeypatch):
+    import chess_coach.material_source as module
+
+    db, _ = fixture(tmp_path, monkeypatch)
+    original = module.source_marker
+    markers = iter((original(db, 1, 1, LEARNER), "changed"))
+    monkeypatch.setattr(module, "source_marker", lambda *args: next(markers))
+    with preview_history(db, LEARNER) as history:
+        history.targets([1])
+        with pytest.raises(ValueError, match="source changed during preparation"):
+            module.prepare(db, 1, LEARNER, history=history)
+    db.close()
+
+
+@pytest.mark.parametrize("corruption", ["pgn", "variant", "missing_ply"])
+def test_history_rejects_corrupt_game_and_new_snapshot_reloads(tmp_path, corruption):
+    db = games_db(tmp_path)
+    first = db.connection.execute(
+        "SELECT id FROM positions WHERE game_id=1 ORDER BY ply"
+    ).fetchone()[0]
+    db.connection.execute("SAVEPOINT corrupt")
+    if corruption == "pgn":
+        db.connection.execute("UPDATE games SET pgn=? WHERE id=1", ("",))
+    elif corruption == "variant":
+        db.connection.execute("UPDATE games SET variant=? WHERE id=1", ("Chess960",))
+    else:
+        db.connection.execute("DELETE FROM positions WHERE game_id=1 AND ply=4")
+    with preview_history(db, LEARNER) as history:
+        history.targets([first])
+        for _ in range(2):
+            with pytest.raises(ValueError):
+                history.board(1, first)
+    db.connection.execute("ROLLBACK TO corrupt")
+    db.connection.execute("RELEASE corrupt")
+    with preview_history(db, LEARNER) as history:
+        history.targets([first])
+        assert history.context(1, first)["subject"] == LEARNER
+    db.close()
+
+
+@pytest.mark.parametrize("source", ["invalid json", "{}", '{"detector_input": null}'])
+def test_invalid_source_record_excludes_candidate(tmp_path, monkeypatch, source):
+    db, _ = fixture(tmp_path, monkeypatch)
+    db.connection.execute("SAVEPOINT corrupt")
+    db.connection.execute("UPDATE detector_runs SET input_json=?", (source,))
+    result = list_candidates(db, LEARNER)
+    assert not result["candidates"]
+    assert result["excluded"]
+    db.connection.execute("ROLLBACK TO corrupt")
+    db.connection.execute("RELEASE corrupt")
+    assert len(list_candidates(db, LEARNER)["candidates"]) == 1
+    db.close()
+
+
+def test_material_verification_limit_fails_closed(tmp_path, monkeypatch):
+    import chess_coach.material_source as module
+
+    db, _ = fixture(tmp_path, monkeypatch)
+    monkeypatch.setattr(module, "MAX_DECISIONS", 1)
+    result = list_candidates(db, LEARNER)
+    assert not result["candidates"]
+    assert result["excluded"]
+    db.close()
+
+
+def test_changed_marker_during_witness_verification_excludes_candidate(tmp_path, monkeypatch):
+    import chess_coach.material_opportunity_current as module
+
+    db, _ = fixture(tmp_path, monkeypatch)
+    assert len(list_candidates(db, LEARNER)["candidates"]) == 1
+    with monkeypatch.context() as patch:
+        patch.setattr(module, "source_marker", lambda *args: "changed")
+        result = list_candidates(db, LEARNER)
+        assert not result["candidates"]
+        assert result["excluded"]
+    assert len(list_candidates(db, LEARNER)["candidates"]) == 1
+    db.close()
+
+
+def test_invalid_witness_cannot_become_preview_candidate(tmp_path, monkeypatch):
+    import chess_coach.material_opportunity_current as module
+
+    db, _ = fixture(tmp_path, monkeypatch)
+    assert len(list_candidates(db, LEARNER)["candidates"]) == 1
+    with monkeypatch.context() as patch:
+        patch.setattr(module, "verified_witness", lambda *args: {"uci": ["a1a8"], "role": "best"})
+        result = list_candidates(db, LEARNER)
+        assert not result["candidates"]
+        assert result["excluded"] == {"stale or unavailable source": 1}
+    assert len(list_candidates(db, LEARNER)["candidates"]) == 1
+    db.close()
+
+
+def test_missing_source_and_decision_fail_closed(tmp_path, monkeypatch):
+    from chess_coach.decision_inspection import inspect_decision
+    from chess_coach.material_opportunity_source import load_source
+    from chess_coach.material_source import prepare
+
+    db, _ = fixture(tmp_path, monkeypatch)
+    with pytest.raises(ValueError, match="material opportunity unavailable"):
+        load_source(db, -1)
+    with preview_history(db, LEARNER) as history:
+        history.targets([-1])
+        with pytest.raises(ValueError, match="decision unavailable"):
+            prepare(db, -1, LEARNER, history=history)
+        with pytest.raises(ValueError, match="unknown decision"):
+            inspect_decision(db, -1, learner=LEARNER, _history=history)
+    db.close()

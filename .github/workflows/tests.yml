@@ -39,4 +39,6 @@ jobs:
       - name: Run pytest
         run: uv run pytest
       - name: Run coverage
-        run: uv run pytest --cov --cov-report=term-missing
+        run: |
+          uv run pytest --cov --cov-report=term-missing --cov-fail-under=90 --cov-precision=2
+          uv run coverage json -o - | uv run python -c 'import json, sys; total = json.load(sys.stdin)["totals"]["percent_covered"]; print(f"Unrounded coverage: {total:.6f}%"); sys.exit(total < 90)'
