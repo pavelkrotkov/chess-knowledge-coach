@@ -3,12 +3,13 @@
 {% block content %}
 <h2>Structure history</h2>
 {% if report %}
-<p>Named matcher {{ report.version }}; {{ report.games_examined }} attributable games with current atomic episodes examined. {{ report.unmatched_positions }} positions matched neither supported family. This is observation, not a measure of mastery. Other structures may be present.</p>
+<p>Named matcher {{ report.version }}; {{ report.games_examined }} attributable games with current atomic episodes examined. {{ report.unmatched_positions }} positions matched no supported family. Structure names describe pawn geometry and do not identify the actual opening. This is observation, not a measure of mastery. Other structures may be present.</p>
 {% if report.game_limit_reached or report.scan_limit_reached or report.position_limit_games %}<p>Coverage is truncated: at most 1,000 candidate games scanned, 100 attributable games and 1,000 positions per game. Candidate scan limit reached: {{ report.scan_limit_reached }}. {{ report.position_limit_games }} games exceeded the position limit.</p>{% endif %}
+<p>Matcher versions: {% for version in report.versions %}<a href="{{ url_for('views.structures', version=version) }}">{{ version }}</a>{% if not loop.last %} · {% endif %}{% endfor %}.</p>
 {% for family in report.families %}
 <section><h3>{{ family.name }}</h3>
 <p>{{ family.episodes }} named intervals in {{ family.games }} games. Counts can overlap and intervals can split when the pawn moves.</p>
-<p>Rule: {{ family.rule }} Confidence 1.0 means the stated geometry matched exactly, not certainty of a chess evaluation. Color identifies the IQP owner or Carlsbad minority side.</p>
+<p>Rule: {{ family.rule }} Confidence 1.0 means the stated geometry matched exactly, not certainty of a chess evaluation. Color identifies the IQP owner, Carlsbad minority side, or advancing side of a closed-center skeleton.</p>
 <p>Typical plans and counterplans: {{ family.plans }} <a href="{{ family.source }}">Reference</a>{% if family.counterplan_source %}; <a href="{{ family.counterplan_source }}">counterplan reference</a>{% endif %}</p>
 <ul>{% for item in family["items"] %}<li>Game {{ item.game_id }}, learner {{ item.learner_color }}, {{ item.color }} structure{% if item.square %} at {{ item.square }}{% endif %}, plies {{ item.start_ply }}–{{ item.end_ply }}: <a href="{{ url_for('views.structure_position', position_id=item.position_id) }}">source position</a>; atomic run {{ item.run_id }} ({{ item.atomic_detector_version }}), episode IDs {{ item.episode_ids | join(', ') }}.</li>{% else %}<li>No matches in examined games.</li>{% endfor %}</ul>
 </section>{% endfor %}

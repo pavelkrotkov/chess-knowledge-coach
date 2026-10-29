@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+from .named_structures import VERSION, VERSIONS
+
 
 def configure(sub):
     openings = sub.add_parser("import-openings")
@@ -19,6 +21,7 @@ def configure(sub):
         "structure-history", help="Report named structures in attributable games"
     )
     history.add_argument("--learner", required=True)
+    history.add_argument("--matcher-version", choices=VERSIONS, default=VERSION)
     motifs = sub.add_parser("record-motifs")
     motifs.add_argument("position_id", type=int)
     motifs.add_argument("--detector-version", default="0.1.0")

@@ -10,6 +10,7 @@ from .deep_selection_views import list_selections, show_selection
 from .evidence_review import inspect_evidence, list_evidence, review_evidence
 from .named_structure_report import structure_report
 from .named_structure_source import source_position
+from .named_structures import VERSION, VERSIONS
 from .pipeline_status import pipeline_status
 from .puzzle_import_report import corpus_report
 from .puzzle_snapshot_state import statuses
@@ -135,8 +136,11 @@ def library():
 
 @views.get("/structures")
 def structures():
+    version = request.args.get("version", VERSION)
+    if version not in VERSIONS:
+        abort(400)
     try:
-        report = structure_report(database(), current_app.config["SUBJECT"])
+        report = structure_report(database(), current_app.config["SUBJECT"], version=version)
     except ValueError:
         report = None
     return render_template("structures.html", report=report)

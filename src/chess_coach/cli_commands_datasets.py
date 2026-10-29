@@ -110,4 +110,4 @@ def handle_corpus_status(db, args):
 
 
 def handle_structure_history(db, args):
-    print(json.dumps(structure_report(db, args.learner), indent=2))
+    print(json.dumps(structure_report(db, args.learner, version=args.matcher_version), indent=2))

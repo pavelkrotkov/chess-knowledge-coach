@@ -195,9 +195,13 @@ never recorded retain NULLs and are not guessed into the current views.
 
 The private Structures page and `structure-history --learner NAME` derive
 named observations from positions covered by current atomic episodes. Matcher
-version 1.0.0 recognizes isolated d-file pawns and a deliberately narrow
-Carlsbad skeleton, for both colors. Each interval retains atomic run, detector
-version, source episode IDs and a source position; repeated extraction is safe.
+version 1.1.0 adds conservative French-like, Caro-Kann-like and modern
+Benoni-like skeletons to the version 1.0.0 isolated d-file pawn and narrow
+Carlsbad matches, for both colors. These geometry labels do not classify the
+opening, and can overlap. Use `--matcher-version 1.0.0` or the browser version
+link to recompute the prior rules over current atomic episodes. Each interval
+retains atomic run, detector version, source episode IDs and a source position;
+repeated extraction is safe.
 Counts describe games and contiguous matching intervals, not playing skill.
 Unmatched positions may contain other structures. Typical plans are educational
 ideas, not evaluated recommendations. The view examines at most 100 attributable

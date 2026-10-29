@@ -56,7 +56,7 @@ def test_history_transitions_replay_lineage_and_subject(setup):
     _, db = setup
     before = structure_report(db, "learner")
     assert before["games_examined"] == 1
-    iqp, carlsbad = before["families"]
+    iqp, carlsbad = before["families"][:2]
     assert iqp["episodes"] == 2 and iqp["games"] == 1
     assert carlsbad["episodes"] == 1 and carlsbad["items"][0]["end_ply"] == 2
     assert all(

@@ -2,7 +2,11 @@
 
 import chess
 
-VERSION = "1.0.0"
+from .closed_center_structures import DEFINITIONS as CLOSED_DEFINITIONS
+from .closed_center_structures import closed_center_matches
+
+VERSION = "1.1.0"
+VERSIONS = ("1.0.0", "1.1.0")
 
 # Descriptions are educational patterns, not verified moves in the current position.
 DEFINITIONS = {
@@ -52,12 +56,30 @@ def _carlsbad(minority, majority, color, flip):
     return [{"family": "carlsbad", "color": color, "square": None, "confidence": 1.0}]
 
 
-def match_structures(board):
-    """Return every exact supported match; color is IQP owner or Carlsbad minority."""
+def match_structures(board, *, version=VERSION):
+    """Return every supported match; color identifies the relevant side in each rule."""
+    if version not in VERSIONS:
+        raise ValueError("unknown named structure matcher version")
     white, black = _files(board, chess.WHITE), _files(board, chess.BLACK)
-    return (
+    legacy = (
         _iqps(white, "white")
         + _iqps(black, "black")
         + _carlsbad(white, black, "white", False)
         + _carlsbad(black, white, "black", True)
     )
+
+    if version == "1.0.0":
+        return legacy
+    return (
+        legacy
+        + closed_center_matches(white, black, "white", False)
+        + closed_center_matches(black, white, "black", True)
+    )
+
+
+def definitions(version=VERSION):
+    if version not in VERSIONS:
+        raise ValueError("unknown named structure matcher version")
+    if version == "1.0.0":
+        return DEFINITIONS
+    return {**DEFINITIONS, **CLOSED_DEFINITIONS}

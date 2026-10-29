@@ -40,12 +40,12 @@ def _extend(intervals, match, row, game_id, learner_side):
     return item
 
 
-def game_history(db, game_id, learner_side):
+def game_history(db, game_id, learner_side, version):
     rows = _rows(db, game_id)
     items, intervals = [], {}
     unknown = 0
     for row in rows[:MAX_POSITIONS]:
-        matches = match_structures(chess.Board(row["fen"]))
+        matches = match_structures(chess.Board(row["fen"]), version=version)
         unknown += not bool(matches)
         for match in matches:
             item = _extend(intervals, match, row, game_id, learner_side)
