@@ -17,7 +17,7 @@ def advance(board, objective, lines, matched, index):
 
 
 def _finished(board, objective, index, matched, reply):
-    verified = objective == "checkmate" and board.is_checkmate()
+    verified = objective in {"checkmate", "mate_in_one"} and board.is_checkmate()
     status = "objective_verified" if verified else "line_completed"
     return move_state(board, status, status, index, matched, reply)
 

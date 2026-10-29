@@ -363,12 +363,16 @@ def test_retry_service_reports_failed_sync_and_closes_database(monkeypatch, resu
     monkeypatch.setattr(ops_retry, "database_path", lambda: Path("fixture.sqlite"))
     monkeypatch.setattr(ops_retry, "Database", FakeDatabase)
     monkeypatch.setattr(ops_retry, "sync_result", lambda *args, **kwargs: result)
+    processed = []
+    monkeypatch.setattr(
+        ops_retry, "process_objectives", lambda db, learner: processed.append(learner)
+    )
     if result is not None and result["status"] == "failed":
         with pytest.raises(SystemExit, match="cooldown retry synchronization failed"):
             ops_retry.main()
     else:
         ops_retry.main()
-    assert closed == [True]
+    assert closed == [True] and processed == ["fixture"]
 
 
 def test_release_verifier_requires_installed_board_script(tmp_path):

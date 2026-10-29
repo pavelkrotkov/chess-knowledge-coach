@@ -515,7 +515,7 @@ timeout and retry-sleep budget bound the network portion. When the server’s
 required retry delay exceeds the remaining budget, synchronization records a
 UTC retry deadline and stops rather than retrying early. Later scheduled runs
 make no Lichess requests until that deadline; they can still advance local
-work. The deployed retry timer checks every 10 seconds and runs synchronization alone when the deadline is due, even during analysis; it resumes after restart and serializes synchronization with the regular worker. `pipeline-status` exposes the deadline and waiting status. Unrelated
+work. The deployed retry timer checks every 10 seconds, synchronizes only when the deadline is due, and separately processes a small local batch of pending mate-in-one checks, even during analysis; it resumes after restart and serializes synchronization with the regular worker. `pipeline-status` exposes the deadline and waiting status. Unrelated
 network budget failures do not create a cooldown. Large games receive a
 `position_budget_exceeded` status and do not prevent later games from advancing.
 
@@ -874,6 +874,21 @@ observation. Current owned examples can be verified and practiced as prepared
 lines; unlisted legal moves need verification. These observations do not establish
 intent, ability or mastery. Independent held-out validation and an explicit policy
 are required before mastery eligibility. Prevention is a separate required slice.
+## Owned mate-in-one alternative verification
+
+The private library can offer a separate, explicitly labeled mate-in-one task
+from a current owned mate source. It retains one prepared example; a different
+legal move is recorded without changing the original event response and is
+queued for bounded verification. The worker reconstructs the original owned
+game (at most 1,000 decisions and 1,000,000 PGN bytes) and accepted session
+history, checks source and review currentness before
+and after verification, and appends a result. The existing retry service runs bounded subject-owned checks even when no sync
+retry is due; it does not contact Lichess for this verification. A legal checkmate is correct;
+a legal non-mate is incorrect only for this announced one-move objective.
+Insufficient history, stale sources, timeouts and cancellation remain unresolved.
+Hints and reveals remain distinct, and no verification updates mastery or FSRS.
+Existing generic checkmate tasks are unchanged; standalone compositions and
+other objectives do not use this verification policy.
 
 ## Provisional fork observations
 
