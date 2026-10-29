@@ -11,7 +11,7 @@ from .material_source_marker import source_marker
 from .pin_defense import observe as defense
 from .pin_observation import observe as execute
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 
 
 def process_decision(db, position_id, learner, operation):

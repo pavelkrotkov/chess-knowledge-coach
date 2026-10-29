@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.29.0"
+REGISTRY_VERSION = "1.32.0"
 
 CAPABILITIES = (
     {
@@ -18,7 +18,7 @@ CAPABILITIES = (
         "area": "Skill coverage",
         "name": "Bounded pin opportunities",
         "status": "observation-only",
-        "details": "New noncapturing slider pins use bounded legal replies and verified material or immediate mate; already capturable targets remain unresolved. Relative-pin exposure and absolute-pin slides are compared with verified captures of the pinner. Checks, recaptures, compensation and unsupported branches remain unresolved. Pin mastery is closed pending independent qualification.",
+        "details": "Pin detector and mapper version 1.0.1 reject repeated or terminal roots. New noncapturing slider pins use bounded legal replies and verified material or immediate mate; already capturable targets remain unresolved. Relative-pin exposure and absolute-pin slides are compared with verified captures of the pinner. Checks, recaptures, compensation and unsupported branches remain unresolved. Pin mastery is closed pending independent qualification.",
     },
     {
         "id": "pawn_opportunities",

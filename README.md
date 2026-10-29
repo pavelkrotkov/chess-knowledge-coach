@@ -826,7 +826,9 @@ is one supplied continuation, not proof that other legal moves fail.
 ## Provisional pin observations
 
 The pin workers inspect current learner decisions using reconstructed game history
-and independent rotating cursors. A pin is descriptive geometry until a bounded
+and independent rotating cursors. Detector and mapper version 1.0.1 reject repeated,
+fifty-move-rule or terminal roots before the tested move. Version 1.0.0 facts and
+reviews remain historical and cannot support a current claim. A pin is descriptive geometry until a bounded
 consequence is verified. The execute path considers newly created slider pins to
 a king or more valuable piece; it does not score a position where the same pin
 already existed or the pinned or rear piece could already be legally captured.

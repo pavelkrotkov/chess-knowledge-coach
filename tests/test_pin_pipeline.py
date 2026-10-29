@@ -82,7 +82,7 @@ def test_source_review_and_closed_mastery(tmp_path, monkeypatch):
     db.connection.commit()
     assert inspect_evidence(db, evidence_id)["pin_source_currentness"] == "stale"
     db.connection.execute(
-        "UPDATE mapping_runs SET mapper_version=? WHERE id=?", ("1.0.0", result["mapping_run_id"])
+        "UPDATE mapping_runs SET mapper_version=? WHERE id=?", ("1.0.1", result["mapping_run_id"])
     )
     db.connection.commit()
     assert inspect_evidence(db, evidence_id)["pin_source_currentness"] == "current"
