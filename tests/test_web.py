@@ -396,7 +396,7 @@ def test_status_reports_retry_deadline(setup, monkeypatch):
     monkeypatch.setattr(
         web_views,
         "pipeline_status",
-        lambda db: {
+        lambda db, learner=None: {
             "health": {
                 "status": "waiting",
                 "sync_status": "backoff",

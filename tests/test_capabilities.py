@@ -37,6 +37,7 @@ def test_registry_is_scoped_unique_and_defensive():
             "Boleslavsky",
         )
     )
+    assert states["automatic_deep_analysis"] == "supported"
     assert states["competency_graph"] == "supported"
     assert states["mate_in_one_execute"] == "supported"
     assert states["tactical_geometry"] == "observation-only"

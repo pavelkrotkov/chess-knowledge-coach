@@ -31,6 +31,14 @@ def handle_process_pipeline(db, args):
         "classifier_version",
         "ontology_version",
         "tactical_version",
+        "deep_enabled",
+        "deep_max_scan",
+        "deep_max_games",
+        "deep_per_game",
+        "deep_max_jobs",
+        "deep_nodes",
+        "deep_seconds",
+        "deep_multipv",
     )
     learner = args.username or os.environ.get("LICHESS_USERNAME")
     if not learner:
@@ -43,4 +51,4 @@ def handle_process_pipeline(db, args):
 
 
 def handle_pipeline_status(db, args):
-    print(json.dumps(pipeline_status(db), indent=2))
+    print(json.dumps(pipeline_status(db, os.environ.get("LICHESS_USERNAME")), indent=2))

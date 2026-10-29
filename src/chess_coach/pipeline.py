@@ -5,6 +5,8 @@ from .mastery import mastery_report
 from .pipeline_config import PipelineConfig
 from .pipeline_cooldown import utc_now
 from .pipeline_cursor import save_cursor
+from .pipeline_deep import process_deep
+from .pipeline_deep_config import combined_status
 from .pipeline_game import process_game
 from .pipeline_health import finish_run, run_status, start_run
 from .pipeline_inputs import engine_identity, scan_input
@@ -46,12 +48,14 @@ def _run_pipeline(db, config, token, transport, clock):
         save_cursor(db, account, game_id, scan_hash)
     save_cursor(db, account, last_scanned, scan_hash)
     scan["has_more"] |= scan_input(db, config, engine_hash) != scan_hash
+    deep = process_deep(db, config)
     reports = mastery_report(db, subject=config.learner)
-    status = run_status(db, sync, games, scan)
+    status = combined_status(run_status(db, sync, games, scan), deep)
     return {
         "status": status,
         "sync": sync,
         "scan": scan,
+        "deep": deep,
         "games": games,
         "mastery": [public_report(row) for row in reports],
     }

@@ -27,5 +27,13 @@ def configure(sub):
     parser.add_argument("--classifier-version", default="1.1.0")
     parser.add_argument("--ontology-version", default="tactical-mate-v1")
     parser.add_argument("--tactical-version", default="1.0.0")
+    parser.add_argument("--no-deep", dest="deep_enabled", action="store_false")
+    parser.add_argument("--deep-max-scan", type=int, default=100)
+    parser.add_argument("--deep-max-games", type=int, default=4)
+    parser.add_argument("--deep-per-game", type=int, default=4)
+    parser.add_argument("--deep-max-jobs", type=int, default=4)
+    parser.add_argument("--deep-nodes", type=int, default=20000)
+    parser.add_argument("--deep-seconds", type=float, default=1.0)
+    parser.add_argument("--deep-multipv", type=int, default=3)
 
     sub.add_parser("pipeline-status", help="Read durable processing status")
