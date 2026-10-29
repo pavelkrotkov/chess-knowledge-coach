@@ -233,7 +233,9 @@ uv run chess-coach restore-db coach-backup.sqlite coach-restored.sqlite --projec
 Both paths must be inside the explicitly selected project root. The source is
 opened read-only, and SQLite's online backup API captures a consistent copy
 including committed WAL data. The copy is checked with `integrity_check` and
-`foreign_key_check` before publication; the new file has owner-only permissions.
+`foreign_key_check`, then its logical schema, metadata, rowids, storage types and
+values are compared with that same pinned source snapshot before publication. The
+new file has owner-only permissions.
 An existing destination or its SQLite journal, WAL, or shared-memory companion
 is never overwritten. Keep exclusive control of the destination directory while
 the operation runs so another process cannot create a companion afterward.
@@ -242,6 +244,19 @@ the destination directory and cleaned up after completion or a handled failure.
 Restoring does not replace the original database or run schema migrations. It
 requires a standalone rollback-journal backup, such as one produced by
 `backup-db`; use `backup-db` first for a WAL-mode source.
+
+The comparison supports ordinary rowid and WITHOUT ROWID tables and fails closed
+on virtual tables, inaccessible hidden rowids, unsupported schemas, oversized
+records, or a comparison error. It streams rows with a 16 MiB SQLite record limit,
+a 4,096-object schema limit, a 512-column table limit and a 16 MiB total schema
+definition limit. The pinned snapshot has a five-minute cooperative deadline;
+an operating-system I/O call may exceed it. WAL readers do not normally block
+writers but can delay checkpointing and WAL truncation; rollback-journal readers
+can block writer commits during the snapshot.
+
+The restore comparison proves equality to the supplied backup, not that the backup
+matched some earlier source. It cannot detect common-mode faults or changes after
+verification. Independently preserved backups remain important.
 
 For a WAL database, keep the database and its SQLite-managed sidecars available
 to the live SQLite connection; copying the main file alone can omit committed
