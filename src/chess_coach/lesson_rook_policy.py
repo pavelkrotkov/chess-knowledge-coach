@@ -23,9 +23,9 @@ def _fact(fact):
     )
 
 
-def rook_supported(db, evidence, fact):
+def rook_supported(db, evidence, fact, *, _history=None):
     return (
         _mapping(evidence)
         and _fact(fact)
-        and state(db, evidence["position_id"], evidence["subject"]) == "current"
+        and state(db, evidence["position_id"], evidence["subject"], _history=_history) == "current"
     )

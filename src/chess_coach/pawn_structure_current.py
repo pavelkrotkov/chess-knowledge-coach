@@ -17,14 +17,16 @@ def _active(db, evidence, facts):
     )
 
 
-def currentness(db, evidence):
+def currentness(db, evidence, *, _history=None):
     if evidence["mapping_producer"] != MAPPER:
         return None
     facts = evidence["facts"]
     if not _active(db, evidence, facts):
         return "stale"
     try:
-        prepared, lesson = prepare_lesson(db, evidence["position_id"], evidence["subject"])
+        prepared, lesson = prepare_lesson(
+            db, evidence["position_id"], evidence["subject"], _history=_history
+        )
         row = db.connection.execute(
             "SELECT input_json FROM detector_runs WHERE id=?", (facts[0]["detector_run_id"],)
         ).fetchone()

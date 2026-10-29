@@ -10,7 +10,7 @@ from .pin_observation import observe as execute
 from .pin_pipeline import VERSION, _names
 
 
-def current_pin(db, evidence, operation):
+def current_pin(db, evidence, operation, *, _history=None):
     _, mapper, _ = _names(operation)
     if evidence["mapping_producer"] == mapper and not mapper_current(db, evidence):
         return {}, "stale", None
@@ -21,6 +21,7 @@ def current_pin(db, evidence, operation):
         mapper=mapper,
         validator=partial(_valid, operation=operation),
         verify=partial(verified_fen, observer=observer),
+        _history=_history,
     )
 
 

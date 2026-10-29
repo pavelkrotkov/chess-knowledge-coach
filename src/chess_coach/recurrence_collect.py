@@ -7,7 +7,7 @@ from .recurrence_scan import scan
 from .recurrence_sources import evidence
 
 
-def collect(db, learner, sources, begin, finish, previous, pairs, before):
+def collect(db, learner, sources, begin, finish, previous, pairs, before, *, _history=None):
     excluded, cache, parts, found, limited = Counter(), {}, {}, [], []
     recorded, next_before = new_groups(), None
     for skill, operation in pairs:
@@ -28,6 +28,7 @@ def collect(db, learner, sources, begin, finish, previous, pairs, before):
             finish,
             previous,
             single=len(pairs) == 1,
+            _history=_history,
         )
         if len(pairs) == 1 and truncated and next_before is None:
             next_before = rows[-1]["id"]

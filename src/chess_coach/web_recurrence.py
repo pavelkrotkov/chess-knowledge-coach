@@ -2,7 +2,9 @@
 
 from flask import Blueprint, current_app, render_template, request
 
+from .learner_identity import normalize_identity
 from .lesson_narrative import build
+from .preview_snapshot import preview_history
 from .recurrence_report import default_windows, report
 from .recurrence_snapshot import read_snapshot
 from .web_db import database
@@ -10,10 +12,10 @@ from .web_db import database
 recurrence_views = Blueprint("recurrence_views", __name__)
 
 
-def _attach_lessons(result):
+def _attach_lessons(result, db, subject, history):
     for period in ("previous", "current"):
         for group in result[period]:
-            group["lesson"] = build(database(), current_app.config["SUBJECT"], group)
+            group["lesson"] = build(db, subject, group, _history=history)
 
 
 @recurrence_views.get("/recurrence")
@@ -26,18 +28,21 @@ def recurrence():
     operation = request.args.get("operation") or None
     cursor = request.args.get("cursor") or None
     try:
-        with read_snapshot(database()):
+        db = database()
+        subject = normalize_identity(current_app.config["SUBJECT"])
+        with read_snapshot(db), preview_history(db, subject) as history:
             result = report(
-                database(),
-                current_app.config["SUBJECT"],
+                db,
+                subject,
                 start,
                 end,
                 previous,
                 skill=skill,
                 operation=operation,
                 cursor=cursor,
+                _history=history,
             )
-            _attach_lessons(result)
+            _attach_lessons(result, db, subject, history)
         error = None
     except ValueError:
         result, error = None, "Report unavailable; check filters and restart."

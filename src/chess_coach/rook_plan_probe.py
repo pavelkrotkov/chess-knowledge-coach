@@ -14,14 +14,16 @@ def _matches(inputs, marker, context):
     )
 
 
-def state(db, position_id, learner):
+def state(db, position_id, learner, *, _history=None):
     position = db.connection.execute(
         "SELECT game_id FROM positions WHERE id=?", (position_id,)
     ).fetchone()
     if position is None:
         return "unavailable"
     try:
-        context = context_for_position(db, position["game_id"], position_id, learner)
+        context = context_for_position(
+            db, position["game_id"], position_id, learner, _history=_history
+        )
         stored = detector(db, position_id)
         if stored is None:
             return "needed"

@@ -6,12 +6,14 @@ import pytest
 
 from chess_coach.evidence_review import review_evidence
 from chess_coach.material_detector import process_decision
-from chess_coach.related_capture import preview
+from chess_coach.related_capture import _selection, preview
 from chess_coach.related_capture_start import start_related
 from chess_coach.unified_session_events import submit
 from chess_coach.web import create_app
+from tests.fork_concealment_support import assert_collision, assert_concealed
 from tests.test_material_pipeline import LEARNER, make_game
-from tests.test_unified_sessions import token
+from tests.transfer_concealment_support import binding_text, preview_text
+from tests.transfer_expected_support import expected_binding
 
 
 def fixture(tmp_path, monkeypatch):
@@ -41,7 +43,8 @@ def test_capture_preview_start_and_review_invalidation(tmp_path, monkeypatch):
     result = preview(db, LEARNER, 1, "test")
     assert result["status"] == "available" and result["baseline"] is None
     item = result["items"][0]
-    assert item["fen"].split()[1] == "w" and "e1e4" not in json.dumps(result)
+    assert item["fen"].split()[1] == "w"
+    assert "e1e4" not in preview_text(result, _selection(db, LEARNER, 1, "test"))
     assert "key" not in item and result["review_status"] == "unreviewed"
     review_evidence(db, evidence, decision="reject", actor="fixture_reviewer")
     with pytest.raises(ValueError):
@@ -80,9 +83,21 @@ def test_capture_preview_start_and_review_invalidation(tmp_path, monkeypatch):
     assert db.connection.execute("SELECT COUNT(*) FROM training_attempts").fetchone()[0] == 0
 
 
-def test_browser_preview_and_safe_start(tmp_path, monkeypatch):
+@pytest.mark.parametrize("collision", ["none", "reference", "csrf"])
+def test_browser_preview_and_safe_start(tmp_path, monkeypatch, collision):
     db, _ = fixture(tmp_path, monkeypatch)
+    if collision == "reference":
+        monkeypatch.setattr("chess_coach.related_capture.digest", lambda value: "e1e4" + "a" * 60)
+        monkeypatch.setattr(
+            "chess_coach.related_transfer_admission.digest", lambda value: "e1e4" + "a" * 60
+        )
+    expected = preview(db, LEARNER, 1, "test")["items"][0]["reference"]
     db.close()
+    csrf_value = ("e1e4" + "A" * 39) if collision == "csrf" else "A" * 43
+    monkeypatch.setattr(
+        "chess_coach.web_security.secrets.token_urlsafe",
+        lambda n: csrf_value if n == 32 else "B" * 32,
+    )
     app = create_app(
         db_path=tmp_path / "transfer.sqlite",
         subject=LEARNER,
@@ -98,8 +113,12 @@ def test_browser_preview_and_safe_start(tmp_path, monkeypatch):
     page = client.get(
         "/decisions/1/related-captures", base_url="https://coach.invalid", headers=headers
     )
-    assert page.status_code == 200 and b"e1e4" not in page.data and b"provisional" in page.data
-    data = {"csrf": token(page, "csrf"), "reference": token(page, "reference")}
+    assert b"provisional" in page.data
+    with client.session_transaction(base_url="https://coach.invalid") as session:
+        session_csrf = session["csrf"]
+    assert_collision(page, collision, answer=b"e1e4")
+    assert_concealed(page, session_csrf, expected, answer=b"e1e4")
+    data = {"csrf": session_csrf, "reference": expected}
     assert (
         client.post(
             "/decisions/1/related-captures/start",
@@ -119,7 +138,7 @@ def test_browser_preview_and_safe_start(tmp_path, monkeypatch):
     practice = client.get(
         response.headers["Location"], base_url="https://coach.invalid", headers=headers
     )
-    assert practice.status_code == 200 and b"e1e4" not in practice.data
+    assert_concealed(practice, session_csrf, answer=b"e1e4")
 
 
 def test_public_prompts_cursor_and_diversity_follow_review_and_familiarity(tmp_path, monkeypatch):
@@ -149,7 +168,7 @@ def test_public_prompts_cursor_and_diversity_follow_review_and_familiarity(tmp_p
     db.connection.commit()
     first = preview(db, LEARNER, 1, "test")
     assert len(first["items"]) == 4 and first["next_cursor"]
-    assert "e1e4" not in json.dumps(first)
+    assert "e1e4" not in preview_text(first, _selection(db, LEARNER, 1, "test"))
     second = preview(db, LEARNER, 1, "test", first["next_cursor"])
     assert second["items"] and not (
         {i["fen"] for i in first["items"]} & {i["fen"] for i in second["items"]}
@@ -175,6 +194,7 @@ def test_pattern_cue_is_durable_and_revocation_blocks_resumed_session(tmp_path, 
     db, evidence = fixture(tmp_path, monkeypatch)
     review_evidence(db, evidence, decision="accept", actor="fixture_reviewer")
     choice = preview(db, LEARNER, 1, "test")["items"][0]
+    selected = _selection(db, LEARNER, 1, "test")
     start_related(
         db,
         attempt_id="cued",
@@ -189,7 +209,9 @@ def test_pattern_cue_is_durable_and_revocation_blocks_resumed_session(tmp_path, 
     binding = json.loads(row["provenance_json"])["related_capture"]
     assert binding["pattern_cued"] is True and binding["motif"] == "material_capture"
     assert binding["operation"] == "execute" and binding["rank_version"] == "capture-transfer-v1"
-    assert binding["evidence_id"] == evidence and "e1e4" not in json.dumps(binding)
+    assert binding["evidence_id"] == evidence
+    expected = expected_binding(db, selected, choice["reference"], LEARNER, fork=False)
+    assert "e1e4" not in binding_text(binding, expected)
     review_evidence(db, evidence, decision="revoke", actor="fixture_reviewer")
     with pytest.raises(ValueError, match="stale"):
         show(db, "cued", LEARNER)

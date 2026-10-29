@@ -7,9 +7,9 @@ from .material_source import prepare
 from .material_source_marker import source_marker
 
 
-def verified_fen(db, evidence, fact, *, observer=observe):
+def verified_fen(db, evidence, fact, *, observer=observe, _history=None):
     try:
-        prepared = prepare(db, evidence["position_id"], evidence["subject"])
+        prepared = prepare(db, evidence["position_id"], evidence["subject"], history=_history)
         source = load_source(db, fact["detector_run_id"])
         if {k: v for k, v in source.items() if k != "reactivation"} != source_inputs(prepared):
             return None

@@ -6,12 +6,14 @@ from .fork_evidence_current import current_fork
 from .fork_evidence_verify import verified_fen
 
 
-def current_defense(db, evidence):
-    return current_fork(db, evidence, mapper=MAPPER, validator=_valid, verify=_verify)
+def current_defense(db, evidence, *, _history=None):
+    return current_fork(
+        db, evidence, mapper=MAPPER, validator=_valid, verify=_verify, _history=_history
+    )
 
 
-def _verify(db, evidence, fact):
-    return verified_fen(db, evidence, fact, observer=observe)
+def _verify(db, evidence, fact, *, _history=None):
+    return verified_fen(db, evidence, fact, observer=observe, _history=_history)
 
 
 def _valid(evidence, fact):

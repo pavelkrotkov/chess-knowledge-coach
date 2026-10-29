@@ -24,7 +24,7 @@ from .pin_explanation import explain as explain_pin
 from .rook_plan_current import currentness as rook_currentness
 
 
-def inspect_evidence(db: Database, evidence_id: int) -> dict:
+def inspect_evidence(db: Database, evidence_id: int, *, _history=None) -> dict:
     row = evidence_row(db, evidence_id)
     result = _summary(row)
     result["context"] = decode(row["context_json"])
@@ -33,17 +33,17 @@ def inspect_evidence(db: Database, evidence_id: int) -> dict:
     result["mapping_created_at"] = row["mapping_created_at"]
     result["facts"] = facts_for_evidence(db, evidence_id)
     result["material_source_currentness"] = evidence_currentness(db, result)
-    fact, currentness, fen = current_fork(db, result)
+    fact, currentness, fen = current_fork(db, result, _history=_history)
     result["fork_explanation"] = explain_fork(fact, fen)
     result["fork_source_currentness"] = currentness
     if currentness == "current":
         result["decision_fen"] = fen
-    defense, defense_currentness, defense_fen = current_defense(db, result)
+    defense, defense_currentness, defense_fen = current_defense(db, result, _history=_history)
     result["fork_defense_explanation"] = explain_defense(defense, defense_fen)
     result["fork_defense_currentness"] = defense_currentness
     if defense_currentness == "current":
         result["decision_fen"] = defense_fen
-    discovery_view(db, result)
+    discovery_view(db, result, _history=_history)
     result["mate_source_currentness"] = mate_currentness(db, result)
     pawn, pawn_currentness = current_pawn(db, result)
     result["pawn_source_currentness"] = pawn_currentness
@@ -52,16 +52,16 @@ def inspect_evidence(db: Database, evidence_id: int) -> dict:
         result["decision_fen"] = pawn["report"]["decision_fen"]
     result["back_rank_source_currentness"] = back_rank_currentness(db, result)
 
-    result["king_safety_currentness"] = king_safety_currentness(db, result)
-    result["pawn_structure_currentness"] = structure_currentness(db, result)
+    result["king_safety_currentness"] = king_safety_currentness(db, result, _history=_history)
+    result["pawn_structure_currentness"] = structure_currentness(db, result, _history=_history)
     for operation in ("execute", "prevent"):
-        pin, currentness, pin_fen = current_pin(db, result, operation)
+        pin, currentness, pin_fen = current_pin(db, result, operation, _history=_history)
         if currentness:
             result["pin_explanation"] = explain_pin(pin, pin_fen)
             result["pin_source_currentness"] = currentness
             if currentness == "current":
                 result["decision_fen"] = pin_fen
-    result["rook_plan_currentness"] = rook_currentness(db, result)
+    result["rook_plan_currentness"] = rook_currentness(db, result, _history=_history)
     result["reviews"] = _reviews(db, evidence_id)
     return result
 
