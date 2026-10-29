@@ -219,4 +219,77 @@ The ready `puzzle-snapshots/VERSION/manifest.json` identifies the immutable
 CSV, archive and their byte counts and SHA-256 digests. Those hashes are
 locally computed, not publisher-authenticated. Archive offsets are not CSV
 record offsets; the staging command performs its own decoded-record
-checkpoints. Full download, indexing and measurement are integrated in #138.
+checkpoints.
+
+### Stage a downloaded puzzle snapshot
+
+Use a reviewed release and an isolated validation database before touching the
+service database. Read `csv_path`, `version`, `csv_sha256`, `archive_sha256`,
+and `source_url` from the ready manifest; pass them as `CSV`, `VERSION`,
+`CSV_SHA256`, `ARCHIVE_SHA256`, and `SOURCE_URL` respectively. The archive
+hash identifies the downloaded source, while the importer verifies the decoded
+CSV hash; neither is an independently published checksum. Choose a database
+and all output, backups, caches and temporary directories inside the selected
+project. Do not overwrite a version or an existing backup.
+
+```sh
+chess-coach --db "$VALIDATION_DB" stage-puzzles "$CSV" --project-root "$CHESS_PROJECT_ROOT" \
+  --version "$VERSION" --csv-sha256 "$CSV_SHA256" --archive-sha256 "$ARCHIVE_SHA256" \
+  --source-url "$SOURCE_URL" --max-rows 20000 --batch-size 100 \
+  --min-free-bytes 16106127360 --enable-wal
+chess-coach --db "$VALIDATION_DB" corpus-status
+```
+
+The row limit applies to each invocation. Inspect the reported state and
+counts, including quarantined records and errors, before proceeding; a
+`staging` version is intentionally unavailable for practice. Repeating the
+same arguments resumes from a committed decoded-record checkpoint and hashes
+the whole CSV again. Only after budgeting storage and runtime for the entire
+source should the operator use `--max-rows 0` to process to EOF. Publication
+occurs after the entire file is rechecked and reconciled. Do not call a
+partially staged file a ready library. A derived subset needs a separate
+version and a manifest recording its selection, count, its own hash, and both
+parent hashes; its label must say that it is a subset.
+
+Test backup and restore to new project-local paths with `backup-db` and
+`restore-db`, then verify old unfinished sessions and references on the
+restored copy. Check query plans and measured resource use on the actual
+snapshot. Before activating a production corpus, back up the service database,
+finish and verify publication, and check the authenticated library and practice
+flows on the reviewed release. Measure browser responsiveness during import
+on the actual deployment; isolated database timings do not establish an HTTP
+latency budget. Preserve old corpus versions and the rollback backup.
+
+### Measured initial subset
+
+The prepared October 2026 source snapshot contains 6,157,341 CSV records;
+the archive is 307,234,795 bytes and the decoded CSV is 1,139,783,132 bytes.
+The initial library is deliberately capped at the first 100,000 source-order
+records. This prefix is not random or representative. Its derived CSV is
+18,608,905 bytes, has a separate SHA-256 and manifest linking the parent CSV
+and archive hashes, and remains separate from the unchanged full snapshot.
+The isolated import accepted 100,000 and quarantined zero. It contains 73
+themes, including 12,818 forks, 5,998 pins, 13,245 mate-in-two and 50,229
+endgame tags. Rating counts were 22,628 below 1000, 32,830 at 1000–1499,
+25,832 at 1500–1999, and 18,710 at 2000 or above. Tags describe content;
+they do not establish skill evidence.
+
+On Hermes, using 50-row transactions and a 15 GiB free-space reserve, this
+isolated run took 355.57 seconds including a checkpoint backup, restore and
+resume. The 2,000 batch writes measured 324.73 ms p95 and 5,509.01 ms max;
+the smaller batch is not a guarantee of a shorter maximum lock delay.
+The restored copy preserved an unfinished synthetic legacy session. Four
+indexed theme/rating keyset probes measured 0.55–6.45 ms p95 over 100
+queries each; the query plan used the covering theme index and puzzle key.
+The ready database was 101,212,160 bytes after a passive checkpoint, with
+5,228,312 WAL bytes before the checkpoint; the checkpoint reported no busy
+readers and two frames checkpointed. These are isolated measurements, not
+production HTTP or lock-latency guarantees.
+
+The full snapshot is retained for later expansion. Before importing a larger
+selection, record its deterministic selection and source hashes, measure its
+storage and latency under the actual service workload, and use a new version.
+Keep the 15 GiB reserve and old versions until recovery and historical
+references have been verified. The currently prepared subset has not yet been
+activated in the production service; live browser and practice acceptance
+remain required after the reviewed release is deployed.

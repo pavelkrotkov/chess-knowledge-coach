@@ -16,3 +16,5 @@ __pycache__/
 *.db-wal
 *.db-shm
 *.db-journal
+
+/puzzle-snapshots/
