@@ -1,6 +1,7 @@
 """Mechanisms to investigate, separated from observations and diagnosis."""
 
 MECHANISMS = {
+    "pawn-structure-lesson-mapper": "A possible mechanism is pressure on a pawn or activity supported by it; the position alone does not establish which plan is best.",
     "material-opportunity-mapper": "A possible local mechanism is an exposed piece being captured before it can be protected; check the replies in each source.",
     "fork-opportunity-mapper": "A possible local mechanism is a single move threatening two targets, so a defense of one can leave the other exposed.",
     "fork-defense-mapper": "A possible local mechanism is that a candidate move leaves two valuable targets vulnerable to one opposing move.",

@@ -3,6 +3,7 @@
 from .learner_identity import normalize_identity
 from .lesson_cues import CUES
 from .lesson_mechanisms import describe
+from .lesson_narrative import qualification
 from .lesson_possible import MECHANISMS
 from .lesson_source import source
 
@@ -31,7 +32,7 @@ def lessons(db, learner, position_id):
                     "question": question,
                     "habit": habit,
                     "practice": practice,
-                    "qualification": "This provisional bounded observation does not establish intent, attention or mastery.",
+                    "qualification": qualification(family),
                 }
             )
     return result

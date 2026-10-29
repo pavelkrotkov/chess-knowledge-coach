@@ -951,8 +951,8 @@ a source can have changed since its recorded observation. All counts are
 provisional descriptive candidates, not claims of confirmed weakness or mastery.
 Rejected, revoked and known-stale evidence is excluded. The linked individual
 evidence page performs its existing deeper source checks. No review, training,
-or mastery state is created by this report. Practice/game progress and grounded
-lessons are separate release work.
+or mastery state is created by this report. Practice/game progress remains
+separate release work; bounded source-linked lessons are described below.
 
 ## Provisional pawn-structure lessons
 
@@ -996,6 +996,10 @@ continuation is replayed from the reconstructed decision board and must use
 canonical legal SAN. Missing or stale sources leave a diagnostic cue rather than
 an invented example. A candidate's review status is shown; unreviewed evidence
 remains unreviewed. Counts are partial samples, not rates or diagnoses.
+
+Pawn-structure observations can also be grouped as descriptive, always-ambiguous
+contexts. Repeated structures are not repeated mistakes or evidence of mastery;
+plans and counterplans are ideas, not conclusions about overall advantage.
 
 A lesson separates observed source facts, a possible mechanism to investigate,
 a diagnostic question, a habit and practice links. The source proofs are bounded:

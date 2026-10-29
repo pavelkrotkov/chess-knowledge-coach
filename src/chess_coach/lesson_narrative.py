@@ -8,6 +8,16 @@ from .lesson_source import source
 VERSION = "coach-lesson-v1"
 
 
+def qualification(family):
+    text = (
+        "These are provisional bounded observations, not a diagnosis of skill, intent or attention. "
+        "Unreviewed sources remain unreviewed; later counterplay and overall safety may be unknown."
+    )
+    if family == "pawn-structure-lesson-mapper":
+        text += " Repeated structures are not repeated mistakes; plans are ideas and mastery remains closed."
+    return text
+
+
 def build(db, learner, group):
     examples = []
     for candidate in group["lesson_examples"]:
@@ -31,8 +41,5 @@ def build(db, learner, group):
         "question": question,
         "habit": habit,
         "practice": practice,
-        "qualification": (
-            "These are provisional bounded observations, not a diagnosis of skill, intent or attention. "
-            "Unreviewed sources remain unreviewed; later counterplay and overall safety may be unknown."
-        ),
+        "qualification": qualification(group["family"]),
     }

@@ -99,6 +99,8 @@ def test_decision_and_saved_history_render_coaching(tmp_path, monkeypatch):
     )
     client = app.test_client()
     headers = {"Tailscale-User-Login": "login"}
+    report_page = client.get("/recurrence", base_url="https://coach.invalid", headers=headers)
+    assert b"not repeated mistakes" in report_page.data
     view = client.get("/decisions/1", base_url="https://coach.invalid", headers=headers)
     assert view.status_code == 200
     assert b"Diagnostic question" in view.data and b"Nc7+" in view.data

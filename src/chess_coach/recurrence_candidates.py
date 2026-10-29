@@ -3,6 +3,7 @@
 from .fork_contract import MAPPER as FORK_MAPPER
 from .fork_defense_contract import MAPPER as DEFENSE_MAPPER
 from .material_policy import MAPPER as MATERIAL_MAPPER
+from .pawn_structure_probe import state as structure_state
 from .recurrence_family_policy import family_ok
 from .recurrence_fork_marker import fork_state
 from .recurrence_marker import material_state
@@ -12,11 +13,18 @@ from .recurrence_review import review
 from .recurrence_sources import linked_fact
 
 
+def _structure_state(db, row):
+    value = structure_state(db, row["position_id"], row["subject"])
+    return {"current": "current", "needed": "stale"}.get(value, "currentness unavailable")
+
+
 def _state(db, row, fact, parts):
     if row["mapping_producer"] == MATERIAL_MAPPER:
         return material_state(db, row, fact, parts) if material_ok(row, fact) else "unsupported"
     if not family_ok(row, fact):
         return "unsupported"
+    if row["mapping_producer"] == "pawn-structure-lesson-mapper":
+        return _structure_state(db, row)
     if row["mapping_producer"] in {FORK_MAPPER, DEFENSE_MAPPER}:
         return fork_state(db, row, fact, parts)
     return "currentness unverified"
@@ -30,7 +38,7 @@ def candidate(db, row, game, parts):
     if not fact_ok(db, row, fact):
         return None, "linked fact"
     state = _state(db, row, fact, parts)
-    if state in {"stale", "unsupported"}:
+    if state in {"stale", "unsupported", "currentness unavailable"}:
         return None, state
     return {
         "id": row["id"],

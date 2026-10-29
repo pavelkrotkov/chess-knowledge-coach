@@ -5,6 +5,7 @@ from .lesson_lines import legal_san
 from .lesson_material import _material as material
 from .lesson_proofs import _mate as mate
 from .lesson_proofs import _pawn as pawn
+from .lesson_structure import structure
 from .lesson_tactics import _defense as defense
 from .lesson_tactics import _fork as fork
 
@@ -15,6 +16,7 @@ ADAPTERS = {
     "pawn-endgame-mapper": pawn,
     "bounded-mate-observation-mapper": mate,
     "back-rank-observation-mapper": back_rank,
+    "pawn-structure-lesson-mapper": structure,
 }
 
 

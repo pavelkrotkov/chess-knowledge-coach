@@ -1,6 +1,11 @@
 """Educational questions and practice habits for supported mechanisms."""
 
 CUES = {
+    "pawn-structure-lesson-mapper": (
+        "Can the pawn advance safely, or can either side increase pressure or piece activity?",
+        "Compare the pawn's legal advances, supporting pieces and immediate captures before choosing a plan.",
+        "Replay the linked decisions, compare the recorded plans and counterplans, and check the displayed lines.",
+    ),
     "material-opportunity-mapper": (
         "Could an exposed piece be captured, and what are the immediate replies?",
         "Before choosing a move, scan attacked pieces, possible captures and recaptures.",
