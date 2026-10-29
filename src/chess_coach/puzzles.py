@@ -16,10 +16,15 @@ def import_puzzles(db: Database, path: str | Path, *, version: str, batch_size: 
     path = Path(path)
     checksum = _checksum(path)
     existing = db.connection.execute(
-        "SELECT id, checksum, imported_rows FROM puzzle_corpora WHERE version = ?", (version,)
+        "SELECT id, checksum, imported_rows, state FROM puzzle_corpora WHERE version = ?",
+        (version,),
     ).fetchone()
     if existing is not None and existing["checksum"] != checksum:
         raise ValueError(f"corpus version {version!r} already exists with a different checksum")
+    if existing is not None and existing["state"] != "legacy_ready":
+        if existing["state"] == "ready":
+            return int(existing["imported_rows"])
+        raise ValueError("corpus version is not available for legacy import")
     db.connection.execute(
         "INSERT OR IGNORE INTO puzzle_corpora(version, source, checksum) VALUES (?, ?, ?)",
         (version, str(path), checksum),

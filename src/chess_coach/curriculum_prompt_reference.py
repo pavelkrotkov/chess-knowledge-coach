@@ -13,7 +13,7 @@ def referenced_prompt(db: Database, source_ref: str) -> str | None:
         return None
     row = db.connection.execute(
         """SELECT p.fen,p.solution FROM puzzles p JOIN puzzle_corpora c ON c.id=p.corpus_id
-        WHERE c.version=? AND p.puzzle_id=?""",
+        WHERE c.version=? AND c.state IN ('legacy_ready','ready') AND p.puzzle_id=?""",
         ref,
     ).fetchone()
     if row is None:

@@ -41,7 +41,7 @@ def _create_attempt(
     puzzle = db.connection.execute(
         """SELECT puzzles.fen, puzzles.solution, puzzle_corpora.checksum
         FROM puzzles JOIN puzzle_corpora ON puzzles.corpus_id = puzzle_corpora.id
-        WHERE puzzle_corpora.version = ? AND puzzles.puzzle_id = ?""",
+        WHERE puzzle_corpora.version = ? AND puzzle_corpora.state IN ('legacy_ready','ready') AND puzzles.puzzle_id = ?""",
         (version, puzzle_id),
     ).fetchone()
     if puzzle is None:

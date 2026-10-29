@@ -22,7 +22,7 @@ def referenced_candidate(db: Database, source_ref: str) -> dict | None:
         return None
     row = db.connection.execute(
         """SELECT p.*, c.version FROM puzzles p JOIN puzzle_corpora c ON c.id=p.corpus_id
-        WHERE c.version=? AND p.puzzle_id=?""",
+        WHERE c.version=? AND c.state IN ('legacy_ready','ready') AND p.puzzle_id=?""",
         ref,
     ).fetchone()
     return verified_candidate(row) if row is not None else None

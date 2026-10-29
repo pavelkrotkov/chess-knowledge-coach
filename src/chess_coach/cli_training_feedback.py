@@ -10,7 +10,7 @@ from .training_feedback import puzzle_training_ref, show_training_puzzle, submit
 def handle_create_puzzle_training(db, args):
     puzzle = db.connection.execute(
         """SELECT 1 FROM puzzles p JOIN puzzle_corpora c ON c.id = p.corpus_id
-        WHERE c.version = ? AND p.puzzle_id = ?""",
+        WHERE c.version = ? AND c.state IN ('legacy_ready','ready') AND p.puzzle_id = ?""",
         (args.version, args.puzzle_id),
     ).fetchone()
     if puzzle is None:
