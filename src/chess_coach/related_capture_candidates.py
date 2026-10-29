@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 from .related_capture_public import public_candidates
 
 
-def candidates(db, version, rating, familiar_games):
+def candidates(db, version, rating, familiar_games, *, theme="hangingPiece", all_lines=False):
     corpus = db.connection.execute(
         "SELECT c.id,c.checksum,i.selection_json FROM puzzle_corpora c LEFT JOIN puzzle_imports i ON i.corpus_id=c.id WHERE c.version=? AND c.state='ready'",
         (version,),
@@ -14,11 +14,11 @@ def candidates(db, version, rating, familiar_games):
     if corpus is None:
         return [], None
     lower, upper = (max(0, rating - 500), min(3999, rating + 500)) if rating else (600, 2200)
-    rows = _corpus_rows(db, corpus["id"], lower, upper)
+    rows = _corpus_rows(db, corpus["id"], lower, upper, theme)
     result = [
         _corpus(row, version) for row in rows if _game_id(row["source"]) not in familiar_games
     ]
-    public, metadata = public_candidates(db, familiar_games)
+    public, metadata = public_candidates(db, familiar_games, all_lines=all_lines)
     result.extend(public)
     return result, {
         "checksum": corpus["checksum"],
@@ -30,7 +30,7 @@ def candidates(db, version, rating, familiar_games):
     }
 
 
-def _corpus_rows(db, corpus_id, lower, upper):
+def _corpus_rows(db, corpus_id, lower, upper, theme):
     rows = []
     width = max(1, (upper - lower + 1) // 5)
     for index in range(5):
@@ -39,9 +39,9 @@ def _corpus_rows(db, corpus_id, lower, upper):
         rows.extend(
             db.connection.execute(
                 """SELECT p.* FROM puzzle_themes t JOIN puzzles p ON p.corpus_id=t.corpus_id AND p.puzzle_id=t.puzzle_id
-            WHERE t.corpus_id=? AND t.theme='hangingPiece' AND t.rating BETWEEN ? AND ?
+            WHERE t.corpus_id=? AND t.theme=? AND t.rating BETWEEN ? AND ?
             ORDER BY t.rating,t.puzzle_id LIMIT 100""",
-                (corpus_id, start, stop),
+                (corpus_id, theme, start, stop),
             ).fetchall()
         )
     return rows

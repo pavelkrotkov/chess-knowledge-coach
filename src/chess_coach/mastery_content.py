@@ -2,14 +2,20 @@
 
 from .back_rank_mastery import closed as back_rank_closed
 from .fork_family_policy import family_reason
+from .king_safety_mastery import closed as king_safety_closed
 from .mastery_provenance import valid_confidence, valid_links
 from .mate_mastery_policy import mastery_allowed as mate_mastery_allowed
 from .material_mastery_policy import mastery_allowed
 from .material_mastery_source import source_reason
 from .pawn_mastery_policy import mastery_allowed as pawn_mastery_allowed
+from .pin_mastery import closed as pin_closed
 
 
 def _family_reason(db, row):
+    if pin_closed(row):
+        return "pin_family_unvalidated"
+    if king_safety_closed(row):
+        return "king_safety_family_unvalidated"
     if back_rank_closed(row):
         return "back_rank_family_unvalidated"
     if not mate_mastery_allowed(db, row):

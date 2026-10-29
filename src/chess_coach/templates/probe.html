@@ -1,0 +1,13 @@
+{% extends "base.html" %}{% block content %}
+<h2>Lesson probe</h2>
+<p>This position and pattern were shown in the lesson. This is a cued, familiar task, not an uncued test.</p>
+<p>{% if state.stale %}This is a historical attempt; its source has changed or been revoked. New responses are unavailable, and its result is not current evidence.{% endif %}</p>
+<p>{{ state.question }}</p>
+{% include "board.html" %}
+{% for entry in state.events %}<p>{{ entry.message }}{% if entry.kind == 'answer' %} Elapsed wall time since the task started: {% if entry.elapsed_seconds is none %}unknown{% else %}{{ entry.elapsed_seconds }} seconds{% endif %}; {% if entry.assisted %}assistance used{% else %}no assistance recorded{% endif %}.{% endif %}</p>{% endfor %}
+{% if not state.answered and not state.stale %}<form method="post" action="{{ url_for('probe_views.submit', attempt=state.attempt_id) }}">
+<input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="event" value="{{ event }}"><input type="hidden" name="kind" value="answer">
+<label for="answer">Your answer</label> <input id="answer" name="answer" required maxlength="32" autocomplete="off"><button>Submit answer</button></form>{% endif %}
+{% if not state.stale %}{% for kind, label in [('hint', 'Hint'), ('reveal', 'Reveal accepted answers')] %}<form method="post" action="{{ url_for('probe_views.submit', attempt=state.attempt_id) }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="event" value="{{ event }}-{{ kind }}"><input type="hidden" name="kind" value="{{ kind }}"><button>{{ label }}</button></form>{% endfor %}{% endif %}
+<p>A response can support only the stated task. It cannot identify the cause of a game move or establish mastery.</p>
+<p><a href="{{ url_for('lesson_views.show', lesson_id=state.lesson_id) }}">Return to lesson</a></p>{% endblock %}

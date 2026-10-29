@@ -37,8 +37,24 @@ COVERAGE: dict[str, dict[str, Any]] = {
         "limits": "Provisional bounded material observations require review and independent validation before mastery eligibility.",
     },
     "absolute_pin": {
-        "capabilities": ["tactical_geometry"],
-        "detector": "chess_coach.motif_detectors.detect_motifs",
+        "capabilities": ["tactical_geometry", "pin_opportunities"],
+        "detector": "chess_coach.pin_observation.observe",
+        "fixtures": {
+            "positive": "tests/test_pin_observation.py::test_absolute_pin_requires_all_legal_replies",
+            "negative": "tests/test_pin_observation.py::test_existing_pin_and_already_capturable_target_do_not_prove_creation",
+            "ambiguous": "tests/test_pin_observation.py::test_defended_pinned_piece_does_not_become_a_material_claim",
+        },
+        "limits": "Bounded material or immediate mate proof; pin mastery remains closed pending qualification.",
+    },
+    "relative_pin": {
+        "capabilities": ["pin_opportunities"],
+        "detector": "chess_coach.pin_observation.observe",
+        "fixtures": {
+            "positive": "tests/test_pin_observation.py::test_relative_pin_execution_proves_each_reply_including_piece_moves",
+            "negative": "tests/test_pin_observation.py::test_checking_counterplay_does_not_prove_exposure_loss",
+            "ambiguous": "tests/test_pin_observation.py::test_relative_exposure_without_verified_defense_is_ambiguous",
+        },
+        "limits": "Bounded material or immediate mate proof; pin mastery remains closed pending qualification.",
     },
     "isolated_pawn": {
         "capabilities": ["structures"],
@@ -49,8 +65,9 @@ COVERAGE: dict[str, dict[str, Any]] = {
         "detector": "chess_coach.structure_features.extract_features",
     },
     "open_files": {
-        "capabilities": ["structures"],
-        "detector": "chess_coach.structure_features.extract_features",
+        "capabilities": ["structures", "rook_plans"],
+        "detector": "chess_coach.rook_plan_lesson.lesson",
+        "limits": "Recorded alternatives and immediate captures are bounded observations; mastery remains closed.",
     },
     "locked_center": {
         "capabilities": ["structures"],

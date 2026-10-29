@@ -1,19 +1,12 @@
 """Apply the same supported fact contracts to standalone decision lessons."""
 
 from .back_rank_outcomes import outcomes
+from .king_safety_policy import supported_king
+from .lesson_mate_policy import mate_supported
+from .lesson_rook_policy import rook_supported
 from .lesson_structure_policy import structure_supported
-from .mate_selection import mapping_skill
 from .material_opportunity_links import valid_link
 from .material_policy import fact_allowed
-
-
-def _mate(evidence, payload):
-    return (
-        payload["status"] == "opportunity"
-        and mapping_skill(payload) == evidence["skill"]
-        and payload["outcome"] == evidence["outcome"]
-        and evidence["operation"] == "execute"
-    )
 
 
 def _supported(db, evidence, fact):
@@ -26,9 +19,14 @@ def _supported(db, evidence, fact):
             outcome=evidence["outcome"],
         )
     if family == "bounded-mate-observation-mapper":
-        return _mate(evidence, payload)
-    if family == "pawn-structure-lesson-mapper":
-        return structure_supported(db, evidence, fact)
+        return mate_supported(evidence, payload)
+    descriptive = {
+        "king-safety-lesson-mapper": supported_king,
+        "pawn-structure-lesson-mapper": structure_supported,
+        "rook-plan-lesson-mapper": rook_supported,
+    }
+    if family in descriptive:
+        return descriptive[family](db, evidence, fact)
     if family == "back-rank-observation-mapper":
         return evidence["skill"] == "back_rank" and (
             evidence["operation"],

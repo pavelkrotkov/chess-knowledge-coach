@@ -119,7 +119,7 @@ def test_legacy_flag_has_unknown_reviewer_and_no_fabricated_event() -> None:
         "reviewed_at": None,
         "raw_flag": 2,
     }
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 25
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 26
     revoked = review_evidence(db, 1, decision="revoke", actor="fixture-reviewer")
     assert revoked["review_status"] == "revoked" and len(revoked["reviews"]) == 1
     assert revoked["legacy_validation"] == result["legacy_validation"]

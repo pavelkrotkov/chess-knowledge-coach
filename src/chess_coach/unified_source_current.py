@@ -13,6 +13,9 @@ def snapshot_hash(snapshot):
 
 def require_current(db, row):
     _require_related_current(db, row)
+    from .related_fork_current import require_current as require_fork_current
+
+    require_fork_current(db, row, snapshot_hash)
     if row["source_type"] != "own-game":
         return
     try:

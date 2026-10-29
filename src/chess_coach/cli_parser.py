@@ -12,6 +12,7 @@ from .cli_public_training import configure as public_training
 from .cli_recovery import configure as recovery
 from .cli_recurrence import configure as recurrence
 from .cli_related_capture import configure as related_capture
+from .cli_related_fork import configure as related_fork
 from .cli_snapshot import configure as snapshot
 from .cli_unified_practice import configure as unified_practice
 
@@ -32,6 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
     public_training(sub)
     unified_practice(sub)
     related_capture(sub)
+    related_fork(sub)
     sub.add_parser("capabilities", help="Report versioned product capabilities")
     sub.add_parser("competencies", help="Report competency coverage and prerequisites")
     sub.add_parser("seed-competencies", help="Store the current competency graph version")

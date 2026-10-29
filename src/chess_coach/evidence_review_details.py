@@ -11,12 +11,16 @@ from .fork_defense_evidence import current_defense
 from .fork_defense_explanation import explain as explain_defense
 from .fork_evidence_current import current_fork
 from .fork_explanation import explain_fork
+from .king_safety_current import currentness as king_safety_currentness
 from .mate_evidence import currentness as mate_currentness
 from .material_evidence_current import evidence_currentness
 from .material_explanation import explain_material
 from .pawn_coach_current import current_pawn
 from .pawn_coach_explanation import explain as explain_pawn
 from .pawn_structure_current import currentness as structure_currentness
+from .pin_evidence import current_pin
+from .pin_explanation import explain as explain_pin
+from .rook_plan_current import currentness as rook_currentness
 
 
 def inspect_evidence(db: Database, evidence_id: int) -> dict:
@@ -46,7 +50,16 @@ def inspect_evidence(db: Database, evidence_id: int) -> dict:
         result["decision_fen"] = pawn["report"]["decision_fen"]
     result["back_rank_source_currentness"] = back_rank_currentness(db, result)
 
+    result["king_safety_currentness"] = king_safety_currentness(db, result)
     result["pawn_structure_currentness"] = structure_currentness(db, result)
+    for operation in ("execute", "prevent"):
+        pin, currentness, pin_fen = current_pin(db, result, operation)
+        if currentness:
+            result["pin_explanation"] = explain_pin(pin, pin_fen)
+            result["pin_source_currentness"] = currentness
+            if currentness == "current":
+                result["decision_fen"] = pin_fen
+    result["rook_plan_currentness"] = rook_currentness(db, result)
     result["reviews"] = _reviews(db, evidence_id)
     return result
 

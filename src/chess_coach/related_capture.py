@@ -1,12 +1,10 @@
 """Preview and safely select bounded capture-transfer practice."""
 
 from .fact_fingerprint import canonical, digest
-from .related_capture_candidates import candidates
 from .related_capture_cursor import _cursor, _offset
-from .related_capture_familiar import familiarity
 from .related_capture_features import capture_features
-from .related_capture_rank import rank
-from .related_capture_source import baseline, source_for_position
+from .related_capture_source import source_for_position
+from .related_transfer_select import select
 
 VERSION = "capture-transfer-v1"
 PAGE = 4
@@ -16,33 +14,15 @@ def _selection(db, subject, position, corpus_version):
     source = source_for_position(db, subject, position)
     if capture_features(source["prompt_fen"], source["lines"][0].split()) is None:
         raise ValueError("unsupported capture source")
-    rating = baseline(db, source)
-    familiar, games, is_familiar = familiarity(db, subject)
-    pool, corpus = candidates(db, corpus_version, rating, games)
-    if corpus is None:
-        return None
-    diagnostics = {}
-    ordered = rank(source, pool, familiar, rating, diagnostics, is_familiar)
-    scope = digest(
-        canonical(
-            [
-                VERSION,
-                subject,
-                source,
-                corpus_version,
-                corpus,
-                rating,
-                sorted(familiar),
-                sorted(games),
-                pool,
-            ]
-        )
-    )
-    return source, rating, corpus, ordered, scope, diagnostics
+    return select(db, subject, source, corpus_version, VERSION)
 
 
 def preview(db, subject, position, corpus_version, cursor=None):
     selection = _selection(db, subject, position, corpus_version)
+    return present(selection, cursor)
+
+
+def present(selection, cursor):
     if selection is None:
         return {"status": "corpus unavailable", "items": [], "next_cursor": None}
     source, rating, corpus, ordered, scope, diagnostics = selection
@@ -70,7 +50,18 @@ def _present(item, scope):
     result = {
         key: value
         for key, value in item.items()
-        if key not in {"order", "prompt_key", "key", "game", "diversity", "round"}
+        if key
+        not in {
+            "order",
+            "prompt_key",
+            "key",
+            "game",
+            "diversity",
+            "round",
+            "matching_lines",
+            "matching_line_indices",
+            "source_lines_hash",
+        }
     }
     result["reference"] = digest(canonical([scope, item["type"], item["version"], item["key"]]))
     return result

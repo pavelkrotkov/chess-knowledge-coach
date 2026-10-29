@@ -1,6 +1,26 @@
 """Educational questions and practice habits for supported mechanisms."""
 
 CUES = {
+    "pin-execute-mapper": (
+        "Can a slider pin a piece to its king or a more valuable piece?",
+        "Check legal defenses and captures before relying on a pin.",
+        "Replay the source and test each displayed defense and capture.",
+    ),
+    "pin-prevent-mapper": (
+        "What happens if the pinned piece moves, or the pinning piece is captured?",
+        "Compare legal defenses, checks and recaptures before moving.",
+        "Replay the source and compare the tested pin and defensive alternatives.",
+    ),
+    "rook-plan-lesson-mapper": (
+        "Which legal rook entry squares can be reached, and how can the opponent contest them?",
+        "For each listed entry, calculate legal immediate captures and recaptures; compare the recorded alternative and inspect unchecked threats and later counterplay.",
+        "Replay the linked decisions and test the recorded alternatives and immediate captures.",
+    ),
+    "king-safety-lesson-mapper": (
+        "Which legal checks and king replies follow each choice?",
+        "Compare the displayed legal checks, captures, and possible king replies before choosing.",
+        "Replay the played move and alternative, and test the displayed checks.",
+    ),
     "pawn-structure-lesson-mapper": (
         "Can the pawn advance safely, or can either side increase pressure or piece activity?",
         "Compare the pawn's legal advances, supporting pieces and immediate captures before choosing a plan.",

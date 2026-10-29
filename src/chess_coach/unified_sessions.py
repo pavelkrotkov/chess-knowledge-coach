@@ -2,6 +2,7 @@
 
 import json
 
+from .related_session_filter import apply_filter
 from .unified_session_state import now, session_row, view
 from .unified_source_current import require_current, snapshot_hash
 from .unified_sources import resolve_source
@@ -40,10 +41,21 @@ def start(db, *, attempt_id, subject, source_type, version, key):
         raise
 
 
-def _create(db, attempt_id, subject, source_type, version, key, provenance=None):
+def _create(
+    db,
+    attempt_id,
+    subject,
+    source_type,
+    version,
+    key,
+    provenance=None,
+    provenance_key="related_capture",
+    line_filter=None,
+):
     snapshot = resolve_source(db, source_type, version, key, subject=subject)
+    apply_filter(snapshot, provenance, provenance_key, line_filter)
     if provenance is not None:
-        snapshot["provenance"]["related_capture"] = provenance
+        snapshot["provenance"][provenance_key] = provenance
     fingerprint = snapshot_hash(snapshot)
     lines = [line.split() for line in snapshot["lines"]]
     db.connection.execute(

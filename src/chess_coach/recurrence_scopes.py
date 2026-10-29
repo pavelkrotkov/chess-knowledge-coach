@@ -16,14 +16,19 @@ from .material_policy import MAPPER as MATERIAL
 from .pawn_coach_contract import MAPPER as PAWN
 from .pawn_coach_contract import SCOPE as PAWN_SCOPE
 from .pawn_coach_contract import VERSION as PAWN_VERSION
+from .pin_pipeline import VERSION as PIN_VERSION
 
 SCOPES = {
+    "king-safety-lesson-mapper": ("1.0.0", "king-safety-lesson"),
     MATERIAL: (MATERIAL_VERSION, MATERIAL_SCOPE),
+    "pin-execute-mapper": (PIN_VERSION, "pin-execute-v1"),
+    "pin-prevent-mapper": (PIN_VERSION, "pin-prevent-v1"),
     FORK: (FORK_VERSION, FORK_SCOPE),
     DEFENSE: (DEFENSE_VERSION, DEFENSE_SCOPE),
     MATE: (MATE_VERSION, "bounded-mate-v1"),
     PAWN: (PAWN_VERSION, PAWN_SCOPE),
     "pawn-structure-lesson-mapper": ("1.1.0", "pawn-structure-lesson"),
+    "rook-plan-lesson-mapper": ("1.1.0", "rook-plan-lesson"),
 }
 
 

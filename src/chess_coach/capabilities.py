@@ -3,15 +3,43 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.31.0"
+REGISTRY_VERSION = "1.36.0"
 
 CAPABILITIES = (
+    {
+        "id": "rook_plans",
+        "area": "Skill coverage",
+        "name": "Rook plans on open files",
+        "status": "observation-only",
+        "details": "Current learner decisions compare recorded legal rook-file choices with alternatives and bounded immediate captures. The plans are provisional; mastery remains closed.",
+    },
+    {
+        "id": "king_safety_lessons",
+        "area": "Skill coverage",
+        "name": "King shelter and defensive choices",
+        "status": "observation-only",
+        "details": "The bounded worker records changes in king-zone shelter and compares immediate legal checks, captures, promotions and conditional king moves for played and sampled alternative choices. Repetition and draw boundaries are unsupported. Observations remain ambiguous and mastery is closed pending independent qualification.",
+    },
+    {
+        "id": "related_fork_execution",
+        "area": "Training",
+        "name": "Related pawn and knight fork execution",
+        "status": "supported",
+        "details": "Current owned qualified fork execution observations retrieve unfamiliar examples with a first-move fork and original-target capture in the legal supplied line. Fork prevention and later-timing forks remain unsupported; supplied lines do not prove all defenses.",
+    },
     {
         "id": "pawn_structure_lessons",
         "area": "Skill coverage",
         "name": "Pawn-structure plans from decisions",
         "status": "observation-only",
         "details": "Current attributable decisions show isolated and backward pawn plans and bounded immediate exchanges of pawn-supported pieces. The bounded worker distinguishes current replays, pending work and truncated coverage. Reviewable observations remain ambiguous and ineligible for mastery; overall compensation remains uncertain.",
+    },
+    {
+        "id": "pin_opportunities",
+        "area": "Skill coverage",
+        "name": "Bounded pin opportunities",
+        "status": "observation-only",
+        "details": "Pin detector and mapper version 1.0.1 reject repeated or terminal roots. New noncapturing slider pins use bounded legal replies and verified material or immediate mate; already capturable targets remain unresolved. Relative-pin exposure and absolute-pin slides are compared with verified captures of the pinner. Checks, recaptures, compensation and unsupported branches remain unresolved. Current pin sources feed bounded recurrence and rechecked lessons; pin mastery is closed pending independent qualification.",
     },
     {
         "id": "pawn_opportunities",
@@ -229,6 +257,13 @@ CAPABILITIES = (
         "name": "Grounded coaching explanations",
         "status": "observation-only",
         "details": "Deterministic lessons recheck supported sources, replay legal lines, distinguish observed results from questions, and retain explicitly saved versions. Coverage is bounded and provisional; currentness, overall safety and later counterplay may remain unknown.",
+    },
+    {
+        "id": "lesson_diagnostic_probes",
+        "area": "Training",
+        "name": "Cued lesson probes",
+        "status": "observation-only",
+        "details": "Cited fork and mate recognition and pawn-ending choices record bounded responses separately from moves. Familiar, assisted and ungraded answers do not establish causality or mastery; scheduling remains unchanged.",
     },
     {
         "id": "opening_classification",

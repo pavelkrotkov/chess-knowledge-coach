@@ -5,9 +5,19 @@ from .related_capture_match import candidate as score_candidate
 from .related_capture_position import prompt_key
 
 
-def rank(source, candidates, familiar, baseline, diagnostics=None, is_familiar=None):
+def rank(
+    source,
+    candidates,
+    familiar,
+    baseline,
+    diagnostics=None,
+    is_familiar=None,
+    *,
+    feature=capture_features,
+    score=score_candidate,
+):
     """Rank distinct unfamiliar prompts; candidates are bounded by the caller."""
-    source_features = capture_features(source["prompt_fen"], source["lines"][0].split())
+    source_features = feature(source["prompt_fen"], source["lines"][0].split())
     if source_features is not None:
         source_features["opening"] = source.get("opening")
     if source_features is None:
@@ -18,7 +28,7 @@ def rank(source, candidates, familiar, baseline, diagnostics=None, is_familiar=N
     diagnostics.update(exact_source=0, familiar=0, duplicate=0)
     examples = []
     for candidate in candidates:
-        item = score_candidate(candidate, source_features, set(), baseline)
+        item = score(candidate, source_features, set(), baseline)
         if item is None:
             continue
         reason = _excluded(item["prompt_key"], source_key, familiar, is_familiar)

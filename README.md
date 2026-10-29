@@ -823,6 +823,38 @@ history controls show positions already played without changing the attempt.
 Hint and reveal are explicit actions and are recorded as hints; a revealed line
 is one supplied continuation, not proof that other legal moves fail.
 
+## Provisional pin observations
+
+The pin workers inspect current learner decisions using reconstructed game history
+and independent rotating cursors. Detector and mapper version 1.0.1 reject repeated,
+fifty-move-rule or terminal roots before the tested move. Version 1.0.0 facts and
+reviews remain historical and cannot support a current claim. A pin is descriptive
+geometry until a bounded consequence is verified. The execute path considers newly created slider pins to
+a king or more valuable piece; it does not score a position where the same pin
+already existed or the pinned or rear piece could already be legally captured.
+Every legal immediate reply must admit a verified target capture followed by all
+immediate replies, or an immediate checkmate. Unresolved checks, recaptures,
+promotions, en passant, repetitions, and compensation outside the proof remain
+unresolved rather than inferred from a single engine line. Scans cap legal moves
+at 64, pin candidates at 16 and immediate replies at 64.
+
+Prevention includes moving an already relatively pinned piece off the line, or
+sliding an absolutely pinned piece along its pin. A verified capture of the exposed
+or pinned piece and an independently verified legal capture of the pinner supply
+the compared consequences. Either of multiple qualifying captures can be observed. The result addresses those tested lines, not overall safety or
+the best move. The separate created-pin defense scan uses bounded alternatives;
+checks, unresolved exchanges, alternative compensation and unexamined branches
+remain ambiguous. Review displays the linked current source and proof; observations
+are provisional and all pin mastery remains closed pending independent held-out
+qualification. No general pin practice grading is implied.
+
+The recurrence report can filter each pin kind by execute or prevent, subject to
+its normal sampling limits. It checks the current source marker without replaying
+the proof for each count. A grounded lesson separately rechecks the current source,
+then displays legally replayed proof or unresolved-geometry lines, with practical
+questions that distinguish the recorded move from tested alternatives. It does not
+establish overall safety, compensation, intent or mastery.
+
 ## Provisional fork observations
 
 The automatic worker scans a separate rotating bounded set of decisions, using
@@ -1024,3 +1056,94 @@ recorded by the existing `enrichment.explain_position` adapter with model,
 prompt version and input provenance. Only configure a callable you trust; it is not a sandbox, and
 no external generator is enabled by default. Call it outside a transaction;
 otherwise it falls back to avoid committing unrelated caller work.
+
+
+## Provisional rook-file plans
+
+The worker uses a separate rotating cursor and the existing material position and
+decision budgets to inspect learner-owned decisions. It requires distinct legal
+recorded best and played continuations, and at least one rook move onto a file
+that is open or half-open in the source position. It lists that rook's legal
+entry moves into the enemy half, and checks immediate opponent captures after
+each entry and each recorded root. The two roots also report their rooks’
+geometric enemy-half attack squares, including occupied squares and pinned rooks;
+these are not legal moves or recaptures. Each target-square exchange uses at most 64
+nodes and six plies; checks, terminal or repetition boundaries, en passant and
+unsupported or exhausted exchanges remain unresolved. A pinned attacker is
+only counted when its capture is legal. One recorded continuation or a local
+exchange is not a forced result or proof of overall safety, compensation,
+advantage, intent or preference. Positions without the required source lines
+are not graded; the worker reports no-match-or-unsupported, unavailable and capped coverage.
+
+Facts and mappings retain their source, producer version and immutable history.
+Currentness checks source and output fingerprints without repeating the chess
+inference. The private decision and recurrence lessons show the source, conditional plans,
+counterplans, legal alternatives, capture checks and review status. The plan
+names the recorded move and, where verified, the opponent capture and its bounded
+exchange; an inconclusive capture check is explicitly unsupported. Recurring
+observations are descriptive, not repeated mistakes. Version 1.1.0 mappings are
+always ambiguous and never mastery-eligible, even when accepted. An independent held-out review of version 1.0.0 covered two positive, two
+negative and two ambiguous cases and reported zero false factual claims; it
+identified missing position-specific plans and did not qualify mastery. Version
+1.1.0 has not yet received independent held-out review. Before opening mastery,
+a separate held-out review and documented decision are required. See the
+[version 1.0.0 review](https://github.com/pavelkrotkov/chess-knowledge-coach/pull/218#pullrequestreview-5700914014).
+
+## King-safety observations
+
+The bounded material worker also inspects current attributable decisions where the mover’s king zone, shelter pawns or geometric attacks change. The zone consists of the king’s adjacent files, one and two ranks ahead. Attacks are geometric, including attacks by pinned pieces; they are not legal threats. The worker checks the played move and at most eight legal alternatives, recording coverage and unresolved cases, immediate legal checks, mates, captures and promotions, and king moves after a specific legal opponent reply. The displayed alternative minimizes immediate mate and check counts among the completed sampled moves; it is not a best-move recommendation. Source continuations are legal possibilities, not forced lines. Captures and checks can provide counterplay, but overall compensation and later safety are not established. A shelter change does not prove a mistake.
+
+Draw-claim, repeated-root and terminal histories and unsupported bounds are reported as unavailable rather than classified. Observations remain ambiguous and ineligible for mastery even if accepted for review. Before changing that gate, independently qualify a held-out positive, negative and ambiguous fixture set, report its counts and false claims, and document the validation decision. The current implementation has not passed that qualification. Recurrence and decision lessons retain source links and review state; a bounded scan may require another worker run.
+
+## Lesson diagnostic probes
+
+Saved fork, mate and pawn-ending lessons can offer short, source-linked probes
+when their cited proof supports the question. Fork and mate tasks ask about a
+checked threat; pawn-ending tasks ask for a result-preserving choice. The
+lesson has already shown the position or pattern, so each task is marked cued
+and familiar. A single response cannot establish the cause of a game move,
+attention, calculation, or mastery.
+
+A task stores its accepted answers and proof provenance privately. The prompt
+does not expose those answers; a reveal is recorded as assistance. Answers not
+covered by the bounded proof stay ungraded. Answer, elapsed wall time since
+start, hints, reveals and outcome are retained independently from move practice.
+Reusing an event ID with the same input returns the original result; conflicting
+retries are rejected. The learner and cited lesson source are rechecked before
+starting or recording an event, and rejected, revoked, or changed sources
+cannot be resumed. Probe results do not change reviews, FSRS, or mastery.
+
+## Related fork execution practice
+
+A current subject-owned pawn or knight fork execution observation can lead from
+its evidence or grounded lesson to unfamiliar related practice. The exact
+selected evidence must retain its active producer, mapper version and scope,
+source fact and latest accepted or unreviewed review status. A successful fork
+and a missed fork are labeled separately; neither is treated as mastery. The
+existing capture-transfer path and its historical session bindings remain
+unchanged. Related material-protection practice is not yet supported.
+
+Candidates come from a bounded indexed `fork` theme pool and licensed public
+collections. The theme is only a search hint. After the corpus setup move, the
+complete supplied line is replayed; the learner must create a legal pawn or
+knight fork immediately and the same piece must capture an original fork target
+on the next learner move. Target piece roles, relative geometry, material,
+phase, opening context and content difficulty determine ranking. Candidate
+forks later in the line, unresolved en-passant states and other fork operations
+are outside this slice. A supplied example line does not prove the move wins
+against every defense. Familiar positions and games are excluded under the
+same rules and limits as capture transfer, and source/version/review changes
+invalidate the opaque reference and the resulting cued session.
+
+```bash
+uv run chess-coach --db PROJECT_DB related-forks --subject LEARNER --evidence EVIDENCE_ID --corpus CORPUS_VERSION
+uv run chess-coach --db PROJECT_DB start-related-fork --subject LEARNER --evidence EVIDENCE_ID --corpus CORPUS_VERSION --attempt ATTEMPT_ID --reference OPAQUE_REFERENCE
+```
+
+Use `--cursor CURSOR` to continue a preview. The source observation, rank
+version and operation are saved in immutable unified-session provenance as
+pattern-cued practice. For a public task with multiple supplied lines, the
+session retains only lines that match the fork; other legal choices need
+verification. The source line digest, selected indices and filter version are
+rechecked on resume. Existing session moves and reveal accounting apply;
+completion does not create skill evidence or verify unlisted alternatives.
