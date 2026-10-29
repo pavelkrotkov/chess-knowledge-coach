@@ -16,6 +16,11 @@ CUES = {
         "For each listed entry, calculate legal immediate captures and recaptures; compare the recorded alternative and inspect unchecked threats and later counterplay.",
         "Replay the linked decisions and test the recorded alternatives and immediate captures.",
     ),
+    "king-safety-lesson-mapper": (
+        "Which legal checks and king replies follow each choice?",
+        "Compare the displayed legal checks, captures, and possible king replies before choosing.",
+        "Replay the played move and alternative, and test the displayed checks.",
+    ),
     "pawn-structure-lesson-mapper": (
         "Can the pawn advance safely, or can either side increase pressure or piece activity?",
         "Compare the pawn's legal advances, supporting pieces and immediate captures before choosing a plan.",

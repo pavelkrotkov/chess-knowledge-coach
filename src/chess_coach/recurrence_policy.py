@@ -36,6 +36,7 @@ def fact_ok(db, row, fact):
             "back-rank-observation-mapper",
             "pawn-structure-lesson-mapper",
             "rook-plan-lesson-mapper",
+            "king-safety-lesson-mapper",
         }
         and payload.get("outcome") != row["outcome"]
     ):

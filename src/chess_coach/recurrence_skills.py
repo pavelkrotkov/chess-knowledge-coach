@@ -18,4 +18,5 @@ PAIRS = (
     ("relative_pin", "execute"),
     ("relative_pin", "prevent"),
     ("open_files", "evaluate"),
+    ("king_safety", "evaluate"),
 )

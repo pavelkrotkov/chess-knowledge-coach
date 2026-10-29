@@ -17,6 +17,8 @@ def qualification(family):
         text += " Pin mastery remains closed; the displayed lines are bounded, not proof of overall safety."
     if family in {"pawn-structure-lesson-mapper", "rook-plan-lesson-mapper"}:
         text += " These are ambiguous descriptive observations, not skill evidence; repeated positions are not repeated mistakes. Plans are ideas and mastery remains closed."
+    if family == "king-safety-lesson-mapper":
+        text += " Shelter changes are not necessarily mistakes; compensation and later threats remain unresolved. Mastery remains closed."
     return text
 
 

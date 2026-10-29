@@ -1,6 +1,7 @@
 """Compose a source-linked lesson example."""
 
 from .lesson_backrank import back_rank
+from .lesson_king_safety import king_safety
 from .lesson_lines import legal_san
 from .lesson_material import _material as material
 from .lesson_pin import pin
@@ -22,6 +23,7 @@ ADAPTERS = {
     "back-rank-observation-mapper": back_rank,
     "pawn-structure-lesson-mapper": structure,
     "rook-plan-lesson-mapper": rook,
+    "king-safety-lesson-mapper": king_safety,
 }
 
 

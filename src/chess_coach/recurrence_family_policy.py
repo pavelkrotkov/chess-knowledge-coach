@@ -6,6 +6,7 @@ from .fork_contract import VERSION as FORK_VERSION
 from .fork_defense_contract import MAPPER as DEFENSE_MAPPER
 from .fork_defense_contract import PRODUCER as DEFENSE_PRODUCER
 from .fork_defense_contract import VERSION as DEFENSE_VERSION
+from .king_safety_recurrence import king_ok
 from .recurrence_fork_policy import fork_family_ok
 from .recurrence_pin_policy import PIN_FAMILIES, pin_family_ok
 from .recurrence_proof_policy import backrank_ok, mate_ok, pawn_ok
@@ -13,6 +14,7 @@ from .recurrence_rook_policy import rook_ok
 
 FAMILIES = {
     **PIN_FAMILIES,
+    "king-safety-lesson-mapper": ("king-safety-lesson", "1.0.0", "king_safety_lesson"),
     FORK_MAPPER: (FORK_PRODUCER, FORK_VERSION, "fork_opportunity"),
     DEFENSE_MAPPER: (DEFENSE_PRODUCER, DEFENSE_VERSION, "fork_defense_opportunity"),
     "bounded-mate-observation-mapper": ("bounded-mate-observation", "1.0.0", "bounded_mate"),
@@ -33,6 +35,7 @@ def _structure_ok(row, fact):
 
 
 VALIDATORS = {
+    "king-safety-lesson-mapper": king_ok,
     "rook-plan-lesson-mapper": rook_ok,
     FORK_MAPPER: fork_family_ok,
     DEFENSE_MAPPER: fork_family_ok,

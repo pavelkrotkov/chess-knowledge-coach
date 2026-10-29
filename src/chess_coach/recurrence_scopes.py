@@ -19,6 +19,7 @@ from .pawn_coach_contract import VERSION as PAWN_VERSION
 from .pin_pipeline import VERSION as PIN_VERSION
 
 SCOPES = {
+    "king-safety-lesson-mapper": ("1.0.0", "king-safety-lesson"),
     MATERIAL: (MATERIAL_VERSION, MATERIAL_SCOPE),
     "pin-execute-mapper": (PIN_VERSION, "pin-execute-v1"),
     "pin-prevent-mapper": (PIN_VERSION, "pin-prevent-v1"),

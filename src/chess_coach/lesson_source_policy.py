@@ -1,6 +1,7 @@
 """Apply the same supported fact contracts to standalone decision lessons."""
 
 from .back_rank_outcomes import outcomes
+from .king_safety_policy import supported_king
 from .lesson_mate_policy import mate_supported
 from .lesson_rook_policy import rook_supported
 from .lesson_structure_policy import structure_supported
@@ -20,6 +21,7 @@ def _supported(db, evidence, fact):
     if family == "bounded-mate-observation-mapper":
         return mate_supported(evidence, payload)
     descriptive = {
+        "king-safety-lesson-mapper": supported_king,
         "pawn-structure-lesson-mapper": structure_supported,
         "rook-plan-lesson-mapper": rook_supported,
     }

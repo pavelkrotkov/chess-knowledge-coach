@@ -2,6 +2,7 @@
 
 from .fork_contract import MAPPER as FORK_MAPPER
 from .fork_defense_contract import MAPPER as DEFENSE_MAPPER
+from .king_safety_probe import state as king_state
 from .material_policy import MAPPER as MATERIAL_MAPPER
 from .recurrence_family_policy import family_ok
 from .recurrence_marker import material_state
@@ -20,6 +21,7 @@ def source_state(db, row, fact, parts, structure_state, rook_state):
     if not family_ok(row, fact):
         return "unsupported"
     checks = {
+        "king-safety-lesson-mapper": king_state,
         "rook-plan-lesson-mapper": rook_state,
         "pawn-structure-lesson-mapper": structure_state,
     }
