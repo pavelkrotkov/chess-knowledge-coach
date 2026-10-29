@@ -125,7 +125,7 @@ are recorded without converting score loss into mastery. Limits apply per
 search, so analysis can take approximately twice the earlier scan budget.
 `uv run chess-coach --db coach.sqlite inspect-decision POSITION_ID` or the
 private evidence page shows SAN continuations and run provenance. Legacy runs
-show comparison data as unavailable. Selective deep verification remains future
+show comparison data as unavailable. Automatic deep verification remains future
 work; a bounded point score is an engine estimate, not proof.
 
 
@@ -579,13 +579,34 @@ eligible, missing, overlapping, capped-out and omitted critical candidates,
 plus category targets and allocations. Static motifs are observations, and
 engine scores do not create mastery evidence. The private browser’s Deep
 selection page shows pending candidates and their immutable selection history.
-Selection is manual; deeper engine execution remains planned. Currentness is
+Selection and deeper engine execution are manual; automatic scheduling remains
+planned. Currentness is
 relative to the completed cheap checkpoint and its recorded engine/configuration
 provenance. Selection does not rehash the executable or infer unrun configuration
 changes. If source data or its cheap checkpoint changes, a selection becomes
 stale. Analysis handoff rejects
-source databases containing selection history until selection-aware merge is
-implemented; it never silently drops that history.
+source databases containing selection or deep history until a provenance-aware
+merge is implemented; it never silently drops that history.
+
+## Bounded deep execution
+
+With `LICHESS_USERNAME` set and a current selection already recorded:
+
+```bash
+uv run chess-coach --db coach.sqlite run-deep SELECTION_ID --max-jobs 4
+```
+
+Each selected position uses one bounded MultiPV best search and a separate
+forced-played search from the original game history. Limits apply to each search;
+MultiPV work is shared across alternatives and is not summed. Results and
+attempts are stored separately from the cheap pipeline; the decision page shows
+both. A separate worker lock permits synchronization to progress while the engine
+is thinking. Interrupted jobs resume; insufficient searches can be retried with
+`--retry-insufficient`. Current defaults are provisional and do not constitute a
+benchmark or a chess proof. Scores and alternatives do not create skill evidence.
+Stability comparisons require matching recorded engine, history and score
+semantics. If external neural-network identity is not provably identical,
+the comparison is marked incomparable rather than guessing.
 
 
 ## Staged puzzle corpus

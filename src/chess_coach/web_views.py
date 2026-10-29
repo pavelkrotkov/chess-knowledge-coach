@@ -93,7 +93,12 @@ def capabilities():
 def decision_detail(position_id: int):
     try:
         run_id = request.args.get("run_id")
-        result = inspect_decision(database(), position_id, run_id=int(run_id) if run_id else None)
+        result = inspect_decision(
+            database(),
+            position_id,
+            run_id=int(run_id) if run_id else None,
+            learner=current_app.config["SUBJECT"],
+        )
     except ValueError:
         abort(404)
     return render_template(

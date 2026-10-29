@@ -5,9 +5,13 @@ import json
 from .db import Database
 from .decision_history import decision_board
 from .decision_line_view import view_line
+from .decision_runs import cheap_run
+from .deep_execution_views import deep_for_position
 
 
-def inspect_decision(db: Database, position_id: int, *, run_id: int | None = None) -> dict:
+def inspect_decision(
+    db: Database, position_id: int, *, run_id: int | None = None, learner: str | None = None
+) -> dict:
     position = db.connection.execute(
         """SELECT p.*, g.pgn, g.variant FROM positions p JOIN games g ON g.id=p.game_id
         WHERE p.id=?""",
@@ -16,7 +20,7 @@ def inspect_decision(db: Database, position_id: int, *, run_id: int | None = Non
     if position is None:
         raise ValueError("unknown decision")
     board = decision_board(db, position)
-    run = _run(db, position["game_id"], run_id)
+    run = cheap_run(db, position["game_id"], position_id, run_id)
     run_view = dict(run) if run else None
     if run_view is not None:
         run_view["config"] = json.loads(run_view.pop("config_json"))
@@ -32,24 +36,12 @@ def inspect_decision(db: Database, position_id: int, *, run_id: int | None = Non
         "best": None,
         "played": None,
         "status": "analysis_unavailable",
+        "deep": deep_for_position(db, position_id, learner, board, position["uci"]),
         "note": "Each line is a separate bounded search, not a skill or mastery assessment.",
     }
     if run is not None:
         _add_lines(db, result, board, run["id"])
     return result
-
-
-def _run(db, game_id, run_id):
-    if run_id is not None:
-        row = db.connection.execute(
-            "SELECT * FROM analysis_runs WHERE id=? AND game_id=?", (run_id, game_id)
-        ).fetchone()
-        if row is None:
-            raise ValueError("unknown analysis run for decision")
-        return row
-    return db.connection.execute(
-        "SELECT * FROM analysis_runs WHERE game_id=? ORDER BY id DESC LIMIT 1", (game_id,)
-    ).fetchone()
 
 
 def _add_lines(db, result, board, run_id):

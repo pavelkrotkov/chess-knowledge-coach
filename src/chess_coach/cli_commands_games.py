@@ -39,7 +39,14 @@ def handle_analyze_game(db, args):
 
 
 def handle_inspect_decision(db, args):
-    print(json.dumps(inspect_decision(db, args.position_id, run_id=args.run_id), indent=2))
+    print(
+        json.dumps(
+            inspect_decision(
+                db, args.position_id, run_id=args.run_id, learner=os.environ.get("LICHESS_USERNAME")
+            ),
+            indent=2,
+        )
+    )
 
 
 def handle_predict_maia(db, args):
