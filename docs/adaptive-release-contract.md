@@ -171,3 +171,11 @@ All release scenarios must pass with the required checks, exact-head independent
 review, private deployment verification and backup/restore evidence before #119
 closes. The real learner’s data and credentials must not appear in fixtures,
 tracked files, issues or logs.
+
+## Review policy during provider unavailability
+
+The user authorized an independent Sol review of each exact final head and green
+CI as the review gate while Greptile is unavailable. Address all available
+review findings; this policy does not claim that an unavailable provider has
+reviewed the change. Existing exact-head and release acceptance requirements
+remain in force.

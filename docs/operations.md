@@ -235,7 +235,8 @@ project. Do not overwrite a version or an existing backup.
 ```sh
 chess-coach --db "$VALIDATION_DB" stage-puzzles "$CSV" --project-root "$CHESS_PROJECT_ROOT" \
   --version "$VERSION" --csv-sha256 "$CSV_SHA256" --archive-sha256 "$ARCHIVE_SHA256" \
-  --source-url "$SOURCE_URL" --max-rows 20000 --batch-size 100 \
+  --source-url "$SOURCE_URL" --selection-manifest "$SELECTION_MANIFEST" \
+  --max-rows 20000 --batch-size 50 \
   --min-free-bytes 16106127360 --enable-wal
 chess-coach --db "$VALIDATION_DB" corpus-status
 ```
@@ -249,7 +250,18 @@ source should the operator use `--max-rows 0` to process to EOF. Publication
 occurs after the entire file is rechecked and reconciled. Do not call a
 partially staged file a ready library. A derived subset needs a separate
 version and a manifest recording its selection, count, its own hash, and both
-parent hashes; its label must say that it is a subset.
+parent hashes; its label must say that it is a subset. Pass the validated
+selection JSON with `--selection-manifest` on every invocation, including
+resumes. The selection is an operator declaration bound to the derived CSV
+and archive identities; the importer does not independently reconstruct the
+prefix from the parent CSV. The recorded selected count must match accepted
+plus quarantined records before publication. Existing imports without selection
+metadata remain unknown, not assumed to be full snapshots. For a full source
+with no selection manifest, omit that option. For a prefix, the JSON fields are
+`policy` (`source_order_prefix`), `fullsource_count`, `selected_count`,
+`parent_csv_sha256`, `parent_archive_sha256`, `derived_csv_sha256`, and
+`representative` (`false`). Hashes must be lowercase SHA-256; the selected
+count cannot exceed the source count.
 
 Test backup and restore to new project-local paths with `backup-db` and
 `restore-db`, then verify old unfinished sessions and references on the
@@ -276,8 +288,9 @@ they do not establish skill evidence.
 
 On Hermes, using 50-row transactions and a 15 GiB free-space reserve, this
 isolated run took 355.57 seconds including a checkpoint backup, restore and
-resume. The 2,000 batch writes measured 324.73 ms p95 and 5,509.01 ms max;
-the smaller batch is not a guarantee of a shorter maximum lock delay.
+resume. The 2,000 batch operations measured 324.73 ms p95 and 5,509.01 ms
+max. This duration may include waiting for SQLite locks and is not a direct measurement of lock
+hold time; the smaller batch does not guarantee a shorter maximum delay.
 The restored copy preserved an unfinished synthetic legacy session. Four
 indexed theme/rating keyset probes measured 0.55–6.45 ms p95 over 100
 queries each; the query plan used the covering theme index and puzzle key.

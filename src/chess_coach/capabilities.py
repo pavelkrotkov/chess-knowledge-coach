@@ -11,7 +11,7 @@ CAPABILITIES = (
         "area": "Training",
         "name": "Staged local puzzle corpus",
         "status": "supported",
-        "details": "Decoded local CSV snapshots import in bounded batches; only legally validated, completed versions become available. Official download and broad activation remain planned.",
+        "details": "Official snapshots can be acquired and staged in bounded batches with optional declared subset provenance; only legally validated, completed versions become available. Live broad activation remains planned.",
     },
     {
         "id": "competency_graph",

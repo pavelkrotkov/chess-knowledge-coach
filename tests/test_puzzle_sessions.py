@@ -192,7 +192,7 @@ def test_schema_v4_upgrade_preserves_cursor_and_creates_session_tables(monkeypat
 
     db.initialize()
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 19
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 20
     assert db.connection.execute("SELECT pgn FROM games").fetchone()[0] == "existing"
     row = db.connection.execute("SELECT * FROM sync_progress").fetchone()
     assert (row["revision"], row["next_kind"], row["history_windows"]) == (

@@ -16,12 +16,13 @@ def initialize(
     source_url: str | None,
     fields: list[str],
     start: int,
+    selection: str | None,
 ) -> int:
     try:
         db.connection.execute("BEGIN IMMEDIATE")
         old = db.connection.execute(
             """SELECT c.id,c.state,c.checksum,i.csv_path,i.csv_sha256,i.archive_sha256,
-            i.source_url,i.importer_version,i.header_json
+            i.source_url,i.importer_version,i.header_json,i.selection_json
             FROM puzzle_corpora c LEFT JOIN puzzle_imports i ON i.corpus_id=c.id WHERE c.version=?""",
             (version,),
         ).fetchone()
@@ -35,8 +36,8 @@ def initialize(
                 raise RuntimeError("SQLite did not return a corpus ID")
             db.connection.execute(
                 """INSERT INTO puzzle_imports
-                (corpus_id,csv_path,csv_sha256,archive_sha256,source_url,importer_version,header_json,byte_offset)
-                VALUES (?,?,?,?,?,?,?,?)""",
+                (corpus_id,csv_path,csv_sha256,archive_sha256,source_url,importer_version,header_json,byte_offset,selection_json)
+                VALUES (?,?,?,?,?,?,?,?,?)""",
                 (
                     corpus_id,
                     path,
@@ -46,10 +47,11 @@ def initialize(
                     IMPORTER_VERSION,
                     json.dumps(fields),
                     start,
+                    selection,
                 ),
             )
         else:
-            corpus_id = _resume(db, old, path, digest, archive, source_url, fields)
+            corpus_id = _resume(db, old, path, digest, archive, source_url, fields, selection)
         db.connection.commit()
         return int(corpus_id)
     except BaseException:
@@ -57,8 +59,8 @@ def initialize(
         raise
 
 
-def _resume(db: Database, old, path, digest, archive, source_url, fields):
-    expected = (path, digest, archive, source_url, IMPORTER_VERSION, json.dumps(fields))
+def _resume(db: Database, old, path, digest, archive, source_url, fields, selection):
+    expected = (path, digest, archive, source_url, IMPORTER_VERSION, json.dumps(fields), selection)
     actual = tuple(
         old[key]
         for key in (
@@ -68,6 +70,7 @@ def _resume(db: Database, old, path, digest, archive, source_url, fields):
             "source_url",
             "importer_version",
             "header_json",
+            "selection_json",
         )
     )
     if old["checksum"] != digest or actual != expected or old["state"] == "legacy_ready":
