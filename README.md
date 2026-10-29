@@ -118,6 +118,17 @@ outputs whose decision and perspective were not recorded retain NULL provenance
 and should not be treated as corrected analysis. A failed run commits no partial
 outputs. Engine evaluations are not mastery evidence.
 
+Each new run also stores separately bounded best-line and forced-played-root
+searches from the same pre-move board with reconstructed game history. Native
+centipawn or mate scores, bounds, optional engine WDL, legal PV and actual work
+are recorded without converting score loss into mastery. Limits apply per
+search, so analysis can take approximately twice the earlier scan budget.
+`uv run chess-coach --db coach.sqlite inspect-decision POSITION_ID` or the
+private evidence page shows SAN continuations and run provenance. Legacy runs
+show comparison data as unavailable. Selective deep verification remains future
+work; a bounded point score is an engine estimate, not proof.
+
+
 ## Learner decision context
 
 The Python API exposes per-move context without storing an account identifier

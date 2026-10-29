@@ -4,6 +4,7 @@ import json
 import os
 
 from .analysis import analyze_game
+from .decision_inspection import inspect_decision
 from .enrichment import SubprocessMaiaAdapter, UnavailableMaiaAdapter, predict_maia
 from .ingest import ingest_pgn
 from .lichess import LichessClient
@@ -35,6 +36,10 @@ def handle_analyze_game(db, args):
             indent=2,
         )
     )
+
+
+def handle_inspect_decision(db, args):
+    print(json.dumps(inspect_decision(db, args.position_id, run_id=args.run_id), indent=2))
 
 
 def handle_predict_maia(db, args):

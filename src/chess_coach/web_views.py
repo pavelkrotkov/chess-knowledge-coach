@@ -4,6 +4,7 @@ from flask import Blueprint, abort, current_app, redirect, render_template, requ
 
 from .capabilities import capability_report
 from .curriculum import daily_plan
+from .decision_inspection import inspect_decision
 from .evidence_review import inspect_evidence, list_evidence, review_evidence
 from .pipeline_status import pipeline_status
 from .web_board import board_rows
@@ -74,3 +75,15 @@ def plan():
 @views.get("/capabilities")
 def capabilities():
     return render_template("capabilities.html", report=capability_report())
+
+
+@views.get("/decisions/<int:position_id>")
+def decision_detail(position_id: int):
+    try:
+        run_id = request.args.get("run_id")
+        result = inspect_decision(database(), position_id, run_id=int(run_id) if run_id else None)
+    except ValueError:
+        abort(404)
+    return render_template(
+        "decision.html", decision=result, board=board_rows(result["decision_fen"])
+    )

@@ -2,6 +2,7 @@
 
 import sqlite3
 
+from .analysis_comparison_schema import add_comparison_lines
 from .classification_schema import add_classification_lineage
 from .curriculum_schema import add_curriculum_index
 from .evidence_review_schema import add_evidence_reviews
@@ -30,6 +31,7 @@ def upgrade_recent(connection: sqlite3.Connection, version: int) -> None:
         (13, add_curriculum_index),
         (14, add_pipeline_stages),
         (15, add_pipeline_cooldown),
+        (16, add_comparison_lines),
     )
     for target, apply_upgrade in upgrades:
         if version < target:

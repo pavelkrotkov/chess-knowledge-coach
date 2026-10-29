@@ -35,8 +35,8 @@ class Engine:
     def configure(self, settings):
         pass
 
-    def analyse(self, board, limit, multipv):
-        return [{"pv": [next(iter(board.legal_moves))]}]
+    def analyse(self, board, limit, multipv, root_moves=None):
+        return [{"pv": [root_moves[0] if root_moves else next(iter(board.legal_moves))]}]
 
     def quit(self):
         pass
@@ -233,7 +233,7 @@ def test_v14_upgrade_preserves_existing_health_and_adds_unknown_deadline(monkeyp
     before_cursor = tuple(db.connection.execute("SELECT * FROM pipeline_cursors").fetchone())
     before = tuple(db.connection.execute("SELECT * FROM pipeline_health").fetchone())
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 15
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 16
     after = tuple(db.connection.execute("SELECT * FROM pipeline_health").fetchone())
     assert after[:-1] == before and after[-1] is None
     assert (
@@ -399,10 +399,10 @@ def test_due_retry_runs_during_analysis_and_survives_reopen(tmp_path, monkeypatc
     errors = []
 
     class SlowEngine(Engine):
-        def analyse(self, board, limit, multipv):
+        def analyse(self, board, limit, multipv, root_moves=None):
             started.set()
             assert release.wait(20)
-            return super().analyse(board, limit, multipv)
+            return super().analyse(board, limit, multipv, root_moves=root_moves)
 
     def analyze():
         worker_db = Database(db.path)

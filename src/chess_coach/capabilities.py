@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.0.0"
+REGISTRY_VERSION = "1.1.0"
 
 CAPABILITIES = (
     {
@@ -45,8 +45,8 @@ CAPABILITIES = (
         "id": "decision_comparison",
         "area": "Analysis",
         "name": "Best versus played decision analysis",
-        "status": "planned",
-        "details": "The current scan stores a best-line score and played move, not a comparable forced-played score or selective deep verification.",
+        "status": "supported",
+        "details": "Two bounded searches compare the best and forced played move on the same decision board; selective deep verification remains planned.",
     },
     {
         "id": "corpus_mate_practice",

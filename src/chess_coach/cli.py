@@ -18,6 +18,7 @@ COMMANDS = {
     "init-db": games.handle_init_db,
     "ingest-pgn": games.handle_ingest_pgn,
     "analyze-game": games.handle_analyze_game,
+    "inspect-decision": games.handle_inspect_decision,
     "predict-maia": games.handle_predict_maia,
     "sync-lichess": games.handle_sync_lichess,
     "import-openings": datasets.handle_import_openings,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .analysis_comparison_merge import merge_comparisons
 from .db import Database
 
 
@@ -76,6 +77,9 @@ def merge_analysis_outputs(target: Database, source: Database) -> int:
                     ),
                 )
                 imported += 1
+            merge_comparisons(
+                target, source, run["id"], cursor.lastrowid, game["id"], run["game_id"]
+            )
         target.connection.commit()
         return imported
     except Exception:
