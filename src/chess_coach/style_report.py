@@ -7,7 +7,7 @@ from .style_selection import selection
 from .style_sources import source_games
 from .style_summary import summarize
 
-VERSION = "style-choices-v1"
+VERSION = "style-choices-v2"
 
 
 def style_report(db, learner):
@@ -41,6 +41,13 @@ def style_report(db, learner):
     )
     return {
         "version": VERSION,
+        "familiarity_note": (
+            "Familiarity is unknown: game-start timestamps do not date individual decisions. "
+            "Earlier-started games may reach the position later; this count is not prior exposure."
+        ),
+        "trend_note": (
+            "Groups use game-start timestamps; overlapping games do not establish decision order."
+        ),
         "coverage": {key: value for key, value in source.items() if key != "games"},
         "selection_counts": dict(counts),
         "allocations": dict(allocations),

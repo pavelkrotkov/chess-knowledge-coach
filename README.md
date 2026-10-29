@@ -706,14 +706,17 @@ similarly evaluated alternatives contribute. This is a selected and biased
 sample, not a personality, mastery, or playing-strength assessment. Results
 include selection/alternative coverage, reasons for exclusion, source run and
 attempt identity, game outcomes separately, and strata for color, ratings,
-clock/time control, material phase, opening, structure and prior observed
-position frequency. Indistinguishable game records are conservatively collapsed before counting games
-or prior position exposure; identical games with missing dates can therefore be
-undercounted. Missing or incomplete history stays unknown; dates must be
-strictly earlier for familiarity. Trends require enough independent dated games
-in both periods.
+clock/time control, material phase, opening, structure and familiarity.
+Indistinguishable game records are conservatively collapsed before counting games;
+identical games with missing dates can therefore be undercounted. Familiarity is
+unknown because game-start timestamps do not establish when a position occurred.
+The count of earlier-started games eventually containing the same position is
+a noncausal sample proxy: games can overlap and the position may have been
+reached later. It is unknown when timestamps or sample history are incomplete.
+The two-period comparison groups games by start time; overlapping games mean it
+does not establish decision-time order.
 
-Method `style-choices-v1` compares exact centipawn scores within 50 cp at
+Method `style-choices-v2` compares exact centipawn scores within 50 cp at
 minimum depth four and replays four legal PV plies per choice. It uses conventional
 1/3/3/5/9 material units and requires a one-pawn material difference opposed by
 three distinct enemy-half squares attacked by non-pawn, non-king pieces; the

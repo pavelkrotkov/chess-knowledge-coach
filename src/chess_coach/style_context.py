@@ -1,4 +1,4 @@
-"""Decision context, observed prior positions and pre-move structural labels."""
+"""Decision context and pre-move structural labels."""
 
 import chess
 
@@ -39,8 +39,8 @@ def describe_context(db, context, opening):
         else "over 30 seconds",
         "phase": _phase(board),
         "familiarity": context["familiarity"],
-        "prior_observed_games": context["prior_observed_games"],
-        "observed_at": context["observation_at"],
+        "earlier_started_games_with_position": context["earlier_started_games_with_position"],
+        "game_start_at": context["observation_at"],
         "opening": opening_context(db, opening, board),
         "structures": sorted({item["family"] for item in match_structures(board)}),
         "structure_matcher": STRUCTURE_VERSION,

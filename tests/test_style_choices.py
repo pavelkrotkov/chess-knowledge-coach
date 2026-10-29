@@ -19,6 +19,7 @@ from chess_coach.style_dimensions import dimensions
 from chess_coach.style_familiarity import familiarity
 from chess_coach.style_metrics import metrics
 from chess_coach.style_report import style_report
+from chess_coach.style_sources import source_games
 from chess_coach.style_summary import summarize
 from chess_coach.web import create_app
 from tests.test_deep_execution import DeepEngine, options, prepare_selected, use_engine
@@ -86,19 +87,43 @@ def test_conflicting_alternatives_are_ambiguous_and_attack_map_includes_pinned_p
     assert metrics(board, chess.WHITE)["enemy_half_attacks"] == 4
 
 
-def test_prior_familiarity_never_uses_future_or_simultaneous_games():
+def test_overlapping_games_never_become_prior_familiarity():
     fen = chess.STARTING_FEN
     rows: list[dict[str, Any]] = [
-        {"learner_color": "white", "pre_move_fen": fen, "game_id": game, "observation_at": date}
-        for game, date in ((3, "2026-03-01"), (1, "2026-01-01"), (2, "2026-03-01"))
+        {
+            "learner_color": "white",
+            "pre_move_fen": fen,
+            "game_id": 1,
+            "observation_at": "2026-01-01T00:00:00+00:00",
+            "actual_position_time_for_test": "2026-01-03T00:00:00+00:00",
+        },
+        {
+            "learner_color": "white",
+            "pre_move_fen": fen,
+            "game_id": 2,
+            "observation_at": "2026-01-02T00:00:00+00:00",
+            "actual_position_time_for_test": "2026-01-02T00:01:00+00:00",
+        },
+        {
+            "learner_color": "white",
+            "pre_move_fen": fen,
+            "game_id": 3,
+            "observation_at": "2026-01-02T00:00:00+00:00",
+        },
     ]
     familiarity(rows, False)
-    assert [row["prior_observed_games"] for row in rows] == [1, 0, 1]
+    assert [row["familiarity"] for row in rows] == ["unknown"] * 3
+    assert [row["earlier_started_games_with_position"] for row in rows] == [0, 1, 1]
+    assert all("prior_observed_games" not in row for row in rows)
+    familiarity(rows, True)
+    assert all(row["earlier_started_games_with_position"] is None for row in rows)
+    rows[0]["observation_at"] = None
+    familiarity(rows, False)
+    assert rows[0]["familiarity"] == "unknown"
+    assert rows[0]["earlier_started_games_with_position"] is None
     familiarity(rows, True)
     assert all(row["familiarity"] == "unknown" for row in rows)
-    rows[0]["observation_at"] = None
-    familiarity(rows, True)
-    assert rows[0]["prior_observed_games"] is None
+    assert all(row["earlier_started_games_with_position"] is None for row in rows)
 
 
 def _observation(game, color, clock, choice):
@@ -116,7 +141,7 @@ def _observation(game, color, clock, choice):
             "familiarity": "unknown",
             "opening": {"name": "unknown"},
             "structures": [],
-            "observed_at": f"2026-01-{game:02d}T00:00:00+00:00",
+            "game_start_at": f"2026-01-{game:02d}T00:00:00+00:00",
         },
     }
 
@@ -183,7 +208,10 @@ def test_profile_uses_owned_current_deep_results_and_private_browser(tmp_path, m
     )
     main()
     output = capsys.readouterr().out
-    assert json.loads(output)["version"] == "style-choices-v1"
+    cli_report = json.loads(output)
+    assert cli_report["version"] == "style-choices-v2"
+    assert "not prior exposure" in cli_report["familiarity_note"]
+    assert "overlapping games" in cli_report["trend_note"]
     assert LEARNER not in output and OPPONENT not in output
     assert "game_key" not in output and "fingerprint" not in output
     app = create_app(
@@ -275,7 +303,7 @@ def test_trend_requires_two_sufficient_dated_independent_periods():
     assert result is not None
     assert result["earlier"]["choices"] == {"fewer_pieces": 6}
     assert result["later"]["choices"] == {"more_pieces": 6}
-    items[0]["context"]["observed_at"] = None
+    items[0]["context"]["game_start_at"] = None
     assert summarize(items)["simplification"]["trend"] is None
 
 
@@ -283,3 +311,19 @@ def test_material_balance_is_from_the_mover_perspective():
     board = chess.Board("7k/8/8/8/8/8/P7/K7 w - - 0 1")
     assert metrics(board, chess.WHITE)["material"] == 1
     assert metrics(board, chess.BLACK)["material"] == -1
+
+
+def test_game_start_does_not_prove_prior_position_in_real_ingestion():
+    db = Database(":memory:")
+    db.initialize()
+    # The first game may still be in progress when the second reaches this position.
+    for day in ("01", "02"):
+        tags = f'[UTCDate "2026.01.{day}"]\n[UTCTime "00:00:00"]\n'
+        ingest_pgn(db, PGN.replace('[Event "Synthetic"]\n', f'[Event "Synthetic {day}"]\n{tags}'))
+    source = source_games(db, LEARNER)
+    assert source["independent_games"] == 2
+    first_moves = [game["contexts"][0] for game in source["games"]]
+    by_start = sorted(first_moves, key=lambda context: context["observation_at"])
+    assert [item["familiarity"] for item in by_start] == ["unknown", "unknown"]
+    assert [item["earlier_started_games_with_position"] for item in by_start] == [0, 1]
+    assert all("prior_observed_games" not in item for item in by_start)
