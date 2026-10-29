@@ -9,6 +9,7 @@ from .web_config import validate_config
 from .web_practice import practice
 from .web_repertoire import repertoire_views
 from .web_security import install_security
+from .web_style import style_views
 from .web_views import views
 
 
@@ -43,6 +44,7 @@ def create_app(
     app.register_blueprint(views)
     app.register_blueprint(practice)
     app.register_blueprint(repertoire_views)
+    app.register_blueprint(style_views)
 
     @app.teardown_appcontext
     def close_database(error):

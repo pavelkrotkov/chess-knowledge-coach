@@ -9,6 +9,7 @@ from .evidence import evidence_report, validate_evidence
 from .evidence_review import inspect_evidence, list_evidence, review_evidence
 from .mastery import mastery_report, update_mastery
 from .puzzle_sessions import request_hint, start_attempt
+from .style_report import style_report
 from .training import create_training_item, due_items, review_item
 
 
@@ -100,3 +101,7 @@ def handle_review_evidence(db, args):
             indent=2,
         )
     )
+
+
+def handle_style_choices(db, args):
+    print(json.dumps(style_report(db, args.learner), indent=2))

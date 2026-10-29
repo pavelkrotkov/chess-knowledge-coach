@@ -696,3 +696,35 @@ merge transpositions while played lines remain separate. Outcomes and named
 structures describe observations, not mastery or opening quality. Accepted
 active failure evidence appearing in at least two games is linked without an
 opportunity denominator; the fuller recurrence analysis remains future work.
+
+### Descriptive choice profile
+
+`chess-coach --db PATH style-choices --learner NAME` and the private Choice
+profile page report selected learner decisions using current completed deep
+MultiPV results. Only the actual played root present in that same search and
+similarly evaluated alternatives contribute. This is a selected and biased
+sample, not a personality, mastery, or playing-strength assessment. Results
+include selection/alternative coverage, reasons for exclusion, source run and
+attempt identity, game outcomes separately, and strata for color, ratings,
+clock/time control, material phase, opening, structure and familiarity.
+Indistinguishable game records are conservatively collapsed before counting games;
+identical games with missing dates can therefore be undercounted. Familiarity is
+unknown because game-start timestamps do not establish when a position occurred.
+The count of earlier-started games eventually containing the same position is
+a noncausal sample proxy: games can overlap and the position may have been
+reached later. It is unknown when timestamps or sample history are incomplete.
+The two-period comparison groups games by start time; overlapping games mean it
+does not establish decision-time order.
+
+Method `style-choices-v2` compares exact centipawn scores within 50 cp at
+minimum depth four and replays four legal PV plies per choice. It uses conventional
+1/3/3/5/9 material units and requires a one-pawn material difference opposed by
+three distinct enemy-half squares attacked by non-pawn, non-king pieces; the
+attack map includes pinned pieces and is not legal mobility or initiative.
+Simplification requires a two-piece difference in total non-pawn, non-king
+material. Multiple alternatives with conflicting directions are ambiguous.
+These are provisional geometric proxies and projections, not calibrated chess
+judgments; a sample direction requires five opportunities across three games.
+Game outcomes and same-search score gaps are shown separately and cannot prove
+that a choice caused the result. Missing or incomplete comparisons never become
+preference evidence. Other style dimensions remain planned.
