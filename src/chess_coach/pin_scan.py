@@ -17,7 +17,17 @@ def scan(board):
     candidates = [(move, pin) for move in moves for pin in pins(board, move)]
     if len(candidates) > MAX_PINS:
         move, pin = candidates[0]
-        return {"proven": [], "uncertain": [{**pin, "move": move.uci(), "san": board.san(move)}]}
+        return {
+            "proven": [],
+            "uncertain": [
+                {
+                    **pin,
+                    "move": move.uci(),
+                    "san": board.san(move),
+                    "reason": "candidate_budget_exhausted",
+                }
+            ],
+        }
     return _classify(board, candidates)
 
 

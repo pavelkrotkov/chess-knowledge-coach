@@ -17,6 +17,7 @@ from chess_coach import mastery_content
     ],
 )
 def test_family_gate_priority(monkeypatch, back_rank, mate, pawn, fork, material, expected):
+    monkeypatch.setattr(mastery_content, "pin_closed", lambda _row: False)
     monkeypatch.setattr(mastery_content, "back_rank_closed", lambda _row: back_rank)
     monkeypatch.setattr(mastery_content, "mate_mastery_allowed", lambda *_: mate)
     monkeypatch.setattr(mastery_content, "pawn_mastery_allowed", lambda *_: pawn)
@@ -25,3 +26,12 @@ def test_family_gate_priority(monkeypatch, back_rank, mate, pawn, fork, material
     monkeypatch.setattr(mastery_content, "valid_confidence", lambda *_: True)
     monkeypatch.setattr(mastery_content, "valid_links", lambda *_: True)
     assert mastery_content.content_reason(None, {"outcome": "success", "confidence": 1}) == expected
+
+
+def test_pin_family_gate_closes_linked_sources_even_when_skill_is_renamed():
+    from chess_coach.pin_mastery import closed
+
+    assert closed({"skill": "relative_pin", "mapping_producer": "other", "pin_fact_count": 0})
+    assert closed({"skill": "other", "mapping_producer": "pin-execute-mapper", "pin_fact_count": 0})
+    assert closed({"skill": "other", "mapping_producer": "other", "pin_fact_count": 1})
+    assert not closed({"skill": "fork", "mapping_producer": "other", "pin_fact_count": 0})

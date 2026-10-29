@@ -44,7 +44,7 @@ def _assessment(board, actual, after, best_line, played_line):
 
 
 def _uncertain(pin):
-    fact = ambiguous(pin["type"], "pin_consequence_unresolved")
+    fact = ambiguous(pin["type"], pin.get("reason", "pin_consequence_unresolved"))
     fact["geometry"] = {
         "move": pin["move"],
         "san": pin["san"],

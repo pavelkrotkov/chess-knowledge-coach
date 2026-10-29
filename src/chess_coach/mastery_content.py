@@ -7,14 +7,11 @@ from .mate_mastery_policy import mastery_allowed as mate_mastery_allowed
 from .material_mastery_policy import mastery_allowed
 from .material_mastery_source import source_reason
 from .pawn_mastery_policy import mastery_allowed as pawn_mastery_allowed
+from .pin_mastery import closed as pin_closed
 
 
 def _family_reason(db, row):
-    if (
-        row["skill"] in {"absolute_pin", "relative_pin"}
-        or row["mapping_producer"] in {"pin-execute-mapper", "pin-prevent-mapper"}
-        or row["pin_fact_count"]
-    ):
+    if pin_closed(row):
         return "pin_family_unvalidated"
     if back_rank_closed(row):
         return "back_rank_family_unvalidated"
