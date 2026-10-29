@@ -25,6 +25,6 @@ def _fetch(
     order: str = "p.rating,p.puzzle_id",
 ):
     query = """SELECT p.*, c.version FROM puzzles p JOIN puzzle_corpora c ON c.id=p.corpus_id
-        WHERE c.version=? AND p.rating>=0"""
+        WHERE c.version=? AND c.state IN ('legacy_ready','ready') AND p.rating>=0"""
     query += extra + f" ORDER BY {order} LIMIT ?"
     return list(db.connection.execute(query, [version, *values, limit]).fetchall())

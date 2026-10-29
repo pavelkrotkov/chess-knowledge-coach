@@ -2,7 +2,7 @@
 {% block content %}<h2>Evidence {{ evidence.id }}</h2>
 <p>{{ evidence.skill }} / {{ evidence.operation }}: {{ evidence.outcome }}. Review: {{ evidence.review_status }}. Lifecycle: {{ evidence.lifecycle_status }}.</p>
 <p>Subject: {{ evidence.subject or "unattributed" }}.</p>
-<p>Source game: {{ evidence.game_id if evidence.game_id is not none else "unavailable" }}; ply: {{ evidence.ply if evidence.ply is not none else "unavailable" }}. Observed: {{ evidence.observation_at or "unknown" }}.</p>{% include "board.html" %}<h3>Explanation and source facts</h3>
+<p>Source game: {{ evidence.game_id if evidence.game_id is not none else "unavailable" }}; ply: {{ evidence.ply if evidence.ply is not none else "unavailable" }}. Observed: {{ evidence.observation_at or "unknown" }}.</p>{% include "board.html" %}{% if evidence.position_id %}<p><a href="{{ url_for('views.decision_detail', position_id=evidence.position_id) }}">Inspect decision analysis</a></p>{% endif %}<h3>Explanation and source facts</h3>
 <pre>{{ evidence.context | tojson(indent=2) }}</pre>{% if evidence.facts %}<ul>{% for fact in evidence.facts %}<li>{{ fact.fact_type }} - {{ fact.detector_version }}<pre>{{ fact.payload | tojson(indent=2) }}</pre>
 </li>{% endfor %}</ul>{% else %}<p>No linked detector facts; see the source and explanation above.</p>{% endif %}<h3>Human review</h3>
 <form method="post" action="{{ url_for('views.evidence_review', evidence_id=evidence.id) }}">

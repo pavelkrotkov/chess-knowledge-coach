@@ -8,6 +8,7 @@ from pathlib import Path
 
 import chess.engine
 
+from .analysis_comparison import comparison_line
 from .analysis_output import line_fields
 
 
@@ -59,11 +60,25 @@ def scan(
 ) -> None:
     from .analysis_positions import decisions
 
+    limit = chess.engine.Limit(nodes=nodes, depth=depth, time=time_limit)
     for position, board in decisions(connection, game):
-        result = engine.analyse(
-            board, chess.engine.Limit(nodes=nodes, depth=depth, time=time_limit), multipv=multipv
-        )
-        lines = result if isinstance(result, list) else [result]
-        for number, line in enumerate(lines or [{}], start=1):
-            json.dump(line_fields(position, board, number, dict(line)), spool)
-            spool.write("\n")
+        _scan_decision(engine, position, board, limit, multipv, spool)
+
+
+def _scan_decision(engine, position, board, limit, multipv, spool):
+    result = engine.analyse(board, limit, multipv=multipv)
+    lines = result if isinstance(result, list) else [result]
+    for number, line in enumerate(lines or [{}], start=1):
+        _spool(spool, line_fields(position, board, number, dict(line)))
+    best = dict(lines[0]) if lines else {}
+    played_move = board.parse_uci(position["uci"])
+    forced = engine.analyse(board, limit, multipv=1, root_moves=[played_move])
+    forced_lines = forced if isinstance(forced, list) else [forced]
+    played = dict(forced_lines[0]) if forced_lines else {}
+    for role, line in (("best", best), ("played", played)):
+        _spool(spool, comparison_line(position, board, role, line))
+
+
+def _spool(spool, value):
+    json.dump(value, spool)
+    spool.write("\n")

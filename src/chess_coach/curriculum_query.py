@@ -5,7 +5,8 @@ from .db import Database
 
 def corpus_status(db: Database, version: str) -> tuple[str, bool]:
     row = db.connection.execute(
-        "SELECT id FROM puzzle_corpora WHERE version=?", (version,)
+        "SELECT id FROM puzzle_corpora WHERE version=? AND state IN ('legacy_ready','ready')",
+        (version,),
     ).fetchone()
     if row is None:
         return "unknown_corpus", False

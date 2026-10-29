@@ -20,6 +20,7 @@ def create_app(
     login: str,
     origin: str,
     backend_host: str | None = None,
+    project_root: str | Path | None = None,
 ) -> Flask:
     host = validate_config(subject, actor, corpus, login, origin)
     app = Flask(__name__)
@@ -32,6 +33,7 @@ def create_app(
         SESSION_COOKIE_SAMESITE="Strict",
         MAX_CONTENT_LENGTH=16384,
         DB_PATH=str(db_path),
+        PROJECT_ROOT=str(project_root) if project_root is not None else None,
         SUBJECT=subject,
         ACTOR=actor,
         CORPUS=corpus,

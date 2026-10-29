@@ -6,6 +6,7 @@ from typing import Any
 
 from .db import Database
 from .ontology_mapping import map_facts
+from .ontology_versions import existing_version
 
 SEED = {
     "tactics": "Pattern-based tactical opportunities",
@@ -22,14 +23,19 @@ FACT_OPERATIONS = {"fork": "execute", "hanging_piece": "prevent", "absolute_pin"
 
 
 def seed_ontology(db: Database, version: str) -> int:
+    """Store the legacy ontology without mutating existing versions."""
+    if not version:
+        raise ValueError("ontology version is required")
+    if existing_version(db, version, SEED, EDGES):
+        return len(SEED)
     for skill, description in SEED.items():
         db.connection.execute(
-            "INSERT OR REPLACE INTO skills(skill, description, ontology_version) VALUES (?, ?, ?)",
+            "INSERT INTO skills(skill, description, ontology_version) VALUES (?, ?, ?)",
             (skill, description, version),
         )
     for parent, child, edge_type in EDGES:
         db.connection.execute(
-            """INSERT OR REPLACE INTO skill_edges
+            """INSERT INTO skill_edges
             (parent_skill, parent_version, child_skill, child_version, edge_type, ontology_version)
             VALUES (?, ?, ?, ?, ?, ?)""",
             (parent, version, child, version, edge_type, version),

@@ -51,7 +51,7 @@ def analysis_input(game_hash: str, config: PipelineConfig, engine_hash: str | No
             "threads": config.threads,
             "hash_mb": config.hash_mb,
             "multipv": 1,
-            "semantics": "pre_move_v1",
+            "semantics": "same-board-roots-v1",
         }
     )
 
@@ -127,6 +127,7 @@ def scan_input(db: Database, config: PipelineConfig, engine_hash: str | None) ->
             "settings": settings,
             "engine": engine_hash,
             "mapper": MAPPER_VERSION,
+            "analysis_semantics": "same-board-roots-v1",
             "dataset": list(dataset) if dataset else None,
         }
     )

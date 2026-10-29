@@ -3,7 +3,10 @@
 import json
 
 from .motifs import record_motif_opportunities
+from .named_structure_report import structure_report
 from .openings import classify_game, import_openings
+from .puzzle_import import stage_puzzles
+from .puzzle_import_report import corpus_report
 from .puzzles import import_puzzles, query_puzzles
 from .structures import extract_game_episodes
 
@@ -77,7 +80,34 @@ def handle_query_puzzles(db, args):
                 max_rating=args.max_rating,
                 limit=args.limit,
                 offset=args.offset,
+                after_rating=args.after_rating,
+                after_id=args.after_id,
             ),
             indent=2,
         )
     )
+
+
+def handle_stage_puzzles(db, args):
+    result = stage_puzzles(
+        db,
+        args.path,
+        project_root=args.project_root,
+        version=args.version,
+        csv_sha256=args.csv_sha256,
+        archive_sha256=args.archive_sha256,
+        source_url=args.source_url,
+        max_rows=args.max_rows,
+        batch_size=args.batch_size,
+        enable_wal=args.enable_wal,
+        min_free_bytes=args.min_free_bytes,
+    )
+    print(json.dumps(result, indent=2))
+
+
+def handle_corpus_status(db, args):
+    print(json.dumps(corpus_report(db), indent=2))
+
+
+def handle_structure_history(db, args):
+    print(json.dumps(structure_report(db, args.learner, version=args.matcher_version), indent=2))

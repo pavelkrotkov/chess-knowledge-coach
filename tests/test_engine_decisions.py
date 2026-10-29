@@ -51,8 +51,9 @@ class FakeEngine:
     def configure(self, settings):
         self.settings = settings
 
-    def analyse(self, board, limit, multipv):
-        self.boards.append(board.copy())
+    def analyse(self, board, limit, multipv, root_moves=None):
+        if root_moves is None:
+            self.boards.append(board.copy())
         if self.fail and len(self.boards) == 2:
             raise RuntimeError("engine failed")
         if self.empty:
@@ -63,7 +64,7 @@ class FakeEngine:
         return [
             {
                 "score": chess.engine.PovScore(chess.engine.Cp(100), chess.WHITE),
-                "pv": [next(iter(board.legal_moves))],
+                "pv": [root_moves[0] if root_moves else next(iter(board.legal_moves))],
                 "nodes": 10,
                 "depth": 2,
             }
@@ -214,7 +215,7 @@ def test_upgrade_from_v1_keeps_old_engine_decision_unknown():
         "SELECT score_cp, decision_fen, score_pov FROM engine_outputs"
     ).fetchone()
     assert tuple(output) == (10, None, None)
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 15
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 18
 
 
 @pytest.mark.skipif(not Path("/usr/games/stockfish").is_file(), reason="Stockfish not installed")
@@ -337,8 +338,8 @@ def test_analysis_spools_only_required_fields_beside_database(tmp_path, monkeypa
             sizes.append(os.fstat(spool.fileno()).st_size)
 
     class ExtraEngine(FakeEngine):
-        def analyse(self, board, limit, multipv):
-            lines = super().analyse(board, limit, multipv)
+        def analyse(self, board, limit, multipv, root_moves=None):
+            lines = super().analyse(board, limit, multipv, root_moves=root_moves)
             lines[0]["unused"] = object()
             lines[0]["large_unused"] = "x" * 1_000_000
             return lines

@@ -36,7 +36,15 @@ def _analysis_exists(connection: sqlite3.Connection, row) -> bool:
         AND e.decision_fen IS NOT NULL AND e.score_pov IS NOT NULL AND e.played_move=p.uci)""",
         (row["game_id"], row["output_id"]),
     ).fetchone()[0]
-    return missing == 0
+    if missing:
+        return False
+    missing_pairs = connection.execute(
+        """SELECT COUNT(*) FROM positions p WHERE p.game_id=? AND
+        (SELECT COUNT(*) FROM decision_analysis_lines d
+         WHERE d.run_id=? AND d.position_id=p.id AND d.role IN ('best','played')) != 2""",
+        (row["game_id"], row["output_id"]),
+    ).fetchone()[0]
+    return missing_pairs == 0
 
 
 def tactical_output_hash(connection: sqlite3.Connection, game_id: int) -> str:

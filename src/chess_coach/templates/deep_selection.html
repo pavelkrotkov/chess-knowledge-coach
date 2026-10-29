@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Selected decisions — Chess coach{% endblock %}
+{% block content %}
+<h2>Game {{ selection.game_id }}: selected decisions</h2>
+<p>Selection {{ selection.selection_id }} is {{ selection.state }}. Candidates are not skill findings; deep analysis has not run in this feature.</p>
+<p>Eligible decisions: {{ selection.coverage.eligible }}. Selected: {{ selection.coverage.selected }}. Omitted critical candidates: {{ selection.coverage.omitted_critical }}. Missing scores: {{ selection.coverage.missing_scores }}.</p>
+<p>Effective limit: {{ selection.coverage.effective_limit }}. Reserved control target: {{ selection.coverage.control_target }}; controls selected: {{ selection.coverage.control_selected }}. Unselected eligible decisions: {{ selection.coverage.capped_out }}.</p>
+<h3>Coverage and quotas</h3>
+<ul>{% for category in ("score", "uncertain", "opportunity") %}<li>{{ category }}: {{ selection.coverage.nominated[category] }} nominated; {{ selection.coverage.selected_by_category[category] }} selected; {{ selection.coverage.omitted_by_category[category] }} omitted. Slot target {{ selection.coverage.quota_targets[category] }}, allocated {{ selection.coverage.quota_allocated[category] }}.</li>{% endfor %}</ul>
+<p>Reason counts (including omitted positions):</p><ul>{% for reason, count in selection.coverage.reason_counts.items() %}<li>{{ reason | replace("_", " ") }}: {{ count }} nominated, {{ selection.coverage.omitted_reason_counts[reason] }} omitted.</li>{% endfor %}</ul>
+<p>Nominations can overlap: {{ selection.coverage.overlapping_nominations }} decisions have multiple categories.</p>
+{% if selection["items"] %}<ol>{% for item in selection["items"] %}<li><a href="{{ url_for('views.decision_detail', position_id=item.position_id, run_id=selection.cheap_run_id) }}">Ply {{ item.ply }}</a> — {{ item.status | replace("_", " ") }}; {{ item.allocation }}; {{ item.reasons | join(', ') | replace('_', ' ') }}</li>{% endfor %}</ol>{% else %}<p>No positions selected under this limit.</p>{% endif %}
+<h3>Selection history (up to 100)</h3><ul>{% for entry in selection.history %}<li><a href="{{ url_for('views.deep_selection_detail', game_id=selection.game_id, selection=entry.selection_id) }}">Selection {{ entry.selection_id }}</a> — {{ entry.created_at }}</li>{% endfor %}</ul>
+{% endblock %}

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from .analysis_comparison_merge import merge_comparisons
 from .db import Database
+from .deep_selection_merge import require_merge_safe
 
 
 def merge_analysis_outputs(target: Database, source: Database) -> int:
@@ -10,6 +12,7 @@ def merge_analysis_outputs(target: Database, source: Database) -> int:
     imported = 0
     try:
         target.connection.execute("BEGIN IMMEDIATE")
+        require_merge_safe(source)
         runs = source.connection.execute(
             """SELECT runs.*, games.source AS game_source, games.source_id
             FROM analysis_runs AS runs JOIN games ON games.id = runs.game_id ORDER BY runs.id"""
@@ -76,6 +79,9 @@ def merge_analysis_outputs(target: Database, source: Database) -> int:
                     ),
                 )
                 imported += 1
+            merge_comparisons(
+                target, source, run["id"], cursor.lastrowid, game["id"], run["game_id"]
+            )
         target.connection.commit()
         return imported
     except Exception:

@@ -226,6 +226,7 @@ def test_schema_upgrade_preserves_existing_sessions_and_rolls_back_on_failure(mo
     with monkeypatch.context() as patch:
         patch.setattr(db_recent, "add_training_completions", lambda connection: None)
         patch.setattr(db_recent, "add_curriculum_index", lambda connection: None)
+        patch.setattr(db_recent, "add_corpus_staging", lambda connection: None)
         db.initialize()
     db.connection.execute("PRAGMA user_version=11")
     db.connection.execute("""INSERT INTO puzzle_sessions

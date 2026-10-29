@@ -187,3 +187,36 @@ Perform end-to-end acceptance on a backup-derived separate database with an
 explicitly labelled release-smoke review actor. Do not review production
 evidence or invent candidate evidence or mastery to make the test pass;
 insufficient evidence is a valid result.
+
+### Official puzzle snapshots
+
+Install the `zstd` executable on the host. The following operator-only command
+streams the official [Lichess puzzle export](https://database.lichess.org/#puzzles)
+without credentials. Choose a unique version and set byte, disk reserve, and
+time budgets from available capacity; the values below are examples, not a
+claim about the current archive size:
+
+```sh
+chess-coach acquire-puzzles --project-root "$CHESS_PROJECT_ROOT" --version snapshot-2026-01 \
+  --max-archive-bytes 10000000000 --max-csv-bytes 50000000000 \
+  --reserve-bytes 10000000000 --seconds 7200 --connect-timeout 10 --read-timeout 30
+chess-coach acquisition-status --project-root "$CHESS_PROJECT_ROOT"
+```
+
+Progress also appears on the authenticated browser status page; the browser
+never starts a download. The command stops on provider backoff, honoring
+`Retry-After` (at least one minute), and can be run again with the same version.
+Snapshot paths reject existing symlink components to keep reads and writes
+inside the selected project. Partial transfers resume only after matching a
+strong ETag, exact range and length, and a locally checked partial hash. Without a strong ETag, or after a
+mismatching response, the next attempt starts in a new directory. Failed and
+partial files remain in the project; ready versions are never overwritten.
+The transfer timeout is checked between reads, with each read bounded by the
+configured read timeout. Decoding is bounded by the same overall time, decoded
+size and disk reserve. It requires successful zstd EOF and valid UTF-8.
+
+The ready `puzzle-snapshots/VERSION/manifest.json` identifies the immutable
+CSV, archive and their byte counts and SHA-256 digests. Those hashes are
+locally computed, not publisher-authenticated. Archive offsets are not CSV
+record offsets; the staging command performs its own decoded-record
+checkpoints. Full download, indexing and measurement are integrated in #138.

@@ -3,9 +3,23 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.0.0"
+REGISTRY_VERSION = "1.6.0"
 
 CAPABILITIES = (
+    {
+        "id": "staged_puzzle_corpus",
+        "area": "Training",
+        "name": "Staged local puzzle corpus",
+        "status": "supported",
+        "details": "Decoded local CSV snapshots import in bounded batches; only legally validated, completed versions become available. Official download and broad activation remain planned.",
+    },
+    {
+        "id": "competency_graph",
+        "area": "Skill coverage",
+        "name": "Competency graph and coverage",
+        "status": "supported",
+        "details": "A versioned taxonomy displays prerequisites and implementation coverage; it does not add detectors or establish mastery.",
+    },
     {
         "id": "mate_in_one_execute",
         "area": "Skill coverage",
@@ -25,7 +39,7 @@ CAPABILITIES = (
         "area": "Skill coverage",
         "name": "Pawn structures and board features",
         "status": "observation-only",
-        "details": "Atomic structure features and episodes describe positions; they do not establish positional skill failures.",
+        "details": "Atomic episodes and conservative IQP, Carlsbad, French-like, Caro-Kann-like and Benoni-like history describe positions; they do not establish positional skill failures. Other named families remain planned.",
     },
     {
         "id": "tactical_decisions",
@@ -42,11 +56,18 @@ CAPABILITIES = (
         "details": "Grounded positional lessons and verified elementary endgame decisions are not yet available.",
     },
     {
+        "id": "manual_deep_selection",
+        "area": "Analysis",
+        "name": "Manual selection for deep analysis",
+        "status": "supported",
+        "details": "A bounded manual selector records possible opportunities and control samples; automatic deep analysis remains planned.",
+    },
+    {
         "id": "decision_comparison",
         "area": "Analysis",
         "name": "Best versus played decision analysis",
-        "status": "planned",
-        "details": "The current scan stores a best-line score and played move, not a comparable forced-played score or selective deep verification.",
+        "status": "supported",
+        "details": "Two bounded searches compare the best and forced played move on the same decision board; selective deep verification remains planned.",
     },
     {
         "id": "corpus_mate_practice",

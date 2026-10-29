@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Decision analysis — Chess coach{% endblock %}
+{% block content %}
+<h2>Decision analysis</h2>
+<p>Game {{ decision.game_id }}, ply {{ decision.ply }}. Played: {{ decision.played_san }}. Score perspective: {{ decision.score_pov }}.</p>
+{% include "board.html" %}
+<p>{{ decision.note }} Limits apply to each of the two searches; comparing both can approximately double scan work. Status: {{ decision.status }}.</p>
+{% if decision.run %}<p>Run {{ decision.run.id }}: {{ decision.run.engine }}. Configuration: {{ decision.run.config | tojson }}.</p>{% else %}<p>No analysis run is available.</p>{% endif %}
+{% for role in ("best", "played") %}{% set line = decision[role] %}
+<section><h3>{{ role | capitalize }} continuation</h3>
+{% if line %}<p>Status: {{ line.status }}. Score: {% if line.score_kind %}{{ line.score_kind }} {{ line.score_value }} ({{ line.score_bound }}){% else %}unavailable{% endif %}. Native WDL (wins / draws / losses): {{ line.wdl if line.wdl else "unavailable" }}.</p>
+<p>Line: {{ line.san | join(" ") if line.san else "unavailable" }}{% if line.terminal %}. Terminal: {{ line.terminal_reason }}, result {{ line.terminal }}{% endif %}.</p>
+<p>Work: {{ line.nodes if line.nodes is not none else "unknown" }} nodes, depth {{ line.depth if line.depth is not none else "unknown" }}, selective depth {{ line.seldepth if line.seldepth is not none else "unknown" }}, {{ line.time_seconds if line.time_seconds is not none else "unknown" }} seconds.</p>
+{% else %}<p>Unavailable for this run.</p>{% endif %}</section>{% endfor %}
+{% endblock %}

@@ -3,9 +3,17 @@
 from flask import Blueprint, abort, current_app, redirect, render_template, request, url_for
 
 from .capabilities import capability_report
+from .competency_coverage import competency_report
 from .curriculum import daily_plan
+from .decision_inspection import inspect_decision
+from .deep_selection_views import list_selections, show_selection
 from .evidence_review import inspect_evidence, list_evidence, review_evidence
+from .named_structure_report import structure_report
+from .named_structure_source import source_position
+from .named_structures import VERSION, VERSIONS
 from .pipeline_status import pipeline_status
+from .puzzle_import_report import corpus_report
+from .puzzle_snapshot_state import statuses
 from .web_board import board_rows
 from .web_db import database
 from .web_release import release_info
@@ -16,7 +24,12 @@ views = Blueprint("views", __name__)
 @views.get("/")
 def index():
     return render_template(
-        "status.html", status=pipeline_status(database()), release=release_info()
+        "status.html",
+        status=pipeline_status(database()),
+        release=release_info(),
+        acquisitions=statuses(current_app.config["PROJECT_ROOT"])
+        if current_app.config["PROJECT_ROOT"]
+        else [],
     )
 
 
@@ -74,3 +87,71 @@ def plan():
 @views.get("/capabilities")
 def capabilities():
     return render_template("capabilities.html", report=capability_report())
+
+
+@views.get("/decisions/<int:position_id>")
+def decision_detail(position_id: int):
+    try:
+        run_id = request.args.get("run_id")
+        result = inspect_decision(database(), position_id, run_id=int(run_id) if run_id else None)
+    except ValueError:
+        abort(404)
+    return render_template(
+        "decision.html", decision=result, board=board_rows(result["decision_fen"])
+    )
+
+
+@views.get("/competencies")
+def competencies():
+    return render_template("competencies.html", report=competency_report())
+
+
+@views.get("/deep-selections")
+def deep_selections():
+    return render_template(
+        "deep_selections.html",
+        selections=list_selections(database(), current_app.config["SUBJECT"]),
+    )
+
+
+@views.get("/deep-selections/<int:game_id>")
+def deep_selection_detail(game_id: int):
+    try:
+        selection_id = request.args.get("selection")
+        result = show_selection(
+            database(),
+            game_id,
+            current_app.config["SUBJECT"],
+            selection_id=int(selection_id) if selection_id else None,
+        )
+    except ValueError:
+        abort(404)
+    return render_template("deep_selection.html", selection=result)
+
+
+@views.get("/library")
+def library():
+    return render_template("library.html", corpora=corpus_report(database()))
+
+
+@views.get("/structures")
+def structures():
+    version = request.args.get("version", VERSION)
+    if version not in VERSIONS:
+        abort(400)
+    try:
+        report = structure_report(database(), current_app.config["SUBJECT"], version=version)
+    except ValueError:
+        report = None
+    return render_template("structures.html", report=report)
+
+
+@views.get("/structures/positions/<int:position_id>")
+def structure_position(position_id: int):
+    try:
+        position = source_position(database(), current_app.config["SUBJECT"], position_id)
+    except ValueError:
+        abort(404)
+    return render_template(
+        "structure_position.html", position=position, board=board_rows(position["fen"])
+    )

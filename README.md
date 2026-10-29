@@ -118,6 +118,17 @@ outputs whose decision and perspective were not recorded retain NULL provenance
 and should not be treated as corrected analysis. A failed run commits no partial
 outputs. Engine evaluations are not mastery evidence.
 
+Each new run also stores separately bounded best-line and forced-played-root
+searches from the same pre-move board with reconstructed game history. Native
+centipawn or mate scores, bounds, optional engine WDL, legal PV and actual work
+are recorded without converting score loss into mastery. Limits apply per
+search, so analysis can take approximately twice the earlier scan budget.
+`uv run chess-coach --db coach.sqlite inspect-decision POSITION_ID` or the
+private evidence page shows SAN continuations and run provenance. Legacy runs
+show comparison data as unavailable. Selective deep verification remains future
+work; a bounded point score is an engine estimate, not proof.
+
+
 ## Learner decision context
 
 The Python API exposes per-move context without storing an account identifier
@@ -181,6 +192,22 @@ runs also identify the imported dataset and fingerprint its contents. A
 no-match opening is stored as a current classification with a NULL opening
 node and zero confidence. Old rows whose production time and run identity were
 never recorded retain NULLs and are not guessed into the current views.
+
+The private Structures page and `structure-history --learner NAME` derive
+named observations from positions covered by current atomic episodes. Matcher
+version 1.1.0 adds conservative French-like, Caro-Kann-like and modern
+Benoni-like skeletons to the version 1.0.0 isolated d-file pawn and narrow
+Carlsbad matches, for both colors. These geometry labels do not classify the
+opening, and can overlap. Use `--matcher-version 1.0.0` or the browser version
+link to recompute the prior rules over current atomic episodes. Each interval
+retains atomic run, detector version, source episode IDs and a source position;
+repeated extraction is safe.
+Counts describe games and contiguous matching intervals, not playing skill.
+Unmatched positions may contain other structures. Typical plans are educational
+ideas, not evaluated recommendations. The view examines at most 100 attributable
+games, scanning at most 1,000 candidates, and 1,000 covered positions per game; it reports truncation. The
+definitions and reference links are displayed in the report; changing matcher
+rules requires a new matcher version.
 
 ## Database upgrades
 
@@ -516,3 +543,85 @@ This command does not configure Tailscale Serve or install a service.
 
 For private service installation, backup, upgrade, and recovery, see the
 [Hermes operations guide](docs/operations.md).
+
+## Competency coverage
+
+`chess-coach competencies` reports the current versioned learning graph, typed
+prerequisites and support relationships, and capability-backed coverage. The
+private browser exposes the same report at **Competencies**. Observation-only
+geometry or opening classification is not a skill outcome; unsupported names
+and puzzle themes are not mastery evidence. Supported mate-in-one execution
+links to its implementation and positive, negative and ambiguous tests.
+
+`chess-coach --db coach.sqlite seed-competencies` stores this graph in the
+existing ontology tables without changing older versions. Seeding is idempotent
+and rejects a conflicting copy of the same version. Relations are directed from
+a prerequisite or supporting skill to the skill it helps; `contains` expresses
+taxonomy rather than a prerequisite.
+
+
+## Manual selection for later deep analysis
+
+After the bounded pipeline has completed a game’s current cheap analysis, set
+`LICHESS_USERNAME` in the environment and run:
+
+```bash
+uv run chess-coach --db coach.sqlite select-deep --game-id 1 --per-game 4 --total 12
+uv run chess-coach --db coach.sqlite show-deep-selection 1
+uv run chess-coach --db coach.sqlite list-deep-selections
+```
+
+Repeat `--game-id` to select multiple games, up to 20 per invocation. The
+per-game and total limits cap selected positions; a deterministic control
+sample is reserved before nominated score changes, uncertain scores and possible
+motifs. A limit of one can therefore select only a control. Coverage shows
+eligible, missing, overlapping, capped-out and omitted critical candidates,
+plus category targets and allocations. Static motifs are observations, and
+engine scores do not create mastery evidence. The private browser’s Deep
+selection page shows pending candidates and their immutable selection history.
+Selection is manual; deeper engine execution remains planned. Currentness is
+relative to the completed cheap checkpoint and its recorded engine/configuration
+provenance. Selection does not rehash the executable or infer unrun configuration
+changes. If source data or its cheap checkpoint changes, a selection becomes
+stale. Analysis handoff rejects
+source databases containing selection history until selection-aware merge is
+implemented; it never silently drops that history.
+
+
+## Staged puzzle corpus
+
+The existing `import-puzzles` command preserves legacy behavior and labels those
+corpora **legacy_ready**; that label does not claim complete line validation.
+For a decoded UTF-8 CSV already inside the project, compute its SHA-256 and run:
+
+```sh
+uv run chess-coach --db PROJECT_DB stage-puzzles PROJECT_CSV --project-root PROJECT_ROOT \
+  --version SNAPSHOT --csv-sha256 DECODED_SHA256 --max-rows 1000
+uv run chess-coach --db PROJECT_DB corpus-status
+```
+
+Repeat the same command to resume. `--max-rows 0` processes through EOF in
+transactions of at most 100 records by default; `--batch-size` may be 1–500.
+The default 10 GiB free-space reserve pauses import before another batch; the
+operator may set `--min-free-bytes`. `--enable-wal` explicitly enables SQLite
+WAL for a supported local filesystem; it changes the database journal mode.
+The importer verifies the decoded digest again before publication. Optional
+`--archive-sha256` and `--source-url` record source metadata separately;
+this importer does not verify an archive or perform a download. The later
+acquisition and activation work remains required.
+
+Only **ready** and **legacy_ready** corpora are available for practice.
+A ready version is immutable; a conflicting source identity is rejected.
+Malformed CSV stops the import; illegal chess records are quarantined and
+reported, and cannot be practiced. Theme names and `unknown` objectives are
+content metadata, not skill evidence. The private **Library** page and
+`corpus-status` show state, counts, checkpoint and bounded error examples.
+For published versions, `query-puzzles --theme THEME` uses a normalized index;
+after 1,000 offsets use `--after-rating R --after-id ID` from the last row.
+
+A 20,000-row synthetic Hermes fixture using local WAL and 100-row batches
+measured 22.16 seconds import, 0.37 ms p95 database reads, 28.34 ms p95
+concurrent training writes, 141.5 ms p95 batch transactions (826.63 ms max),
+and 4.46 ms p95 indexed theme queries. This is a fixture measurement, not a
+full-corpus or browser-response guarantee; the real corpus and disk budget
+must be measured during #138.

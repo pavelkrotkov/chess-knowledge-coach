@@ -16,10 +16,11 @@ def import_puzzles(db: Database, path: str | Path, *, version: str, batch_size: 
     path = Path(path)
     checksum = _checksum(path)
     existing = db.connection.execute(
-        "SELECT id, checksum, imported_rows FROM puzzle_corpora WHERE version = ?", (version,)
+        "SELECT id, checksum, imported_rows, state FROM puzzle_corpora WHERE version = ?",
+        (version,),
     ).fetchone()
-    if existing is not None and existing["checksum"] != checksum:
-        raise ValueError(f"corpus version {version!r} already exists with a different checksum")
+    if _already_ready(existing, checksum, version):
+        return int(existing["imported_rows"])
     db.connection.execute(
         "INSERT OR IGNORE INTO puzzle_corpora(version, source, checksum) VALUES (?, ?, ?)",
         (version, str(path), checksum),
@@ -60,6 +61,18 @@ def import_puzzles(db: Database, path: str | Path, *, version: str, batch_size: 
         raise
     finally:
         _close_stream(stream, process)
+
+
+def _already_ready(existing, checksum: str, version: str) -> bool:
+    if existing is None:
+        return False
+    if existing["checksum"] != checksum:
+        raise ValueError(f"corpus version {version!r} already exists with a different checksum")
+    if existing["state"] == "legacy_ready":
+        return False
+    if existing["state"] == "ready":
+        return True
+    raise ValueError("corpus version is not available for legacy import")
 
 
 def _close_stream(stream: TextIO, process: Popen[str] | None) -> None:
