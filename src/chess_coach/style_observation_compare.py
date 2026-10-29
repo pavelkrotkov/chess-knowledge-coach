@@ -5,6 +5,7 @@ from .style_check_annotate import annotate
 from .style_compare import candidates
 from .style_defense_choices import annotate as annotate_defense
 from .style_history_lines import history_safe, lines_safe
+from .style_protection_annotate import annotate as annotate_protection
 
 
 def compare(db, learner, context, item, board, budget):
@@ -23,6 +24,7 @@ def compare(db, learner, context, item, board, budget):
         return "history_or_promotion_unsupported", compared, deep, covered, completed
     annotate(board, compared, budget)
     annotate_defense(board, compared)
+    annotate_protection(db, learner, context, board, deep, compared, budget["protection"])
     return status, compared, deep, covered, completed
 
 

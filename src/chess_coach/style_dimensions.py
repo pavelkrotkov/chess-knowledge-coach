@@ -4,12 +4,21 @@ from .style_center import classify as center
 from .style_check_choices import classify as checks
 from .style_defense_choices import NAMES as DEFENSE_NAMES
 from .style_defense_choices import classify as defense
+from .style_protection_choices import NAMES as PROTECTION_NAMES
+from .style_protection_choices import classify as protection
 from .style_tradeoffs import classify as tradeoffs
 from .style_transitions import classify as transitions
 
 
 def classify(pair):
-    return {**tradeoffs(pair), **transitions(pair), **center(pair), **checks(pair), **defense(pair)}
+    return {
+        **tradeoffs(pair),
+        **transitions(pair),
+        **center(pair),
+        **checks(pair),
+        **defense(pair),
+        **protection(pair),
+    }
 
 
 def dimensions(pairs):
@@ -29,6 +38,7 @@ def dimensions(pairs):
             "conditional_check",
             "conditional_mate",
             *DEFENSE_NAMES,
+            *PROTECTION_NAMES,
         )
     }
     for pair in pairs:

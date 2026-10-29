@@ -4,11 +4,13 @@ from collections import Counter
 
 from .repertoire_sources import MAX_GAMES
 from .style_observations import game_observations
+from .style_protection_budget import MAX_WORK as PROTECTION_WORK_LIMIT
+from .style_protection_budget import create as protection_budget
 from .style_selection import selection
 from .style_sources import source_games
 from .style_summary import summarize
 
-VERSION = "style-choices-v6"
+VERSION = "style-choices-v7"
 MATE_SEARCH_LIMIT = 100
 
 
@@ -41,6 +43,7 @@ def style_report(db, learner, *, max_games=MAX_GAMES):
         "completed": 0,
         "unsupported": 0,
         "skipped": 0,
+        "protection": protection_budget(limit=PROTECTION_WORK_LIMIT),
     }
     for game in source["games"]:
         selected = selection(db, game["game_id"], learner)
@@ -97,8 +100,23 @@ def style_report(db, learner, *, max_games=MAX_GAMES):
             "square, which need not be the checker. A legal evasion does not prove subsequent "
             "safety, compensation or overall defense quality. Forced, unscored, stale, missing "
             "and unsupported choices are unknown; non-check decisions are outside this family. "
-            "Threatened-piece protection and longer threats remain unsupported. Each contrast "
+            "Broader threats and unqualified piece protection remain unsupported. Each contrast "
             "requires the same current, same-search, same-depth exact CP gate as other choices."
+        ),
+        "protection_method": (
+            "Only a unique owned protection source current within the read snapshot and "
+            "with original history is eligible. Later requests recheck it. "
+            "The same-search choices are compared only when each bounded verifier supports "
+            "the same originally threatened piece. Moving that piece and capturing a proved "
+            "immediate attacker are distinct, potentially overlapping events. An unmoved "
+            "piece is not proof of a guard; guard, checking counterplay, compensation, "
+            "other captures and longer threats remain unknown where the model cannot prove "
+            "them. The result concerns supported immediate captures only, not overall "
+            "safety or the outcome of the game. At most 20 report-wide source-lookup, "
+            "source-resolution, threat-probe and proof work units are reserved; source "
+            "resolution includes currentness and witness checks and an exemplar proof; "
+            "root proofs use a one-second limit. Skipped and unsupported decisions are "
+            "unknown. The work limit is not a wall-clock guarantee."
         ),
         "sample_note": (
             "Games are selected in descending local game-ID order, not by game date. "
@@ -115,7 +133,8 @@ def style_report(db, learner, *, max_games=MAX_GAMES):
         ),
         "coverage": {key: value for key, value in source.items() if key != "games"},
         "selection_counts": dict(counts),
-        "checking_coverage": budget,
+        "checking_coverage": {key: value for key, value in budget.items() if key != "protection"},
+        "protection_coverage": budget["protection"],
         "allocations": dict(allocations),
         "dimensions": summarize(observations),
         "observations": observations,
