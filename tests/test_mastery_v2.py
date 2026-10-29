@@ -1,3 +1,5 @@
+"""Generic mastery statistics; fork-family eligibility is tested separately."""
+
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -35,7 +37,7 @@ def add_game(db, number, age, outcome="success", ply=1, subject="learner", produ
         producer=producer,
         detector_version="v1",
         input_data={},
-        facts=[{"fact_type": "fork", "payload": {}}],
+        facts=[{"fact_type": "fixture_skill", "payload": {}}],
     )
     with mapping_transaction(db):
         mapped = record_mapping_run_in_transaction(
@@ -49,7 +51,7 @@ def add_game(db, number, age, outcome="success", ply=1, subject="learner", produ
             input_data={},
             mappings=[
                 {
-                    "skill": "fork",
+                    "skill": "fixture_skill",
                     "outcome": outcome,
                     "confidence": 1,
                     "fact_ids": facts["fact_ids"],
@@ -72,7 +74,9 @@ def setup_db():
 def test_weighted_policy_as_of_and_revoke_invalidates_state():
     db = setup_db()
     ids = [add_game(db, 1, 0), add_game(db, 2, 90, "failure"), add_game(db, 3, 180)]
-    result = update_mastery(db, subject="learner", skill="fork", operation="execute", as_of=NOW)
+    result = update_mastery(
+        db, subject="learner", skill="fixture_skill", operation="execute", as_of=NOW
+    )
     assert result["status"] == "sufficient"
     assert result["mastery"] == pytest.approx(1.25 / 1.75)
     assert result["effective_weight"] == pytest.approx(1.75)
@@ -99,7 +103,9 @@ def test_horizon_future_learner_ownership_and_null_trend():
     add_game(db, 4, 5, ply=2)
     add_game(db, 5, 4)
     add_game(db, 6, 3)
-    result = update_mastery(db, subject="learner", skill="fork", operation="execute", as_of=NOW)
+    result = update_mastery(
+        db, subject="learner", skill="fixture_skill", operation="execute", as_of=NOW
+    )
     assert result["context_count"] == 3
     assert result["exclusions"] == {
         "future_observation": 1,
@@ -109,7 +115,11 @@ def test_horizon_future_learner_ownership_and_null_trend():
     assert result["trend_30d"] == 0
     with pytest.raises(ValueError):
         update_mastery(
-            db, subject="learner", skill="fork", operation="execute", as_of=NOW.replace(tzinfo=None)
+            db,
+            subject="learner",
+            skill="fixture_skill",
+            operation="execute",
+            as_of=NOW.replace(tzinfo=None),
         )
     newer = mastery_report(db, subject="learner", as_of=NOW + timedelta(days=366))[0]
     assert newer["status"] == "insufficient"
@@ -124,18 +134,20 @@ def test_nullable_trend_and_atomic_rollback():
     )
     db.connection.commit()
     with pytest.raises(Exception, match="blocked"):
-        update_mastery(db, subject="learner", skill="fork", operation="execute", as_of=NOW)
+        update_mastery(db, subject="learner", skill="fixture_skill", operation="execute", as_of=NOW)
     assert db.connection.execute("SELECT COUNT(*) FROM mastery_states").fetchone()[0] == 0
     db.connection.execute("DROP TRIGGER fail_event")
     db.connection.commit()
-    result = update_mastery(db, subject="learner", skill="fork", operation="execute", as_of=NOW)
+    result = update_mastery(
+        db, subject="learner", skill="fixture_skill", operation="execute", as_of=NOW
+    )
     assert result["trend_30d"] is None
     assert db.connection.execute("SELECT trend_30d FROM mastery_states").fetchone()[0] is None
     with pytest.raises(RuntimeError), mapping_transaction(db):
         update_mastery(
             db,
             subject="learner",
-            skill="fork",
+            skill="fixture_skill",
             operation="execute",
             as_of=NOW + timedelta(days=1),
         )
@@ -155,7 +167,7 @@ def test_multiple_game_plies_and_producers_count_as_one_context():
         producer="second",
         detector_version="v1",
         input_data={},
-        facts=[{"fact_type": "fork", "payload": {}}],
+        facts=[{"fact_type": "fixture_skill", "payload": {}}],
     )
     with mapping_transaction(db):
         mapped = record_mapping_run_in_transaction(
@@ -169,7 +181,7 @@ def test_multiple_game_plies_and_producers_count_as_one_context():
             input_data={},
             mappings=[
                 {
-                    "skill": "fork",
+                    "skill": "fixture_skill",
                     "outcome": "failure",
                     "confidence": 1,
                     "fact_ids": facts["fact_ids"],
@@ -182,7 +194,9 @@ def test_multiple_game_plies_and_producers_count_as_one_context():
     review_evidence(db, second, decision="accept", actor="fixture-reviewer")
     add_game(db, 2, 2)
     add_game(db, 3, 3)
-    result = update_mastery(db, subject="learner", skill="fork", operation="execute", as_of=NOW)
+    result = update_mastery(
+        db, subject="learner", skill="fixture_skill", operation="execute", as_of=NOW
+    )
     assert result["context_count"] == 3
     assert result["exclusions"] == {"duplicate_context": 1}
     assert first not in result["supporting_evidence_ids"]
@@ -193,7 +207,9 @@ def test_multiple_game_plies_and_producers_count_as_one_context():
 def test_superseded_detector_removes_contribution_without_erasing_history():
     db = setup_db()
     ids = [add_game(db, i, i) for i in range(3)]
-    initial = update_mastery(db, subject="learner", skill="fork", operation="execute", as_of=NOW)
+    initial = update_mastery(
+        db, subject="learner", skill="fixture_skill", operation="execute", as_of=NOW
+    )
     assert initial["status"] == "sufficient"
     position = db.connection.execute(
         "SELECT position_id FROM evidence_mappings WHERE id = ?", (ids[0],)
@@ -218,14 +234,18 @@ def test_underflow_weight_excluded_from_score_and_trend():
         add_game(db, number, 365, outcome="failure")
     db.connection.execute("UPDATE evidence_mappings SET confidence = ?", (5e-324,))
     db.connection.commit()
-    result = update_mastery(db, subject="learner", skill="fork", operation="execute", as_of=NOW)
+    result = update_mastery(
+        db, subject="learner", skill="fixture_skill", operation="execute", as_of=NOW
+    )
     assert result["status"] == "insufficient"
     assert result["context_count"] == 0 and result["effective_weight"] == 0
     assert result["mastery"] is None and result["trend_30d"] is None
     assert result["exclusions"] == {"zero_effective_weight": 3}
     for number in range(3, 6):
         add_game(db, number, 0)
-    result = update_mastery(db, subject="learner", skill="fork", operation="execute", as_of=NOW)
+    result = update_mastery(
+        db, subject="learner", skill="fixture_skill", operation="execute", as_of=NOW
+    )
     assert result["status"] == "sufficient" and result["context_count"] == 3
     assert result["mastery"] == 1 and result["trend_30d"] is None
     assert result["exclusions"] == {"zero_effective_weight": 3}

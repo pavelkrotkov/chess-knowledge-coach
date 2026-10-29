@@ -13,6 +13,7 @@ from chess_coach.db import Database
 from chess_coach.evidence_review import inspect_evidence, review_evidence
 from chess_coach.fork_detector import process_decision
 from chess_coach.ingest import ingest_pgn
+from chess_coach.mastery import update_mastery
 from chess_coach.mastery_eligibility import eligible_contexts
 from chess_coach.pipeline import process_pipeline
 from chess_coach.pipeline_config import PipelineConfig
@@ -319,3 +320,70 @@ def test_renamed_game_fork_source_cannot_bypass_policy(tmp_path, monkeypatch):
     db.connection.commit()
     eligible, excluded = eligible_contexts(db, LEARNER, "fork", "execute", datetime.now(UTC))
     assert not eligible and excluded["fork_family_unvalidated"] == 1
+
+
+def test_reviewed_forks_require_three_current_distinct_games(tmp_path, monkeypatch):
+    db = Database(tmp_path / "mastery-forks.sqlite")
+    db.initialize()
+    monkeypatch.setattr(chess.engine.SimpleEngine, "popen_uci", lambda _: Engine())
+    config = PipelineConfig(
+        learner=LEARNER, engine_path=sys.executable, nodes=100, deep_enabled=False
+    )
+    evidence_ids = []
+    positions = []
+    for day, played in [(1, "b5c7"), (2, "h1g1"), (3, "b5c7"), (10, "h1g1")]:
+        board = chess.Board("r3k3/7p/8/1N6/8/8/6P1/7K w - - 0 1")
+        game = chess.pgn.Game()
+        game.setup(board)
+        game.headers["White"] = LEARNER
+        game.headers["Black"] = "fixture_opponent"
+        game.headers["Result"] = "*"
+        game.headers["UTCDate"] = f"2026.01.{day:02d}"
+        game.headers["UTCTime"] = "12:00:00"
+        node = game.add_variation(board.parse_uci(played))
+        board.push_uci(played)
+        node.add_variation(board.parse_uci("e8f8"))
+        assert ingest_pgn(db, str(game))["games"] == 1
+        game_id = db.connection.execute("SELECT MAX(id) FROM games").fetchone()[0]
+        position = db.connection.execute(
+            "SELECT id FROM positions WHERE game_id=? AND ply=1", (game_id,)
+        ).fetchone()[0]
+        positions.append(position)
+        result = run_analysis(
+            db, game_id, game_input(db, game_id), config, engine_identity(sys.executable)
+        )
+        assert result["status"] == "complete"
+        observation = process_decision(db, position, LEARNER)
+        assert observation["outcome"] == ("success" if played == "b5c7" else "failure")
+        evidence_ids.append(observation["evidence_ids"][0])
+
+    as_of = datetime(2026, 1, 7, 12, tzinfo=UTC)
+    for evidence_id in (evidence_ids[0], evidence_ids[1], evidence_ids[3]):
+        review_evidence(db, evidence_id, decision="accept", actor="fixture_reviewer")
+    partial = update_mastery(db, subject=LEARNER, skill="fork", operation="execute", as_of=as_of)
+    assert partial["status"] == "insufficient" and partial["context_count"] == 2
+    assert partial["exclusions"] == {"future_observation": 1, "unreviewed_or_invalid_review": 1}
+    review_evidence(db, evidence_ids[2], decision="accept", actor="fixture_reviewer")
+    complete = update_mastery(db, subject=LEARNER, skill="fork", operation="execute", as_of=as_of)
+    assert complete["status"] == "sufficient" and complete["context_count"] == 3
+    assert complete["supporting_evidence_ids"] == evidence_ids[:3]
+    assert complete["exclusions"] == {"future_observation": 1}
+
+    review_evidence(db, evidence_ids[1], decision="revoke", actor="fixture_reviewer")
+    revoked = update_mastery(db, subject=LEARNER, skill="fork", operation="execute", as_of=as_of)
+    assert revoked["status"] == "insufficient" and revoked["context_count"] == 2
+    assert revoked["exclusions"] == {"future_observation": 1, "revoked": 1}
+    db.connection.execute(
+        "UPDATE decision_analysis_lines SET score_value=score_value+1 WHERE position_id=? AND role=?",
+        (positions[0], "best"),
+    )
+    db.connection.commit()
+    stale = update_mastery(db, subject=LEARNER, skill="fork", operation="execute", as_of=as_of)
+    assert stale["context_count"] == 1 and stale["supporting_evidence_ids"] == [evidence_ids[2]]
+    assert stale["exclusions"] == {
+        "fork_family_unvalidated": 1,
+        "future_observation": 1,
+        "revoked": 1,
+    }
+    assert inspect_evidence(db, evidence_ids[0])["fork_source_currentness"] == "stale"
+    assert inspect_evidence(db, evidence_ids[2])["fork_source_currentness"] == "current"
