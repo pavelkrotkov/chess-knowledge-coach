@@ -210,7 +210,7 @@ def test_owned_selected_exchange_reaches_cli_and_private_browser(tmp_path, monke
     )
     main()
     cli = json.loads(capsys.readouterr().out)
-    assert cli["version"] == "style-choices-v4"
+    assert cli["version"] == "style-choices-v5"
     assert cli["dimensions"]["center_pawn_exchange"]["choices"] == {"exchange": 1}
     assert "opponent moves" in cli["center_method"]
     app = create_app(

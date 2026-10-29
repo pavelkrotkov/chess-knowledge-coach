@@ -9,5 +9,10 @@ def previous(previous, kind, move, source_type):
     result = json.loads(previous["response_json"])
     if source_type == "own-game":
         result.pop("source_key", None)
-        result.pop("objective_target", None)
+        if result.get("objective") not in {
+            "capture_named_target",
+            "bounded_material_gain",
+            "protect_threatened_piece",
+        }:
+            result.pop("objective_target", None)
     return result

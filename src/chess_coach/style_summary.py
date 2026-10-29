@@ -22,5 +22,8 @@ def summarize(observations):
             "center_pawn_exchange",
             "center_file_opening",
             "center_lock",
+            "root_check",
+            "conditional_check",
+            "conditional_mate",
         )
     }

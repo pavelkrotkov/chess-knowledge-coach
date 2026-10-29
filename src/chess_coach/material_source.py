@@ -22,15 +22,17 @@ def prepare(db, position_id, learner, *, history=None):
         "SELECT 1 FROM positions WHERE game_id=? LIMIT 1 OFFSET ?", (game_id, MAX_DECISIONS)
     ).fetchone():
         raise ValueError("game exceeds material verification limit")
+    # Check attribution before and after capturing the source marker.
     _context(db, game_id, position_id, learner, history)
     marker = source_marker(db, position_id, game_id, learner)
     context = _context(db, game_id, position_id, learner, history)
-    cheap = source_snapshot(db, game_id, learner)
+    cheap = _snapshot(db, game_id, position_id, learner, history)
     board = decision_board(db, position) if history is None else history.board(game_id, position_id)
     analysis = inspect_decision(
         db, position_id, run_id=cheap["cheap_run_id"], learner=learner, _history=history
     )
     best, played, provenance = current_lines(db, analysis, cheap["cheap_run_id"], board)
+    # Keep the final source check even when a preview reuses its cheap summary.
     if source_marker(db, position_id, game_id, learner) != marker:
         raise ValueError("source changed during preparation")
     return {
@@ -50,3 +52,9 @@ def _context(db, game_id, position_id, learner, history):
     if history is None:
         return context_for_position(db, game_id, position_id, learner)
     return history.context(game_id, position_id)
+
+
+def _snapshot(db, game_id, position_id, learner, history):
+    if history is None:
+        return source_snapshot(db, game_id, learner)
+    return history.source(game_id, position_id)

@@ -5,12 +5,13 @@ from collections import Counter
 from .learner_identity import learner_color, normalize_identity
 from .named_structure_intervals import game_history
 from .named_structures import VERSION
+from .repertoire_limit import MAX_GAMES, validate_limit
 
 MAX_SCAN = 1000
-MAX_GAMES = 100
 
 
-def games_for_learner(db, learner):
+def games_for_learner(db, learner, *, limit=MAX_GAMES):
+    limit = validate_limit(limit)
     if normalize_identity(learner) is None:
         raise ValueError("learner identity is unavailable")
     rows = db.connection.execute("SELECT * FROM games ORDER BY id DESC LIMIT ?", (MAX_SCAN + 1,))
@@ -23,9 +24,9 @@ def games_for_learner(db, learner):
         color = learner_color(row, learner)
         if color:
             games.append((row, color))
-            if len(games) > MAX_GAMES:
+            if len(games) > limit:
                 break
-    return games[:MAX_GAMES], len(games) > MAX_GAMES, scanned > MAX_SCAN
+    return games[:limit], len(games) > limit, scanned > MAX_SCAN
 
 
 def reviewed_failures(db, game_id, learner, color):

@@ -17,7 +17,12 @@ def advance(board, objective, lines, matched, index):
 
 
 def _finished(board, objective, index, matched, reply):
-    verified = objective in {"checkmate", "mate_in_one", "mate_within_two"} and board.is_checkmate()
+    verified = objective in {
+        "avoid_immediate_mate",
+        "protect_threatened_piece",
+        "capture_named_target",
+        "bounded_material_gain",
+    } or (objective in {"checkmate", "mate_in_one", "mate_within_two"} and board.is_checkmate())
     status = "objective_verified" if verified else "line_completed"
     return move_state(board, status, status, index, matched, reply)
 

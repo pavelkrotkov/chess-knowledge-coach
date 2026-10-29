@@ -1,11 +1,12 @@
 """Gate one source-backed comparison and preserve coverage counts."""
 
 from .deep_execution_views import deep_for_position
+from .style_check_annotate import annotate
 from .style_compare import candidates
 from .style_history_lines import history_safe, lines_safe
 
 
-def compare(db, learner, context, item, board):
+def compare(db, learner, context, item, board, budget):
     if board is None or board.fen() != context["pre_move_fen"]:
         return "history_unavailable", None, None, False, False
     deep = deep_for_position(db, context["position_id"], learner, board, context["played_move"])
@@ -19,6 +20,7 @@ def compare(db, learner, context, item, board):
     lines = [compared["played"], *(pair["alternative_line"] for pair in compared["pairs"])]
     if not lines_safe(board, lines):
         return "history_or_promotion_unsupported", compared, deep, covered, completed
+    annotate(board, compared, budget)
     return status, compared, deep, covered, completed
 
 

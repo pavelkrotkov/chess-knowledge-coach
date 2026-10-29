@@ -6,7 +6,7 @@ from .deep_selection_source import learner_key
 from .deep_selection_views import show_selection
 
 
-def deep_for_position(db, position_id, learner, board, played):
+def deep_for_position(db, position_id, learner, board, played, *, _history=None):
     key = _safe_key(learner)
     if key is None:
         return None
@@ -20,7 +20,7 @@ def deep_for_position(db, position_id, learner, board, played):
     ).fetchone()
     if job is None:
         return None
-    if not _selection_is_current(db, job, learner):
+    if not _selection_is_current(db, job, learner, position_id, _history):
         return {
             "job_id": job["id"],
             "status": "stale",
@@ -35,9 +35,16 @@ def deep_for_position(db, position_id, learner, board, played):
     return _present(job, attempt, result, board)
 
 
-def _selection_is_current(db, job, learner):
+def _selection_is_current(db, job, learner, position_id, history):
     try:
-        selection = show_selection(db, job["game_id"], learner, selection_id=job["selection_id"])
+        selection = show_selection(
+            db,
+            job["game_id"],
+            learner,
+            selection_id=job["selection_id"],
+            _history=history,
+            _position_id=position_id,
+        )
     except ValueError:
         return False
     return selection["state"] == "current"

@@ -3,9 +3,30 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.41.0"
+REGISTRY_VERSION = "1.47.0"
 
 CAPABILITIES = (
+    {
+        "id": "bounded_protection_objectives",
+        "area": "Training",
+        "name": "Owned threatened-piece defense objectives",
+        "status": "observation-only",
+        "details": "Current owned protection sources bind a specified threatened piece. Bounded proof checks supported profitable immediate captures; checks, uncertain threats and longer compensation remain unresolved. This does not establish overall safety or mastery.",
+    },
+    {
+        "id": "bounded_capture_objectives",
+        "area": "Training",
+        "name": "Owned bounded capture objectives",
+        "status": "observation-only",
+        "details": "Current owned material sources can bind a named target or a minimum bounded material gain. Unsupported replies, checks and exchanges remain unresolved; this does not establish a win or mastery.",
+    },
+    {
+        "id": "immediate_mate_defense_alternatives",
+        "area": "Training",
+        "name": "Owned immediate-mate defense alternatives",
+        "status": "observation-only",
+        "details": "Current owned back-rank prevention sources offer an explicit one-move objective: prevent every legal immediate opposing checkmate. A bounded worker checks alternative moves and retains a separate result; this provisional defense does not establish overall safety, a win, or mastery.",
+    },
     {
         "id": "short_mate_alternative_verification",
         "area": "Training",
@@ -298,7 +319,7 @@ CAPABILITIES = (
         "area": "Style",
         "name": "Material, simplification and transition choice observations",
         "status": "observation-only",
-        "details": "Current bounded MultiPV choices expose provisional four-ply material, piece-count, attack-map, queenless and low-material transition proxies with coverage and contextual strata. Projections are conditional, not observed outcomes; narrow central pawn contacts, captures, exchanges, d/e file openings and one locked skeleton are also compared. Broader initiative, defense and center choices remain planned. They do not establish personality, skill or playing strength.",
+        "details": "Current bounded MultiPV choices expose provisional four-ply material, piece-count, attack-map, queenless and low-material transition proxies with coverage and contextual strata. Projections are conditional, not observed outcomes; narrow central pawn contacts, captures, exchanges, d/e file openings and one locked skeleton are also compared. Legal root and conditional continuation checks, evasions and conditional one-move mate witnesses are recorded where supported. Broader initiative, defense and center choices remain planned. They do not establish personality, skill or playing strength.",
     },
     {
         "id": "repertoire_recommendations",

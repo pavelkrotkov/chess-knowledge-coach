@@ -5,11 +5,11 @@ import json
 from .deep_selection_source import source_snapshot
 
 
-def selection_state(db, game_id, learner, current_id, run):
+def selection_state(db, game_id, learner, current_id, run, *, _history=None, _position_id=None):
     if run["id"] != current_id:
         return "historical"
     try:
-        source = source_snapshot(db, game_id, learner)
+        source = _source(db, game_id, learner, _history, _position_id)
     except ValueError:
         return "stale"
     if (
@@ -42,3 +42,11 @@ def selection_items(db, selection_id, state):
         }
         for row in rows
     ]
+
+
+def _source(db, game_id, learner, history, position_id):
+    if history is None:
+        return source_snapshot(db, game_id, learner)
+    if history.db is not db or history.learner != learner:
+        raise ValueError("preview history scope differs")
+    return history.source(game_id, position_id)

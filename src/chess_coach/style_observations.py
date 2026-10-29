@@ -6,7 +6,7 @@ from .style_game_observations import collect
 from .style_selection import selection_coverage
 
 
-def game_observations(db, learner, game, selected):
+def game_observations(db, learner, game, selected, budget):
     counts, allocations, observations = Counter(), Counter(), []
     if selected is None:
         return counts, allocations, observations
@@ -18,7 +18,7 @@ def game_observations(db, learner, game, selected):
         counts["stale_selection"] += len(by_id)
         return counts, allocations, observations
     counts.update(selection_coverage(selected))
-    collect(db, learner, game, selected, by_id, counts, observations)
+    collect(db, learner, game, selected, by_id, counts, observations, budget)
     return counts, allocations, observations
 
 
