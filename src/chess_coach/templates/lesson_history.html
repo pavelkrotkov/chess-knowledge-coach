@@ -4,5 +4,9 @@
 <h2>Saved lesson {{ record.id }}</h2>
 <p>Saved {{ record.generated_at }}. Generator: {{ record.generator_model }}; prompt: {{ record.prompt_version }}. This is a historical snapshot; source status may have changed since it was generated.</p>
 {% set lesson = record.lesson %}{% include "lesson_body.html" %}
+{% set kind = {'fork-opportunity-mapper': 'recognize', 'bounded-mate-observation-mapper': 'recognize', 'pawn-endgame-mapper': 'evaluate'}.get(lesson.family) %}
+{% if kind %}<h3>Try a short probe</h3><p>This uses the taught position, so it is cued and familiar. A response cannot determine why a game move happened.</p>
+{% for example in lesson.examples %}<form method="post" action="{{ url_for('probe_views.begin') }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="attempt" value="{{ probe_attempt }}-{{ loop.index }}"><input type="hidden" name="lesson" value="{{ record.id }}"><input type="hidden" name="evidence" value="{{ example.evidence_id }}"><input type="hidden" name="kind" value="{{ kind }}"><button>Try this example</button></form>{% endfor %}{% endif %}
+<p><a href="{{ url_for('probe_views.history', lesson_id=record.id) }}">View probe history</a></p>
 <p><a href="{{ url_for('recurrence_views.recurrence') }}">Return to recurring patterns</a></p>
 {% endblock %}

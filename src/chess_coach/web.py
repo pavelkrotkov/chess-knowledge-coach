@@ -12,6 +12,7 @@ from .web_mate import mate_views
 from .web_pawn import pawn_views
 from .web_practice import practice
 from .web_practice_tools import practice_tools
+from .web_probes import probe_views
 from .web_recurrence import recurrence_views
 from .web_related_capture import related_capture
 from .web_repertoire import repertoire_views
@@ -56,6 +57,7 @@ def create_app(
     app.register_blueprint(mate_views)
     app.register_blueprint(pawn_views)
     app.register_blueprint(practice)
+    app.register_blueprint(probe_views)
     app.register_blueprint(practice_tools)
     app.register_blueprint(unified_practice)
     app.register_blueprint(repertoire_views)

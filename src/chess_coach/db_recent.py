@@ -15,6 +15,7 @@ from .lichess_schema import add_sync_turn
 from .mastery_schema import allow_unknown_trend
 from .pipeline_cooldown_schema import add_pipeline_cooldown
 from .pipeline_schema import add_pipeline_stages
+from .probe_schema import add_probes
 from .public_training_schema import add_public_training
 from .puzzle_import_schema import add_corpus_staging
 from .puzzle_selection_schema import add_puzzle_selection
@@ -48,6 +49,7 @@ def upgrade_recent(connection: sqlite3.Connection, version: int) -> None:
         (23, add_engine_output_index),
         (24, add_position_fen_index),
         (25, add_lessons),
+        (26, add_probes),
     )
     for target, apply_upgrade in upgrades:
         if version < target:

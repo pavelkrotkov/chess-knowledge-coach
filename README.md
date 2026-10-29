@@ -1088,8 +1088,27 @@ identified missing position-specific plans and did not qualify mastery. Version
 1.1.0 has not yet received independent held-out review. Before opening mastery,
 a separate held-out review and documented decision are required. See the
 [version 1.0.0 review](https://github.com/pavelkrotkov/chess-knowledge-coach/pull/218#pullrequestreview-5700914014).
+
 ## King-safety observations
 
 The bounded material worker also inspects current attributable decisions where the mover’s king zone, shelter pawns or geometric attacks change. The zone consists of the king’s adjacent files, one and two ranks ahead. Attacks are geometric, including attacks by pinned pieces; they are not legal threats. The worker checks the played move and at most eight legal alternatives, recording coverage and unresolved cases, immediate legal checks, mates, captures and promotions, and king moves after a specific legal opponent reply. The displayed alternative minimizes immediate mate and check counts among the completed sampled moves; it is not a best-move recommendation. Source continuations are legal possibilities, not forced lines. Captures and checks can provide counterplay, but overall compensation and later safety are not established. A shelter change does not prove a mistake.
 
 Draw-claim, repeated-root and terminal histories and unsupported bounds are reported as unavailable rather than classified. Observations remain ambiguous and ineligible for mastery even if accepted for review. Before changing that gate, independently qualify a held-out positive, negative and ambiguous fixture set, report its counts and false claims, and document the validation decision. The current implementation has not passed that qualification. Recurrence and decision lessons retain source links and review state; a bounded scan may require another worker run.
+
+## Lesson diagnostic probes
+
+Saved fork, mate and pawn-ending lessons can offer short, source-linked probes
+when their cited proof supports the question. Fork and mate tasks ask about a
+checked threat; pawn-ending tasks ask for a result-preserving choice. The
+lesson has already shown the position or pattern, so each task is marked cued
+and familiar. A single response cannot establish the cause of a game move,
+attention, calculation, or mastery.
+
+A task stores its accepted answers and proof provenance privately. The prompt
+does not expose those answers; a reveal is recorded as assistance. Answers not
+covered by the bounded proof stay ungraded. Answer, elapsed wall time since
+start, hints, reveals and outcome are retained independently from move practice.
+Reusing an event ID with the same input returns the original result; conflicting
+retries are rejected. The learner and cited lesson source are rechecked before
+starting or recording an event, and rejected, revoked, or changed sources
+cannot be resumed. Probe results do not change reviews, FSRS, or mastery.

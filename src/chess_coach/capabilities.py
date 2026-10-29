@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.34.0"
+REGISTRY_VERSION = "1.35.0"
 
 CAPABILITIES = (
     {
@@ -250,6 +250,13 @@ CAPABILITIES = (
         "name": "Grounded coaching explanations",
         "status": "observation-only",
         "details": "Deterministic lessons recheck supported sources, replay legal lines, distinguish observed results from questions, and retain explicitly saved versions. Coverage is bounded and provisional; currentness, overall safety and later counterplay may remain unknown.",
+    },
+    {
+        "id": "lesson_diagnostic_probes",
+        "area": "Training",
+        "name": "Cued lesson probes",
+        "status": "observation-only",
+        "details": "Cited fork and mate recognition and pawn-ending choices record bounded responses separately from moves. Familiar, assisted and ungraded answers do not establish causality or mastery; scheduling remains unchanged.",
     },
     {
         "id": "opening_classification",
