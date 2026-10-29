@@ -855,6 +855,10 @@ then displays legally replayed proof or unresolved-geometry lines, with practica
 questions that distinguish the recorded move from tested alternatives. It does not
 establish overall safety, compensation, intent or mastery.
 
+## Owned immediate-mate defense verification
+
+Current owned back-rank prevention observations can offer a one-move objective to prevent every legal immediate opposing checkmate. A source-proven example is checked against this exact goal, and other legal answers are processed by the existing bounded local worker with original game history. Any legal mating reply refutes the objective, including mates unrelated to the back rank; an exhaustive absence of mating replies verifies the defense. Draw or history uncertainty, terminal positions without checkmate, timeouts and incomplete scans stay ungraded. This provisional result does not establish overall safety, a win, mastery or scheduling progress.
+
 ## Owned mate-within-two alternative verification
 
 Current owned short-mate observations can offer an explicitly announced mate-within-two objective. One supplied root is shown through its legal defensive branches; an unlisted legal root is queued for the existing local verification worker. The worker uses original game history and a bounded three-ply search, checking every legal defense and retaining a mating witness for each. A proved alternative remains playable against a stored legal defense; only a played checkmate completes the objective. A definitive refutation is incorrect for this horizon, while exhausted node or time limits and unavailable history remain ungraded. Current ownership, source version and review are rechecked before results and continuation. Hints and reveals remain distinct, and this provisional practice does not update mastery or scheduling.

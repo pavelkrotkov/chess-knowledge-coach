@@ -3,9 +3,16 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.42.0"
+REGISTRY_VERSION = "1.43.0"
 
 CAPABILITIES = (
+    {
+        "id": "immediate_mate_defense_alternatives",
+        "area": "Training",
+        "name": "Owned immediate-mate defense alternatives",
+        "status": "observation-only",
+        "details": "Current owned back-rank prevention sources offer an explicit one-move objective: prevent every legal immediate opposing checkmate. A bounded worker checks alternative moves and retains a separate result; this provisional defense does not establish overall safety, a win, or mastery.",
+    },
     {
         "id": "short_mate_alternative_verification",
         "area": "Training",

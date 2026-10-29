@@ -5,6 +5,7 @@ from flask import abort, current_app, render_template, request
 from .back_rank_practice import list_candidates as back_rank_candidates
 from .discovery_practice import list_candidates as discovery_candidates
 from .mate_practice import list_candidates as mate_candidates
+from .objective_defense_list import candidates as defense_candidates
 from .objective_mate_list import candidates as mate_one_candidates
 from .objective_short_list import candidates as short_mate_candidates
 from .pawn_practice_list import list_candidates as list_pawn_candidates
@@ -28,6 +29,7 @@ def render_library():
         own_game=list_candidates(database(), current_app.config["SUBJECT"]),
         discovery_game=discovery_candidates(database(), current_app.config["SUBJECT"]),
         mate_one_game=mate_one_candidates(database(), current_app.config["SUBJECT"]),
+        defense_game=defense_candidates(database(), current_app.config["SUBJECT"]),
         short_mate_game=short_mate_candidates(database(), current_app.config["SUBJECT"]),
         mate_game=mate_candidates(database(), current_app.config["SUBJECT"]),
         pawn_game=pawn_game,

@@ -1,0 +1,40 @@
+"""Bind supported owned objective versions to the session snapshot."""
+
+from .objective_contract import OBJECTIVE, VERSION
+from .objective_defense_source import OBJECTIVE as DEFENSE_OBJECTIVE
+from .objective_defense_source import VERSION as DEFENSE_VERSION
+from .objective_short_source import OBJECTIVE as SHORT_OBJECTIVE
+from .objective_short_source import VERSION as SHORT_VERSION
+
+
+def matches(session, data, request):
+    return _scope(session, request) and _binding(session, data, request)
+
+
+def _scope(session, request):
+    return (
+        session["source_type"] == "own-game"
+        and (session["source_version"], session["objective"])
+        in {
+            (VERSION, "mate_in_one"),
+            (SHORT_VERSION, "mate_within_two"),
+            (DEFENSE_VERSION, "avoid_immediate_mate"),
+        }
+        and session["status"] == "needs_verification"
+        and session["snapshot_hash"] == request["snapshot_hash"]
+        and session["learner_color"] == request["learner_color"]
+    )
+
+
+def _binding(session, data, request):
+    return (
+        data.get("objective_version") == request["objective_version"]
+        and (session["source_version"], data.get("objective_version"))
+        in {
+            (VERSION, OBJECTIVE),
+            (SHORT_VERSION, SHORT_OBJECTIVE),
+            (DEFENSE_VERSION, DEFENSE_OBJECTIVE),
+        }
+        and data.get("history_mode") == request["history_mode"]
+        and data.get("source_fingerprint") == request["source_hash"]
+    )
