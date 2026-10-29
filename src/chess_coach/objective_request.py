@@ -3,6 +3,7 @@
 import json
 
 from .learner_identity import normalize_identity
+from .objective_capture_contract import VERSIONS as CAPTURE_VERSIONS
 from .objective_contract import VERSION
 from .objective_defense_source import VERSION as DEFENSE_VERSION
 from .objective_events import prefix, prefix_hash
@@ -12,6 +13,7 @@ from .unified_session_state import now
 
 def enqueue(db, session, event_id, result):
     if session["source_type"] != "own-game" or session["source_version"] not in {
+        *CAPTURE_VERSIONS,
         VERSION,
         SHORT_VERSION,
         DEFENSE_VERSION,

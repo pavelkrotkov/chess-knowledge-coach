@@ -1,5 +1,11 @@
 """Bind supported owned objective versions to the session snapshot."""
 
+from .objective_capture_contract import (
+    GAIN_OBJECTIVE,
+    GAIN_VERSION,
+    TARGET_OBJECTIVE,
+    TARGET_VERSION,
+)
 from .objective_contract import OBJECTIVE, VERSION
 from .objective_defense_source import OBJECTIVE as DEFENSE_OBJECTIVE
 from .objective_defense_source import VERSION as DEFENSE_VERSION
@@ -16,6 +22,8 @@ def _scope(session, request):
         session["source_type"] == "own-game"
         and (session["source_version"], session["objective"])
         in {
+            (TARGET_VERSION, "capture_named_target"),
+            (GAIN_VERSION, "bounded_material_gain"),
             (VERSION, "mate_in_one"),
             (SHORT_VERSION, "mate_within_two"),
             (DEFENSE_VERSION, "avoid_immediate_mate"),
@@ -31,6 +39,8 @@ def _binding(session, data, request):
         data.get("objective_version") == request["objective_version"]
         and (session["source_version"], data.get("objective_version"))
         in {
+            (TARGET_VERSION, TARGET_OBJECTIVE),
+            (GAIN_VERSION, GAIN_OBJECTIVE),
             (VERSION, OBJECTIVE),
             (SHORT_VERSION, SHORT_OBJECTIVE),
             (DEFENSE_VERSION, DEFENSE_OBJECTIVE),

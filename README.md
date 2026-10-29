@@ -855,6 +855,10 @@ then displays legally replayed proof or unresolved-geometry lines, with practica
 questions that distinguish the recorded move from tested alternatives. It does not
 establish overall safety, compensation, intent or mastery.
 
+## Owned bounded capture objectives
+
+Current owned material-capture observations can offer two distinct one-move tasks: capture a named piece or find a capture that preserves a material gain of at least three points. The named-target task displays its target; the gain-only task does not reveal the source exemplar target before a hint or reveal. Each example is checked with the original game history. Alternative legal captures are queued for bounded verification against the announced objective and every supported immediate reply. Different moves fail the named-target objective only when they do not capture that target; they do not automatically fail the material-gain objective. Checks, special moves, recaptures, unsupported exchanges, draw or history uncertainty, incomplete reply enumeration and timeouts remain ungraded. These provisional, bounded material observations do not establish overall safety, compensation, a win, mastery or scheduling progress.
+
 ## Owned immediate-mate defense verification
 
 Current owned back-rank prevention observations can offer a one-move objective to prevent every legal immediate opposing checkmate. A source-proven example is checked against this exact goal, and other legal answers are processed by the existing bounded local worker with original game history. Any legal mating reply refutes the objective, including mates unrelated to the back rank; an exhaustive absence of mating replies verifies the defense. Draw or history uncertainty, terminal positions without checkmate, timeouts and incomplete scans stay ungraded. This provisional result does not establish overall safety, a win, mastery or scheduling progress.

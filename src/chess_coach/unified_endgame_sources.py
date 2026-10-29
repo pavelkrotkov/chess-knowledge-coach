@@ -6,6 +6,8 @@ from .discovery_practice import VERSION as DISCOVERY_VERSION
 from .discovery_practice_source import resolve as resolve_discovery
 from .mate_practice_source import VERSION as MATE_VERSION
 from .mate_practice_source import resolve as resolve_mate
+from .objective_capture_contract import VERSIONS as CAPTURE_VERSIONS
+from .objective_capture_source import resolve as resolve_capture
 from .objective_contract import VERSION as MATE_ONE_VERSION
 from .objective_defense_source import VERSION as DEFENSE_VERSION
 from .objective_defense_source import resolve as resolve_defense
@@ -17,6 +19,7 @@ from .pawn_practice import resolve as resolve_pawn
 
 VERSIONS = frozenset(
     (
+        *CAPTURE_VERSIONS,
         MATE_VERSION,
         PAWN_VERSION,
         BACK_RANK_VERSION,
@@ -28,11 +31,14 @@ VERSIONS = frozenset(
 )
 
 
+OBJECTIVE_RESOLVERS = {DEFENSE_VERSION: resolve_defense, SHORT_VERSION: resolve_short}
+
+
 def resolve(db, version, key, subject):
-    if version == DEFENSE_VERSION:
-        return resolve_defense(db, version, key, subject)
-    if version == SHORT_VERSION:
-        return resolve_short(db, version, key, subject)
+    if version in CAPTURE_VERSIONS:
+        return resolve_capture(db, version, key, subject)
+    if version in OBJECTIVE_RESOLVERS:
+        return OBJECTIVE_RESOLVERS[version](db, version, key, subject)
     if version == DISCOVERY_VERSION:
         return resolve_discovery(db, version, key, subject)
     if version == MATE_ONE_VERSION:

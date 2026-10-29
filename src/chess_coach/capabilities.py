@@ -3,9 +3,16 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.43.0"
+REGISTRY_VERSION = "1.45.0"
 
 CAPABILITIES = (
+    {
+        "id": "bounded_capture_objectives",
+        "area": "Training",
+        "name": "Owned bounded capture objectives",
+        "status": "observation-only",
+        "details": "Current owned material sources can bind a named target or a minimum bounded material gain. Unsupported replies, checks and exchanges remain unresolved; this does not establish a win or mastery.",
+    },
     {
         "id": "immediate_mate_defense_alternatives",
         "area": "Training",

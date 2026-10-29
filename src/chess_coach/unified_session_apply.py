@@ -2,6 +2,7 @@
 
 import json
 
+from .objective_capture_contract import VERSIONS as CAPTURE_VERSIONS
 from .objective_contract import VERSION as MATE_ONE_VERSION
 from .objective_defense_source import VERSION as DEFENSE_VERSION
 from .objective_short_source import VERSION as SHORT_VERSION
@@ -26,7 +27,12 @@ def record_event(db, row, event_id, kind, move):
             if move == "reveal"
             else {"feedback": "hint", "hint": square}
         )
-        if row["source_version"] in {MATE_ONE_VERSION, SHORT_VERSION, DEFENSE_VERSION}:
+        if row["source_version"] in {
+            MATE_ONE_VERSION,
+            SHORT_VERSION,
+            DEFENSE_VERSION,
+            *CAPTURE_VERSIONS,
+        }:
             detail["assistance_kind"] = "revealed" if move == "reveal" else "hinted"
     else:
         detail = apply_move(row, lines, candidates, move)

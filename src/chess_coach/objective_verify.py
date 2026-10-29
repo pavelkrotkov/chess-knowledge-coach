@@ -2,16 +2,12 @@
 
 from .objective_contract import OWNED_HISTORY, UNAVAILABLE
 from .objective_current import current
-from .objective_defense_judge import verify as verify_defense
-from .objective_defense_source import OBJECTIVE as DEFENSE_OBJECTIVE
 from .objective_events import assistance
 from .objective_history import before_answer
-from .objective_judge import judge
 from .objective_provenance import SECONDS as SECONDS
 from .objective_provenance import VERSION as VERSION
 from .objective_provenance import provenance as provenance
-from .objective_short_horizon import verify as verify_short
-from .objective_short_source import OBJECTIVE as SHORT_OBJECTIVE
+from .objective_verify_dispatch import verify
 
 
 def compute(db, request, clock, *, seconds=SECONDS):
@@ -30,11 +26,7 @@ def compute(db, request, clock, *, seconds=SECONDS):
         board, move = before_answer(db, session, events)
     except (ValueError, KeyError, TypeError, IndexError):
         return {**base, "status": "unresolved", "reason": "history_unavailable"}
-    if request["objective_version"] == DEFENSE_OBJECTIVE:
-        return verify_defense(board, move, request, events, clock, start, seconds, base)
-    if request["objective_version"] == SHORT_OBJECTIVE:
-        return verify_short(board, move, request, events, clock, start, seconds, base)
-    return judge(board, move, request, events, clock, start, seconds, base)
+    return verify(board, move, request, events, clock, start, seconds, base, session)
 
 
 def unresolved(request, reason):
