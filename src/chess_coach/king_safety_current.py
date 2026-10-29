@@ -5,7 +5,7 @@ from .king_safety_probe import state
 from .material_opportunity_links import valid_link
 
 
-def currentness(db, evidence):
+def currentness(db, evidence, *, _history=None):
     if evidence["mapping_producer"] != MAPPER:
         return None
     facts = evidence["facts"]
@@ -18,6 +18,6 @@ def currentness(db, evidence):
         return "stale"
     return (
         "current"
-        if state(db, evidence["position_id"], evidence["subject"]) == "current"
+        if state(db, evidence["position_id"], evidence["subject"], _history=_history) == "current"
         else "stale"
     )

@@ -5,7 +5,7 @@ from .rook_plan_mapping import MAPPER
 from .rook_plan_probe import state
 
 
-def currentness(db, evidence):
+def currentness(db, evidence, *, _history=None):
     if evidence["mapping_producer"] != MAPPER:
         return None
     facts = evidence["facts"]
@@ -13,5 +13,5 @@ def currentness(db, evidence):
         return "stale"
     if facts[0]["detector_status"] != "active" or not valid_link(db, evidence, facts[0]):
         return "stale"
-    result = state(db, evidence["position_id"], evidence["subject"])
+    result = state(db, evidence["position_id"], evidence["subject"], _history=_history)
     return {"current": "current", "needed": "stale"}.get(result, "unavailable")

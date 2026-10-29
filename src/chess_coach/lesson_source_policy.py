@@ -9,7 +9,7 @@ from .material_opportunity_links import valid_link
 from .material_policy import fact_allowed
 
 
-def _supported(db, evidence, fact):
+def _supported(db, evidence, fact, *, _history=None):
     family, payload = evidence["mapping_producer"], fact["payload"]
     if family == "material-opportunity-mapper":
         return fact_allowed(
@@ -26,7 +26,7 @@ def _supported(db, evidence, fact):
         "rook-plan-lesson-mapper": rook_supported,
     }
     if family in descriptive:
-        return descriptive[family](db, evidence, fact)
+        return descriptive[family](db, evidence, fact, _history=_history)
     if family == "back-rank-observation-mapper":
         return evidence["skill"] == "back_rank" and (
             evidence["operation"],
@@ -35,11 +35,11 @@ def _supported(db, evidence, fact):
     return True
 
 
-def supported(db, evidence):
+def supported(db, evidence, *, _history=None):
     facts = evidence["facts"]
     if len(facts) != 1 or not valid_link(db, evidence, facts[0]):
         return False
     try:
-        return _supported(db, evidence, facts[0])
+        return _supported(db, evidence, facts[0], _history=_history)
     except (ValueError, TypeError, KeyError, AttributeError):
         return False

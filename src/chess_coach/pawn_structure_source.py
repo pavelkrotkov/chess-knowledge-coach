@@ -4,8 +4,8 @@ from .material_source import prepare
 from .pawn_structure_lesson import lesson
 
 
-def prepare_lesson(db, position_id, learner):
-    prepared = prepare(db, position_id, learner)
+def prepare_lesson(db, position_id, learner, *, _history=None):
+    prepared = prepare(db, position_id, learner, history=_history)
     result = lesson(
         prepared["board"], prepared["context"]["played_move"], prepared["best"], prepared["played"]
     )

@@ -21,14 +21,16 @@ def _period(row, excluded, begin, finish, previous):
     return selected
 
 
-def consider(db, learner, row, sources, cache, parts, excluded, begin, finish, previous):
+def consider(
+    db, learner, row, sources, cache, parts, excluded, begin, finish, previous, *, _history=None
+):
     period = _period(row, excluded, begin, finish, previous)
     if period is None:
         return None
     game = source(db, learner, row, sources, cache, excluded)
     if game is None:
         return None
-    item, reason = candidate(db, row, game, parts)
+    item, reason = candidate(db, row, game, parts, _history=_history)
     if reason:
         excluded[reason] += 1
         return None

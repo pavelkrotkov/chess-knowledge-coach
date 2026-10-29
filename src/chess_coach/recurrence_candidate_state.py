@@ -11,12 +11,15 @@ from .recurrence_material_policy import material_ok
 from .recurrence_pin_policy import PIN_FAMILIES, marker_state
 
 
-def _structure_state(db, row, check):
-    value = check(db, row["position_id"], row["subject"])
+def _structure_state(db, row, check, _history):
+    if _history is None:
+        value = check(db, row["position_id"], row["subject"])
+    else:
+        value = check(db, row["position_id"], row["subject"], _history=_history)
     return {"current": "current", "needed": "stale"}.get(value, "currentness unavailable")
 
 
-def source_state(db, row, fact, parts, structure_state, rook_state):
+def source_state(db, row, fact, parts, structure_state, rook_state, *, _history=None):
     if row["mapping_producer"] == MATERIAL_MAPPER:
         return material_state(db, row, fact, parts) if material_ok(row, fact) else "unsupported"
     if not family_ok(row, fact):
@@ -27,7 +30,7 @@ def source_state(db, row, fact, parts, structure_state, rook_state):
         "pawn-structure-lesson-mapper": structure_state,
     }
     if row["mapping_producer"] in checks:
-        return _structure_state(db, row, checks[row["mapping_producer"]])
+        return _structure_state(db, row, checks[row["mapping_producer"]], _history)
     if row["mapping_producer"] in {FORK_MAPPER, DEFENSE_MAPPER, DISCOVERY_MAPPER, *PIN_FAMILIES}:
         return marker_state(db, row, fact, parts)
     return "currentness unverified"
