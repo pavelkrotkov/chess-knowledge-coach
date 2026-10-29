@@ -7,13 +7,13 @@ from .material_source import prepare
 from .material_source_marker import source_marker
 
 
-def verified_fen(db, evidence, fact):
+def verified_fen(db, evidence, fact, *, observer=observe):
     try:
         prepared = prepare(db, evidence["position_id"], evidence["subject"])
         source = load_source(db, fact["detector_run_id"])
         if {k: v for k, v in source.items() if k != "reactivation"} != source_inputs(prepared):
             return None
-        fresh = observe(
+        fresh = observer(
             prepared["board"],
             prepared["context"]["played_move"],
             prepared["best"],

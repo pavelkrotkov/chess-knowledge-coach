@@ -1,6 +1,7 @@
 """Bounded restartable game processing without automatic human review."""
 
 from .db import Database
+from .fork_defense_worker import process_defenses
 from .fork_worker import process_forks
 from .material_worker import process_material
 from .pipeline_config import PipelineConfig
@@ -51,4 +52,5 @@ def _run_pipeline(db, config, token, transport, clock):
     deep = process_deep(db, config)
     material = process_material(db, config)
     forks = process_forks(db, config)
-    return pipeline_report(db, config, sync, scan, games, deep, material, forks)
+    defenses = process_defenses(db, config)
+    return pipeline_report(db, config, sync, scan, games, deep, material, forks, defenses)

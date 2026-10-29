@@ -23,11 +23,12 @@ def public_report(report: dict) -> dict:
     return {key: report[key] for key in fields}
 
 
-def pipeline_report(db, config, sync, scan, games, deep, material, forks):
+def pipeline_report(db, config, sync, scan, games, deep, material, forks, defenses):
     reports = mastery_report(db, subject=config.learner)
     status = combined_status(
         combined_status(combined_status(run_status(db, sync, games, scan), deep), material), forks
     )
+    status = combined_status(status, defenses)
     return {
         "status": status,
         "sync": sync,
@@ -35,6 +36,7 @@ def pipeline_report(db, config, sync, scan, games, deep, material, forks):
         "deep": deep,
         "material": material,
         "forks": forks,
+        "fork_defenses": defenses,
         "games": games,
         "mastery": [public_report(row) for row in reports],
     }

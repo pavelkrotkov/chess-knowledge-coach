@@ -22,9 +22,9 @@ COVERAGE: dict[str, dict[str, Any]] = {
         "limits": "Game outcomes require review; hinted puzzle attempts add no skill evidence.",
     },
     "fork": {
-        "capabilities": ["tactical_geometry", "fork_opportunities"],
+        "capabilities": ["tactical_geometry", "fork_opportunities", "fork_defense"],
         "detector": "chess_coach.fork_observation.observe",
-        "limits": "Version 1.0.1 pawn and knight noncapturing execute observations may qualify for mastery after review and current source checks; broader fork mastery and practice remain unsupported.",
+        "limits": "Version 1.0.1 pawn and knight noncapturing execute observations may qualify for mastery after review and current source checks; version 1.0.0 knight-threat prevention may qualify after review and current source checks; broader fork mastery and fork practice remain unsupported.",
     },
     "hanging_piece": {
         "capabilities": ["tactical_geometry", "material_opportunities"],

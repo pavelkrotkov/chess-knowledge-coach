@@ -842,3 +842,30 @@ alternatives remained ambiguous because their forced played continuations contai
 only the root move. These examples are not independent validation or an accuracy
 estimate; other checks, defended targets, counterplay and insufficient lines can
 remain ambiguous. The worker reports its scan, decision caps and unavailable inputs.
+
+
+## Provisional fork-defense observations
+
+A separate bounded worker scans reconstructed learner decisions with its own
+cursor and the material scan and decision limits. It may inspect a stackless
+opponent-to-move position only as a positional candidate filter; it does not
+insert a null move or make a historical claim from that position. An existing
+threat is reported only when a legal alternative learner move retains it and the
+fork has a bounded proof using the original game history. A newly exposed fork
+may be reported only from a recorded engine continuation rooted at the legal
+played move, with its concrete material consequence and a verified alternative.
+The engine continuation is hypothetical; it does not claim the opponent actually
+played the fork or intended it. Equivalent quiet defenses can
+be successes. All legal in-scope immediate opponent fork candidates are checked
+within caps of 128 legal moves and 16 fork candidates per scan. The legal anchor
+search considers at most 64 learner moves and 32 fork proofs; exhausted anchor
+budgets are labeled. Direct material threats, unresolved candidates, checks,
+capturing defenses, promotions, counterplay, missing lines, draw or repetition
+boundaries and exhausted budgets are ambiguous or excluded. A quiet alternative's
+recorded continuation may include a check only when its legal reply resolves it. Score gaps only veto
+an otherwise supported failure. The private evidence page identifies the actual
+source and distinguishes a legal counterfactual from the played line. Version
+1.0.0 success and failure observations for noncapturing knight fork threats may
+contribute to mastery after explicit review and current source checks. Other
+fork-defense evidence remains visible but ineligible; fork exercise access
+remains closed. Existing fork execution and material policies are separate.

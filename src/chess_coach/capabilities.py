@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.21.0"
+REGISTRY_VERSION = "1.22.0"
 
 CAPABILITIES = (
     {
@@ -103,6 +103,13 @@ CAPABILITIES = (
         "name": "Bounded material forks",
         "status": "observation-only",
         "details": "Noncapturing fork moves use bounded legal defenses and target captures with current engine continuations, accounting for defensive captures and subsequent replies against the original material position. Legal capturing, promotion and en passant fork shapes are reported as unsupported ambiguity; mate-only consequences, recaptures, unresolved checks, sacrifices and counterplay remain outside scope or ambiguous. Version 1.0.1 pawn and knight execute successes and failures may qualify for mastery after review and current source checks; other fork observations remain ineligible. Fork practice is not supported.",
+    },
+    {
+        "id": "fork_defense",
+        "area": "Skill coverage",
+        "name": "Bounded fork defense observations",
+        "status": "observation-only",
+        "details": "A positional standstill prefilter is paired with a legal history-preserving alternative or recorded fork line and bounded material proof. Equivalent quiet defenses may be observed; checks, capturing defenses, promotions, unresolved counterplay and unproven forks remain ambiguous. Version 1.0.0 success and failure observations for noncapturing knight fork threats may qualify for mastery after review and current source checks; other defense observations remain ineligible and fork practice is unsupported.",
     },
     {
         "id": "manual_deep_selection",

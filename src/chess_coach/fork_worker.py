@@ -7,7 +7,7 @@ from .fork_worker_item import process_item
 from .pipeline_cursor import save_cursor
 
 
-def process_forks(db, config):
+def process_forks(db, config, *, scanner=scan, processor=process_item, policy=POLICY):
     report = {
         "status": "complete",
         "examined": 0,
@@ -21,15 +21,15 @@ def process_forks(db, config):
             "decisions": config.material_max_decisions,
         },
     }
-    key, rows = scan(db, config.learner, config.material_max_scan)
+    key, rows = scanner(db, config.learner, config.material_max_scan)
     outcomes = Counter()
     for row in rows[: config.material_max_scan]:
         if report["processed"] >= config.material_max_decisions:
             report["capped"] = True
             break
         report["examined"] += 1
-        process_item(db, row["id"], config.learner, report, outcomes)
-        save_cursor(db, key, row["id"], POLICY)
+        processor(db, row["id"], config.learner, report, outcomes)
+        save_cursor(db, key, row["id"], policy)
     if len(rows) > config.material_max_scan and report["examined"] == config.material_max_scan:
         report["capped"] = True
     if report["capped"] or report["unavailable"]:
