@@ -2,6 +2,8 @@
 
 import chess
 
+from .unified_endgame_sources import VERSIONS as ENDGAME_VERSIONS
+from .unified_endgame_sources import resolve as resolve_endgame
 from .unified_own_game import LEGACY_VERSION, VERSION
 from .unified_own_game_evidence import LIMIT, _inspect, _rows
 from .unified_own_game_keys import _parts, _positive
@@ -25,10 +27,8 @@ def _current(db, subject, rows, kind, evidence_id):
 
 
 def resolve(db, version, key, subject):
-    if version == "mate-own-v1":
-        from .mate_practice import resolve as resolve_mate
-
-        return resolve_mate(db, version, key, subject)
+    if version in ENDGAME_VERSIONS:
+        return resolve_endgame(db, version, key, subject)
     position, kind, suffix = _parts(key)
     rows = _rows(db, subject, position)
     if version == LEGACY_VERSION:

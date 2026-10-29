@@ -153,7 +153,7 @@ def test_private_browser_own_game_and_unlisted_move(tmp_path, monkeypatch):
         data={"csrf": csrf, "source_type": "own-game", "version": VERSION, "key": key},
     )
     page = client.get(posted.headers["Location"], base_url="https://coach.invalid", headers=headers)
-    assert b"Target square:" not in page.data and b"View source evidence" in page.data
+    assert b"Target square:" not in page.data and b"View source evidence" not in page.data
     posted = client.post(
         "/unified/move",
         base_url="https://coach.invalid",
@@ -167,6 +167,7 @@ def test_private_browser_own_game_and_unlisted_move(tmp_path, monkeypatch):
     )
     page = client.get(posted.headers["Location"], base_url="https://coach.invalid", headers=headers)
     assert b"Line complete" in page.data and b"Checkmate verified" not in page.data
+    assert b"View source evidence" in page.data
 
 
 def test_analysis_change_invalidates_live_session_and_retains_history(tmp_path, monkeypatch):

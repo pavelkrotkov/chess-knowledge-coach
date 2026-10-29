@@ -2,11 +2,12 @@
 {% block title %}Practice — Chess coach{% endblock %}
 {% block content %}
 <h2>Practice</h2>
-{% set objectives = {"legal_line": "Find a continuation", "checkmate": "Find checkmate", "promotion": "Promote a pawn", "material_capture": "Capture material", "material_protection": "Protect material"} %}
+{% set objectives = {"legal_line": "Find a continuation", "checkmate": "Find checkmate", "promotion": "Promote a pawn", "material_capture": "Capture material", "material_protection": "Protect material", "pawn_win": "Preserve a win", "pawn_draw": "Hold a draw"} %}
 {% set sources = {"own-game": "Your game", "public": "Public collection", "corpus": "Puzzle collection"} %}
 {% set statuses = {"active": "In progress", "needs_verification": "Needs verification", "line_completed": "Line complete", "objective_verified": "Checkmate verified"} %}
 <p>Playing as {{ state.learner_color }}. Source: {{ sources.get(state.source_type, "Practice") }} · Objective: {{ objectives.get(state.objective, "Find a continuation") }} · Status: {{ statuses.get(state.status, "Unavailable") }}.</p>
-{% if state.source_type == "own-game" %}<p>{% if state.review_status == "accepted" %}Reviewed.{% else %}Not yet reviewed; treat this exercise as provisional.{% endif %} This is one supplied continuation; other legal moves may need checking. {% if state.source_version != "mate-own-v1" or state.status in ("line_completed", "objective_verified") %}<a href="{{ url_for('views.evidence_detail', evidence_id=state.evidence_id) }}">View source evidence (reveals the move)</a>.{% endif %}</p>{% endif %}
+{% if state.source_type == "own-game" %}<p>{% if state.review_status == "accepted" %}Reviewed.{% else %}Not yet reviewed; treat this exercise as provisional.{% endif %} This is one supplied continuation; other legal moves may need checking.{% if state.status != 'active' %} <a href="{{ url_for('views.evidence_detail', evidence_id=state.evidence_id) }}">View source evidence (reveals the move)</a>.{% endif %}</p>{% endif %}
+{% if state.source_version == "pawn-own-v1" %}<p>The pawn detector family is awaiting independent validation; this practice does not establish mastery.</p>{% endif %}
 {% set board_interactive = state.status == "active" and at_current %}
 {% include "board.html" %}
 {% set navigation_url = url_for('unified_practice.show_page', attempt=state.attempt_id) %}

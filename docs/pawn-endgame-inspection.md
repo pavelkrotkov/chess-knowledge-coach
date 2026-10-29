@@ -16,7 +16,9 @@ stalemate, insufficient material, fivefold repetition and the 75-move rule are
 handled through the rules library, with checkmate taking precedence. Either
 player may choose an available threefold or fifty-move claim; the values assume
 optimal play and optimal claims. A claim is not automatic. There is no inference
-about intent, skill, mastery, or the outcome from opposition geometry.
+about intent, skill, mastery, or the outcome from opposition geometry. Direct
+opposition requires the intervening square to be empty; blocked king alignment
+is reported separately. The geometry is descriptive and does not affect WDL.
 
 The local WDL value is used only at a zero halfmove clock: immediately after a
 pawn move or capture, or at a known reset starting state. Such a move makes all

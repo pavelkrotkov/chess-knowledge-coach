@@ -3,9 +3,16 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.23.0"
+REGISTRY_VERSION = "1.24.0"
 
 CAPABILITIES = (
+    {
+        "id": "pawn_opportunities",
+        "area": "Skill coverage",
+        "name": "Bounded pawn-endgame choices",
+        "status": "observation-only",
+        "details": "The worker records provisional pawn observations; success or failure requires both a proved preserving and a worse legal alternative. Prepared own-game practice follows supplied moves; mastery remains closed pending independent validation.",
+    },
     {
         "id": "accessible_practice_board",
         "area": "Training",
@@ -18,7 +25,7 @@ CAPABILITIES = (
         "area": "Analysis",
         "name": "Private bounded pawn-endgame inspection",
         "status": "observation-only",
-        "details": "Local verified WDL and bounded history-aware search inspect current owned king-and-pawn decisions. Unknown alternatives remain ungraded; automatic coaching, exercises and mastery eligibility remain planned.",
+        "details": "Local verified WDL and bounded history-aware search inspect current owned king-and-pawn decisions. Unknown alternatives remain ungraded; provisional automatic observations and prepared practice are described separately.",
     },
     {
         "id": "manual_mate_proof",
@@ -95,7 +102,7 @@ CAPABILITIES = (
         "area": "Skill coverage",
         "name": "Positional and endgame decisions",
         "status": "planned",
-        "details": "Grounded positional lessons and automatic coaching of elementary endgame decisions remain planned.",
+        "details": "Broader grounded positional lessons and the full elementary endgame curriculum remain planned; bounded pawn choices are described separately.",
     },
     {
         "id": "material_opportunities",
@@ -158,7 +165,7 @@ CAPABILITIES = (
         "area": "Training",
         "name": "Own-game exercises",
         "status": "observation-only",
-        "details": "Own-game material practice requires a current verified witness and eligible review state. Protection version 1.0.0 and capture version 1.1.0 have scoped validation; bounded mate prepared lines are provisional and do not update mastery. Unreviewed sources remain provisional.",
+        "details": "Own-game material practice requires a current verified witness and eligible review state. Protection version 1.0.0 and capture version 1.1.0 have scoped validation; bounded mate and pawn prepared lines are provisional and do not update mastery. Unreviewed sources remain provisional.",
     },
     {
         "id": "broader_practice",

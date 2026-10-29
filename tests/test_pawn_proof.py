@@ -166,7 +166,7 @@ def test_source_changed_during_inspection_is_stale(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "inspect", changed)
     assert module.inspect_pawn(db, 1, learner="fixture_a") == {
         "status": "stale",
-        "version": "pawn-proof-v1",
+        "version": "pawn-proof-v2",
     }
 
 
@@ -178,3 +178,27 @@ def test_missing_proof_and_unsupported_compositions_are_unknown(monkeypatch):
     assert proof.inspect(board)["reason"] == "proof_resources_unavailable"
     extra = chess.Board("8/8/8/8/8/8/3PP3/K6k w - - 0 1")
     assert proof.inspect(extra)["status"] == "unsupported"
+
+
+def test_opposition_requires_an_empty_intervening_square_for_both_colors():
+    from chess_coach.pawn_geometry import describe
+
+    open_position = chess.Board("8/1K6/P7/1k6/8/8/8/8 w - - 0 1")
+    blocked_position = chess.Board("8/8/8/8/8/K7/P7/k7 w - - 0 1")
+    for board in (open_position, open_position.mirror()):
+        assert describe(board)["king_alignment"]
+        assert describe(board)["direct_opposition"]
+    for board in (blocked_position, blocked_position.mirror()):
+        assert describe(board)["king_alignment"]
+        assert not describe(board)["direct_opposition"]
+
+
+def test_geometry_has_no_effect_on_outcome_or_alternative_bounds(monkeypatch):
+    import chess_coach.pawn_proof as proof
+
+    board = chess.Board("8/8/8/8/8/8/P3k3/K7 w - - 0 1")
+    before = proof.inspect(board, node_limit=40, max_plies=1)
+    monkeypatch.setattr(proof, "describe", lambda board: {"direct_opposition": True})
+    after = proof.inspect(board, node_limit=40, max_plies=1)
+    assert before.pop("geometry") != after.pop("geometry")
+    assert before == after

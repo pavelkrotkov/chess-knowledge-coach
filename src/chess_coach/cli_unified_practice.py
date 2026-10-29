@@ -2,6 +2,7 @@
 
 import json
 
+from .pawn_practice_list import list_candidates as list_pawn_candidates
 from .unified_own_game import list_candidates
 from .unified_session_events import hint, show, submit
 from .unified_sessions import start
@@ -10,6 +11,9 @@ from .unified_sessions import start
 def configure(sub):
     listing = sub.add_parser("list-own-game-practice")
     listing.add_argument("--subject", required=True)
+    pawn = sub.add_parser("list-pawn-practice")
+    pawn.add_argument("--subject", required=True)
+    pawn.add_argument("--before")
     begin = sub.add_parser("start-unified")
     begin.add_argument("--attempt", required=True)
     begin.add_argument("--subject", required=True)
@@ -60,3 +64,11 @@ def handle_hint(db, args):
 
 def handle_list(db, args):
     print(json.dumps(list_candidates(db, args.subject), indent=2))
+
+
+def handle_list_pawn(db, args):
+    print(
+        json.dumps(
+            list_pawn_candidates(db, args.subject, before=getattr(args, "before", None)), indent=2
+        )
+    )

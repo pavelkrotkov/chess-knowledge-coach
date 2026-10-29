@@ -13,6 +13,8 @@ from .fork_explanation import explain_fork
 from .mate_evidence import currentness as mate_currentness
 from .material_evidence_current import evidence_currentness
 from .material_explanation import explain_material
+from .pawn_coach_current import current_pawn
+from .pawn_coach_explanation import explain as explain_pawn
 
 
 def inspect_evidence(db: Database, evidence_id: int) -> dict:
@@ -35,6 +37,11 @@ def inspect_evidence(db: Database, evidence_id: int) -> dict:
     if defense_currentness == "current":
         result["decision_fen"] = defense_fen
     result["mate_source_currentness"] = mate_currentness(db, result)
+    pawn, pawn_currentness = current_pawn(db, result)
+    result["pawn_source_currentness"] = pawn_currentness
+    result["pawn_explanation"] = explain_pawn(pawn) if pawn else None
+    if pawn:
+        result["decision_fen"] = pawn["report"]["decision_fen"]
     result["reviews"] = _reviews(db, evidence_id)
     return result
 

@@ -5,11 +5,14 @@ from .mastery_provenance import valid_confidence, valid_links
 from .mate_mastery_policy import mastery_allowed as mate_mastery_allowed
 from .material_mastery_policy import mastery_allowed
 from .material_mastery_source import source_reason
+from .pawn_mastery_policy import mastery_allowed as pawn_mastery_allowed
 
 
 def content_reason(db, row) -> str | None:
     if not mate_mastery_allowed(db, row):
         return "mate_family_unvalidated"
+    if not pawn_mastery_allowed(db, row):
+        return "pawn_family_unvalidated"
     reason = family_reason(db, row)
     if reason:
         return reason

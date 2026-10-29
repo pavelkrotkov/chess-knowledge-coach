@@ -28,10 +28,10 @@ def start(db, *, attempt_id, subject, source_type, version, key):
                 key,
             ):
                 raise ValueError("attempt ID belongs to another source")
+            require_current(db, old)
         else:
             _create(db, attempt_id, subject, source_type, version, key)
         row = session_row(db, attempt_id, subject)
-        require_current(db, row)
         result = view(row)
         db.connection.commit()
         return result

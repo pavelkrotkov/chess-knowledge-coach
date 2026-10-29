@@ -3,7 +3,8 @@
 from .decision_history import decision_board
 from .deep_selection_source import source_snapshot
 from .fact_fingerprint import canonical, digest
-from .pawn_proof import VERSION, inspect
+from .pawn_proof import VERSION
+from .pawn_proof import inspect_reused as inspect
 from .pawn_tables import MANIFEST_SHA256
 
 
