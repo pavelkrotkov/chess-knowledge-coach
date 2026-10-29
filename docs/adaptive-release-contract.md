@@ -47,7 +47,7 @@ No optional Maia or bulk handoff optimization substitutes for a mandatory phase.
 
 ## Delivery issues
 
-The following issues implement the mandatory phases; the parent issue records dependencies and the final release gate.
+The following 47 issues implement the mandatory phases; the parent issue records dependencies and the final release gate.
 
 ### Phase 0 — Release contract
 
@@ -56,7 +56,9 @@ The following issues implement the mandatory phases; the parent issue records de
 ### Phase 1 — Trustworthy analysis
 
 - [#121: Inspect comparable best-move and played-move analysis for each learner decision](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/121)
-- [#122: Run resumable selective deep analysis of critical and diagnostic positions](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/122)
+- [#167: Select and inspect bounded critical positions for deeper analysis](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/167)
+- [#168: Resume bounded deep decision analysis with native alternatives and isolated provenance](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/168)
+- [#122: Integrate and benchmark the bounded selective deep-analysis pipeline](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/122)
 - [#123: Publish a versioned competency graph with honest detector and task coverage](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/123)
 
 ### Phase 2 — Useful opportunity detection
@@ -82,7 +84,9 @@ The following issues implement the mandatory phases; the parent issue records de
 
 ### Phase 4 — Relevant practice material
 
-- [#138: Import and index a broad Lichess puzzle library within bounded Hermes resources](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/138)
+- [#169: Stage and publish immutable puzzle corpus versions in bounded SQLite batches](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/169)
+- [#170: Acquire official puzzle snapshots with safe resumable downloads and resource limits](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/170)
+- [#138: Activate and measure the broad indexed Lichess puzzle library on Hermes](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/138)
 - [#139: Add licensed public PGN libraries and canonical endgame/strategy training positions](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/139)
 - [#140: Practice own-game and canonical positions through a unified legal session](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/140)
 - [#142: Retrieve unfamiliar puzzles that train the same pattern as a learner mistake](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/142)
@@ -118,6 +122,8 @@ The following issues implement the mandatory phases; the parent issue records de
 
 - [#161: Operate the complete coaching and course pipeline within private Hermes budgets](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/161)
 - [#162: Verify and deploy the complete personalized coach and private Lichess courses](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/162)
+
+Issues #167 and #168 implement the selection and execution needed by #122; issues #169 and #170 implement staging and acquisition needed by #138. The integration issues retain the original end-to-end acceptance outcomes.
 
 Earlier related issues [#46](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/46), [#47](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/47), [#48](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/48), [#49](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/49), [#52](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/52) and [#53](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/53) remain relevant product history.
 

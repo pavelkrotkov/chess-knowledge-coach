@@ -1,9 +1,9 @@
 """Versioned competency graphs and honest, registry-backed coverage."""
 
 import ast
-import html
 import json
 import sys
+from html.parser import HTMLParser
 from pathlib import Path
 
 import pytest
@@ -82,6 +82,33 @@ def test_coverage_uses_real_capabilities_and_named_fixture_tests():
     assert len(report["edges"]) == len(EDGES)
 
 
+class SkillSections(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.sections = {}
+        self.skill = None
+        self.paragraph = None
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "section":
+            self.skill = dict(attrs).get("data-skill")
+            if self.skill:
+                self.sections[self.skill] = []
+        elif tag == "p" and self.skill:
+            self.paragraph = []
+
+    def handle_data(self, data):
+        if self.paragraph is not None:
+            self.paragraph.append(data)
+
+    def handle_endtag(self, tag):
+        if tag == "p" and self.paragraph is not None:
+            self.sections[self.skill].append("".join(self.paragraph).strip())
+            self.paragraph = None
+        elif tag == "section":
+            self.skill = None
+
+
 def test_cli_and_private_browser_show_same_coverage(tmp_path, monkeypatch, capsys):
     db_path = tmp_path / "unused.sqlite"
     monkeypatch.setattr(sys, "argv", ["chess-coach", "--db", str(db_path), "competencies"])
@@ -106,10 +133,20 @@ def test_cli_and_private_browser_show_same_coverage(tmp_path, monkeypatch, capsy
     )
     assert response.status_code == 200 and response.headers["Cache-Control"] == "no-store"
     page = response.get_data(as_text=True)
+    sections = SkillSections()
+    sections.feed(page)
     for item in report["skills"]:
-        assert html.escape(item["description"]) in page and item["status"] in page
+        paragraphs = sections.sections[item["skill"]]
+        assert any(item["description"] in p and item["status"] in p for p in paragraphs)
+        for capability in item["capabilities"]:
+            assert f"Capability: {capability['id']} ({capability['status']})" in paragraphs
         for prerequisite in item["prerequisites"]:
-            assert prerequisite in page
+            assert prerequisite in next(p for p in paragraphs if p.startswith("Prerequisites:"))
+        for support in item["supported_by"]:
+            assert support in next(p for p in paragraphs if p.startswith("Supported by:"))
+    for edge in report["edges"]:
+        if edge["type"] == "contains":
+            assert f"Contains: {edge['to']}" in sections.sections[edge["from"]]
     assert not db_path.exists()
 
 
