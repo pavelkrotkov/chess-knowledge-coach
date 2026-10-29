@@ -10,7 +10,12 @@ from .deep_execution_views import deep_for_position
 
 
 def inspect_decision(
-    db: Database, position_id: int, *, run_id: int | None = None, learner: str | None = None
+    db: Database,
+    position_id: int,
+    *,
+    run_id: int | None = None,
+    learner: str | None = None,
+    _history=None,
 ) -> dict:
     position = db.connection.execute(
         """SELECT p.*, g.pgn, g.variant FROM positions p JOIN games g ON g.id=p.game_id
@@ -19,7 +24,11 @@ def inspect_decision(
     ).fetchone()
     if position is None:
         raise ValueError("unknown decision")
-    board = decision_board(db, position)
+    board = (
+        decision_board(db, position)
+        if _history is None
+        else _history.board(position["game_id"], position_id)
+    )
     run = cheap_run(db, position["game_id"], position_id, run_id)
     run_view = dict(run) if run else None
     if run_view is not None:

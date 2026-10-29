@@ -805,6 +805,14 @@ Own-game material practice requires a current witness and independent validation
 detector family. Protection version 1.0.0 and capture version 1.1.0 have scoped
 validation. Unreviewed observations are provisional, and rejected
 or revoked observations cannot be used.
+The library's bounded material preview reuses reconstructed history only within
+one read-only snapshot, retaining at most four games and the requested decisions
+from the bounded candidate scan. Currentness is checked against that snapshot;
+a concurrent commit can become visible to the next request. When called inside
+an existing transaction, the preview uses that transaction's snapshot and does
+not end it. The cache is discarded after each preview, and session admission
+and subsequent actions independently recheck source, ownership, version and
+review. Detector and mapping fingerprints and publication are unchanged.
 Its bounded first-move line does not establish a complete forced objective. Sessions are
 rechecked against their source and review when resumed or played. These sessions do not
 write mastery evidence or FSRS reviews. General objective-aware grading remains separate work.

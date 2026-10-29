@@ -5,15 +5,17 @@ from __future__ import annotations
 from collections.abc import Iterator
 from datetime import UTC, datetime
 
+from chess import Board
+
 from .analysis_positions import decisions
 from .db import Database
 from .learner_identity import learner_color, normalize_identity
 from .learner_time import observation_time
 
 
-def decision_contexts(
+def decision_context_boards(
     db: Database, game_id: int, *, learner: str | None
-) -> Iterator[dict[str, object]]:
+) -> Iterator[tuple[dict[str, object], Board]]:
     game = db.connection.execute("SELECT * FROM games WHERE id = ?", (game_id,)).fetchone()
     if game is None:
         raise ValueError(f"unknown game id: {game_id}")
@@ -28,7 +30,7 @@ def decision_contexts(
         before = clocks[mover]
         after = position["clock_seconds"]
         clocks[mover] = after
-        yield {
+        context = {
             "subject": subject if mover == color else None,
             "learner_color": color,
             "game_id": game["id"],
@@ -49,3 +51,11 @@ def decision_contexts(
             "mover_rating": game[f"{mover}_elo"],
             "other_rating": game[f"{other}_elo"],
         }
+        yield context, board
+
+
+def decision_contexts(
+    db: Database, game_id: int, *, learner: str | None
+) -> Iterator[dict[str, object]]:
+    for context, _board in decision_context_boards(db, game_id, learner=learner):
+        yield context

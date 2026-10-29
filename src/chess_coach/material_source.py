@@ -9,7 +9,9 @@ from .material_source_analysis import current_lines
 from .material_source_marker import source_marker
 
 
-def prepare(db, position_id, learner):
+def prepare(db, position_id, learner, *, history=None):
+    if history is not None and (history.db is not db or history.learner != learner):
+        raise ValueError("preview history scope differs")
     position = db.connection.execute(
         "SELECT * FROM positions WHERE id=?", (position_id,)
     ).fetchone()
@@ -20,12 +22,14 @@ def prepare(db, position_id, learner):
         "SELECT 1 FROM positions WHERE game_id=? LIMIT 1 OFFSET ?", (game_id, MAX_DECISIONS)
     ).fetchone():
         raise ValueError("game exceeds material verification limit")
-    context_for_position(db, game_id, position_id, learner)
+    _context(db, game_id, position_id, learner, history)
     marker = source_marker(db, position_id, game_id, learner)
-    context = context_for_position(db, game_id, position_id, learner)
+    context = _context(db, game_id, position_id, learner, history)
     cheap = source_snapshot(db, game_id, learner)
-    board = decision_board(db, position)
-    analysis = inspect_decision(db, position_id, run_id=cheap["cheap_run_id"], learner=learner)
+    board = decision_board(db, position) if history is None else history.board(game_id, position_id)
+    analysis = inspect_decision(
+        db, position_id, run_id=cheap["cheap_run_id"], learner=learner, _history=history
+    )
     best, played, provenance = current_lines(db, analysis, cheap["cheap_run_id"], board)
     if source_marker(db, position_id, game_id, learner) != marker:
         raise ValueError("source changed during preparation")
@@ -40,3 +44,9 @@ def prepare(db, position_id, learner):
         "source_marker": marker,
         "cheap_run_id": cheap["cheap_run_id"],
     }
+
+
+def _context(db, game_id, position_id, learner, history):
+    if history is None:
+        return context_for_position(db, game_id, position_id, learner)
+    return history.context(game_id, position_id)
