@@ -19,4 +19,6 @@ def build_parser() -> argparse.ArgumentParser:
     pipeline(sub)
     recovery(sub)
     sub.add_parser("capabilities", help="Report versioned product capabilities")
+    sub.add_parser("competencies", help="Report competency coverage and prerequisites")
+    sub.add_parser("seed-competencies", help="Store the current competency graph version")
     return parser

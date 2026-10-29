@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Competencies — Chess coach{% endblock %}
+{% block content %}
+<h2>Competencies</h2>
+<p>Graph {{ report.version }} · capability registry {{ report.capability_registry_version }}. A name or theme is not evidence of a skill.</p>
+<p>Prerequisites and supporting skills describe learning relationships; they do not claim a learner has mastered them.</p>
+{% for item in report.skills %}
+<section>
+<h3>{{ item.skill | replace("_", " ") }}</h3>
+<p>{{ item.description }} · <strong>{{ item.status }}</strong>{% if item.operation %} · {{ item.operation }}{% endif %}</p>
+{% if item.prerequisites %}<p>Prerequisites: {{ item.prerequisites | join(", ") }}</p>{% endif %}
+{% if item.supported_by %}<p>Supported by: {{ item.supported_by | join(", ") }}</p>{% endif %}
+{% if item.detector %}<p>Detector: {{ item.detector }}</p>{% endif %}
+{% if item.grading %}<p>Grading: {{ item.grading }}</p>{% endif %}
+{% if item.content %}<p>Content: {{ item.content }}</p>{% endif %}
+<p>{{ item.limits }}</p>
+{% if item.fixtures %}<p>Verification: {% for kind, test in item.fixtures.items() %}{{ kind }}: {{ test }}{% if not loop.last %}; {% endif %}{% endfor %}</p>{% endif %}
+</section>
+{% endfor %}
+{% endblock %}

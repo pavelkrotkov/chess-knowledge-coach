@@ -3,6 +3,7 @@
 from flask import Blueprint, abort, current_app, redirect, render_template, request, url_for
 
 from .capabilities import capability_report
+from .competency_coverage import competency_report
 from .curriculum import daily_plan
 from .decision_inspection import inspect_decision
 from .evidence_review import inspect_evidence, list_evidence, review_evidence
@@ -87,3 +88,8 @@ def decision_detail(position_id: int):
     return render_template(
         "decision.html", decision=result, board=board_rows(result["decision_fen"])
     )
+
+
+@views.get("/competencies")
+def competencies():
+    return render_template("competencies.html", report=competency_report())

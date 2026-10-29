@@ -10,6 +10,8 @@ from . import cli_pipeline
 from . import cli_recovery as recovery
 from .capabilities import capability_report
 from .cli_parser import build_parser
+from .competency_coverage import competency_report
+from .competency_graph import seed_competency_graph
 from .db import Database
 
 COMMANDS = {
@@ -50,6 +52,14 @@ def main() -> None:
     args = build_parser().parse_args()
     if args.command == "capabilities":
         print(json.dumps(capability_report(), indent=2))
+        return
+    if args.command == "competencies":
+        print(json.dumps(competency_report(), indent=2))
+        return
+    if args.command == "seed-competencies":
+        db = Database(args.db)
+        db.initialize()
+        print(json.dumps({"skills": seed_competency_graph(db)}))
         return
     if args.command in recovery.COMMANDS:
         recovery.COMMANDS[args.command](args)

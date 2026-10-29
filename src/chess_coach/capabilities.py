@@ -3,9 +3,16 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.1.0"
+REGISTRY_VERSION = "1.2.0"
 
 CAPABILITIES = (
+    {
+        "id": "competency_graph",
+        "area": "Skill coverage",
+        "name": "Competency graph and coverage",
+        "status": "supported",
+        "details": "A versioned taxonomy displays prerequisites and implementation coverage; it does not add detectors or establish mastery.",
+    },
     {
         "id": "mate_in_one_execute",
         "area": "Skill coverage",

@@ -527,3 +527,18 @@ This command does not configure Tailscale Serve or install a service.
 
 For private service installation, backup, upgrade, and recovery, see the
 [Hermes operations guide](docs/operations.md).
+
+## Competency coverage
+
+`chess-coach competencies` reports the current versioned learning graph, typed
+prerequisites and support relationships, and capability-backed coverage. The
+private browser exposes the same report at **Competencies**. Observation-only
+geometry or opening classification is not a skill outcome; unsupported names
+and puzzle themes are not mastery evidence. Supported mate-in-one execution
+links to its implementation and positive, negative and ambiguous tests.
+
+`chess-coach --db coach.sqlite seed-competencies` stores this graph in the
+existing ontology tables without changing older versions. Seeding is idempotent
+and rejects a conflicting copy of the same version. Relations are directed from
+a prerequisite or supporting skill to the skill it helps; `contains` expresses
+taxonomy rather than a prerequisite.
