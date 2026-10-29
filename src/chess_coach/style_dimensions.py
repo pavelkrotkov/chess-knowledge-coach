@@ -1,5 +1,7 @@
 """Classify contrasting endpoint proxies and conflicting alternatives."""
 
+from .style_transitions import classify as transitions
+
 
 def classify(pair):
     played, other = pair["played"], pair["alternative"]
@@ -12,16 +14,22 @@ def classify(pair):
     tradeoff = None
     if abs(material_delta) >= 1 and abs(attack_delta) >= 3 and material_delta * attack_delta < 0:
         tradeoff = "more_material" if material_delta > 0 else "more_attacked_squares"
-    return {"simplification": simplification, "material_activity": tradeoff}
+    return {"simplification": simplification, "material_activity": tradeoff, **transitions(pair)}
 
 
 def dimensions(pairs):
-    found = {name: set() for name in ("simplification", "material_activity")}
+    found = {
+        name: set()
+        for name in ("simplification", "material_activity", "queenless", "low_material_transition")
+    }
     for pair in pairs:
         for name, value in classify(pair).items():
             if value:
                 found[name].add(value)
-    return {
-        name: next(iter(values)) if len(values) == 1 else "ambiguous" if values else None
-        for name, values in found.items()
-    }
+    return {name: _vote(values) for name, values in found.items()}
+
+
+def _vote(values):
+    if "ambiguous" in values or len(values) > 1:
+        return "ambiguous"
+    return next(iter(values)) if values else None

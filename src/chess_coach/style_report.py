@@ -7,7 +7,7 @@ from .style_selection import selection
 from .style_sources import source_games
 from .style_summary import summarize
 
-VERSION = "style-choices-v2"
+VERSION = "style-choices-v3"
 
 
 def style_report(db, learner):
@@ -41,6 +41,15 @@ def style_report(db, learner):
     )
     return {
         "version": VERSION,
+        "transition_method": (
+            "Four-ply conditional projections, not observed outcomes or intent: queenless "
+            "contrasts zero queens with one per side from such a root; imbalanced "
+            "endpoints are ambiguous. A low-material transition contrasts fewer than six "
+            "non-pawn pieces with six or more from a root with at least six; this is a "
+            "phase proxy, not proof of an endgame. Standard-start verified history, "
+            "nonterminal non-repeated positions and non-promotion lines are required. "
+            "Comparable roots have exact same-depth scores within 50 cp at depth >= 4."
+        ),
         "familiarity_note": (
             "Familiarity is unknown: game-start timestamps do not date individual decisions. "
             "Earlier-started games may reach the position later; this count is not prior exposure."

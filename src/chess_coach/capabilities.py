@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.38.0"
+REGISTRY_VERSION = "1.39.0"
 
 CAPABILITIES = (
     {
@@ -289,9 +289,9 @@ CAPABILITIES = (
     {
         "id": "style_choices",
         "area": "Style",
-        "name": "Material and simplification choice observations",
+        "name": "Material, simplification and transition choice observations",
         "status": "observation-only",
-        "details": "Current bounded MultiPV choices expose provisional four-ply material, piece-count and attack-map proxies with coverage and contextual strata. They do not establish personality, skill or playing strength.",
+        "details": "Current bounded MultiPV choices expose provisional four-ply material, piece-count, attack-map, queenless and low-material transition proxies with coverage and contextual strata. Projections are conditional, not observed outcomes; initiative, defense and center choices remain planned. They do not establish personality, skill or playing strength.",
     },
     {
         "id": "repertoire_recommendations",
