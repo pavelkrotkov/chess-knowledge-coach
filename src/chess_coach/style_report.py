@@ -8,7 +8,7 @@ from .style_selection import selection
 from .style_sources import source_games
 from .style_summary import summarize
 
-VERSION = "style-choices-v5"
+VERSION = "style-choices-v6"
 MATE_SEARCH_LIMIT = 100
 
 
@@ -27,6 +27,11 @@ def style_report(db, learner, *, max_games=MAX_GAMES):
             "selection_capped_out": 0,
             "selection_omitted_critical": 0,
             "selection_missing_scores": 0,
+            "selected_in_check": 0,
+            "comparable_in_check": 0,
+            "forced_check": 0,
+            "outside_check": 0,
+            "check_context_unknown": 0,
         }
     )
     allocations, observations = Counter(), []
@@ -84,6 +89,16 @@ def style_report(db, learner, *, max_games=MAX_GAMES):
             "checks are recorded separately. These observations do not establish initiative, "
             "attacking intent, skill or causal game outcomes; broader king threats remain "
             "unsupported. Existing same-search, same-depth CP gates are unchanged."
+        ),
+        "defense_method": (
+            "Only legal root responses while already in check are compared. King moves, "
+            "captures, interpositions against one sliding checker and counterchecks may overlap; "
+            "they are not independent observations. Captures identify the captured piece and "
+            "square, which need not be the checker. A legal evasion does not prove subsequent "
+            "safety, compensation or overall defense quality. Forced, unscored, stale, missing "
+            "and unsupported choices are unknown; non-check decisions are outside this family. "
+            "Threatened-piece protection and longer threats remain unsupported. Each contrast "
+            "requires the same current, same-search, same-depth exact CP gate as other choices."
         ),
         "sample_note": (
             "Games are selected in descending local game-ID order, not by game date. "

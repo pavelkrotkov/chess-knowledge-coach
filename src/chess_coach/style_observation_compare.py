@@ -3,6 +3,7 @@
 from .deep_execution_views import deep_for_position
 from .style_check_annotate import annotate
 from .style_compare import candidates
+from .style_defense_choices import annotate as annotate_defense
 from .style_history_lines import history_safe, lines_safe
 
 
@@ -21,6 +22,7 @@ def compare(db, learner, context, item, board, budget):
     if not lines_safe(board, lines):
         return "history_or_promotion_unsupported", compared, deep, covered, completed
     annotate(board, compared, budget)
+    annotate_defense(board, compared)
     return status, compared, deep, covered, completed
 
 

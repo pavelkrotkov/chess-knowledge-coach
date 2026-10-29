@@ -1,6 +1,7 @@
 """Summarize the descriptive dimensions of a selected sample."""
 
 from .style_counts import counts
+from .style_defense_choices import NAMES as DEFENSE_NAMES
 from .style_strata import strata
 from .style_trend import trend
 
@@ -25,5 +26,6 @@ def summarize(observations):
             "root_check",
             "conditional_check",
             "conditional_mate",
+            *DEFENSE_NAMES,
         )
     }
