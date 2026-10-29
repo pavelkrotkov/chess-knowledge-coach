@@ -63,6 +63,13 @@ CAPABILITIES = (
         "details": "Grounded positional lessons and verified elementary endgame decisions are not yet available.",
     },
     {
+        "id": "material_opportunities",
+        "area": "Skill coverage",
+        "name": "Bounded material observations",
+        "status": "observation-only",
+        "details": "Legal direct non-pawn captures and immediate protection use bounded exchange and current engine lines. Checks, en passant, promotions, uncertain replies and compensation remain ambiguous. Independent validation is required before mastery eligibility.",
+    },
+    {
         "id": "manual_deep_selection",
         "area": "Analysis",
         "name": "Manual selection for deep analysis",

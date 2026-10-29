@@ -587,7 +587,7 @@ relative to the completed cheap checkpoint and its recorded engine/configuration
 provenance. Selection does not rehash the executable or infer unrun configuration
 changes. If source data or its cheap checkpoint changes, a selection becomes
 stale. Analysis handoff rejects
-source databases containing selection or deep history until a provenance-aware
+source databases containing selection, deep or material history until a provenance-aware
 merge is implemented; it never silently drops that history.
 
 ## Automatic selective deep analysis
@@ -728,3 +728,24 @@ judgments; a sample direction requires five opportunities across three games.
 Game outcomes and same-search score gaps are shown separately and cannot prove
 that a choice caused the result. Missing or incomplete comparisons never become
 preference evidence. Other style dimensions remain planned.
+## Provisional material observations
+
+The automatic worker separately scans up to 40 recorded positions and verifies
+at most four new learner decisions per invocation. It reuses only the current
+cheap checkpoint or a current complete deep result and checks those inputs
+again before committing. Identical active observations replay without replacing
+reviews; changed source or analysis generations create new lineage. Use
+`process-pipeline --help` to set those bounds or `--no-material` to disable the
+pass for one invocation. Engine search is not repeated by this detector.
+
+The current family describes limited non-pawn captures and immediate material
+protection, using legal recaptures on one square and short recorded engine lines.
+It cannot prove an opportunity is safe against every forcing move or later
+compensation. Checks, en passant, promotion, pawn captures, pins, unclear
+exchanges and insufficient or conflicting lines remain ambiguous or outside
+coverage. A score difference only vetoes a potentially misleading failure; it
+never creates an observation on its own. The private evidence page displays
+SAN lines, source context and the boundary. Outcomes do not imply recognition
+or intent, mappings start unreviewed, and even accepted mappings remain excluded
+from mastery until the independent held-out validation and decision described in
+[material validation](docs/material-observation-validation.md) are complete.

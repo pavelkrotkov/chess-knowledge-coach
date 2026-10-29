@@ -44,6 +44,7 @@ def test_registry_is_scoped_unique_and_defensive():
     assert states["competency_graph"] == "supported"
     assert states["mate_in_one_execute"] == "supported"
     assert states["tactical_geometry"] == "observation-only"
+    assert states["material_opportunities"] == "observation-only"
     assert states["own_game_practice"] == "planned"
     assert states["private_course_publication"] == "planned"
     entries[0]["name"] = "modified"

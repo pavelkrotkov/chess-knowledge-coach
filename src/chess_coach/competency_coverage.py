@@ -26,8 +26,9 @@ COVERAGE: dict[str, dict[str, Any]] = {
         "detector": "chess_coach.motif_detectors.detect_motifs",
     },
     "hanging_piece": {
-        "capabilities": ["tactical_geometry"],
-        "detector": "chess_coach.motif_detectors.detect_motifs",
+        "capabilities": ["tactical_geometry", "material_opportunities"],
+        "detector": "chess_coach.material_observation.material_observation",
+        "limits": "Provisional bounded material observations require review and independent validation before mastery eligibility.",
     },
     "absolute_pin": {
         "capabilities": ["tactical_geometry"],

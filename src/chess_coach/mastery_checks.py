@@ -1,9 +1,10 @@
 """Check review, mapping, and linked-source eligibility."""
 
-from .mastery_provenance import is_pending_training, training_reason, valid_confidence, valid_links
+from .mastery_content import final_reason
+from .mastery_provenance import is_pending_training, training_reason
 
 
-def basic_reason(row, subject: str) -> str | None:
+def basic_reason(db, row, subject: str) -> str | None:
     if not subject or subject in {"default", "unassigned", "?", "-"}:
         return "unassigned_subject"
     if row["review_decision"] != "accept" or row["human_validated"] != 1:
@@ -12,7 +13,7 @@ def basic_reason(row, subject: str) -> str | None:
         return training_reason(row)
     if row["mapping_run_id"] is None or row["mapping_status"] != "active":
         return "superseded_or_unscoped"
-    return _content_reason(row)
+    return final_reason(db, row)
 
 
 def _review_reason(row) -> str:
@@ -21,13 +22,3 @@ def _review_reason(row) -> str:
     if row["human_validated"] == 1 and row["review_decision"] is None:
         return "legacy_review"
     return "unreviewed_or_invalid_review"
-
-
-def _content_reason(row) -> str | None:
-    if row["outcome"] not in {"success", "failure"}:
-        return "ambiguous"
-    if not valid_confidence(row["confidence"]):
-        return "invalid_confidence"
-    if not valid_links(row):
-        return "unproven_source"
-    return None
