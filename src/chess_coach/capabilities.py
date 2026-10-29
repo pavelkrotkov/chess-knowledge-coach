@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.35.0"
+REGISTRY_VERSION = "1.36.0"
 
 CAPABILITIES = (
     {
@@ -19,6 +19,13 @@ CAPABILITIES = (
         "name": "King shelter and defensive choices",
         "status": "observation-only",
         "details": "The bounded worker records changes in king-zone shelter and compares immediate legal checks, captures, promotions and conditional king moves for played and sampled alternative choices. Repetition and draw boundaries are unsupported. Observations remain ambiguous and mastery is closed pending independent qualification.",
+    },
+    {
+        "id": "related_fork_execution",
+        "area": "Training",
+        "name": "Related pawn and knight fork execution",
+        "status": "supported",
+        "details": "Current owned qualified fork execution observations retrieve unfamiliar examples with a first-move fork and original-target capture in the legal supplied line. Fork prevention and later-timing forks remain unsupported; supplied lines do not prove all defenses.",
     },
     {
         "id": "pawn_structure_lessons",

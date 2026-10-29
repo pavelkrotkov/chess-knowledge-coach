@@ -1112,3 +1112,38 @@ Reusing an event ID with the same input returns the original result; conflicting
 retries are rejected. The learner and cited lesson source are rechecked before
 starting or recording an event, and rejected, revoked, or changed sources
 cannot be resumed. Probe results do not change reviews, FSRS, or mastery.
+
+## Related fork execution practice
+
+A current subject-owned pawn or knight fork execution observation can lead from
+its evidence or grounded lesson to unfamiliar related practice. The exact
+selected evidence must retain its active producer, mapper version and scope,
+source fact and latest accepted or unreviewed review status. A successful fork
+and a missed fork are labeled separately; neither is treated as mastery. The
+existing capture-transfer path and its historical session bindings remain
+unchanged. Related material-protection practice is not yet supported.
+
+Candidates come from a bounded indexed `fork` theme pool and licensed public
+collections. The theme is only a search hint. After the corpus setup move, the
+complete supplied line is replayed; the learner must create a legal pawn or
+knight fork immediately and the same piece must capture an original fork target
+on the next learner move. Target piece roles, relative geometry, material,
+phase, opening context and content difficulty determine ranking. Candidate
+forks later in the line, unresolved en-passant states and other fork operations
+are outside this slice. A supplied example line does not prove the move wins
+against every defense. Familiar positions and games are excluded under the
+same rules and limits as capture transfer, and source/version/review changes
+invalidate the opaque reference and the resulting cued session.
+
+```bash
+uv run chess-coach --db PROJECT_DB related-forks --subject LEARNER --evidence EVIDENCE_ID --corpus CORPUS_VERSION
+uv run chess-coach --db PROJECT_DB start-related-fork --subject LEARNER --evidence EVIDENCE_ID --corpus CORPUS_VERSION --attempt ATTEMPT_ID --reference OPAQUE_REFERENCE
+```
+
+Use `--cursor CURSOR` to continue a preview. The source observation, rank
+version and operation are saved in immutable unified-session provenance as
+pattern-cued practice. For a public task with multiple supplied lines, the
+session retains only lines that match the fork; other legal choices need
+verification. The source line digest, selected indices and filter version are
+rechecked on resume. Existing session moves and reveal accounting apply;
+completion does not create skill evidence or verify unlisted alternatives.

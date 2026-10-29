@@ -8,7 +8,7 @@ from .unified_sources import resolve_source
 PUBLIC_SCAN = 500
 
 
-def public_candidates(db, familiar_games):
+def public_candidates(db, familiar_games, *, all_lines=False):
     result, metadata, scanned = [], [], 0
     for collection in collections(db):
         metadata.append(
@@ -37,7 +37,11 @@ def public_candidates(db, familiar_games):
                     "version": collection["version"],
                     "key": item["task_id"],
                     "fen": resolved["prompt_fen"],
-                    "line": resolved["lines"][0],
+                    **(
+                        {"lines": resolved["lines"]}
+                        if all_lines
+                        else {"line": resolved["lines"][0]}
+                    ),
                 }
             )
     return result, {"versions": metadata, "scanned": scanned}

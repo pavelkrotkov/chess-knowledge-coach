@@ -43,6 +43,7 @@ def describe(source):
         return None
     return {
         "evidence_id": evidence["id"],
+        "operation": evidence["operation"],
         "fact_id": evidence["facts"][0]["id"],
         "detector_version": evidence["facts"][0]["detector_version"],
         "mapping_run_id": evidence["mapping_run_id"],
