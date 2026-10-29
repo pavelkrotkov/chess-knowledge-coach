@@ -19,7 +19,7 @@ FAMILIES = {
     "pawn-endgame-mapper": ("pawn-endgame-observation", "1.0.0", "pawn_endgame_opportunity"),
     "back-rank-observation-mapper": ("back-rank-observation", "1.0.0", "back_rank"),
     "pawn-structure-lesson-mapper": ("pawn-structure-lesson", "1.1.0", "pawn_structure_lesson"),
-    "rook-plan-lesson-mapper": ("rook-plan-lesson", "1.0.0", "rook_plan_lesson"),
+    "rook-plan-lesson-mapper": ("rook-plan-lesson", "1.1.0", "rook_plan_lesson"),
 }
 
 

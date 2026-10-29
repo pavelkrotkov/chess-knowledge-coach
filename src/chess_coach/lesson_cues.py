@@ -13,7 +13,7 @@ CUES = {
     ),
     "rook-plan-lesson-mapper": (
         "Which legal rook entry squares can be reached, and how can the opponent contest them?",
-        "Compare each rook move with an alternative and check legal captures before occupying a file.",
+        "For each listed entry, calculate legal immediate captures and recaptures; compare the recorded alternative and inspect unchecked threats and later counterplay.",
         "Replay the linked decisions and test the recorded alternatives and immediate captures.",
     ),
     "pawn-structure-lesson-mapper": (

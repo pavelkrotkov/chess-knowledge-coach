@@ -42,6 +42,9 @@ def test_legal_file_entry_tactical_capture_and_alternative(mirror):
     assert result["color"] == ("black" if mirror else "white")
     assert any(entry["square"] == ("a4" if mirror else "a5") for entry in result["entries"])
     assert result["roots"]["best"]["captures"]["captures"][0]["gain"] == 5
+    assert result["plan_status"] == "immediate_capture_found"
+    assert ("Rxa4" if mirror else "Rxa5") in result["counterplan"]
+    assert "gain of 5 material units" in result["plan"]
     assert result["roots"]["played"]["square"] == ("a8" if mirror else "a1")
     assert result["mastery_eligible"] is False
 
@@ -82,6 +85,9 @@ def test_file_occupation_without_entry_and_active_alternative(mirror):
         best, played, take, quiet = "a1a2", "b1b5", "a8a2", "h8g7"
     result = lesson(board, played, line(f"{best} {take}"), line(f"{played} {quiet}"))
     assert result["roots"]["best"]["captures"]["captures"][0]["gain"] == 5
+    assert "file occupation" in result["plan"]
+    assert ("Rb4" if mirror else "Rb5") in result["plan"]
+    assert ("Rxa7" if mirror else "Rxa2") in result["counterplan"]
     assert result["lines"]["played"]["uci"][0] == played
     assert result["roots"]["played"]["square"] == ("a8" if mirror else "a1")
     assert (
@@ -100,6 +106,60 @@ def test_pinned_pawn_cannot_recapture_the_attacker(mirror):
         best, played, take, quiet = "a1a5", "b1c1", "a8a5", "h8g7"
     result = lesson(board, played, line(f"{best} {take}"), line(f"{played} {quiet}"))
     assert result["roots"]["best"]["captures"]["captures"][0]["gain"] == 5
+
+
+@pytest.mark.parametrize("mirror", [False, True])
+def test_conditional_entry_and_unresolved_checking_capture(mirror):
+    for bishop in (False, True):
+        board = chess.Board(
+            "7k/8/4b3/8/8/8/8/3R3K w - - 0 1" if bishop else "7k/8/8/8/8/8/8/3R3K w - - 0 1"
+        )
+        if mirror:
+            board = board.mirror()
+            best, played, reply, entry = "d8d4", "h8g8", "h1g2", "Rd4"
+        else:
+            best, played, reply, entry = "d1d5", "h1g1", "h8g7", "Rd5"
+        result = lesson(board, played, line(f"{best} {reply}"), line(f"{played} {reply}"))
+        assert entry in result["plan"]
+        assert ("Kg8" if mirror else "Kg1") in result["plan"]
+        if bishop:
+            assert result["plan_status"] == "unsupported"
+            assert "unresolved" in result["plan"] and "unresolved" in result["counterplan"]
+            assert "inconclusive" in result["next"]
+        else:
+            assert result["plan_status"] == "immediate_capture_absent"
+            assert "enemy-half entry" in result["plan"]
+            assert "no immediate legal capture" in result["plan"]
+            assert "unverified" in result["counterplan"]
+
+
+@pytest.mark.parametrize("mirror", [False, True])
+def test_played_rook_root_uses_correct_recorded_alternative(mirror):
+    board = chess.Board(FEN)
+    if mirror:
+        board = board.mirror()
+        rook, king, take, reply = "a8a4", "h8g8", "a1a4", "h1g2"
+    else:
+        rook, king, take, reply = "a1a5", "h1g1", "a8a5", "h8g7"
+    result = lesson(board, rook, line(f"{king} {reply}"), line(f"{rook} {take}"))
+    assert ("Ra4" if mirror else "Ra5") in result["plan"]
+    assert ("Kg8" if mirror else "Kg1") in result["plan"]
+    assert ("Rxa4" if mirror else "Rxa5") in result["counterplan"]
+
+
+@pytest.mark.parametrize("mirror", [False, True])
+def test_entry_with_favorable_bounded_recapture_is_not_called_safe(mirror):
+    board = chess.Board("3q3k/8/8/8/4P3/8/8/3R3K w - - 0 1")
+    if mirror:
+        board = board.mirror()
+        rook, king, take, reply = "d8d4", "h8g8", "d1d4", "h1g2"
+    else:
+        rook, king, take, reply = "d1d5", "h1g1", "d8d5", "h8g7"
+    result = lesson(board, king, line(f"{rook} {take}"), line(f"{king} {reply}"))
+    assert result["roots"]["best"]["captures"]["captures"][0]["gain"] == -4
+    assert "gain of -4 material units" in result["plan"]
+    assert "possible, not forced" in result["counterplan"]
+    assert "not forced" in result["uncertainty"]
 
 
 def test_incomplete_same_or_illegal_alternatives_remain_unpublished():
@@ -216,6 +276,9 @@ def test_worker_review_recurrence_browser_and_currentness(tmp_path, monkeypatch)
         page.status_code == 200
         and b"Counterplan" in page.data
         and b"bounded exchange gains 5" in page.data
+        and b"After Ra5" in page.data
+        and b"Rxa5" in page.data
+        and b"Next inspection" in page.data
     )
     db.connection.execute(
         "UPDATE decision_analysis_lines SET score_value=score_value+1 WHERE position_id=3 AND role='best'"
@@ -227,3 +290,55 @@ def test_worker_review_recurrence_browser_and_currentness(tmp_path, monkeypatch)
     assert changed["processed"] == 1
     assert inspect_evidence(db, evidence_id)["review_status"] == "accepted"
     assert inspect_evidence(db, evidence_id)["lifecycle_status"] == "superseded"
+
+
+def test_prior_review_is_preserved_and_upgrade_is_unreviewed(tmp_path, monkeypatch):
+    from chess_coach import rook_plan_mapping, rook_plan_publish
+    from chess_coach.rook_plan_source import prepare_lesson
+
+    db = Database(tmp_path / "upgrade.sqlite")
+    db.initialize()
+    board = chess.Board(FEN)
+    game = chess.pgn.Game()
+    game.setup(board)
+    game.headers.update(
+        {
+            "White": "fixture_learner",
+            "Black": "fixture_opponent",
+            "UTCDate": "2026.01.01",
+            "UTCTime": "12:00:00",
+            "Result": "*",
+        }
+    )
+    game.add_variation(board.parse_uci("h1g1"))
+    ingest_pgn(db, str(game))
+    monkeypatch.setattr(chess.engine.SimpleEngine, "popen_uci", lambda _: Engine())
+    config = PipelineConfig(learner="fixture_learner", engine_path=sys.executable, nodes=100)
+    assert (
+        run_analysis(db, 1, game_input(db, 1), config, engine_identity(sys.executable))["status"]
+        == "complete"
+    )
+    prepared, fact = prepare_lesson(db, 1, "fixture_learner")
+    old_fact = {key: value for key, value in fact.items() if key not in {"plan_status", "next"}}
+    old_fact.update(
+        {"version": "1.0.0", "plan": "Generic plan", "counterplan": "Generic counterplan"}
+    )
+    with monkeypatch.context() as patch:
+        patch.setattr(rook_plan_publish, "VERSION", "1.0.0")
+        patch.setattr(rook_plan_mapping, "VERSION", "1.0.0")
+        old = rook_plan_publish.publish(db, prepared, old_fact)
+    old_id = old["mapping"]["evidence_ids"][0]
+    review_evidence(db, old_id, decision="accept", actor="fixture")
+    assert inspect_evidence(db, old_id)["rook_plan_currentness"] == "stale"
+    assert state(db, 1, "fixture_learner") == "needed"
+    assert process_rook_plans(db, config)["processed"] == 1
+    prior = inspect_evidence(db, old_id)
+    assert prior["review_status"] == "accepted" and prior["lifecycle_status"] == "superseded"
+    new_id = db.connection.execute(
+        "SELECT MAX(id) FROM evidence_mappings WHERE skill='open_files'"
+    ).fetchone()[0]
+    current = inspect_evidence(db, new_id)
+    assert new_id != old_id and current["review_status"] == "unreviewed"
+    assert current["rook_plan_currentness"] == "current"
+    assert current["facts"][0]["detector_version"] == "1.1.0"
+    assert current["outcome"] == "ambiguous"

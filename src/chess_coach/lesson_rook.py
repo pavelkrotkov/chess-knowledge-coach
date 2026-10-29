@@ -24,6 +24,8 @@ def rook(evidence, fen):
         f"The {payload['color']} rook on {payload['rook']} has a recorded move to the {payload['file']}-file, which is {payload['file_kind']} in the source position.",
         payload["plan"],
         f"Counterplan: {payload['counterplan']}",
+        f"Next inspection: {payload['next']}",
+        payload["uncertainty"],
     ]
     entries = payload["entries"]
     if entries:

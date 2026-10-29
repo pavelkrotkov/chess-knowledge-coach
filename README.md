@@ -1077,10 +1077,14 @@ are not graded; the worker reports no-match-or-unsupported, unavailable and capp
 
 Facts and mappings retain their source, producer version and immutable history.
 Currentness checks source and output fingerprints without repeating the chess
-inference. The private decision and recurrence lessons show the source, plans,
-counterplans, legal alternatives, capture checks and review status. Recurring
-observations are descriptive, not repeated mistakes. Version 1.0.0 mappings are
-always ambiguous and never mastery-eligible, even when accepted. No independent
-held-out qualification has been performed: positive, negative and ambiguous
-review counts and false-claim counts are unknown. Before opening mastery, a
-separate held-out review and documented decision are required.
+inference. The private decision and recurrence lessons show the source, conditional plans,
+counterplans, legal alternatives, capture checks and review status. The plan
+names the recorded move and, where verified, the opponent capture and its bounded
+exchange; an inconclusive capture check is explicitly unsupported. Recurring
+observations are descriptive, not repeated mistakes. Version 1.1.0 mappings are
+always ambiguous and never mastery-eligible, even when accepted. An independent held-out review of version 1.0.0 covered two positive, two
+negative and two ambiguous cases and reported zero false factual claims; it
+identified missing position-specific plans and did not qualify mastery. Version
+1.1.0 has not yet received independent held-out review. Before opening mastery,
+a separate held-out review and documented decision are required. See the
+[version 1.0.0 review](https://github.com/pavelkrotkov/chess-knowledge-coach/pull/218#pullrequestreview-5700914014).

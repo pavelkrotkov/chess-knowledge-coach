@@ -8,7 +8,7 @@ def _mapping(evidence):
         (evidence["skill"], evidence["operation"], evidence["outcome"])
         == ("open_files", "evaluate", "ambiguous")
         and evidence["mapping_scope"] == "rook-plan-lesson"
-        and evidence["mapper_version"] == "1.0.0"
+        and evidence["mapper_version"] == "1.1.0"
     )
 
 
@@ -17,8 +17,8 @@ def _fact(fact):
     return (
         fact["producer"] == "rook-plan-lesson"
         and fact["fact_type"] == "rook_plan_lesson"
-        and fact["detector_version"] == fact["run_detector_version"] == "1.0.0"
-        and payload.get("version") == "1.0.0"
+        and fact["detector_version"] == fact["run_detector_version"] == "1.1.0"
+        and payload.get("version") == "1.1.0"
         and payload.get("mastery_eligible") is False
     )
 

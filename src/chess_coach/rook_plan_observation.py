@@ -5,8 +5,9 @@ import chess
 from .pawn_structure_immediate import _capture_status
 from .rook_plan_activity import activity
 from .rook_plan_geometry import entries
+from .rook_plan_narrative import narrative
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 
 def _root(board, line, source):
@@ -27,17 +28,18 @@ def _root(board, line, source):
 def observation(board, move, features, color, kind, lines):
     source = move.from_square
     roots = {role: _root(board, value, source) for role, value in lines.items()}
+    entry_moves = entries(board, source, features)
+    role = next(role for role, line in lines.items() if line["uci"][0] == move.uci())
     return {
         "version": VERSION,
         "color": color,
         "rook": chess.square_name(source),
         "file": chess.FILE_NAMES[chess.square_file(move.to_square)],
         "file_kind": kind,
-        "entries": entries(board, source, features),
+        "entries": entry_moves,
         "lines": lines,
         "roots": roots,
-        "plan": "Consider using this file to reach an entry square or attack a target.",
-        "counterplan": "The opponent can contest entry squares or capture an exposed rook.",
+        **narrative(roots, lines, entry_moves, role),
         "uncertainty": "Legal roots and immediate captures are local observations, not forced continuations, overall safety, positional advantage, intent or evidence of skill. Later tactics and compensation are not assessed.",
         "mastery_eligible": False,
     }
