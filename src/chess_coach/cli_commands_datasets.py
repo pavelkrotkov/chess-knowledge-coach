@@ -101,6 +101,7 @@ def handle_stage_puzzles(db, args):
         batch_size=args.batch_size,
         enable_wal=args.enable_wal,
         min_free_bytes=args.min_free_bytes,
+        selection_manifest=args.selection_manifest,
     )
     print(json.dumps(result, indent=2))
 

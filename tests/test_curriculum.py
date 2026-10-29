@@ -272,6 +272,7 @@ def test_schema_index_upgrade_is_atomic_and_preserves_puzzles(monkeypatch):
     with monkeypatch.context() as patch:
         patch.setattr(db_recent, "add_curriculum_index", lambda connection: None)
         patch.setattr(db_recent, "add_corpus_staging", lambda connection: None)
+        patch.setattr(db_recent, "add_puzzle_selection", lambda connection: None)
         db.initialize()
     db.connection.execute("PRAGMA user_version=12")
     db.connection.execute(
@@ -523,6 +524,7 @@ def test_invalid_legacy_now_due_does_not_break_index_upgrade(monkeypatch):
     with monkeypatch.context() as patch:
         patch.setattr(db_recent, "add_curriculum_index", lambda connection: None)
         patch.setattr(db_recent, "add_corpus_staging", lambda connection: None)
+        patch.setattr(db_recent, "add_puzzle_selection", lambda connection: None)
         db.initialize()
     db.connection.execute("PRAGMA user_version=12")
     db.connection.execute("""INSERT INTO training_items

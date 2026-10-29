@@ -7,6 +7,10 @@
 <section>
 <h3>{{ corpus.version }}</h3>
 <p>State: {{ corpus.state }} · Available rows: {{ corpus.imported_rows }}</p>
+{% if corpus.selection %}
+<p>Declared source-order prefix: {{ corpus.selection.selected_count }} of {{ corpus.selection.fullsource_count }} source records; this selection is not representative.</p>
+<p>Parent decoded CSV SHA-256: {{ corpus.selection.parent_csv_sha256 }}</p>
+{% else %}<p>Source selection: unknown.</p>{% endif %}
 {% if corpus.importer_version %}
 <p>Decoded CSV SHA-256: {{ corpus.csv_sha256 }}</p>
 {% if corpus.archive_sha256 %}<p>Archive SHA-256 (source metadata): {{ corpus.archive_sha256 }}</p>{% endif %}

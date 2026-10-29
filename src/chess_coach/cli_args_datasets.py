@@ -39,6 +39,7 @@ def configure(sub):
     stage.add_argument("--version", required=True)
     stage.add_argument("--csv-sha256", required=True)
     stage.add_argument("--archive-sha256")
+    stage.add_argument("--selection-manifest", type=Path)
     stage.add_argument("--source-url")
     stage.add_argument("--max-rows", type=int, default=1000)
     stage.add_argument("--batch-size", type=int, default=100)

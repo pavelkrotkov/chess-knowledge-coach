@@ -1,5 +1,7 @@
 """Read bounded corpus progress and theme coverage."""
 
+import json
+
 from .db import Database
 
 
@@ -7,7 +9,7 @@ def corpus_report(db: Database) -> list[dict]:
     rows = db.connection.execute(
         """SELECT c.id,c.version,c.state,c.source,c.checksum,c.imported_rows,
         i.csv_sha256,i.archive_sha256,i.importer_version,i.byte_offset,i.row_number,
-        i.accepted,i.rejected,i.error FROM puzzle_corpora c
+        i.accepted,i.rejected,i.error,i.selection_json FROM puzzle_corpora c
         LEFT JOIN puzzle_imports i ON i.corpus_id=c.id ORDER BY c.version"""
     ).fetchall()
     return [_report(db, row) for row in rows]
@@ -15,6 +17,8 @@ def corpus_report(db: Database) -> list[dict]:
 
 def _report(db: Database, row) -> dict:
     result = dict(row)
+    selection = result.pop("selection_json")
+    result["selection"] = json.loads(selection) if selection is not None else None
     if result["state"] == "legacy_ready":
         result["source"] = "legacy local import"
     themes = db.connection.execute(

@@ -15,6 +15,7 @@ from .mastery_schema import allow_unknown_trend
 from .pipeline_cooldown_schema import add_pipeline_cooldown
 from .pipeline_schema import add_pipeline_stages
 from .puzzle_import_schema import add_corpus_staging
+from .puzzle_selection_schema import add_puzzle_selection
 from .puzzle_session_schema import add_puzzle_sessions
 from .training_completion_schema import add_training_completions
 from .training_schema import add_training_scheduler_config
@@ -38,6 +39,7 @@ def upgrade_recent(connection: sqlite3.Connection, version: int) -> None:
         (17, add_deep_selection),
         (18, add_corpus_staging),
         (19, add_deep_execution),
+        (20, add_puzzle_selection),
     )
     for target, apply_upgrade in upgrades:
         if version < target:

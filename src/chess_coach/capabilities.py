@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.7.0"
+REGISTRY_VERSION = "1.9.0"
 
 CAPABILITIES = (
     {
@@ -11,7 +11,7 @@ CAPABILITIES = (
         "area": "Training",
         "name": "Staged local puzzle corpus",
         "status": "supported",
-        "details": "Decoded local CSV snapshots import in bounded batches; only legally validated, completed versions become available. Official download and broad activation remain planned.",
+        "details": "Official snapshots can be acquired and staged in bounded batches with optional declared subset provenance; only legally validated, completed versions become available. Live broad activation remains planned.",
     },
     {
         "id": "competency_graph",
@@ -39,7 +39,7 @@ CAPABILITIES = (
         "area": "Skill coverage",
         "name": "Pawn structures and board features",
         "status": "observation-only",
-        "details": "Atomic episodes and conservative IQP, Carlsbad, French-like, Caro-Kann-like and Benoni-like history describe positions; they do not establish positional skill failures. Other named families remain planned.",
+        "details": "Atomic episodes and conservative IQP, Carlsbad, French-like, Caro-Kann-like, Benoni-like, Maróczy-like, Hedgehog-like, Scheveningen-like and Boleslavsky-like history describe positions; they do not establish positional skill failures. Other named families remain planned.",
     },
     {
         "id": "tactical_decisions",
