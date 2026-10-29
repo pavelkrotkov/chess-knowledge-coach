@@ -135,6 +135,11 @@ def _observation(game, color, clock, choice):
             "material_activity": None,
             "queenless": None,
             "low_material_transition": None,
+            "center_contact": None,
+            "center_pawn_capture": None,
+            "center_pawn_exchange": None,
+            "center_file_opening": None,
+            "center_lock": None,
         },
         "context": {
             "color": color,
@@ -214,7 +219,7 @@ def test_profile_uses_owned_current_deep_results_and_private_browser(tmp_path, m
     main()
     output = capsys.readouterr().out
     cli_report = json.loads(output)
-    assert cli_report["version"] == "style-choices-v3"
+    assert cli_report["version"] == "style-choices-v4"
     assert "not prior exposure" in cli_report["familiarity_note"]
     assert "overlapping games" in cli_report["trend_note"]
     assert LEARNER not in output and OPPONENT not in output

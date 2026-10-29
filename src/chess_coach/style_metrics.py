@@ -2,6 +2,7 @@
 
 import chess
 
+from .style_center_features import features as center_features
 from .style_transition_metrics import queens
 
 HORIZON = 4
@@ -52,5 +53,6 @@ def metrics(board, color):
         "material": material,
         "pieces": pieces,
         **queens(board),
+        **center_features(board),
         "enemy_half_attacks": _attacks(board, color),
     }

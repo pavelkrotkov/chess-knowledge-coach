@@ -7,7 +7,7 @@ from .style_selection import selection
 from .style_sources import source_games
 from .style_summary import summarize
 
-VERSION = "style-choices-v3"
+VERSION = "style-choices-v4"
 
 
 def style_report(db, learner):
@@ -49,6 +49,16 @@ def style_report(db, learner):
             "phase proxy, not proof of an endgame. Standard-start verified history, "
             "nonterminal non-repeated positions and non-promotion lines are required. "
             "Comparable roots have exact same-depth scores within 50 cp at depth >= 4."
+        ),
+        "center_method": (
+            "The four-ply conditional lines compare specific opposing pawn contacts with at "
+            "least one pawn on the d/e file (pairs list white square then black square); "
+            "legal pawn-on-pawn captures touching d/e; "
+            "consecutive pawn recaptures of the same capturing pawn; newly pawn-free d/e "
+            "files; and the exact d4/e4 white and d5/e5 black locked skeleton. Events list "
+            "their side and ply and can be opponent moves. These are narrow proxies, not "
+            "universal open or closed centers, actual outcomes or learner intent. Opposing "
+            "contrasts are ambiguous and no contrast is not evidence of preference."
         ),
         "familiarity_note": (
             "Familiarity is unknown: game-start timestamps do not date individual decisions. "
