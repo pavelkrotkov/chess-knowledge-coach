@@ -283,3 +283,21 @@ def test_automatic_deep_defaults_match_cli():
     assert defaults.deep_seconds == args.deep_seconds == 2.0
     assert defaults.deep_max_jobs == args.deep_max_jobs == 4
     assert defaults.deep_multipv == args.deep_multipv == 3
+
+
+def test_aggregate_completion_waits_for_deep_backlog(tmp_path, monkeypatch):
+    from chess_coach.openings import import_openings
+
+    db = setup_game(tmp_path / "complete.sqlite", monkeypatch)
+    engines(monkeypatch, db)
+    openings = tmp_path / "opening.tsv"
+    openings.write_text("eco\tname\tmoves\nC20\tOpen\te4 e5\n")
+    import_openings(db, openings, version="fixture", source_url="fixture://opening")
+    settings = replace(config(), opening_version="fixture", opening_source="fixture://opening")
+    first = process_pipeline(db, settings, transport=network())
+    assert first["deep"]["pending"] == 2 and first["status"] == "partial"
+    second = process_pipeline(db, settings, transport=network())
+    assert second["deep"]["pending"] == 1 and second["status"] == "partial"
+    third = process_pipeline(db, settings, transport=network())
+    assert third["deep"]["pending"] == 0 and third["deep"]["status"] == "complete"
+    assert third["status"] == "complete"

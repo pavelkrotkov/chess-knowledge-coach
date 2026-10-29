@@ -1005,6 +1005,7 @@ def test_changed_settings_require_a_fresh_bounded_scan(tmp_path, monkeypatch):
     import_openings(db, openings, version="fixture", source_url="fixture://opening")
     config = replace(
         config,
+        deep_enabled=False,
         max_games=1,
         max_scan=1,
         opening_version="fixture",
@@ -1085,6 +1086,7 @@ def test_opening_dataset_append_restarts_bounded_scan(tmp_path, monkeypatch):
     import_openings(db, openings, version="fixture", source_url="fixture://opening")
     config = replace(
         config,
+        deep_enabled=False,
         max_games=1,
         max_scan=1,
         opening_version="fixture",
@@ -1142,7 +1144,9 @@ def test_opening_dataset_change_during_scan_prevents_false_completion(tmp_path, 
     openings = tmp_path / "openings.tsv"
     openings.write_text("eco\tname\tmoves\nC20\tOpen\te4 e5\n")
     import_openings(db, openings, version="fixture", source_url="fixture://opening")
-    config = replace(config, opening_version="fixture", opening_source="fixture://opening")
+    config = replace(
+        config, deep_enabled=False, opening_version="fixture", opening_source="fixture://opening"
+    )
     original = pipeline.process_game
 
     def process_then_import(*args):
