@@ -36,7 +36,7 @@ def view(row):
         result["review_status"] = provenance["review_status"]
         result["evidence_id"] = provenance["evidence_id"]
         result["position_id"] = provenance["position_id"]
-        result["objective_target"] = provenance["objective_target"]
+        result.pop("source_key")
     return result
 
 
@@ -46,4 +46,8 @@ def recent(db, subject):
         FROM unified_sessions WHERE subject=? ORDER BY started_at DESC,attempt_id LIMIT 20""",
         (subject,),
     ).fetchall()
-    return [dict(row) for row in rows]
+    result = [dict(row) for row in rows]
+    for item in result:
+        if item["source_type"] == "own-game":
+            item.pop("source_key")
+    return result

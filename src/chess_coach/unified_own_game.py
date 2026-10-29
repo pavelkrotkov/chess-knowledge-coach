@@ -4,9 +4,10 @@ from collections import Counter
 
 from .learner_identity import normalize_identity
 from .unified_own_game_evidence import LIMIT, _inspect, _rows
-from .unified_own_game_snapshot import key_for
+from .unified_own_game_snapshot import group_for, key_for
 
-VERSION = "material-own-v1"
+VERSION = "material-own-v2"
+LEGACY_VERSION = "material-own-v1"
 
 
 def list_candidates(db, subject):
@@ -26,11 +27,11 @@ def list_candidates(db, subject):
         if reasons:
             excluded.update(reasons)
         else:
-            key = key_for(view)
+            group = group_for(view)
             ready.setdefault(
-                key,
+                group,
                 {
-                    "key": key,
+                    "key": key_for(view, row["id"]),
                     "objective": view["objective"]["kind"],
                     "review_status": view["review_status"],
                 },

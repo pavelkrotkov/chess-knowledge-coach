@@ -2,7 +2,7 @@
 {% block title %}Library — Chess coach{% endblock %}
 {% block content %}
 <h2>Recent practice</h2>
-{% for attempt in recent_attempts %}<p><a href="{{ url_for('unified_practice.show_page', attempt=attempt.attempt_id) }}">{% if attempt.status == "active" %}Resume{% else %}View{% endif %} {{ attempt.source_type }}: {{ attempt.source_key }}</a> · {{ attempt.status }}</p>{% else %}<p>No direct-source attempts yet.</p>{% endfor %}
+{% for attempt in recent_attempts %}<p><a href="{{ url_for('unified_practice.show_page', attempt=attempt.attempt_id) }}">{% if attempt.status == "active" %}Resume{% else %}View{% endif %} {{ attempt.source_type }}{% if attempt.source_type != "own-game" %}: {{ attempt.source_key }}{% endif %}</a> · {{ attempt.status }}</p>{% else %}<p>No direct-source attempts yet.</p>{% endfor %}
 <h2>Own-game material practice</h2>
 <p>Only current opportunities from independently validated detector families are available. Unreviewed observations remain provisional; rejected or revoked observations are excluded. Showing at most 100 observations; exclusions can have multiple reasons. Scanned: {{ own_game.scanned }}{% if own_game.truncated %} (more exist){% endif %}.</p>
 {% for reason, count in own_game.excluded.items() %}<p>{{ reason }}: {{ count }}</p>{% endfor %}

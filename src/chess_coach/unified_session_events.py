@@ -38,7 +38,7 @@ def _event(db, attempt_id, subject, event_id, kind, move):
             (attempt_id, event_id),
         ).fetchone()
         result = (
-            _previous(previous, kind, move)
+            _previous(previous, kind, move, row["source_type"])
             if previous
             else record_event(db, row, event_id, kind, move)
         )
@@ -49,7 +49,11 @@ def _event(db, attempt_id, subject, event_id, kind, move):
         raise
 
 
-def _previous(previous, kind, move):
+def _previous(previous, kind, move, source_type):
     if (previous["kind"], previous["submitted_move"]) != (kind, move):
         raise ValueError("event ID belongs to another request")
-    return json.loads(previous["response_json"])
+    result = json.loads(previous["response_json"])
+    if source_type == "own-game":
+        result.pop("source_key", None)
+        result.pop("objective_target", None)
+    return result

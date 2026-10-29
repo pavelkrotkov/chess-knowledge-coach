@@ -5,9 +5,13 @@ import chess
 KINDS = {"material_capture", "material_protection"}
 
 
-def key_for(view):
+def group_for(view):
     objective = view["objective"]
-    return "{}:{}:{}".format(view["position_id"], objective["kind"], objective["target"])
+    return view["position_id"], objective["kind"], objective["target"]
+
+
+def key_for(view, evidence_id):
+    return "{}:{}:{}".format(view["position_id"], view["objective"]["kind"], evidence_id)
 
 
 def snapshot(view, review, evidence_id):
