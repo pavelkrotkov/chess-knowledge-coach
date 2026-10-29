@@ -38,8 +38,13 @@ def show_selection(db, game_id, learner, *, selection_id=None, _history=None, _p
     if run is None:
         raise ValueError("selection is unavailable")
     state = selection_state(
-        db, game_id, learner, current["selection_id"], run,
-        _history=_history, _position_id=_position_id,
+        db,
+        game_id,
+        learner,
+        current["selection_id"],
+        run,
+        _history=_history,
+        _position_id=_position_id,
     )
     items = selection_items(db, run["id"], state)
     history = db.connection.execute(

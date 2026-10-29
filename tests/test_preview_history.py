@@ -540,12 +540,11 @@ def test_source_snapshot_cleared_when_preview_raises(tmp_path, monkeypatch):
     from chess_coach.material_source import prepare
 
     db, _evidence = fixture(tmp_path, monkeypatch)
-    with pytest.raises(RuntimeError, match="stop"):
-        with preview_history(db, LEARNER) as history:
-            history.targets([1])
-            prepare(db, 1, LEARNER, history=history)
-            assert history.sources.values
-            raise RuntimeError("stop")
+    with pytest.raises(RuntimeError, match="stop"), preview_history(db, LEARNER) as history:
+        history.targets([1])
+        prepare(db, 1, LEARNER, history=history)
+        assert history.sources.values
+        raise RuntimeError("stop")
     assert not history.sources.values
     assert db.connection.execute("PRAGMA query_only").fetchone()[0] == 0
     db.close()

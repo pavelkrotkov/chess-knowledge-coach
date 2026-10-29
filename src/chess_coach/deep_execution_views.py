@@ -38,8 +38,12 @@ def deep_for_position(db, position_id, learner, board, played, *, _history=None)
 def _selection_is_current(db, job, learner, position_id, history):
     try:
         selection = show_selection(
-            db, job["game_id"], learner, selection_id=job["selection_id"],
-            _history=history, _position_id=position_id,
+            db,
+            job["game_id"],
+            learner,
+            selection_id=job["selection_id"],
+            _history=history,
+            _position_id=position_id,
         )
     except ValueError:
         return False
