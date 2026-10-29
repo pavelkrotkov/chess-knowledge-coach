@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.20.0"
+REGISTRY_VERSION = "1.21.0"
 
 CAPABILITIES = (
     {
@@ -12,6 +12,13 @@ CAPABILITIES = (
         "name": "Accessible browser practice board",
         "status": "supported",
         "details": "Private practice supports square selection, keyboard and text move entry, promotion, played-position navigation and explicit hints or line reveal; move validation remains server-side.",
+    },
+    {
+        "id": "manual_pawn_proof",
+        "area": "Analysis",
+        "name": "Private bounded pawn-endgame inspection",
+        "status": "observation-only",
+        "details": "Local verified WDL and bounded history-aware search inspect current owned king-and-pawn decisions. Unknown alternatives remain ungraded; automatic coaching, exercises and mastery eligibility remain planned.",
     },
     {
         "id": "manual_mate_proof",
@@ -81,7 +88,7 @@ CAPABILITIES = (
         "area": "Skill coverage",
         "name": "Positional and endgame decisions",
         "status": "planned",
-        "details": "Grounded positional lessons and verified elementary endgame decisions are not yet available.",
+        "details": "Grounded positional lessons and automatic coaching of elementary endgame decisions remain planned.",
     },
     {
         "id": "material_opportunities",

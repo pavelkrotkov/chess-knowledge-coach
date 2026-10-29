@@ -39,6 +39,7 @@ COMMANDS = {
     "analyze-game": games.handle_analyze_game,
     "inspect-decision": games.handle_inspect_decision,
     "inspect-mate": games.handle_inspect_mate,
+    "inspect-pawn": games.handle_inspect_pawn,
     "predict-maia": games.handle_predict_maia,
     "sync-lichess": games.handle_sync_lichess,
     "import-openings": datasets.handle_import_openings,
