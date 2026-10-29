@@ -2,6 +2,7 @@
 
 from collections import Counter
 
+from .recurrence_snapshot import read_snapshot
 from .repertoire_sources import MAX_GAMES
 from .style_observations import game_observations
 from .style_protection_budget import MAX_WORK as PROTECTION_WORK_LIMIT
@@ -10,11 +11,16 @@ from .style_selection import selection
 from .style_sources import source_games
 from .style_summary import summarize
 
-VERSION = "style-choices-v7"
+VERSION = "style-choices-v8"
 MATE_SEARCH_LIMIT = 100
 
 
 def style_report(db, learner, *, max_games=MAX_GAMES):
+    with read_snapshot(db):
+        return _style_report(db, learner, max_games=max_games)
+
+
+def _style_report(db, learner, *, max_games):
     source = source_games(db, learner, max_games=max_games)
     counts = Counter(
         {
@@ -86,7 +92,7 @@ def style_report(db, learner, *, max_games=MAX_GAMES):
             "on the specific opponent reply at ply two, not forced threats or actual future "
             "moves. Positions already in check, draw-sensitive histories, promotions and "
             "exhausted budgets are unsupported for the conditional mate witness. Each report "
-            "examines at most 100 candidate continuation boards in descending local game-ID "
+            "examines at most 100 candidate continuation boards in selected game-start "
             "order; additional candidates are unknown, not negative. Root and third-ply "
             "checking counts are unaffected by this cap. Opponent "
             "checks are recorded separately. These observations do not establish initiative, "
@@ -119,7 +125,11 @@ def style_report(db, learner, *, max_games=MAX_GAMES):
             "unknown. The work limit is not a wall-clock guarantee."
         ),
         "sample_note": (
-            "Games are selected in descending local game-ID order, not by game date. "
+            "Games with verified UTC start and ownership are selected by game-start time; "
+            "local ID breaks exact ties without implying chronology. Unknown or stale "
+            "records cannot be placed and are excluded with explicit coverage. Historical "
+            "ingest may have normalized duplicate original tags before storage; such lost "
+            "ambiguity cannot be recovered. "
             "Selection and decision counts apply only to retained games; unprocessed games "
             "and their decisions are unknown when the sample, scan, replay or duplicate "
             "limits exclude records. No outcome or preference is inferred for those records."

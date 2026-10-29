@@ -17,6 +17,8 @@ from chess_coach.web import create_app
 from tests.test_deep_execution import DeepEngine, options, use_engine
 
 PGN = """[Event "Synthetic"]
+[UTCDate "2026.01.01"]
+[UTCTime "00:00:00"]
 [White "fixture_opponent"]
 [Black "fixture_learner"]
 [Result "*"]
@@ -89,7 +91,7 @@ def test_source_linked_defense_choices_in_cli_and_private_browser(tmp_path, monk
     )
     main()
     cli = json.loads(capsys.readouterr().out)
-    assert cli["version"] == "style-choices-v7"
+    assert cli["version"] == "style-choices-v8"
     assert cli["dimensions"]["defense_king"]["choices"]["non_king_move"] >= 1
     assert "not independent" in cli["defense_method"]
     app = create_app(

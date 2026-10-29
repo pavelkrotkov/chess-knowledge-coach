@@ -231,7 +231,7 @@ def test_schema_v21_upgrade_is_atomic_and_preserves_legacy(tmp_path, monkeypatch
         "SELECT 1 FROM sqlite_master WHERE name=\u0027unified_sessions\u0027"
     ).fetchone()
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 27
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 28
     assert db.connection.execute("SELECT version FROM puzzle_corpora").fetchone()[0] == "old"
 
 

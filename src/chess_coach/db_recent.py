@@ -21,6 +21,7 @@ from .public_training_schema import add_public_training
 from .puzzle_import_schema import add_corpus_staging
 from .puzzle_selection_schema import add_puzzle_selection
 from .puzzle_session_schema import add_puzzle_sessions
+from .style_time_schema import add_style_game_times
 from .training_completion_schema import add_training_completions
 from .training_schema import add_training_scheduler_config
 from .unified_session_schema import add_unified_sessions
@@ -52,6 +53,7 @@ def upgrade_recent(connection: sqlite3.Connection, version: int) -> None:
         (25, add_lessons),
         (26, add_probes),
         (27, add_objective_verification),
+        (28, add_style_game_times),
     )
     for target, apply_upgrade in upgrades:
         if version < target:

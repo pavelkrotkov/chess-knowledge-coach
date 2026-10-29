@@ -8,6 +8,7 @@ import chess.pgn
 
 from .ingest_identity import source_id
 from .ingest_moves import store_positions
+from .style_time_projection import update_projection
 
 
 def integer(value: str | None) -> int | None:
@@ -54,4 +55,5 @@ def insert_game(
     )
     if cursor.lastrowid is None:
         raise RuntimeError("SQLite did not return the game ID")
+    update_projection(connection, cursor.lastrowid)
     return {"games": 1, "positions": store_positions(connection, cursor.lastrowid, game)}

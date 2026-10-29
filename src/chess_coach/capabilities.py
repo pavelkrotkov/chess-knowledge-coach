@@ -3,9 +3,16 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.51.0"
+REGISTRY_VERSION = "1.52.0"
 
 CAPABILITIES = (
+    {
+        "id": "style_game_start_sampling",
+        "area": "Style",
+        "name": "Bounded recent game-start sample",
+        "status": "observation-only",
+        "details": "A versioned projection selects attributable games with validated UTC game-start timestamps. Unknown or stale records remain unranked; exact ties use local IDs without implying chronological order. Game starts do not establish decision chronology.",
+    },
     {
         "id": "explicit_promotion_objectives",
         "area": "Training",

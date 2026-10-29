@@ -37,7 +37,7 @@ def test_selection_schema_migrates_v16_atomically_and_preserves_history(tmp_path
     )
     db.initialize()
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 27
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 28
     assert db.connection.execute("SELECT COUNT(*) FROM games").fetchone()[0] == 1
 
 

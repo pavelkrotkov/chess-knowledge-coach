@@ -16,6 +16,8 @@ from chess_coach.objective_protection_source import resolve
 from tests.test_deep_execution import DeepEngine, options, use_engine
 
 PGN = """[Event "Synthetic"]
+[UTCDate "2026.01.01"]
+[UTCTime "00:00:00"]
 [White "fixture_learner"]
 [Black "fixture_opponent"]
 [Result "*"]
@@ -47,6 +49,8 @@ def fixture(path, monkeypatch, black=False):
     if black:
         mirrored = chess.pgn.Game()
         mirrored.headers["Event"] = "Synthetic"
+        mirrored.headers["UTCDate"] = "2026.01.01"
+        mirrored.headers["UTCTime"] = "00:00:00"
         mirrored.headers["White"] = "fixture_opponent"
         mirrored.headers["Black"] = "fixture_learner"
         node = mirrored.add_variation(chess.Move.from_uci("g2g3"))

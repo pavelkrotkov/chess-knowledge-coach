@@ -127,6 +127,8 @@ def test_owned_queenless_choice_reaches_cli_and_private_browser(tmp_path, monkey
     from tests.test_deep_execution import DeepEngine, options, use_engine
 
     pgn = """[Event "Synthetic"]
+[UTCDate "2026.01.01"]
+[UTCTime "00:00:00"]
 [White "fixture_opponent"]
 [Black "fixture_learner"]
 [Result "*"]
@@ -241,6 +243,8 @@ def test_custom_root_is_counted_as_unavailable_in_owned_report(tmp_path, monkeyp
     from chess_coach.deep_selection import select_deep
 
     custom = """[Event "Synthetic"]
+[UTCDate "2026.01.01"]
+[UTCTime "00:00:00"]
 [White "fixture_learner"]
 [Black "fixture_opponent"]
 [SetUp "1"]

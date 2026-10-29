@@ -130,6 +130,8 @@ def test_owned_selected_exchange_reaches_cli_and_private_browser(tmp_path, monke
     from tests.test_deep_execution import DeepEngine, options, use_engine
 
     pgn = """[Event "Synthetic"]
+[UTCDate "2026.01.01"]
+[UTCTime "00:00:00"]
 [White "fixture_learner"]
 [Black "fixture_opponent"]
 [Result "*"]
@@ -210,7 +212,7 @@ def test_owned_selected_exchange_reaches_cli_and_private_browser(tmp_path, monke
     )
     main()
     cli = json.loads(capsys.readouterr().out)
-    assert cli["version"] == "style-choices-v7"
+    assert cli["version"] == "style-choices-v8"
     assert cli["dimensions"]["center_pawn_exchange"]["choices"] == {"exchange": 1}
     assert "opponent moves" in cli["center_method"]
     app = create_app(
