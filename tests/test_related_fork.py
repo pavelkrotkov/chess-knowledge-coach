@@ -7,13 +7,15 @@ import pytest
 
 from chess_coach.evidence_review import review_evidence
 from chess_coach.fork_detector import process_decision
-from chess_coach.related_fork import preview
+from chess_coach.related_fork import preview, selection
 from chess_coach.related_fork_features import corpus_fork_features, fork_features
 from chess_coach.related_fork_start import start_related
 from chess_coach.unified_session_events import show, submit
 from chess_coach.web import create_app
 from tests.fork_concealment_support import assert_collision, assert_concealed
 from tests.test_fork_pipeline import LEARNER, make_game
+from tests.transfer_concealment_support import binding_text, preview_text
+from tests.transfer_expected_support import expected_binding
 
 PRE = "r2k4/6pp/8/1N6/8/8/6P1/7K b - - 0 1"
 LINE = "d8e8 b5c7 e8f8 c7a8"
@@ -46,7 +48,8 @@ def test_source_bound_fork_transfer_and_review_invalidation(tmp_path, monkeypatc
     result = preview(db, LEARNER, evidence, "test")
     assert result["status"] == "available" and result["source_outcome"] == "failure"
     assert len(result["items"]) == 1 and result["scanned"] == 2
-    assert "b5c7" not in json.dumps(result) and "fork-good" not in json.dumps(result)
+    assert "b5c7" not in preview_text(result, selection(db, LEARNER, evidence, "test"))
+    assert "fork-good" not in json.dumps(result)
     reference = result["items"][0]["reference"]
     with pytest.raises(ValueError):
         start_related(
@@ -68,6 +71,7 @@ def test_source_bound_fork_transfer_and_review_invalidation(tmp_path, monkeypatc
             reference=reference,
         )
     chosen = preview(db, LEARNER, evidence, "test")["items"][0]
+    selected = selection(db, LEARNER, evidence, "test")
     state = start_related(
         db,
         attempt_id="fork",
@@ -86,7 +90,9 @@ def test_source_bound_fork_transfer_and_review_invalidation(tmp_path, monkeypatc
         "execute",
         True,
     )
-    assert binding["evidence_id"] == evidence and "b5c7" not in json.dumps(binding)
+    assert binding["evidence_id"] == evidence
+    expected = expected_binding(db, selected, chosen["reference"], LEARNER, fork=True)
+    assert "b5c7" not in binding_text(binding, expected)
     review_evidence(db, evidence, decision="revoke", actor="fixture_reviewer")
     with pytest.raises(ValueError, match="stale"):
         show(db, "fork", LEARNER)
@@ -220,7 +226,7 @@ def test_public_candidates_duplicate_exclusion_and_cursor_scope(tmp_path, monkey
     assert len(first["items"]) == 4 and first["next_cursor"]
     assert first["excluded"]["exact_source"] == 1 and first["excluded"]["duplicate"] >= 1
     assert any(item["type"] == "public" for item in first["items"])
-    assert "b5c7" not in json.dumps(first)
+    assert "b5c7" not in preview_text(first, selection(db, LEARNER, evidence, "test"))
     second = preview(db, LEARNER, evidence, "test", first["next_cursor"])
     assert second == preview(db, LEARNER, evidence, "test", first["next_cursor"])
     assert not (
@@ -285,7 +291,7 @@ def test_cli_preview_and_guarded_start(tmp_path, monkeypatch, capsys):
     db, evidence = fixture(tmp_path, monkeypatch)
     listing(db, Namespace(subject=LEARNER, evidence=evidence, corpus="test", cursor=None))
     data = json.loads(capsys.readouterr().out)
-    assert "b5c7" not in json.dumps(data)
+    assert "b5c7" not in preview_text(data, selection(db, LEARNER, evidence, "test"))
     begin(
         db,
         Namespace(
@@ -392,7 +398,8 @@ def test_public_matching_uses_any_validated_alternative(tmp_path, monkeypatch):
     db.connection.commit()
     result = preview(db, LEARNER, evidence, "test")
     public = next(item for item in result["items"] if item["type"] == "public")
-    assert "b5c7" not in json.dumps(result)
+    selected = selection(db, LEARNER, evidence, "test")
+    assert "b5c7" not in preview_text(result, selected)
     start_related(
         db,
         attempt_id="public",
@@ -409,7 +416,8 @@ def test_public_matching_uses_any_validated_alternative(tmp_path, monkeypatch):
     binding = json.loads(row["provenance_json"])["related_fork"]
     assert binding["selected_line_indices"] == [1]
     assert binding["line_filter_version"] == "fork-execute-lines-v1"
-    assert "b5c7" not in json.dumps(binding)
+    expected = expected_binding(db, selected, public["reference"], LEARNER, fork=True)
+    assert "b5c7" not in binding_text(binding, expected)
     assert hint(db, "public", LEARNER, event_id="hint")["hint"] == "b5"
 
     from chess_coach import related_fork_current

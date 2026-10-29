@@ -23,14 +23,14 @@ def _mask_input(body, name, value):
     return body.replace(field, f'<input type="hidden" name="{name}" value="[opaque]">'.encode())
 
 
-def assert_concealed(page, csrf, reference=None):
+def assert_concealed(page, csrf, reference=None, *, answer=b"b5c7"):
     assert page.status_code == 200
     assert token(page, "csrf") == csrf
     if reference is not None:
         assert token(page, "reference") == reference
-    assert b"b5c7" not in without_opaque_inputs(page.data, csrf, reference)
+    assert answer not in without_opaque_inputs(page.data, csrf, reference)
 
 
-def assert_collision(page, collision):
+def assert_collision(page, collision, *, answer=b"b5c7"):
     if collision != "none":
-        assert b"b5c7" in page.data
+        assert answer in page.data
