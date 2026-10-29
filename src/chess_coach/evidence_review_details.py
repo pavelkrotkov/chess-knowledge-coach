@@ -6,6 +6,8 @@ from .db import Database
 from .evidence_review_facts import facts_for_evidence
 from .evidence_review_json import decode
 from .evidence_review_state import _summary, evidence_row
+from .fork_evidence_current import current_fork
+from .fork_explanation import explain_fork
 from .material_evidence_current import evidence_currentness
 from .material_explanation import explain_material
 
@@ -19,6 +21,11 @@ def inspect_evidence(db: Database, evidence_id: int) -> dict:
     result["mapping_created_at"] = row["mapping_created_at"]
     result["facts"] = facts_for_evidence(db, evidence_id)
     result["material_source_currentness"] = evidence_currentness(db, result)
+    fact, currentness, fen = current_fork(db, result)
+    result["fork_explanation"] = explain_fork(fact, fen)
+    result["fork_source_currentness"] = currentness
+    if currentness == "current":
+        result["decision_fen"] = fen
     result["reviews"] = _reviews(db, evidence_id)
     return result
 

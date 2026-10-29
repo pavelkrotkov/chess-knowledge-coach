@@ -813,3 +813,27 @@ chess notation or coordinates. A text-only form works without JavaScript. The
 history controls show positions already played without changing the attempt.
 Hint and reveal are explicit actions and are recorded as hints; a revealed line
 is one supplied continuation, not proof that other legal moves fail.
+
+## Provisional fork observations
+
+The automatic worker scans a separate rotating bounded set of decisions, using
+the material scan and decision limits. It uses reconstructed boards and the
+current owned deep result when available, otherwise the current cheap source.
+A supported noncapturing fork attacks at least two valuable targets, then tests
+every legal immediate defense and a legal unrecapturable target capture, bounded
+by 64 replies and the material verifier. Subsequent tactics and compensation are
+not exhaustively proven. A missed fork additionally requires legal source lines,
+a concrete material comparison and a score veto; a score gap alone never
+creates an outcome. Capturing fork moves, mate-only consequences, promotions,
+recaptures, unresolved checks, sacrifices and counterplay are outside scope or
+ambiguous. Evidence starts unreviewed and fork mastery and exercise access remain
+closed pending separate independent validation. The browser shows source
+currentness and a representative legal line; stale evidence is historical.
+
+The initial development smoke checks used synthetic mirrored positions with
+current owned-deep Stockfish sources. Both executed knight-fork cases and both
+pawn-move missed-fork cases produced bounded observations. Two king-move
+alternatives remained ambiguous because their forced played continuations contained
+only the root move. These examples are not independent validation or an accuracy
+estimate; other checks, defended targets, counterplay and insufficient lines can
+remain ambiguous. The worker reports its scan, decision caps and unavailable inputs.

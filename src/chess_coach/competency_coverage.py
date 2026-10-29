@@ -22,8 +22,9 @@ COVERAGE: dict[str, dict[str, Any]] = {
         "limits": "Game outcomes require review; hinted puzzle attempts add no skill evidence.",
     },
     "fork": {
-        "capabilities": ["tactical_geometry"],
-        "detector": "chess_coach.motif_detectors.detect_motifs",
+        "capabilities": ["tactical_geometry", "fork_opportunities"],
+        "detector": "chess_coach.fork_observation.observe",
+        "limits": "Bounded material forks are provisional and remain ineligible pending independent validation.",
     },
     "hanging_piece": {
         "capabilities": ["tactical_geometry", "material_opportunities"],

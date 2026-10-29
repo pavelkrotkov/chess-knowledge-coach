@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .db import Database
+from .fork_contract import PRODUCER as FORK_PRODUCER
 from .material_contract import PRODUCER
 
 
@@ -21,6 +22,10 @@ def evidence_rows(db: Database, subject: str, skill: str, operation: str):
                    WHERE l.evidence_id=e.id AND (d.producer=? OR f.fact_type='material_opportunity'))
                    AS material_fact_count,
                   (SELECT COUNT(*) FROM evidence_fact_links l
+                   JOIN detector_facts f ON f.id=l.fact_id JOIN detector_runs d ON d.id=f.run_id
+                   WHERE l.evidence_id=e.id AND (d.producer=? OR f.fact_type='fork_opportunity'))
+                   AS fork_fact_count,
+                  (SELECT COUNT(*) FROM evidence_fact_links l
                    LEFT JOIN detector_facts f ON f.id = l.fact_id
                    LEFT JOIN detector_runs d ON d.id = f.run_id
                    WHERE l.evidence_id = e.id AND (
@@ -36,5 +41,5 @@ def evidence_rows(db: Database, subject: str, skill: str, operation: str):
             SELECT id FROM evidence_review_events WHERE evidence_id = e.id ORDER BY id DESC LIMIT 1
         )
         WHERE e.subject = ? AND e.skill = ? AND e.operation = ? ORDER BY e.id""",
-        (PRODUCER, subject, skill, operation),
+        (PRODUCER, FORK_PRODUCER, subject, skill, operation),
     ).fetchall()
