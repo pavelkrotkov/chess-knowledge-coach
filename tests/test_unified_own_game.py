@@ -186,10 +186,10 @@ def test_analysis_change_invalidates_live_session_and_retains_history(tmp_path, 
     assert db.connection.execute("SELECT COUNT(*) FROM unified_session_events").fetchone()[0] == 1
 
 
-def test_candidate_scan_is_bounded_and_deduplicates(monkeypatch):
+def test_candidate_scan_is_bounded_and_deduplicates(tmp_path, monkeypatch):
     from chess_coach import unified_own_game
 
-    rows = [{"id": n} for n in range(1, 102)]
+    rows = [{"id": n, "position_id": 7} for n in range(1, 102)]
     view = {
         "position_id": 7,
         "objective": {"kind": "material_protection", "target": "d4"},
@@ -198,12 +198,14 @@ def test_candidate_scan_is_bounded_and_deduplicates(monkeypatch):
     seen = []
     monkeypatch.setattr(unified_own_game, "_rows", lambda *args: rows)
 
-    def inspect(db, evidence_id, subject):
+    def inspect(db, evidence_id, subject, history):
         seen.append(evidence_id)
         return view, None, []
 
     monkeypatch.setattr(unified_own_game, "_inspect", inspect)
-    result = list_candidates(None, LEARNER)
+    db = Database(tmp_path / "bounded.sqlite")
+    result = list_candidates(db, LEARNER)
+    db.close()
     assert len(seen) == 100 and result["scanned"] == 100 and result["truncated"]
     assert result["candidates"] == [
         {

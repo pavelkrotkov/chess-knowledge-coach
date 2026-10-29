@@ -19,7 +19,7 @@ def _rows(db, subject, position=None):
         else (identity, MAPPER, LIMIT + 1)
     )
     return db.connection.execute(
-        """SELECT e.id FROM evidence_mappings e JOIN mapping_runs r ON r.id=e.mapping_run_id
+        """SELECT e.id, e.position_id FROM evidence_mappings e JOIN mapping_runs r ON r.id=e.mapping_run_id
         WHERE e.subject=? AND r.producer=?"""
         + clause
         + " ORDER BY e.id DESC LIMIT ?",
@@ -50,9 +50,9 @@ def _reasons(view):
     return [reason for failed, reason in checks if failed]
 
 
-def _inspect(db, evidence_id, subject):
+def _inspect(db, evidence_id, subject, history=None):
     try:
-        view = inspect_material_opportunity(db, evidence_id, learner=subject)
+        view = inspect_material_opportunity(db, evidence_id, learner=subject, _history=history)
         review = _review(db, evidence_id)
         reasons = _reasons(view)
         if not reasons:

@@ -3,6 +3,7 @@
 from collections import Counter
 
 from .learner_identity import normalize_identity
+from .preview_snapshot import preview_history
 from .unified_own_game_evidence import LIMIT, _inspect, _rows
 from .unified_own_game_snapshot import group_for, key_for
 
@@ -19,11 +20,17 @@ def list_candidates(db, subject):
             "scanned": 0,
             "truncated": False,
         }
+    with preview_history(db, subject) as history:
+        return _list(db, subject, history)
+
+
+def _list(db, subject, history):
     rows = _rows(db, subject)
+    history.targets(row["position_id"] for row in rows[:LIMIT])
     ready = {}
     excluded = Counter()
     for row in rows[:LIMIT]:
-        view, _, reasons = _inspect(db, row["id"], subject)
+        view, _, reasons = _inspect(db, row["id"], subject, history)
         if reasons:
             excluded.update(reasons)
         else:
