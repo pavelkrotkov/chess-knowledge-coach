@@ -819,7 +819,9 @@ is one supplied continuation, not proof that other legal moves fail.
 The automatic worker scans a separate rotating bounded set of decisions, using
 the material scan and decision limits. It uses reconstructed boards and the
 current owned deep result when available, otherwise the current cheap source.
-A supported noncapturing fork attacks at least two valuable targets, then tests
+The candidate is the played move or current engine best root, not an exhaustive
+search of all legal moves; a missing best source remains ambiguous. A supported
+noncapturing fork attacks at least two valuable targets, then tests
 every legal immediate defense and a legal unrecapturable target capture, bounded
 by 64 replies and the material verifier. Subsequent tactics and compensation are
 not exhaustively proven. A missed fork additionally requires legal source lines,

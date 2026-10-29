@@ -26,7 +26,7 @@ def observe(board, played, best_line, played_line):
 def _alternative(board, actual, best_line, played_line):
     best = _best_move(board, best_line)
     if not isinstance(best, chess.Move):
-        return ambiguous("fork_unresolved") if targets(board, actual) else None
+        return ambiguous("current_best_unavailable")
     best_proof = fork_proof(board, best)
     if best_proof is None:
         return (

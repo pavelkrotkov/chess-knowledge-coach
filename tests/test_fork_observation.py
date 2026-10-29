@@ -94,3 +94,9 @@ def test_exhausted_reply_budget_cannot_produce_a_fork(monkeypatch):
     board = chess.Board("r3k3/7p/8/1N6/8/8/6P1/7K w - - 0 1")
     monkeypatch.setattr(proof_module, "MAX_REPLIES", 0)
     assert proof_module.fork_proof(board, chess.Move.from_uci("b5c7")) is None
+
+
+def test_missing_best_source_is_ambiguous_even_without_played_fork():
+    board = chess.Board("r3k3/7p/8/1N6/8/8/6P1/7K w - - 0 1")
+    result = observe(board, "h1g1", None, line("h1g1", "e8f8"))
+    assert result["outcome"] == "ambiguous" and result["reason"] == "current_best_unavailable"
