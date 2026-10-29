@@ -2,6 +2,7 @@
 
 from collections import Counter
 
+from .repertoire_sources import MAX_GAMES
 from .style_observations import game_observations
 from .style_selection import selection
 from .style_sources import source_games
@@ -11,8 +12,8 @@ VERSION = "style-choices-v5"
 MATE_SEARCH_LIMIT = 100
 
 
-def style_report(db, learner):
-    source = source_games(db, learner)
+def style_report(db, learner, *, max_games=MAX_GAMES):
+    source = source_games(db, learner, max_games=max_games)
     counts = Counter(
         {
             "selected": 0,
@@ -83,6 +84,12 @@ def style_report(db, learner):
             "checks are recorded separately. These observations do not establish initiative, "
             "attacking intent, skill or causal game outcomes; broader king threats remain "
             "unsupported. Existing same-search, same-depth CP gates are unchanged."
+        ),
+        "sample_note": (
+            "Games are selected in descending local game-ID order, not by game date. "
+            "Selection and decision counts apply only to retained games; unprocessed games "
+            "and their decisions are unknown when the sample, scan, replay or duplicate "
+            "limits exclude records. No outcome or preference is inferred for those records."
         ),
         "familiarity_note": (
             "Familiarity is unknown: game-start timestamps do not date individual decisions. "
