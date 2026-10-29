@@ -311,51 +311,25 @@ def test_schema_index_upgrade_is_atomic_and_preserves_puzzles(monkeypatch):
 
 
 def test_repeated_reviewed_same_game_is_one_shared_supporting_context():
-    from chess_coach.fact_runs import record_fact_run
-    from chess_coach.mapping_runs import record_mapping_run_in_transaction
-    from chess_coach.mapping_transaction import mapping_transaction
-
     db = database()
     puzzle(db, "new", FEN_A, "g8h8 c5f8", 500)
+    # The headers distinguish imports, while players, moves, and time identify
+    # the same game. Each copy produces its own verified and reviewed mate fact.
     original = add_reviewed_game(db, 1)
-    row = db.connection.execute(
-        "SELECT position_id,observation_at FROM evidence_mappings WHERE id=?", (original,)
-    ).fetchone()
-    fact = record_fact_run(
-        db,
-        position_id=row["position_id"],
-        producer="independent-fixture",
-        detector_version="v1",
-        input_data={},
-        facts=[{"fact_type": "mate_in_one", "payload": {}}],
-    )
-    with mapping_transaction(db):
-        mapping = record_mapping_run_in_transaction(
-            db,
-            position_id=row["position_id"],
-            producer="independent-fixture",
-            mapper_version="v1",
-            subject="learner",
-            operation="execute",
-            scope_key="fixture",
-            input_data={},
-            mappings=[
-                {
-                    "skill": "mate_in_one",
-                    "outcome": "failure",
-                    "confidence": 1,
-                    "fact_ids": fact["fact_ids"],
-                    "context": {},
-                    "observation_at": row["observation_at"],
-                }
-            ],
-        )
-    duplicate = mapping["evidence_ids"][0]
-    review_evidence(db, duplicate, decision="accept", actor="fixture-reviewer")
+    duplicate = add_reviewed_game(db, 2)
+    rows = db.connection.execute(
+        """SELECT e.id, p.game_id, l.fact_id FROM evidence_mappings e
+        JOIN positions p ON p.id=e.position_id
+        JOIN evidence_fact_links l ON l.evidence_id=e.id
+        WHERE e.id IN (?, ?) ORDER BY e.id""",
+        (original, duplicate),
+    ).fetchall()
+    assert len({row["game_id"] for row in rows}) == 2
+    assert len({row["fact_id"] for row in rows}) == 2
     plan = daily_plan(db, subject="learner", corpus_version="v1", as_of=NOW)
     assert plan["evidence"]["context_count"] == 1
-    assert len(plan["evidence"]["supporting_evidence_ids"]) == 1
-    assert plan["evidence"]["exclusions"]["duplicate_context"] == 1
+    assert plan["evidence"]["supporting_evidence_ids"] == [duplicate]
+    assert plan["evidence"]["exclusions"] == {"duplicate_context": 1}
     assert plan["items"][0]["evidence_ref"] == plan["evidence"]["ref"]
 
 

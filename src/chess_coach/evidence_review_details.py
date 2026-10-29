@@ -10,6 +10,7 @@ from .fork_defense_evidence import current_defense
 from .fork_defense_explanation import explain as explain_defense
 from .fork_evidence_current import current_fork
 from .fork_explanation import explain_fork
+from .mate_evidence import currentness as mate_currentness
 from .material_evidence_current import evidence_currentness
 from .material_explanation import explain_material
 
@@ -33,6 +34,7 @@ def inspect_evidence(db: Database, evidence_id: int) -> dict:
     result["fork_defense_currentness"] = defense_currentness
     if defense_currentness == "current":
         result["decision_fen"] = defense_fen
+    result["mate_source_currentness"] = mate_currentness(db, result)
     result["reviews"] = _reviews(db, evidence_id)
     return result
 

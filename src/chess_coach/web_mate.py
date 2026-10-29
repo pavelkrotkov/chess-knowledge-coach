@@ -2,6 +2,7 @@
 
 from flask import Blueprint, abort, current_app, render_template, request
 
+from .mate_auto_view import automatic_view
 from .mate_inspection import inspect_mate
 from .web_db import database
 
@@ -19,4 +20,8 @@ def detail(position_id: int):
         )
     except ValueError:
         abort(404)
-    return render_template("mate_inspection.html", mate=result)
+    return render_template(
+        "mate_inspection.html",
+        mate=result,
+        automatic=automatic_view(database(), position_id, current_app.config["SUBJECT"]),
+    )
