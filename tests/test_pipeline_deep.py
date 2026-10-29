@@ -276,6 +276,7 @@ def test_timeout_leaves_pending_distinct_from_budget_cap(tmp_path, monkeypatch):
 
 def test_automatic_deep_defaults_match_cli():
     from chess_coach.cli_parser import build_parser
+    from chess_coach.opening_snapshot import SOURCE, VERSION
 
     defaults = PipelineConfig(learner=LEARNER)
     args = build_parser().parse_args(["process-pipeline"])
@@ -283,6 +284,8 @@ def test_automatic_deep_defaults_match_cli():
     assert defaults.deep_seconds == args.deep_seconds == 2.0
     assert defaults.deep_max_jobs == args.deep_max_jobs == 4
     assert defaults.deep_multipv == args.deep_multipv == 3
+    assert (args.opening_version, args.opening_source) == (VERSION, SOURCE)
+    assert args.classifier_version == "1.1.0"
 
 
 def test_aggregate_completion_waits_for_deep_backlog(tmp_path, monkeypatch):

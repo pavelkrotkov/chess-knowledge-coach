@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.10.0"
+REGISTRY_VERSION = "1.11.0"
 
 CAPABILITIES = (
     {
