@@ -39,7 +39,11 @@ def capture_observation(board, candidate, actual, best_line, played_line):
 def _lines(board, candidate, actual, best_line, played_line):
     if actual != candidate and board.gives_check(actual):
         return None, None, "checking_alternative_unresolved"
-    played_pv = continuation(board, played_line, actual.uci(), allow_checks=True)
+    played_pv = continuation(board, played_line, actual.uci(), allow_checks=actual == candidate)
+    if played_pv is None and actual != candidate:
+        played_pv = continuation(
+            board, played_line, actual.uci(), allow_checks=True, minimum_plies=4
+        )
     best_pv = continuation(board, best_line, allow_checks=board.gives_check(candidate))
     if played_pv is None or (actual != candidate and best_pv is None):
         return None, None, "continuation_unavailable"

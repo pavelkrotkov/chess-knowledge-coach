@@ -296,3 +296,29 @@ def test_checking_played_alternative_remains_ambiguous():
     assert (
         result["outcome"] == "ambiguous" and result["reason"] == "checking_alternative_unresolved"
     )
+
+
+def test_missed_capture_keeps_four_ply_material_compensation_check():
+    from chess_coach.material_observation import material_observation
+
+    board = chess.Board("7k/8/8/3b2r1/8/8/8/KNB5 w - - 0 1")
+    assert board.is_valid()
+    best = {**line(["c1g5", "h8h7", "g5h4", "h7g8"]), "score_value": 1000}
+    played = {**line(["b1c3", "h8g8", "c3d5", "g8h8"]), "score_value": 700}
+    result = material_observation(board, "b1c3", best, played)
+    assert result["outcome"] == "ambiguous"
+    assert result["reason"] == "alternative_material_or_compensation"
+
+
+def test_check_resolution_keeps_earlier_material_comparison_horizon():
+    from chess_coach.material_lines import continuation
+
+    board = chess.Board("4k3/8/8/3b2r1/8/8/8/KNB5 w - - 0 1")
+    played = line(["b1c3", "e8e7", "c3d5", "e7e8"])
+    assert board.is_valid()
+    assert continuation(board, played, "b1c3") is None
+    resolved = continuation(board, played, "b1c3", allow_checks=True, minimum_plies=4)
+    assert resolved["material_delta"] == 3 and len(resolved["uci"]) == 4
+    assert resolved["san"][2] == "Nxd5+"
+    short = line(["b1c3", "e8e7"])
+    assert continuation(board, short, "b1c3", allow_checks=True, minimum_plies=4) is None

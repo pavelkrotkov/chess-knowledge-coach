@@ -19,9 +19,12 @@ those outcomes. Missing or mismatched kinds and versions fail closed.
 For a missed capture, the candidate is the current engine best root, not an
 exhaustive search of all legal captures; a quiet best root can therefore leave a
 real capture outside coverage. Capture detector version `1.1.0` permits a
-checking reply in the recorded played line when a legal continuation resolves the check within eight plies. A checking
-played root remains ambiguous, and the candidate still has to pass its bounded
-legal-reply proof, exact score veto and concrete material comparison. A recorded
+checking reply in the recorded played line when a legal continuation resolves
+the check within eight plies. Ordinary played lines retain their original
+four-ply comparison; a checking continuation is evaluated for at least four
+plies. A checking played alternative remains ambiguous, and the candidate still
+has to pass its bounded legal-reply proof, exact score veto and concrete material
+comparison. A recorded
 line is not a proof against later counterplay. The protection detector remains
 at its independently validated version `1.0.0`. Old capture facts are superseded
 on reprocessing without deleting their reviews. Fresh independent validation of
