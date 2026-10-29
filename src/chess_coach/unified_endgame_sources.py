@@ -12,6 +12,8 @@ from .objective_contract import VERSION as MATE_ONE_VERSION
 from .objective_defense_source import VERSION as DEFENSE_VERSION
 from .objective_defense_source import resolve as resolve_defense
 from .objective_mate_source import resolve as resolve_mate_one
+from .objective_protection_contract import VERSION as PROTECTION_VERSION
+from .objective_protection_source import resolve as resolve_protection
 from .objective_short_source import VERSION as SHORT_VERSION
 from .objective_short_source import resolve as resolve_short
 from .pawn_practice import VERSION as PAWN_VERSION
@@ -20,6 +22,7 @@ from .pawn_practice import resolve as resolve_pawn
 VERSIONS = frozenset(
     (
         *CAPTURE_VERSIONS,
+        PROTECTION_VERSION,
         MATE_VERSION,
         PAWN_VERSION,
         BACK_RANK_VERSION,
@@ -31,7 +34,11 @@ VERSIONS = frozenset(
 )
 
 
-OBJECTIVE_RESOLVERS = {DEFENSE_VERSION: resolve_defense, SHORT_VERSION: resolve_short}
+OBJECTIVE_RESOLVERS = {
+    DEFENSE_VERSION: resolve_defense,
+    SHORT_VERSION: resolve_short,
+    PROTECTION_VERSION: resolve_protection,
+}
 
 
 def resolve(db, version, key, subject):

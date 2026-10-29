@@ -855,6 +855,10 @@ then displays legally replayed proof or unresolved-geometry lines, with practica
 questions that distinguish the recorded move from tested alternatives. It does not
 establish overall safety, compensation, intent or mastery.
 
+## Owned threatened-piece protection
+
+Current owned protection observations can offer a task to save the specified original piece from an immediate legal capture that gains at least three material points. The original threat and the example defense are independently checked on the full game history; the historical observation or engine line alone is not a proof. An alternative move is checked against bounded legal replies. A supported profitable capture is a concrete refutation; absence of any supported attack verifies only this immediate objective. Checks, other captures, uncertain exchange branches, sacrifices, draws, incomplete scans and timeouts remain ungraded. The result does not establish overall safety, longer compensation, mastery or scheduling progress.
+
 ## Owned bounded capture objectives
 
 Current owned material-capture observations can offer two distinct one-move tasks: capture a named piece or find a capture that preserves a material gain of at least three points. The named-target task displays its target; the gain-only task does not reveal the source exemplar target before a hint or reveal. Each example is checked with the original game history. Alternative legal captures are queued for bounded verification against the announced objective and every supported immediate reply. Different moves fail the named-target objective only when they do not capture that target; they do not automatically fail the material-gain objective. Checks, special moves, recaptures, unsupported exchanges, draw or history uncertainty, incomplete reply enumeration and timeouts remain ungraded. These provisional, bounded material observations do not establish overall safety, compensation, a win, mastery or scheduling progress.

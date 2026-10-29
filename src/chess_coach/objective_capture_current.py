@@ -6,9 +6,9 @@ from .material_policy import MAPPER
 from .unified_own_game_evidence import _inspect
 
 
-def current(db, evidence_id, subject):
+def current(db, evidence_id, subject, *, kind="material_capture", operation="execute"):
     view, review, reasons = _inspect(db, evidence_id, subject)
-    if reasons or view["objective"]["kind"] != "material_capture":
+    if reasons or view["objective"]["kind"] != kind:
         raise ValueError("capture source unavailable")
     row = db.connection.execute(
         "SELECT producer,mapper_version,subject,operation,position_id,scope_key,status FROM mapping_runs WHERE id=?",
@@ -18,7 +18,7 @@ def current(db, evidence_id, subject):
         MAPPER,
         MAPPER_VERSION,
         view["subject"],
-        "execute",
+        operation,
         view["position_id"],
         SCOPE,
         "active",

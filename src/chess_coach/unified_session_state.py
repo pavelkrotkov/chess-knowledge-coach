@@ -38,9 +38,13 @@ def view(row):
         result["review_status"] = provenance["review_status"]
         result["evidence_id"] = provenance["evidence_id"]
         result["position_id"] = provenance["position_id"]
-        if row["objective"] == "capture_named_target":
+        if row["objective"] in {"capture_named_target", "protect_threatened_piece"}:
             result["objective_target"] = provenance["objective_target"]
-        if row["objective"] in {"capture_named_target", "bounded_material_gain"}:
+        if row["objective"] in {
+            "capture_named_target",
+            "bounded_material_gain",
+            "protect_threatened_piece",
+        }:
             result["gain_threshold"] = provenance["gain_threshold"]
         result.pop("source_key", None)
     return result

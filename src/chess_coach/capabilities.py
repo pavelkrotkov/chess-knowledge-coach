@@ -3,9 +3,16 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.45.0"
+REGISTRY_VERSION = "1.47.0"
 
 CAPABILITIES = (
+    {
+        "id": "bounded_protection_objectives",
+        "area": "Training",
+        "name": "Owned threatened-piece defense objectives",
+        "status": "observation-only",
+        "details": "Current owned protection sources bind a specified threatened piece. Bounded proof checks supported profitable immediate captures; checks, uncertain threats and longer compensation remain unresolved. This does not establish overall safety or mastery.",
+    },
     {
         "id": "bounded_capture_objectives",
         "area": "Training",

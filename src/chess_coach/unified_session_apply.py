@@ -5,6 +5,7 @@ import json
 from .objective_capture_contract import VERSIONS as CAPTURE_VERSIONS
 from .objective_contract import VERSION as MATE_ONE_VERSION
 from .objective_defense_source import VERSION as DEFENSE_VERSION
+from .objective_protection_contract import VERSION as PROTECTION_VERSION
 from .objective_short_source import VERSION as SHORT_VERSION
 from .unified_session_moves import apply_move
 from .unified_session_state import now, session_row, view
@@ -31,6 +32,7 @@ def record_event(db, row, event_id, kind, move):
             MATE_ONE_VERSION,
             SHORT_VERSION,
             DEFENSE_VERSION,
+            PROTECTION_VERSION,
             *CAPTURE_VERSIONS,
         }:
             detail["assistance_kind"] = "revealed" if move == "reveal" else "hinted"

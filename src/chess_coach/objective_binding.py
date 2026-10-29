@@ -9,6 +9,8 @@ from .objective_capture_contract import (
 from .objective_contract import OBJECTIVE, VERSION
 from .objective_defense_source import OBJECTIVE as DEFENSE_OBJECTIVE
 from .objective_defense_source import VERSION as DEFENSE_VERSION
+from .objective_protection_contract import OBJECTIVE as PROTECTION_OBJECTIVE
+from .objective_protection_contract import VERSION as PROTECTION_VERSION
 from .objective_short_source import OBJECTIVE as SHORT_OBJECTIVE
 from .objective_short_source import VERSION as SHORT_VERSION
 
@@ -22,6 +24,7 @@ def _scope(session, request):
         session["source_type"] == "own-game"
         and (session["source_version"], session["objective"])
         in {
+            (PROTECTION_VERSION, "protect_threatened_piece"),
             (TARGET_VERSION, "capture_named_target"),
             (GAIN_VERSION, "bounded_material_gain"),
             (VERSION, "mate_in_one"),
@@ -39,6 +42,7 @@ def _binding(session, data, request):
         data.get("objective_version") == request["objective_version"]
         and (session["source_version"], data.get("objective_version"))
         in {
+            (PROTECTION_VERSION, PROTECTION_OBJECTIVE),
             (TARGET_VERSION, TARGET_OBJECTIVE),
             (GAIN_VERSION, GAIN_OBJECTIVE),
             (VERSION, OBJECTIVE),
