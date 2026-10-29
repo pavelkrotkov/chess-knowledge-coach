@@ -33,6 +33,11 @@ def test_automatic_miss_replay_mastery_and_owned_practice(tmp_path, monkeypatch)
     review_evidence(db, evidence_id, decision="accept", actor="reviewer")
     row = evidence_rows(db, "fixture_a", "mate_in_one", "execute")[0]
     assert not mastery_allowed(db, row)
+    from chess_coach.mastery import update_mastery
+
+    mastery = update_mastery(db, skill="mate_in_one", operation="execute", subject="fixture_a")
+    assert mastery["status"] == "insufficient"
+    assert mastery["exclusions"]["mate_family_unvalidated"] == 1
     candidates = list_candidates(db, "fixture_a")["candidates"]
     assert candidates == [{"key": str(evidence_id), "review_status": "accepted"}]
     with pytest.raises(ValueError):
@@ -204,7 +209,7 @@ def test_pipeline_backfills_mates_without_automatic_review(tmp_path, monkeypatch
     )
     network = httpx.MockTransport(lambda request: httpx.Response(200, text=""))
     result = process_pipeline(db, config, transport=network)
-    assert result["mate"]["processed"] == 1
+    assert "forks" in result and result["mate"]["processed"] == 1
     assert result["mate"]["outcomes"] == {"opportunity": 1}
     assert db.connection.execute("SELECT COUNT(*) FROM evidence_review_events").fetchone()[0] == 0
     assert process_pipeline(db, config, transport=network)["mate"]["replayed"] == 1
@@ -272,3 +277,47 @@ def test_legacy_mate_fact_must_match_the_original_decision(tmp_path, monkeypatch
     other = {"payload": mate_in_one_fact(FEN, "g6g1")}
     assert matches_game(db, {"position_id": 1}, good)
     assert not matches_game(db, {"position_id": 1}, other)
+
+
+def test_mate_browser_reveal_uses_accessible_board_and_counts_assistance(tmp_path, monkeypatch):
+    from chess_coach.web import create_app
+    from tests.test_unified_sessions import token
+
+    path = tmp_path / "accessible-mate.sqlite"
+    db = owned_game(path, monkeypatch)
+    process_decision(db, 1, "fixture_a")
+    key = list_candidates(db, "fixture_a")["candidates"][0]["key"]
+    app = create_app(
+        db_path=path,
+        subject="fixture_a",
+        actor="reviewer",
+        corpus="test",
+        login="fixture",
+        origin="https://coach.invalid",
+    )
+    client = app.test_client()
+    origin = "https://coach.invalid"
+    headers = {"Tailscale-User-Login": "fixture"}
+    library = client.get("/library", base_url=origin, headers=headers)
+    csrf = token(library, "csrf")
+    response = client.post(
+        "/unified/start",
+        base_url=origin,
+        headers=headers | {"Origin": origin},
+        data={"csrf": csrf, "source_type": "own-game", "version": VERSION, "key": key},
+    )
+    assert response.status_code == 303
+    page = client.get(response.headers["Location"], base_url=origin, headers=headers)
+    assert b"data-move-board" in page.data and b"View source evidence" not in page.data
+    assert b"g6g7" not in page.data and b"Qg7#" not in page.data
+    values = {"csrf": csrf, "attempt": token(page, "attempt"), "event": token(page, "event")}
+    for _ in range(2):
+        revealed = client.post(
+            "/unified/reveal", base_url=origin, headers=headers | {"Origin": origin}, data=values
+        )
+        assert revealed.status_code == 200 and b"One supplied continuation" in revealed.data
+    row = db.connection.execute(
+        "SELECT hints_used FROM unified_sessions WHERE attempt_id=?", (values["attempt"],)
+    ).fetchone()
+    assert row[0] == 1
+    assert db.connection.execute("SELECT COUNT(*) FROM evidence_review_events").fetchone()[0] == 0
