@@ -75,7 +75,7 @@ def test_populated_legacy_upgrade_is_repeatable_and_preserves_history(
     }
     db.initialize()
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 22
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 23
     for table, old_rows in preserved.items():
         new_rows = rows(db, table)
         assert [
@@ -274,3 +274,34 @@ def test_upgrade_preserves_custom_evidence_index_and_trigger() -> None:
     audit = db.connection.execute("SELECT evidence_id, outcome FROM evidence_audit").fetchone()
     assert tuple(audit) == (cursor.lastrowid, "failure")
     assert db.connection.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_engine_output_index_upgrade_preserves_rows(tmp_path):
+    db = Database(tmp_path / "index-upgrade.sqlite")
+    db.initialize()
+    db.connection.execute(
+        "INSERT INTO games(pgn,white,black,result) VALUES(?,?,?,?)", ("fixture", "a", "b", "*")
+    )
+    db.connection.execute(
+        "INSERT INTO positions(game_id,ply,fen,san,uci) VALUES(1,1,?,?,?)",
+        ("fixture", "e4", "e2e4"),
+    )
+    db.connection.execute(
+        "INSERT INTO analysis_runs(game_id,engine,engine_version,config_json) VALUES(1,?,?,?)",
+        ("fixture", "1", "{}"),
+    )
+    db.connection.execute("INSERT INTO engine_outputs(run_id,position_id) VALUES(1,1)")
+    db.connection.execute("DROP INDEX idx_engine_outputs_run_position_multipv")
+    db.connection.execute("PRAGMA user_version=22")
+    db.connection.commit()
+    db.initialize()
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 23
+    assert db.connection.execute("SELECT COUNT(*) FROM engine_outputs").fetchone()[0] == 1
+    plan = db.connection.execute(
+        "EXPLAIN QUERY PLAN SELECT * FROM engine_outputs WHERE run_id=? AND position_id=? AND multipv=?",
+        (1, 1, 1),
+    ).fetchall()
+    assert any("idx_engine_outputs_run_position_multipv" in row[3] for row in plan)
+    db.initialize()
+    assert db.connection.execute("SELECT COUNT(*) FROM engine_outputs").fetchone()[0] == 1
+    db.close()

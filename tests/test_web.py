@@ -396,7 +396,7 @@ def test_status_reports_retry_deadline(setup, monkeypatch):
     monkeypatch.setattr(
         web_views,
         "pipeline_status",
-        lambda db, learner=None: {
+        lambda db, learner=None, **kwargs: {
             "health": {
                 "status": "waiting",
                 "sync_status": "backoff",
@@ -813,3 +813,35 @@ def test_private_status_shows_snapshot_progress_without_network(setup, tmp_path)
     page = client.get("/", base_url=ORIGIN, headers=HEADERS)
     assert page.status_code == 200
     assert b"fixture-snapshot: downloading, 7 archive bytes of 10" in page.data
+
+
+def test_status_dashboard_aggregates_all_stages_without_loading_details(setup, monkeypatch):
+    from chess_coach import web_views
+    from chess_coach.pipeline_status import pipeline_status
+
+    path, app, _ = setup
+    db = Database(path)
+    for stage, status in (("analysis", "failed"), ("tactical", "pending")):
+        db.connection.execute(
+            "INSERT INTO pipeline_stages(game_id,stage,input_hash,status,detail,updated_at) "
+            "VALUES(1,?,?,?,?,?)",
+            (stage, "fixture", status, "fixture", "2026-01-01"),
+        )
+    db.connection.commit()
+    db.close()
+    seen = []
+
+    def capture(*args, **kwargs):
+        result = pipeline_status(*args, **kwargs)
+        seen.append(result)
+        return result
+
+    monkeypatch.setattr(web_views, "pipeline_status", capture)
+    page = app.test_client().get("/", base_url=ORIGIN, headers=HEADERS)
+    assert page.status_code == 200
+    assert b"failed: 1" in page.data and b"pending: 1" in page.data
+    assert seen[0]["stages"] == []
+    assert seen[0]["counts"] == {"failed": 1, "pending": 1}
+    details = Database(path)
+    assert len(pipeline_status(details)["stages"]) == 2
+    details.close()

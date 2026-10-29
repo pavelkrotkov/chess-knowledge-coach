@@ -304,3 +304,52 @@ def test_aggregate_completion_waits_for_deep_backlog(tmp_path, monkeypatch):
     third = process_pipeline(db, settings, transport=network())
     assert third["deep"]["pending"] == 0 and third["deep"]["status"] == "complete"
     assert third["status"] == "complete"
+
+
+def test_status_scales_and_preserves_currentness(tmp_path, monkeypatch):
+    from chess_coach.deep_selection import select_deep
+
+    db = setup_game(tmp_path / "scaled.sqlite", monkeypatch)
+    select_deep(db, [1], learner=LEARNER, per_game=3, total=3)
+    connection = db.connection
+    connection.execute("CREATE TEMP TABLE original_outputs AS SELECT * FROM engine_outputs")
+    connection.execute("DELETE FROM engine_outputs")
+    connection.execute(
+        'INSERT INTO analysis_runs(game_id,engine,engine_version,config_json) VALUES(1,"other","1","{}")'
+    )
+    other_run = connection.execute("SELECT MAX(id) FROM analysis_runs").fetchone()[0]
+    position_id = connection.execute("SELECT MIN(id) FROM positions").fetchone()[0]
+    connection.executemany(
+        "INSERT INTO engine_outputs(run_id,position_id) VALUES(?,?)",
+        [(other_run, position_id)] * 10000,
+    )
+    columns = [
+        row[1] for row in connection.execute("PRAGMA table_info(engine_outputs)") if row[1] != "id"
+    ]
+    names = ",".join(columns)
+    connection.execute(f"INSERT INTO engine_outputs({names}) SELECT {names} FROM original_outputs")
+    connection.commit()
+    steps = [0]
+
+    def progress():
+        steps[0] += 1
+        return steps[0] > 100
+
+    connection.set_progress_handler(progress, 1000)
+    try:
+        status = pipeline_status(db, LEARNER, include_stages=False)
+    finally:
+        connection.set_progress_handler(None, 0)
+    assert status["deep"]["counts"]["selected"] == 3
+    assert status["deep"]["counts"]["pending"] == 3
+    assert status["stages"] == []
+    assert status["counts"] == pipeline_status(db)["counts"]
+    assert (
+        pipeline_status(db, "another_learner", include_stages=False)["deep"]["counts"]["selected"]
+        == 0
+    )
+    connection.execute("UPDATE engine_outputs SET decision_fen=NULL WHERE run_id!=?", (other_run,))
+    assert (
+        pipeline_status(db, LEARNER, include_stages=False)["deep"]["counts"]["stale_selections"]
+        == 1
+    )
