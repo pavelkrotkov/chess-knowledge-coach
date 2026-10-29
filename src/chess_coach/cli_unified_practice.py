@@ -13,6 +13,7 @@ def configure(sub):
     listing.add_argument("--subject", required=True)
     pawn = sub.add_parser("list-pawn-practice")
     pawn.add_argument("--subject", required=True)
+    pawn.add_argument("--before")
     begin = sub.add_parser("start-unified")
     begin.add_argument("--attempt", required=True)
     begin.add_argument("--subject", required=True)
@@ -66,4 +67,8 @@ def handle_list(db, args):
 
 
 def handle_list_pawn(db, args):
-    print(json.dumps(list_pawn_candidates(db, args.subject), indent=2))
+    print(
+        json.dumps(
+            list_pawn_candidates(db, args.subject, before=getattr(args, "before", None)), indent=2
+        )
+    )

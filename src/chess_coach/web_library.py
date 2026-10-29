@@ -1,6 +1,6 @@
 """Render bounded private library choices."""
 
-from flask import current_app, render_template
+from flask import abort, current_app, render_template, request
 
 from .mate_practice import list_candidates as mate_candidates
 from .pawn_practice_list import list_candidates as list_pawn_candidates
@@ -13,11 +13,18 @@ from .web_db import database
 
 
 def render_library():
+    try:
+        pawn_game = list_pawn_candidates(
+            database(), current_app.config["SUBJECT"], before=request.args.get("pawn_before")
+        )
+    except ValueError:
+        abort(400)
     return render_template(
         "library.html",
         own_game=list_candidates(database(), current_app.config["SUBJECT"]),
         mate_game=mate_candidates(database(), current_app.config["SUBJECT"]),
-        pawn_game=list_pawn_candidates(database(), current_app.config["SUBJECT"]),
+        pawn_game=pawn_game,
+        pawn_before=request.args.get("pawn_before"),
         corpora=corpus_choices(database(), corpus_report(database())),
         public_collections=library_groups(database()),
         recent_attempts=recent_unified(database(), current_app.config["SUBJECT"]),
