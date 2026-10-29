@@ -10,7 +10,9 @@ from chess_coach.fork_defense_probe import hypothetical
 def mirror(uci):
     move = chess.Move.from_uci(uci)
     return chess.Move(
-        chess.square_mirror(move.from_square), chess.square_mirror(move.to_square)
+        chess.square_mirror(move.from_square),
+        chess.square_mirror(move.to_square),
+        promotion=move.promotion,
     ).uci()
 
 
@@ -46,7 +48,9 @@ def test_existing_fork_threat_safe_alternatives_and_actual_failure(black):
     equivalent = observe(board, other[0], b, line(other, 400))
     assert equivalent["outcome"] == "success"
     failure = observe(board, played[0], b, p)
-    assert failure["outcome"] == "failure" and failure["threat_origin"] == "positional_before_played"
+    assert (
+        failure["outcome"] == "failure" and failure["threat_origin"] == "positional_before_played"
+    )
     assert failure["played"]["material_delta"] == -5
     assert observe(board, played[0], b, {**p, "score_value": 400})["outcome"] == "ambiguous"
 
@@ -140,3 +144,42 @@ def test_real_repetition_history_blocks_counterfactual_outcome():
     best = line(["a1b1", "h8g8", "e1f1", "g7g6"], 500)
     result = observe(board, "a1b1", best, best)
     assert result["outcome"] == "ambiguous" and result["reason"] == "hypothetical_probe_unavailable"
+
+
+@pytest.mark.parametrize("black", [False, True])
+@pytest.mark.parametrize(
+    ("fen", "move"),
+    [
+        ("r3k3/2p4p/8/1N6/8/8/6P1/7K w - - 0 1", "b5c7"),
+        ("1r6/6Pk/8/8/8/8/8/K7 w - - 0 1", "g7g8q"),
+    ],
+)
+def test_unsupported_opponent_fork_shapes_are_uncertain(fen, move, black):
+    from chess_coach.fork_defense_scan import scan
+
+    board = chess.Board(fen)
+    if black:
+        board, move = board.mirror(), mirror(move)
+    assert chess.Move.from_uci(move) in board.legal_moves
+    result = scan(board)
+    assert result is not None and move in result["uncertain"]
+
+
+@pytest.mark.parametrize("black", [False, True])
+def test_failure_accepts_only_resolved_checks_in_the_alternative_line(black):
+    board = chess.Board("7k/6p1/8/8/1n6/8/7P/R3K3 w - - 0 1")
+    best_moves = ["a1a5", "h8h7", "a5h5", "h7g8"]
+    played_moves = ["h2h3", "b4c2", "e1f1", "c2a1"]
+    if black:
+        board = board.mirror()
+        best_moves, played_moves = [
+            list(map(mirror, moves)) for moves in (best_moves, played_moves)
+        ]
+    played = line(played_moves, 0)
+    result = observe(board, played_moves[0], line(best_moves, 500), played)
+    assert result["outcome"] == "failure"
+    assert result["best"]["uci"] == best_moves
+    incomplete = line(best_moves[:3], 500)
+    unresolved = observe(board, played_moves[0], incomplete, played)
+    assert unresolved["outcome"] == "ambiguous"
+    assert unresolved["reason"] == "continuation_unavailable"

@@ -1,7 +1,7 @@
 """Find bounded legal fork threats without treating geometry as proof."""
 
 from .fork_proof import fork_proof
-from .fork_targets import targets
+from .fork_targets import targets, unsupported_shape
 
 MAX_MOVES = 128
 MAX_CANDIDATES = 16
@@ -13,7 +13,9 @@ def scan(board):
     moves = list(board.legal_moves)
     if not moves or len(moves) > MAX_MOVES:
         return None
-    candidates = [move for move in moves if targets(board, move) is not None]
+    candidates = [
+        move for move in moves if targets(board, move) is not None or unsupported_shape(board, move)
+    ]
     if len(candidates) > MAX_CANDIDATES:
         return None
     return _classify(board, candidates)
@@ -22,7 +24,7 @@ def scan(board):
 def _classify(board, candidates):
     proven, uncertain = {}, []
     for move in candidates:
-        proof = fork_proof(board, move)
+        proof = None if unsupported_shape(board, move) else fork_proof(board, move)
         if proof:
             proven[move.uci()] = proof
         else:

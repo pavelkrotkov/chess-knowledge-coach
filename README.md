@@ -861,7 +861,8 @@ within caps of 128 legal moves and 16 fork candidates per scan. The legal anchor
 search considers at most 64 learner moves and 32 fork proofs; exhausted anchor
 budgets are labeled. Direct material threats, unresolved candidates, checks,
 capturing defenses, promotions, counterplay, missing lines, draw or repetition
-boundaries and exhausted budgets are ambiguous or excluded. Score gaps only veto
+boundaries and exhausted budgets are ambiguous or excluded. A quiet alternative's
+recorded continuation may include a check only when its legal reply resolves it. Score gaps only veto
 an otherwise supported failure. The private evidence page identifies the actual
 source and distinguishes a legal counterfactual from the played line. Fork-defense
 mastery and exercise eligibility remain closed pending independent validation;

@@ -1,6 +1,6 @@
 """Identify positional fork candidates without inventing game history."""
 
-from .fork_targets import _valuable
+from .fork_geometry import _valuable
 
 MAX_MOVES = 128
 MAX_CANDIDATES = 16

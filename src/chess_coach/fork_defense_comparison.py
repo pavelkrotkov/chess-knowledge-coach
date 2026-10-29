@@ -5,7 +5,7 @@ from .material_lines import continuation, unopposed_material_loss
 
 def failed(board, played, best, played_line, best_line, proof):
     actual = continuation(board, played_line, played.uci(), allow_checks=True, minimum_plies=4)
-    alternative = continuation(board, best_line, best.uci())
+    alternative = continuation(board, best_line, best.uci(), allow_checks=True, minimum_plies=4)
     if actual is None or alternative is None:
         return None, "continuation_unavailable"
     if not _branch_matches(actual, proof):

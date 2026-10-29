@@ -218,3 +218,26 @@ def test_defense_source_change_before_publish_is_atomic(tmp_path, monkeypatch):
         == 0
     )
     assert not db.connection.in_transaction
+
+
+def test_defense_processing_preserves_reviewed_execute_source(tmp_path, monkeypatch):
+    from chess_coach.fork_detector import process_decision as process_execute
+    from tests.test_fork_pipeline import make_game as execute_game
+
+    db, _ = execute_game(tmp_path / "coexist.sqlite", monkeypatch)
+    execute = process_execute(db, 1, LEARNER)
+    evidence_id = execute["evidence_ids"][0]
+    assert execute["outcome"] == "failure"
+    review_evidence(db, evidence_id, decision="accept", actor="fixture_reviewer")
+    before, _ = eligible_contexts(db, LEARNER, "fork", "execute", datetime.now(UTC))
+    assert len(before) == 1 and before[0]["evidence_id"] == evidence_id
+
+    defense = process_decision(db, 1, LEARNER)
+    assert defense["detector_run_id"] != execute["detector_run_id"]
+    assert process_decision(db, 1, LEARNER)["replayed"]
+    after, excluded = eligible_contexts(db, LEARNER, "fork", "execute", datetime.now(UTC))
+    assert len(after) == 1 and after[0]["evidence_id"] == evidence_id and not excluded
+    evidence = inspect_evidence(db, evidence_id)
+    assert evidence["review_status"] == "accepted"
+    assert evidence["fork_source_currentness"] == "current"
+    assert evidence["lifecycle_status"] == "active"
