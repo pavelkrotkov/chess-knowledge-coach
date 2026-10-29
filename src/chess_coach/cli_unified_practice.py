@@ -2,15 +2,18 @@
 
 import json
 
+from .unified_own_game import list_candidates
 from .unified_session_events import hint, show, submit
 from .unified_sessions import start
 
 
 def configure(sub):
+    listing = sub.add_parser("list-own-game-practice")
+    listing.add_argument("--subject", required=True)
     begin = sub.add_parser("start-unified")
     begin.add_argument("--attempt", required=True)
     begin.add_argument("--subject", required=True)
-    begin.add_argument("--source", required=True, choices=("corpus", "public"))
+    begin.add_argument("--source", required=True, choices=("corpus", "public", "own-game"))
     begin.add_argument("--version", required=True)
     begin.add_argument("--key", required=True)
     for name in ("show-unified", "move-unified", "hint-unified"):
@@ -53,3 +56,7 @@ def handle_move(db, args):
 
 def handle_hint(db, args):
     print(json.dumps(hint(db, args.attempt, args.subject, event_id=args.event), indent=2))
+
+
+def handle_list(db, args):
+    print(json.dumps(list_candidates(db, args.subject), indent=2))

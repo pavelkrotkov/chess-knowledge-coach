@@ -1,5 +1,6 @@
 """Load subject-owned attempts and expose only non-solution session state."""
 
+import json
 from datetime import UTC, datetime
 
 
@@ -17,7 +18,7 @@ def session_row(db, attempt_id, subject):
 
 
 def view(row):
-    return {
+    result = {
         "attempt_id": row["attempt_id"],
         "source_type": row["source_type"],
         "source_version": row["source_version"],
@@ -30,6 +31,13 @@ def view(row):
         "started_at": row["started_at"],
         "finished_at": row["finished_at"],
     }
+    if row["source_type"] == "own-game":
+        provenance = json.loads(row["provenance_json"])
+        result["review_status"] = provenance["review_status"]
+        result["evidence_id"] = provenance["evidence_id"]
+        result["position_id"] = provenance["position_id"]
+        result["objective_target"] = provenance["objective_target"]
+    return result
 
 
 def recent(db, subject):

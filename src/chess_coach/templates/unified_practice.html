@@ -3,6 +3,7 @@
 {% block content %}
 <h2>Practice</h2>
 <p>Playing as {{ state.learner_color }}. Source: {{ state.source_type }} · Objective: {{ state.objective }} · Status: {{ state.status }}.</p>
+{% if state.source_type == "own-game" %}<p>Target square: {{ state.objective_target }}. Review status: {{ state.review_status }}{% if state.review_status != "accepted" %}; this observation is provisional{% endif %}. The supplied move is a bounded witness, not a complete forced objective. <a href="{{ url_for('views.evidence_detail', evidence_id=state.evidence_id) }}">View source evidence (reveals the move)</a>.</p>{% endif %}
 {% include "board.html" %}
 {% if notice %}<p role="status">{{ notice }}</p>{% endif %}
 {% if state.status == "active" %}

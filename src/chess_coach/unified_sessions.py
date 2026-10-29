@@ -1,9 +1,9 @@
 """Start immutable source snapshots without changing legacy puzzle attempts."""
 
-import hashlib
 import json
 
 from .unified_session_state import now, session_row, view
+from .unified_source_current import require_current, snapshot_hash
 from .unified_sources import resolve_source
 
 
@@ -30,7 +30,9 @@ def start(db, *, attempt_id, subject, source_type, version, key):
                 raise ValueError("attempt ID belongs to another source")
         else:
             _create(db, attempt_id, subject, source_type, version, key)
-        result = view(session_row(db, attempt_id, subject))
+        row = session_row(db, attempt_id, subject)
+        require_current(db, row)
+        result = view(row)
         db.connection.commit()
         return result
     except BaseException:
@@ -39,9 +41,8 @@ def start(db, *, attempt_id, subject, source_type, version, key):
 
 
 def _create(db, attempt_id, subject, source_type, version, key):
-    snapshot = resolve_source(db, source_type, version, key)
-    encoded = json.dumps(snapshot, sort_keys=True, separators=(",", ":"))
-    fingerprint = hashlib.sha256(encoded.encode()).hexdigest()
+    snapshot = resolve_source(db, source_type, version, key, subject=subject)
+    fingerprint = snapshot_hash(snapshot)
     lines = [line.split() for line in snapshot["lines"]]
     db.connection.execute(
         """INSERT INTO unified_sessions

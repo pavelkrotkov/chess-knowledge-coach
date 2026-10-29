@@ -7,7 +7,11 @@ from .public_training_validate import validate_task
 from .puzzle_session_validate import solution_moves, validate_line
 
 
-def resolve_source(db, source_type, version, key):
+def resolve_source(db, source_type, version, key, *, subject=None):
+    if source_type == "own-game":
+        from .unified_own_game_resolve import resolve
+
+        return resolve(db, version, key, subject)
     if source_type == "corpus":
         return _corpus(db, version, key)
     if source_type == "public":

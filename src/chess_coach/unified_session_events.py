@@ -4,6 +4,7 @@ import json
 
 from .unified_session_apply import record_event
 from .unified_session_state import session_row, view
+from .unified_source_current import require_current
 
 
 def submit(db, attempt_id, subject, *, event_id, move):
@@ -17,7 +18,9 @@ def hint(db, attempt_id, subject, *, event_id):
 
 
 def show(db, attempt_id, subject):
-    return view(session_row(db, attempt_id, subject))
+    row = session_row(db, attempt_id, subject)
+    require_current(db, row)
+    return view(row)
 
 
 def _event(db, attempt_id, subject, event_id, kind, move):
@@ -28,6 +31,7 @@ def _event(db, attempt_id, subject, event_id, kind, move):
     try:
         db.connection.execute("BEGIN IMMEDIATE")
         row = session_row(db, attempt_id, subject)
+        require_current(db, row)
         previous = db.connection.execute(
             """SELECT kind,submitted_move,response_json FROM unified_session_events
             WHERE attempt_id=? AND event_id=?""",

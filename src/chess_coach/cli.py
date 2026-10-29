@@ -20,6 +20,7 @@ from .competency_graph import seed_competency_graph
 from .db import Database
 
 COMMANDS = {
+    "list-own-game-practice": unified_practice.handle_list,
     "start-unified": unified_practice.handle_start,
     "show-unified": unified_practice.handle_show,
     "move-unified": unified_practice.handle_move,

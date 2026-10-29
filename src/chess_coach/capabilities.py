@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.14.0"
+REGISTRY_VERSION = "1.15.0"
 
 CAPABILITIES = (
     {
@@ -115,8 +115,8 @@ CAPABILITIES = (
         "id": "own_game_practice",
         "area": "Training",
         "name": "Own-game exercises",
-        "status": "planned",
-        "details": "Game positions are not yet generated as playable, verified training exercises.",
+        "status": "observation-only",
+        "details": "Own-game material practice requires a current verified witness and eligible review state. Protection version 1.0.0 is validated; captures remain unavailable pending validation.",
     },
     {
         "id": "broader_practice",
