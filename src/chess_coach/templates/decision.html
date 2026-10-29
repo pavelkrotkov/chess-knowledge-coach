@@ -15,6 +15,12 @@
 <p><a href="{{ url_for('mate.detail', position_id=decision.position_id) }}">Inspect bounded mate proof</a></p>
 <p><a href="{{ url_for('pawn.detail', position_id=decision.position_id) }}">Inspect pawn-endgame proof</a></p>
 <p><a href="{{ url_for('related_capture.show', position=decision.position_id) }}">Practice this capture pattern</a></p>
+
+{% if pawn_lesson %}
+<section><h3>Pawn-structure plans</h3>
+{% for target in pawn_lesson.targets %}<p>{{ target.color | capitalize }} {{ target.kind }} pawn on {{ target.square }}: {{ target.role }}. {{ target.plan }} Counterplan: {{ target.counterplan }} It controls {{ target.controlled_squares | join(", ") }}. {% if target.legal_advance %}A legal one-step advance is {{ target.legal_advance }}; its value is unassessed.{% else %}A one-step advance is unavailable or not checked for the side to move.{% endif %}</p>{% endfor %}
+{% for role, line in pawn_lesson.lines.items() %}<p>{{ role | capitalize }} recorded continuation: {% if line %}{{ line.san | join(" ") }}{% if line.captures %}. Bounded target-square capture: {% for capture in line.captures %}{{ capture.color }} {{ capture.kind }} pawn on {{ capture.square }}, ply {{ capture.ply }} ({{ capture.exchange_gain }} material units){% if not loop.last %}; {% endif %}{% endfor %}{% else %}. No bounded capture established in this line{% endif %}{% else %}unavailable{% endif %}.</p>{% if line %}{% for check in line.immediate %}<p>After {{ line.san[0] }}, immediate captures of the pawn on {{ check.after_square }}: {% if check.status == "unknown" %}unresolved{% elif check.captures %}{% for capture in check.captures %}{{ capture.san }} (bounded exchange {{ capture.gain }} units){% if not loop.last %}, {% endif %}{% endfor %}{% else %}none legal{% endif %}. This checks only immediate captures of that pawn.</p>{% endfor %}{% endif %}{% endfor %}
+<p>{{ pawn_lesson.consequence }} {{ pawn_lesson.uncertainty }}</p><p>Hypothesis: {{ pawn_lesson.hypothesis }}</p><p>Source: {{ pawn_lesson.provenance | tojson }}. Mastery eligibility: closed.</p></section>{% else %}<p>Pawn-structure lesson unavailable for this decision, or no supported geometry matched.</p>{% endif %}
 <h3>Deep analysis</h3>
 {% if decision.deep %}<p>Status: {{ decision.deep.status }}. Comparison: {{ decision.deep.comparison or "unknown" }}. {{ decision.deep.detail }}.</p>
 <p>These are bounded search results, not proof of a chess claim.</p>

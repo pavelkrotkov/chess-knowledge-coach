@@ -4,5 +4,6 @@
 <h2>Structure source</h2>
 <p>Game {{ position.game_id }}, ply {{ position.ply }}. The board is the position after this move.</p>
 {% include "board.html" %}
+<p><a href="{{ url_for('views.decision_detail', position_id=position.id) }}">Inspect the decision before this move</a></p>
 <p><a href="{{ url_for('views.structures') }}">Back to structure history</a></p>
 {% endblock %}

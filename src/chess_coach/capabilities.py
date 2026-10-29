@@ -3,9 +3,16 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.28.0"
+REGISTRY_VERSION = "1.29.0"
 
 CAPABILITIES = (
+    {
+        "id": "pawn_structure_lessons",
+        "area": "Skill coverage",
+        "name": "Pawn-structure plans from decisions",
+        "status": "observation-only",
+        "details": "Current attributable decisions show isolated and backward pawn plans and counterplans with bounded legal continuation witnesses. Descriptive observations are reviewable but ambiguous and ineligible for mastery; activity and compensation remain uncertain.",
+    },
     {
         "id": "pawn_opportunities",
         "area": "Skill coverage",

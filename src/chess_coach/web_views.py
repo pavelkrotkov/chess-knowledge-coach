@@ -11,6 +11,7 @@ from .evidence_review import inspect_evidence, list_evidence, review_evidence
 from .named_structure_report import structure_report
 from .named_structure_source import source_position
 from .named_structures import VERSION, VERSIONS
+from .pawn_structure_source import current_lesson
 from .pipeline_status import pipeline_status
 from .puzzle_snapshot_state import statuses
 from .web_board import board_rows
@@ -102,7 +103,10 @@ def decision_detail(position_id: int):
     except ValueError:
         abort(404)
     return render_template(
-        "decision.html", decision=result, board=board_rows(result["decision_fen"])
+        "decision.html",
+        decision=result,
+        board=board_rows(result["decision_fen"]),
+        pawn_lesson=current_lesson(database(), position_id, current_app.config["SUBJECT"]),
     )
 
 

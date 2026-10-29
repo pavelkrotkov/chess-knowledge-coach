@@ -953,3 +953,27 @@ Rejected, revoked and known-stale evidence is excluded. The linked individual
 evidence page performs its existing deeper source checks. No review, training,
 or mastery state is created by this report. Practice/game progress and grounded
 lessons are separate release work.
+
+## Provisional pawn-structure lessons
+
+The private decision page and `inspect-decision` show attributable isolated and
+backward pawn geometry, plans and counterplans when a current decision source is
+available. Typical plans are ideas, not automatic recommendations. The worker
+uses its own rotating cursor and the material scan and decision limits; every
+examined position consumes the decision limit, including unavailable and
+replayed positions. It writes versioned descriptive facts and unreviewed,
+always ambiguous mappings, preserving prior reviews on supersession.
+
+A legally replayed best or played continuation may show a pawn capture and a
+bounded target-square exchange. The immediate comparison examines legal
+captures of the same pawn after a recorded root move, at most the existing
+exchange checker's 64 nodes and six plies. Checks, en passant, repetition,
+terminal positions, exhausted exchange bounds and unsupported captures remain
+unknown. A continuation is one possibility, not a forced loss or proof of a
+positional cause; activity, compensation, other plans and later tactics are not
+resolved. A legal alternative and a favorable immediate exchange do not prove
+it is the best plan. No outcome or mastery is inferred from a structure label,
+engine score or this bounded observation. This family remains ineligible for
+mastery even if a human accepts the descriptive mapping. See
+[qualification status](docs/pawn-structure-validation.md). Objective-aware
+practice and related training remain part of issues #141, #142 and #144.
