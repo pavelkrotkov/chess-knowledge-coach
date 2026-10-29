@@ -183,3 +183,45 @@ def test_failure_accepts_only_resolved_checks_in_the_alternative_line(black):
     unresolved = observe(board, played_moves[0], incomplete, played)
     assert unresolved["outcome"] == "ambiguous"
     assert unresolved["reason"] == "continuation_unavailable"
+
+
+@pytest.mark.parametrize("black", [False, True])
+@pytest.mark.parametrize("outcome", ["success", "failure"])
+def test_mastery_threat_reads_opponent_knight_on_the_legal_branch(black, outcome):
+    from chess_coach.fork_defense_mastery_root import supported_threat
+
+    board = chess.Board("7k/6p1/8/8/1n6/8/7P/R3K3 w - - 0 1")
+    actual = "a1b1" if outcome == "success" else "h2h3"
+    anchor, fork = "h2h3", "b4c2"
+    if black:
+        board = board.mirror()
+        actual, anchor, fork = map(mirror, (actual, anchor, fork))
+    payload = {
+        "outcome": outcome,
+        "played": {"uci": [actual]},
+        "threats": [{"move": anchor, "fork": {"move": fork}}],
+        "fork": {"move": fork},
+    }
+    assert supported_threat(board.fen(), payload)
+
+
+@pytest.mark.parametrize(
+    ("fen", "played", "fork"),
+    [
+        ("7k/6p1/8/8/1p6/8/7P/R3K3 w - - 0 1", "h2h3", "b4b3"),
+        ("7k/6p1/8/1q6/8/8/7P/R3K3 w - - 0 1", "h2h3", "b5b4"),
+        ("7k/6p1/8/8/8/8/7P/R3K3 w - - 0 1", "h2h3", "h8g8"),
+        ("7k/6p1/8/8/1n6/8/2P4P/R3K3 w - - 0 1", "h2h3", "b4c2"),
+        ("7k/6p1/8/8/8/8/1p5P/R3K3 w - - 0 1", "h2h3", "b2b1q"),
+        ("7k/6p1/8/8/4p3/8/3P3P/R3K3 w - - 0 1", "d2d4", "e4d3"),
+    ],
+)
+def test_mastery_rejects_unsupported_threat_piece_or_shape(fen, played, fork):
+    from chess_coach.fork_defense_mastery_root import supported_threat
+
+    board = chess.Board(fen)
+    actual = board.parse_uci(played)
+    board.push(actual)
+    assert chess.Move.from_uci(fork) in board.legal_moves
+    payload = {"outcome": "failure", "played": {"uci": [played]}, "fork": {"move": fork}}
+    assert not supported_threat(fen, payload)

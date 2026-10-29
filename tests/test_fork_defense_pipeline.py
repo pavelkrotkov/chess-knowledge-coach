@@ -1,4 +1,4 @@
-"""Automatic fork-defense facts retain source lineage and stay ineligible."""
+"""Qualified knight defense requires reviewed, current and exact source evidence."""
 
 import sys
 from datetime import UTC, datetime
@@ -110,11 +110,27 @@ def test_worker_source_review_replay_and_private_explanation(tmp_path, monkeypat
         and evidence["review_status"] == "unreviewed"
     )
     assert evidence["context"]["provenance"]["kind"] == "cheap"
+    before, excluded = eligible_contexts(db, LEARNER, "fork", "prevent", datetime.now(UTC))
+    assert not before and excluded["unreviewed_or_invalid_review"] == 1
     review_evidence(db, evidence_id, decision="accept", actor="fixture_reviewer")
     replay = process_decision(db, 1, LEARNER)
     assert replay["replayed"] and replay["evidence_ids"] == [evidence_id]
     eligible, excluded = eligible_contexts(db, LEARNER, "fork", "prevent", datetime.now(UTC))
-    assert not eligible and excluded["fork_defense_family_unvalidated"] == 1
+    assert len(eligible) == 1 and eligible[0]["outcome"] == outcome and not excluded
+    wrong_subject, _ = eligible_contexts(db, "fixture_other", "fork", "prevent", datetime.now(UTC))
+    assert not wrong_subject
+    future, excluded = eligible_contexts(
+        db, LEARNER, "fork", "prevent", datetime(2025, 12, 31, tzinfo=UTC)
+    )
+    assert not future and excluded["future_observation"] == 1
+    old, excluded = eligible_contexts(
+        db, LEARNER, "fork", "prevent", datetime(2027, 2, 1, tzinfo=UTC)
+    )
+    assert not old and excluded["outside_horizon"] == 1
+    review_evidence(db, evidence_id, decision="revoke", actor="fixture_reviewer")
+    eligible, excluded = eligible_contexts(db, LEARNER, "fork", "prevent", datetime.now(UTC))
+    assert not eligible and excluded["revoked"] == 1
+    review_evidence(db, evidence_id, decision="accept", actor="fixture_reviewer")
     from chess_coach.unified_own_game import VERSION
     from chess_coach.unified_sessions import start
 
@@ -153,6 +169,8 @@ def test_worker_source_review_replay_and_private_explanation(tmp_path, monkeypat
     )
     db.connection.commit()
     assert inspect_evidence(db, evidence_id)["fork_defense_currentness"] == "stale"
+    eligible, excluded = eligible_contexts(db, LEARNER, "fork", "prevent", datetime.now(UTC))
+    assert not eligible and excluded["fork_defense_family_unvalidated"] == 1
     new = process_decision(db, 1, LEARNER)
     assert new["evidence_ids"] != [evidence_id]
     old = inspect_evidence(db, evidence_id)
@@ -241,3 +259,109 @@ def test_defense_processing_preserves_reviewed_execute_source(tmp_path, monkeypa
     assert evidence["review_status"] == "accepted"
     assert evidence["fork_source_currentness"] == "current"
     assert evidence["lifecycle_status"] == "active"
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "UPDATE evidence_mappings SET mapper_version='0.9.0' WHERE operation='prevent'",
+        "UPDATE mapping_runs SET mapper_version='0.9.0' WHERE producer='fork-defense-mapper'",
+        "UPDATE detector_facts SET detector_version='0.9.0' WHERE fact_type='fork_defense_opportunity'",
+        "UPDATE detector_runs SET detector_version='0.9.0' WHERE producer='fork-defense'",
+        "UPDATE mapping_runs SET producer='spoof' WHERE producer='fork-defense-mapper'",
+        "UPDATE detector_runs SET producer='spoof' WHERE producer='fork-defense'",
+        "UPDATE detector_facts SET fact_type='spoof' WHERE fact_type='fork_defense_opportunity'",
+        "UPDATE evidence_mappings SET outcome='failure' WHERE operation='prevent'",
+        "UPDATE detector_facts SET payload_json=json_set(payload_json, '$.threats[0].fork.move', 'b4a2') WHERE fact_type='fork_defense_opportunity'",
+    ],
+)
+def test_defense_mastery_rejects_spoofed_identity_version_or_fact(tmp_path, monkeypatch, change):
+    db, _ = make_game(tmp_path / "defense-spoof.sqlite", monkeypatch)
+    evidence_id = process_decision(db, 1, LEARNER)["evidence_ids"][0]
+    review_evidence(db, evidence_id, decision="accept", actor="fixture_reviewer")
+    before, _ = eligible_contexts(db, LEARNER, "fork", "prevent", datetime.now(UTC))
+    assert len(before) == 1
+    db.connection.execute(change)
+    db.connection.commit()
+    eligible, excluded = eligible_contexts(db, LEARNER, "fork", "prevent", datetime.now(UTC))
+    assert not eligible and excluded["fork_defense_family_unvalidated"] == 1
+
+
+def test_renamed_defense_sources_stay_closed(tmp_path, monkeypatch):
+    db, _ = make_game(tmp_path / "renamed-defense.sqlite", monkeypatch)
+    evidence_id = process_decision(db, 1, LEARNER)["evidence_ids"][0]
+    review_evidence(db, evidence_id, decision="accept", actor="fixture_reviewer")
+    db.connection.execute(
+        "UPDATE mapping_runs SET producer='other' WHERE producer='fork-defense-mapper'"
+    )
+    db.connection.execute("UPDATE detector_runs SET producer='other' WHERE producer='fork-defense'")
+    db.connection.execute(
+        "UPDATE detector_facts SET fact_type='other' WHERE fact_type='fork_defense_opportunity'"
+    )
+    db.connection.commit()
+    eligible, excluded = eligible_contexts(db, LEARNER, "fork", "prevent", datetime.now(UTC))
+    assert not eligible and excluded["fork_defense_family_unvalidated"] == 1
+
+
+def test_defense_fact_cannot_be_mapped_as_execute(tmp_path, monkeypatch):
+    from chess_coach.mapping_runs import record_mapping_run_in_transaction
+    from chess_coach.mapping_transaction import mapping_transaction
+
+    db, _ = make_game(tmp_path / "cross-operation.sqlite", monkeypatch)
+    original = process_decision(db, 1, LEARNER)
+    item = {
+        "skill": "fork",
+        "outcome": "success",
+        "confidence": 0.5,
+        "fact_ids": original["fact_ids"],
+        "context": {},
+        "observation_at": "2026-01-01T12:00:00+00:00",
+    }
+    with mapping_transaction(db):
+        fake = record_mapping_run_in_transaction(
+            db,
+            position_id=1,
+            producer="fork-opportunity-mapper",
+            mapper_version="1.0.1",
+            subject=LEARNER,
+            operation="execute",
+            scope_key="spoof",
+            input_data={},
+            mappings=[item],
+        )
+    review_evidence(db, fake["evidence_ids"][0], decision="accept", actor="fixture_reviewer")
+    eligible, excluded = eligible_contexts(db, LEARNER, "fork", "execute", datetime.now(UTC))
+    assert not eligible and excluded["fork_defense_family_unvalidated"] == 1
+
+
+def test_execute_fact_cannot_be_mapped_as_prevention(tmp_path, monkeypatch):
+    from chess_coach.fork_detector import process_decision as process_execute
+    from chess_coach.mapping_runs import record_mapping_run_in_transaction
+    from chess_coach.mapping_transaction import mapping_transaction
+    from tests.test_fork_pipeline import make_game as execute_game
+
+    db, _ = execute_game(tmp_path / "execute-as-defense.sqlite", monkeypatch)
+    original = process_execute(db, 1, LEARNER)
+    item = {
+        "skill": "fork",
+        "outcome": "failure",
+        "confidence": 0.5,
+        "fact_ids": original["fact_ids"],
+        "context": {},
+        "observation_at": "2026-01-01T12:00:00+00:00",
+    }
+    with mapping_transaction(db):
+        fake = record_mapping_run_in_transaction(
+            db,
+            position_id=1,
+            producer="fork-defense-mapper",
+            mapper_version="1.0.0",
+            subject=LEARNER,
+            operation="prevent",
+            scope_key="spoof",
+            input_data={},
+            mappings=[item],
+        )
+    review_evidence(db, fake["evidence_ids"][0], decision="accept", actor="fixture_reviewer")
+    eligible, excluded = eligible_contexts(db, LEARNER, "fork", "prevent", datetime.now(UTC))
+    assert not eligible and excluded["fork_defense_family_unvalidated"] == 1

@@ -864,6 +864,8 @@ capturing defenses, promotions, counterplay, missing lines, draw or repetition
 boundaries and exhausted budgets are ambiguous or excluded. A quiet alternative's
 recorded continuation may include a check only when its legal reply resolves it. Score gaps only veto
 an otherwise supported failure. The private evidence page identifies the actual
-source and distinguishes a legal counterfactual from the played line. Fork-defense
-mastery and exercise eligibility remain closed pending independent validation;
-existing fork execution and material policies are separate.
+source and distinguishes a legal counterfactual from the played line. Version
+1.0.0 success and failure observations for noncapturing knight fork threats may
+contribute to mastery after explicit review and current source checks. Other
+fork-defense evidence remains visible but ineligible; fork exercise access
+remains closed. Existing fork execution and material policies are separate.
