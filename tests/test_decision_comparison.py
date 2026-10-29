@@ -313,3 +313,69 @@ def test_missing_engine_line_preserves_requested_root_but_is_unavailable(tmp_pat
     assert report["played"]["root_move"] == report["played_move"]
     assert report["played"]["status"] == "unavailable"
     assert report["best"]["status"] == "unavailable"
+
+
+@pytest.mark.parametrize(
+    "defect",
+    ["board", "pov", "semantics", "root", "illegal_pv", "wrong_played_root", "empty_wrong_pov"],
+)
+def test_rejected_line_never_displays_its_score_or_wdl(tmp_path, monkeypatch, capsys, defect):
+    db_path = tmp_path / "rejected.sqlite"
+    db = make_db(db_path)
+    run_fake(db, monkeypatch, Engine())
+    role = "played" if defect in {"wrong_played_root", "empty_wrong_pov"} else "best"
+    row = db.connection.execute(
+        "SELECT * FROM decision_analysis_lines WHERE position_id=1 AND role=?", (role,)
+    ).fetchone()
+    changes = {
+        "board": {"decision_fen": "different"},
+        "pov": {"score_pov": "black"},
+        "semantics": {"semantics": "unsupported"},
+        "root": {"root_move": "a2a3"},
+        "illegal_pv": {"pv": row["root_move"] + " a2a3"},
+        "wrong_played_root": {"root_move": "g1h3", "pv": "g1h3"},
+        "empty_wrong_pov": {"score_pov": "black", "pv": None},
+    }[defect]
+    assignments = ", ".join(f"{column}=?" for column in changes)
+    db.connection.execute(
+        f"UPDATE decision_analysis_lines SET {assignments}, score_kind='cp', score_value=987654, "
+        "score_bound='lower', wdl_json='[777,111,112]' WHERE id=?",
+        (*changes.values(), row["id"]),
+    )
+    db.connection.commit()
+    report = inspect_decision(db, 1)
+    rejected = report[role]
+    assert rejected["status"] == "unavailable"
+    assert rejected["score_kind"] is None and rejected["score_value"] is None
+    assert rejected["score_bound"] is None and rejected["wdl"] is None
+    assert rejected["pv"] is None and rejected["root_move"] is None
+    assert rejected["nodes"] is None and rejected["depth"] is None
+    other = "best" if role == "played" else "played"
+    assert report[other]["status"] == "limited" and report[other]["score_value"] == 42
+    persisted = db.connection.execute(
+        "SELECT score_value, wdl_json FROM decision_analysis_lines WHERE id=?", (row["id"],)
+    ).fetchone()
+    assert tuple(persisted) == (987654, "[777,111,112]")
+
+    monkeypatch.setattr(sys, "argv", ["chess-coach", "--db", str(db_path), "inspect-decision", "1"])
+    main()
+    cli = json.loads(capsys.readouterr().out)
+    assert cli[role]["score_value"] is None and cli[role]["wdl"] is None
+
+    app = create_app(
+        db_path=db_path,
+        subject="learner",
+        actor="reviewer",
+        corpus="test",
+        login="fixture",
+        origin="https://coach.invalid",
+    )
+    page = app.test_client().get(
+        "/decisions/1",
+        base_url="https://coach.invalid",
+        headers={"Tailscale-User-Login": "fixture"},
+    )
+    assert page.status_code == 200
+    assert b"987654" not in page.data and b"777, 111, 112" not in page.data
+    assert b"Status: unavailable. Score: unavailable" in page.data
+    assert b"Status: limited. Score: cp 42" in page.data
