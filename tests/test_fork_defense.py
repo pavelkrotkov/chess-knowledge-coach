@@ -46,7 +46,7 @@ def test_existing_fork_threat_safe_alternatives_and_actual_failure(black):
     equivalent = observe(board, other[0], b, line(other, 400))
     assert equivalent["outcome"] == "success"
     failure = observe(board, played[0], b, p)
-    assert failure["outcome"] == "failure" and failure["threat_origin"] == "existing"
+    assert failure["outcome"] == "failure" and failure["threat_origin"] == "positional_before_played"
     assert failure["played"]["material_delta"] == -5
     assert observe(board, played[0], b, {**p, "score_value": 400})["outcome"] == "ambiguous"
 

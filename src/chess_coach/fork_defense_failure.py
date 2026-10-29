@@ -40,5 +40,5 @@ def _origin(proof, candidates):
         squares is not None
         and [chess.square_name(square) for square in squares] == proof["targets"]
     ):
-        return "existing"
+        return "positional_before_played"
     return "created_by_played_move"
