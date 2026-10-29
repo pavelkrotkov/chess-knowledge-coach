@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.11.0"
+REGISTRY_VERSION = "1.12.0"
 
 CAPABILITIES = (
     {
@@ -18,7 +18,7 @@ CAPABILITIES = (
         "area": "Training",
         "name": "Staged local puzzle corpus",
         "status": "supported",
-        "details": "Official snapshots can be acquired and staged in bounded batches with optional declared subset provenance; only legally validated, completed versions become available. Live broad activation remains planned.",
+        "details": "Official snapshots can be acquired and staged in bounded batches with optional declared subset provenance; only legally validated, completed versions become available. Broader related retrieval and grading remain planned.",
     },
     {
         "id": "competency_graph",

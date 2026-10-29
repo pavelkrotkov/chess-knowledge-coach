@@ -303,6 +303,37 @@ The full snapshot is retained for later expansion. Before importing a larger
 selection, record its deterministic selection and source hashes, measure its
 storage and latency under the actual service workload, and use a new version.
 Keep the 15 GiB reserve and old versions until recovery and historical
-references have been verified. The currently prepared subset has not yet been
-activated in the production service; live browser and practice acceptance
-remain required after the reviewed release is deployed.
+references have been verified.
+
+### Observed production activation
+
+The reviewed d711 release was activated with schema 20 and the ready
+`lichess-20261002-first100000` source-order subset. The prior corpus and
+35 existing tables were preserved. Verified backup and restore retained the
+selection provenance. An authenticated plan and practice flow was checked,
+and synthetic graded practice plus an unfinished legacy session were verified
+on a restored copy; no production training writes were made for that test.
+
+The live import took 503.85 seconds with 100,000 accepted records. During the
+run, 757 authenticated library requests returned HTTP 200, with 307.87 ms p95
+and 987.21 ms maximum observed latency. One connection was refused without a
+timing measurement; its cause was not established. Twenty subsequent
+readiness requests returned HTTP 200 and a missing identity was denied. An
+external private HTTPS plan request also returned HTTP 200.
+
+Measured transaction lock hold, from successful `BEGIN` acquisition through
+commit, was 372.916 ms p95 and 3,129.248 ms maximum. An independent empty
+writer measured acquisition waits of 229.656 ms p95 and 743.811 ms maximum.
+Indexed production theme/rating queries measured 1.551–2.334 ms p95. A passive
+checkpoint reported zero busy and 333 of 333 frames checkpointed; free space
+remained above the 15 GiB reserve. These observations are not latency or
+availability guarantees. The original source snapshot remained unchanged,
+conflicting identities and corrupted snapshots were rejected, and staged rows
+remained unavailable.
+
+The retained full source can support later expansion. Related retrieval,
+unified playable own-game and canonical sessions, and broader alternative
+handling remain required in [#142](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/142),
+[#140](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/140), and
+[#144](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/144).
+Source tags describe material and do not establish mastery.
