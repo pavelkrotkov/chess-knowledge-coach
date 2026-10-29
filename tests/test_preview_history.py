@@ -429,3 +429,64 @@ def test_missing_source_and_decision_fail_closed(tmp_path, monkeypatch):
         with pytest.raises(ValueError, match="unknown decision"):
             inspect_decision(db, -1, learner=LEARNER, _history=history)
     db.close()
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "UPDATE evidence_mappings SET context_json='null'",
+        "UPDATE detector_facts SET payload_json='null'",
+        "UPDATE evidence_fact_links SET active=0",
+        "UPDATE detector_runs SET status='superseded'",
+    ],
+)
+def test_unusable_evidence_is_excluded_until_restored(tmp_path, monkeypatch, statement):
+    db, _ = fixture(tmp_path, monkeypatch)
+    assert len(list_candidates(db, LEARNER)["candidates"]) == 1
+    db.connection.execute("SAVEPOINT corrupt")
+    db.connection.execute(statement)
+    result = list_candidates(db, LEARNER)
+    assert not result["candidates"]
+    assert result["excluded"]
+    db.connection.execute("ROLLBACK TO corrupt")
+    db.connection.execute("RELEASE corrupt")
+    assert len(list_candidates(db, LEARNER)["candidates"]) == 1
+    db.close()
+
+
+def test_missing_deep_provenance_excludes_candidate(tmp_path, monkeypatch):
+    import chess_coach.material_source as module
+
+    db, _ = fixture(tmp_path, monkeypatch)
+    assert len(list_candidates(db, LEARNER)["candidates"]) == 1
+    original = module.inspect_decision
+
+    def missing_attempt(*args, **kwargs):
+        analysis = original(*args, **kwargs)
+        analysis["deep"] = {
+            "status": "complete",
+            "result": {"best": analysis["best"], "played": analysis["played"]},
+            "job_id": -1,
+            "attempt_number": 1,
+        }
+        return analysis
+
+    with monkeypatch.context() as patch:
+        patch.setattr(module, "inspect_decision", missing_attempt)
+        result = list_candidates(db, LEARNER)
+        assert not result["candidates"]
+        assert result["excluded"]
+    assert len(list_candidates(db, LEARNER)["candidates"]) == 1
+    db.close()
+
+
+def test_absent_subject_never_opens_snapshot(tmp_path, monkeypatch):
+    import chess_coach.unified_own_game as module
+
+    db, _ = fixture(tmp_path, monkeypatch)
+    monkeypatch.setattr(module, "preview_history", lambda *args: pytest.fail("unexpected snapshot"))
+    result = list_candidates(db, "  ")
+    assert result["candidates"] == []
+    assert result["excluded"] == {"subject unavailable": 1}
+    assert result["scanned"] == 0
+    db.close()
