@@ -65,8 +65,9 @@ COVERAGE: dict[str, dict[str, Any]] = {
         "detector": "chess_coach.structure_features.extract_features",
     },
     "open_files": {
-        "capabilities": ["structures"],
-        "detector": "chess_coach.structure_features.extract_features",
+        "capabilities": ["structures", "rook_plans"],
+        "detector": "chess_coach.rook_plan_lesson.lesson",
+        "limits": "Recorded alternatives and immediate captures are bounded observations; mastery remains closed.",
     },
     "locked_center": {
         "capabilities": ["structures"],

@@ -6,6 +6,7 @@ from .lesson_material import _material as material
 from .lesson_pin import pin
 from .lesson_proofs import _mate as mate
 from .lesson_proofs import _pawn as pawn
+from .lesson_rook import rook
 from .lesson_structure import structure
 from .lesson_tactics import _defense as defense
 from .lesson_tactics import _fork as fork
@@ -20,6 +21,7 @@ ADAPTERS = {
     "bounded-mate-observation-mapper": mate,
     "back-rank-observation-mapper": back_rank,
     "pawn-structure-lesson-mapper": structure,
+    "rook-plan-lesson-mapper": rook,
 }
 
 

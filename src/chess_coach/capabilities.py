@@ -3,9 +3,16 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.32.0"
+REGISTRY_VERSION = "1.33.0"
 
 CAPABILITIES = (
+    {
+        "id": "rook_plans",
+        "area": "Skill coverage",
+        "name": "Rook plans on open files",
+        "status": "observation-only",
+        "details": "Current learner decisions compare recorded legal rook-file choices with alternatives and bounded immediate captures. The plans are provisional; mastery remains closed.",
+    },
     {
         "id": "pawn_structure_lessons",
         "area": "Skill coverage",

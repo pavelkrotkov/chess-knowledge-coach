@@ -17,6 +17,7 @@ STATES = {
     "pawn-endgame-mapper": "pawn_source_currentness",
     "back-rank-observation-mapper": "back_rank_source_currentness",
     "pawn-structure-lesson-mapper": "pawn_structure_currentness",
+    "rook-plan-lesson-mapper": "rook_plan_currentness",
 }
 
 

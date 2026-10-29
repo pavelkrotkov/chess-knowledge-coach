@@ -17,4 +17,5 @@ PAIRS = (
     ("absolute_pin", "prevent"),
     ("relative_pin", "execute"),
     ("relative_pin", "prevent"),
+    ("open_files", "evaluate"),
 )

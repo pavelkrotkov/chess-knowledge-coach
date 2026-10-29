@@ -1056,3 +1056,31 @@ recorded by the existing `enrichment.explain_position` adapter with model,
 prompt version and input provenance. Only configure a callable you trust; it is not a sandbox, and
 no external generator is enabled by default. Call it outside a transaction;
 otherwise it falls back to avoid committing unrelated caller work.
+
+
+## Provisional rook-file plans
+
+The worker uses a separate rotating cursor and the existing material position and
+decision budgets to inspect learner-owned decisions. It requires distinct legal
+recorded best and played continuations, and at least one rook move onto a file
+that is open or half-open in the source position. It lists that rook's legal
+entry moves into the enemy half, and checks immediate opponent captures after
+each entry and each recorded root. The two roots also report their rooks’
+geometric enemy-half attack squares, including occupied squares and pinned rooks;
+these are not legal moves or recaptures. Each target-square exchange uses at most 64
+nodes and six plies; checks, terminal or repetition boundaries, en passant and
+unsupported or exhausted exchanges remain unresolved. A pinned attacker is
+only counted when its capture is legal. One recorded continuation or a local
+exchange is not a forced result or proof of overall safety, compensation,
+advantage, intent or preference. Positions without the required source lines
+are not graded; the worker reports no-match-or-unsupported, unavailable and capped coverage.
+
+Facts and mappings retain their source, producer version and immutable history.
+Currentness checks source and output fingerprints without repeating the chess
+inference. The private decision and recurrence lessons show the source, plans,
+counterplans, legal alternatives, capture checks and review status. Recurring
+observations are descriptive, not repeated mistakes. Version 1.0.0 mappings are
+always ambiguous and never mastery-eligible, even when accepted. No independent
+held-out qualification has been performed: positive, negative and ambiguous
+review counts and false-claim counts are unknown. Before opening mastery, a
+separate held-out review and documented decision are required.

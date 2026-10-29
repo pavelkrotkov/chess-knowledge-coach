@@ -19,6 +19,7 @@ from .pawn_coach_explanation import explain as explain_pawn
 from .pawn_structure_current import currentness as structure_currentness
 from .pin_evidence import current_pin
 from .pin_explanation import explain as explain_pin
+from .rook_plan_current import currentness as rook_currentness
 
 
 def inspect_evidence(db: Database, evidence_id: int) -> dict:
@@ -56,6 +57,7 @@ def inspect_evidence(db: Database, evidence_id: int) -> dict:
             result["pin_source_currentness"] = currentness
             if currentness == "current":
                 result["decision_fen"] = pin_fen
+    result["rook_plan_currentness"] = rook_currentness(db, result)
     result["reviews"] = _reviews(db, evidence_id)
     return result
 

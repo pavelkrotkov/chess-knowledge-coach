@@ -9,6 +9,7 @@ from .fork_defense_contract import VERSION as DEFENSE_VERSION
 from .recurrence_fork_policy import fork_family_ok
 from .recurrence_pin_policy import PIN_FAMILIES, pin_family_ok
 from .recurrence_proof_policy import backrank_ok, mate_ok, pawn_ok
+from .recurrence_rook_policy import rook_ok
 
 FAMILIES = {
     **PIN_FAMILIES,
@@ -18,6 +19,7 @@ FAMILIES = {
     "pawn-endgame-mapper": ("pawn-endgame-observation", "1.0.0", "pawn_endgame_opportunity"),
     "back-rank-observation-mapper": ("back-rank-observation", "1.0.0", "back_rank"),
     "pawn-structure-lesson-mapper": ("pawn-structure-lesson", "1.1.0", "pawn_structure_lesson"),
+    "rook-plan-lesson-mapper": ("rook-plan-lesson", "1.0.0", "rook_plan_lesson"),
 }
 
 
@@ -31,6 +33,7 @@ def _structure_ok(row, fact):
 
 
 VALIDATORS = {
+    "rook-plan-lesson-mapper": rook_ok,
     FORK_MAPPER: fork_family_ok,
     DEFENSE_MAPPER: fork_family_ok,
     "bounded-mate-observation-mapper": mate_ok,

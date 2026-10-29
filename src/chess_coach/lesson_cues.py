@@ -11,6 +11,11 @@ CUES = {
         "Compare legal defenses, checks and recaptures before moving.",
         "Replay the source and compare the tested pin and defensive alternatives.",
     ),
+    "rook-plan-lesson-mapper": (
+        "Which legal rook entry squares can be reached, and how can the opponent contest them?",
+        "Compare each rook move with an alternative and check legal captures before occupying a file.",
+        "Replay the linked decisions and test the recorded alternatives and immediate captures.",
+    ),
     "pawn-structure-lesson-mapper": (
         "Can the pawn advance safely, or can either side increase pressure or piece activity?",
         "Compare the pawn's legal advances, supporting pieces and immediate captures before choosing a plan.",
