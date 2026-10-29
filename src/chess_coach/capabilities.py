@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.12.0"
+REGISTRY_VERSION = "1.13.0"
 
 CAPABILITIES = (
     {
@@ -152,6 +152,13 @@ CAPABILITIES = (
         "name": "Opening classification",
         "status": "observation-only",
         "details": "A pinned CC0 opening dataset supports a private descriptive repertoire with source-linked games, contexts and structure observations. Sparse and unclassified games remain visible; recommendations are not yet available.",
+    },
+    {
+        "id": "style_choices",
+        "area": "Style",
+        "name": "Material and simplification choice observations",
+        "status": "observation-only",
+        "details": "Current bounded MultiPV choices expose provisional four-ply material, piece-count and attack-map proxies with coverage and contextual strata. They do not establish personality, skill or playing strength.",
     },
     {
         "id": "repertoire_recommendations",

@@ -45,6 +45,7 @@ COMMANDS = {
     "stage-puzzles": datasets.handle_stage_puzzles,
     "corpus-status": datasets.handle_corpus_status,
     "query-puzzles": datasets.handle_query_puzzles,
+    "style-choices": learning.handle_style_choices,
     "validate-evidence": learning.handle_validate_evidence,
     "list-evidence": learning.handle_list_evidence,
     "inspect-evidence": learning.handle_inspect_evidence,
