@@ -21,7 +21,9 @@ def line(*moves, score=0):
 def mirror(uci):
     move = chess.Move.from_uci(uci)
     return chess.Move(
-        chess.square_mirror(move.from_square), chess.square_mirror(move.to_square)
+        chess.square_mirror(move.from_square),
+        chess.square_mirror(move.to_square),
+        promotion=move.promotion,
     ).uci()
 
 
@@ -100,3 +102,79 @@ def test_missing_best_source_is_ambiguous_even_without_played_fork():
     board = chess.Board("r3k3/7p/8/1N6/8/8/6P1/7K w - - 0 1")
     result = observe(board, "h1g1", None, line("h1g1", "e8f8"))
     assert result["outcome"] == "ambiguous" and result["reason"] == "current_best_unavailable"
+
+
+@pytest.mark.parametrize("black", [False, True])
+def test_capturing_defense_requires_gain_from_original_position(black):
+    from chess_coach.fork_branch import defense_witness
+    from chess_coach.material_lines import material
+
+    board = chess.Board("8/2P5/8/6K1/8/6br/1k3N2/3r4 b - - 0 1")
+    if black:
+        board = board.mirror()
+    transform = mirror if black else lambda move: move
+    attacker = chess.parse_square(transform("f2d1")[:2])
+    targets = tuple(chess.parse_square(transform(move)[2:]) for move in ("f2d1", "f2h3"))
+    reply = chess.Move.from_uci(transform("g3c7"))
+    color = not board.turn
+    initial = material(board, color)
+    assert board.is_valid() and board.is_capture(reply)
+    assert defense_witness(board, reply, attacker, targets, color, initial)
+    board.set_piece_at(chess.parse_square(transform("g3c7")[2:]), chess.Piece(chess.ROOK, color))
+    assert defense_witness(board, reply, attacker, targets, color, material(board, color)) is None
+
+
+def test_counterreply_uses_material_before_the_defensive_capture():
+    from chess_coach.material_lines import material
+    from chess_coach.material_reply_guard import _unresolved
+
+    board = chess.Board("8/2R5/8/6K1/8/6bq/1k1B1N2/3r4 b - - 0 1")
+    assert board.is_valid()
+    original = material(board, chess.WHITE)
+    board.push_uci("g3c7")
+    pre_capture = material(board, chess.WHITE)
+    board.push_uci("f2h3")
+    reply = chess.Move.from_uci("d1d2")
+    assert reply in board.legal_moves and board.is_capture(reply)
+    assert not _unresolved(board, reply, chess.WHITE, pre_capture)
+    assert _unresolved(board, reply, chess.WHITE, original)
+
+
+@pytest.mark.parametrize("black", [False, True])
+@pytest.mark.parametrize(
+    ("fen", "move"),
+    [
+        ("r3k3/2p4p/8/1N6/8/8/6P1/7K w - - 0 1", "b5c7"),
+        ("1r6/6Pk/8/8/8/8/8/K7 w - - 0 1", "g7g8q"),
+        ("7k/2r1r3/8/3pP3/8/8/8/K7 w - d6 0 1", "e5d6"),
+    ],
+)
+def test_unsupported_legal_fork_shapes_are_ambiguous(fen, move, black):
+    board = chess.Board(fen)
+    if black:
+        board, move = board.mirror(), mirror(move)
+    assert board.is_valid() and chess.Move.from_uci(move) in board.legal_moves
+    result = observe(board, move, None, None)
+    assert result == {"kind": "fork", "outcome": "ambiguous", "reason": "unsupported_fork_move"}
+    assert fork_proof(board, chess.Move.from_uci(move)) is None
+
+
+def test_unsupported_best_shape_cannot_be_graded_as_missed_fork():
+    board = chess.Board("r3k3/2p4p/8/1N6/8/8/6P1/7K w - - 0 1")
+    result = observe(board, "h1g1", line("b5c7", "e8f8"), line("h1g1", "e8f8"))
+    assert result["outcome"] == "ambiguous" and result["reason"] == "unsupported_fork_move"
+
+
+@pytest.mark.parametrize("black", [False, True])
+def test_fork_proof_includes_profitable_capturing_defense(black):
+    board = chess.Board("q3k3/5N1p/8/1N6/8/8/6P1/7K w - - 0 1")
+    move, reply = "b5c7", "e8f7"
+    if black:
+        board, move, reply = board.mirror(), mirror(move), mirror(reply)
+    proof = fork_proof(board, chess.Move.from_uci(move))
+    assert board.is_valid() and proof
+    assert any(branch["reply"] == reply for branch in proof["branches"])
+    assert observe(board, move, None, line(move, reply))["outcome"] == "success"
+    queen = chess.parse_square(mirror("b5a8")[2:] if black else "a8")
+    board.set_piece_at(queen, chess.Piece(chess.ROOK, not board.turn))
+    assert fork_proof(board, chess.Move.from_uci(move)) is None

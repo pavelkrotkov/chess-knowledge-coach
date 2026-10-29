@@ -221,3 +221,22 @@ def test_fork_explanation_uses_source_fact_and_reconstructed_board(tmp_path, mon
     assert view["fork_source_currentness"] == "current"
     assert view["fork_explanation"]["move"] == "Nc7+"
     assert view["decision_fen"] == "r3k3/7p/8/1N6/8/8/6P1/7K w - - 0 1"
+
+
+def test_prior_no_opportunity_version_is_recomputed(tmp_path, monkeypatch):
+    from chess_coach import fork_detector
+
+    db, _ = make_game(tmp_path / "version.sqlite", monkeypatch)
+    original = fork_detector.observe
+    monkeypatch.setattr(fork_detector, "observe", lambda *args: None)
+    prior = process_decision(db, 1, LEARNER)
+    assert prior["outcome"] == "no_opportunity" and not prior["fact_ids"]
+    db.connection.execute(
+        "UPDATE detector_runs SET detector_version=? WHERE id=?",
+        ("1.0.0", prior["detector_run_id"]),
+    )
+    db.connection.commit()
+    monkeypatch.setattr(fork_detector, "observe", original)
+    current = process_decision(db, 1, LEARNER)
+    assert current["outcome"] == "failure" and current["fact_ids"]
+    assert not current["replayed"] and current["detector_run_id"] != prior["detector_run_id"]

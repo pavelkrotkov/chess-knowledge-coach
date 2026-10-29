@@ -19,5 +19,5 @@ def explain_fork(fact, fen):
         "boundary": proof.get("boundary")
         or "The current inputs do not establish a bounded fork outcome.",
         "qualification": "Provisional bounded observation; it does not prove recognition, mastery, or the absence of later counterplay.",
-        "exclusions": "Capturing fork moves, mate-only consequences, recaptures, promotions, unresolved checks, sacrifices and forcing counterplay remain outside coverage or ambiguous.",
+        "exclusions": "Capturing, promotion and en passant fork moves are unsupported; mate-only consequences, recaptures, unresolved checks, sacrifices and forcing counterplay remain outside coverage or ambiguous.",
     }

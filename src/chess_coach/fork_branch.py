@@ -26,4 +26,4 @@ def defense_witness(board, reply, attacker, targets, color, initial):
 
 
 def _unsupported(board, reply):
-    return board.is_capture(reply) or board.gives_check(reply) or reply.promotion is not None
+    return board.is_en_passant(reply) or board.gives_check(reply) or reply.promotion is not None

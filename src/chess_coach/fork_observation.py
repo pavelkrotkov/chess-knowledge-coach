@@ -5,7 +5,7 @@ import chess
 from .fork_comparison import miss
 from .fork_proof import fork_proof
 from .fork_result import ambiguous
-from .fork_targets import targets
+from .fork_targets import targets, unsupported_shape
 from .material_lines import continuation
 from .material_observation_fallback import _best_move
 
@@ -20,6 +20,8 @@ def observe(board, played, best_line, played_line):
     played_proof = fork_proof(board, actual)
     if played_proof:
         return _success(board, actual, played_line, played_proof)
+    if unsupported_shape(board, actual):
+        return ambiguous("unsupported_fork_move")
     return _alternative(board, actual, best_line, played_line)
 
 
@@ -27,6 +29,8 @@ def _alternative(board, actual, best_line, played_line):
     best = _best_move(board, best_line)
     if not isinstance(best, chess.Move):
         return ambiguous("current_best_unavailable")
+    if unsupported_shape(board, best):
+        return ambiguous("unsupported_fork_move")
     best_proof = fork_proof(board, best)
     if best_proof is None:
         return (

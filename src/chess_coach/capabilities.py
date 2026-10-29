@@ -95,7 +95,7 @@ CAPABILITIES = (
         "area": "Skill coverage",
         "name": "Bounded material forks",
         "status": "observation-only",
-        "details": "Noncapturing fork moves use bounded legal defenses and target captures with current engine continuations. Capturing forks, mate-only consequences, recaptures, promotions, unresolved checks, sacrifices and counterplay remain outside scope or ambiguous. Fork observations remain ineligible pending independent validation.",
+        "details": "Noncapturing fork moves use bounded legal defenses and target captures with current engine continuations, accounting for defensive captures and subsequent replies against the original material position. Legal capturing, promotion and en passant fork shapes are reported as unsupported ambiguity; mate-only consequences, recaptures, unresolved checks, sacrifices and counterplay remain outside scope or ambiguous. Fork observations remain ineligible pending independent validation.",
     },
     {
         "id": "manual_deep_selection",

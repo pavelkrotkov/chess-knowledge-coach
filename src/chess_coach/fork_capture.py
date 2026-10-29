@@ -13,7 +13,7 @@ def capture(board, attacker, square, color, initial):
     if target is None or target.color == color or move not in board.legal_moves:
         return None
     gain, reason, _ = capture_gain(board, move, target)
-    if reason or unresolved_reply(board, move):
+    if reason or unresolved_reply(board, move, initial):
         return None
     if material(board, color) - initial + gain < 3:
         return None
