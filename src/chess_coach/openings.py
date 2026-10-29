@@ -19,6 +19,11 @@ def import_openings(
     source_url: str,
 ) -> int:
     """Import ECO/name/moves or ECO/name/pgn rows into a position DAG."""
+    return import_rows(db, _rows(path), version=version, source_url=source_url)
+
+
+def import_rows(db, rows, *, version, source_url):
+    """Atomically add rows to a versioned dataset."""
     try:
         db.connection.execute(
             "INSERT OR IGNORE INTO opening_datasets(version, source_url) VALUES (?, ?)",
@@ -32,7 +37,6 @@ def import_openings(
             raise ValueError(f"failed to insert or find dataset {version!r}")
         dataset_id = dataset_id[0]
         previous_changes = db.connection.total_changes
-        rows = _rows(path)
         for row_number, row in enumerate(rows, start=1):
             _import_row(db, dataset_id, row, row_number)
         if db.connection.total_changes != previous_changes:

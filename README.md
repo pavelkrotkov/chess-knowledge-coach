@@ -648,3 +648,26 @@ concurrent training writes, 141.5 ms p95 batch transactions (826.63 ms max),
 and 4.46 ms p95 indexed theme queries. This is a fixture measurement, not a
 full-corpus or browser-response guarantee; the real corpus and disk budget
 must be measured during #138.
+
+### Opening repertoire
+
+The bundled opening names are the five ECO TSV files from the
+[Lichess chess-openings dataset](https://github.com/lichess-org/chess-openings/tree/e76b8b4ec5c8aeeba41dac6caf4a60b938f652db),
+released under CC0. The snapshot is pinned to commit
+`e76b8b4ec5c8aeeba41dac6caf4a60b938f652db`; import verifies the SHA-256 of
+each source file before atomically adding its positions and edges:
+
+```bash
+uv run chess-coach --db PATH import-lichess-openings
+```
+
+The bounded `process-pipeline` command defaults to this dataset and reports it
+missing until imported. It reclassifies affected games when dataset contents
+change. Explicit `--opening-version` and `--opening-source` select another
+imported dataset. The private browser's Repertoire page and `repertoire
+--learner NAME` report up to 100 attributable games in 1,000 candidates.
+They expose unclassified, unknown, stale and truncated coverage; positions
+merge transpositions while played lines remain separate. Outcomes and named
+structures describe observations, not mastery or opening quality. Accepted
+active failure evidence appearing in at least two games is linked without an
+opportunity denominator; the fuller recurrence analysis remains future work.

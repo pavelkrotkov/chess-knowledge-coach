@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Repertoire — Chess coach{% endblock %}
+{% block content %}
+<h2>Repertoire</h2>
+{% if report %}
+<p>Attributable games examined: {{ report.games|length }}. Unclassified: {{ report.unclassified }}; classified without a named match: {{ report.unknown }}; stale classifications awaiting reprocessing: {{ report.stale }}. Stale classifications are excluded from position aggregates. Results and frequencies describe this sample, not skill. Small samples are unreliable.</p>
+<p>Bounded to 1,000 candidate games and 100 attributable games. Candidate scan limit reached: {{ report.scan_limit_reached }}; game limit reached: {{ report.game_limit_reached }}; games exceeding 1,000 recorded plies: {{ report.position_limit_games }}.</p>
+{% if report.dataset %}<p>Installed dataset: <a href="{{ report.dataset.source_url }}">Lichess CC0 snapshot {{ report.dataset.version }}</a>, content revision {{ report.dataset.content_revision }}. Individual game classifications show their own dataset and classifier.</p>{% else %}<p>Pinned Lichess dataset is not installed. Import it before the worker can classify games.</p>{% endif %}
+{% for group in report.groups %}
+<section><h3>{{ group.color|title }}: {{ group.names|join('; ') or 'Reached position' }}</h3>
+<p>{{ group.count }} games reached this position. Outcomes: {{ group.outcomes }}. Named structure distribution across the whole games (possibly after this position; games may match multiple families): {{ group.structures or 'no named matches' }}. Structure coverage: {{ group.structure_coverage }}.</p>
+<p>Position: <code>{{ group.position }}</code>. Played lines reaching it (transpositions share this position). Positions include each move through the last named match:</p>
+<ul>{% for line, ids in group.lines.items() %}<li>{{ line }} — {{ ids|length }} games: {% for id in ids %}<a href="{{ url_for('repertoire_views.repertoire_game', game_id=id) }}">game {{ id }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</li>{% endfor %}</ul>
+<ul>{% for game in group.games %}<li><a href="{{ url_for('repertoire_views.repertoire_game', game_id=game.id) }}">Game {{ game.id }}</a>: {{ game.outcome }}, {{ game.date or 'date unknown' }}, time control {{ game.time_control or 'unknown' }}, learner/opponent rating {{ game.learner_rating or 'unknown' }}/{{ game.opponent_rating or 'unknown' }}.</li>{% endfor %}</ul></section>
+{% else %}<p>No classified named positions in this sample.</p>{% endfor %}
+<h3>Reviewed recurring failures</h3><p>Accepted active evidence in at least two distinct games in the examined sample; this is not an opportunity-adjusted recurrence rate.</p>
+<ul>{% for pattern in report.recurring %}<li>{{ pattern.skill }} / {{ pattern.operation }}: {% for evidence in pattern.evidence %}<a href="{{ url_for('views.evidence_detail', evidence_id=evidence.id) }}">evidence {{ evidence.id }}</a> (<a href="{{ url_for('repertoire_views.repertoire_game', game_id=evidence.game_id) }}">game {{ evidence.game_id }}</a>){% if not loop.last %}, {% endif %}{% endfor %}</li>{% else %}<li>No reviewed recurring failures in this sample.</li>{% endfor %}</ul>
+<h3>All examined games</h3><ul>{% for game in report.games %}<li><a href="{{ url_for('repertoire_views.repertoire_game', game_id=game.id) }}">Game {{ game.id }}</a> — {{ game.color }}, {% if not game.opening %}unclassified{% elif game.classification_stale %}classification stale{% elif not game.opening.position_key %}unknown opening{% else %}{{ game.opening.name }}{% endif %}.</li>{% else %}<li>No attributable games.</li>{% endfor %}</ul>
+{% else %}<p>Set a learner identity to view attributable games.</p>{% endif %}
+{% endblock %}

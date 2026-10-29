@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.9.0"
+REGISTRY_VERSION = "1.10.0"
 
 CAPABILITIES = (
     {
@@ -137,7 +137,7 @@ CAPABILITIES = (
         "area": "Repertoire",
         "name": "Opening classification",
         "status": "observation-only",
-        "details": "Imported opening data supports classification and history; it does not yet recommend repertoire changes or new openings.",
+        "details": "A pinned CC0 opening dataset supports a private descriptive repertoire with source-linked games, contexts and structure observations. Sparse and unclassified games remain visible; recommendations are not yet available.",
     },
     {
         "id": "repertoire_recommendations",

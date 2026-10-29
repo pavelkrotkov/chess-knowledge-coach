@@ -1,5 +1,7 @@
 """Arguments for bounded background-compatible processing."""
 
+from .opening_snapshot import SOURCE, VERSION
+
 
 def configure(sub):
     parser = sub.add_parser("process-pipeline", help="Synchronize and process bounded pending work")
@@ -19,10 +21,10 @@ def configure(sub):
     parser.add_argument("--network-seconds", type=float, default=120.0)
     parser.add_argument("--network-bytes", type=int, default=8388608)
     parser.add_argument("--network-sleep", type=float, default=60.0)
-    parser.add_argument("--opening-version")
-    parser.add_argument("--opening-source")
+    parser.add_argument("--opening-version", default=VERSION)
+    parser.add_argument("--opening-source", default=SOURCE)
     parser.add_argument("--structure-version", default="0.1.0")
-    parser.add_argument("--classifier-version", default="1.0.0")
+    parser.add_argument("--classifier-version", default="1.1.0")
     parser.add_argument("--ontology-version", default="tactical-mate-v1")
     parser.add_argument("--tactical-version", default="1.0.0")
 

@@ -31,6 +31,8 @@ COMMANDS = {
     "predict-maia": games.handle_predict_maia,
     "sync-lichess": games.handle_sync_lichess,
     "import-openings": datasets.handle_import_openings,
+    "import-lichess-openings": datasets.handle_import_lichess_openings,
+    "repertoire": datasets.handle_repertoire,
     "classify-opening": datasets.handle_classify_opening,
     "extract-structures": datasets.handle_extract_structures,
     "structure-history": datasets.handle_structure_history,

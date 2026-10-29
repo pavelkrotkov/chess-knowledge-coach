@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Game {{ game.id }} — Repertoire{% endblock %}
+{% block content %}
+<h2>Game {{ game.id }}</h2>
+<p>Learner played {{ game.color }}; outcome {{ game.outcome }}. Date {{ game.date or 'unknown' }}, time control {{ game.time_control or 'unknown' }}, learner/opponent rating {{ game.learner_rating or 'unknown' }}/{{ game.opponent_rating or 'unknown' }}.</p>
+{% if game.classification_stale %}<p>Classification is stale after input or dataset changes and awaits reprocessing.</p>{% endif %}
+{% if game.opening %}<p>Classification: {{ game.opening.name or 'unknown' }} {{ game.opening.eco or '' }}. Dataset <a href="{{ game.opening.source_url }}">{{ game.opening.version }}</a>, current dataset revision {{ game.opening.content_revision }}, classifier {{ game.opening.classifier_version }}, run {{ game.opening.run_id }}.</p>{% else %}<p>Opening classification has not run.</p>{% endif %}
+{% if game.position_id %}<p>Played line: {{ game.line|join(' ') }}. <a href="{{ url_for('views.structure_position', position_id=game.position_id) }}">View reached position</a> (ply {{ game.ply }}).</p>{% endif %}
+<p>Structure extraction: {{ game.structures.status }}; named families: {{ game.structures.families|join(', ') or 'none' }}. Position limit reached: {{ game.structures.truncated }}.</p>
+<h3>Game moves</h3><p>Each move links to its recorded position. {% if game.positions_truncated %}Only the first 1,000 plies are shown.{% endif %}</p>
+<ol>{% for move in game.moves %}<li><a href="{{ url_for('views.structure_position', position_id=move.id) }}">{{ move.san }}</a></li>{% else %}<li>No recorded moves.</li>{% endfor %}</ol>
+<h3>Accepted active failure evidence</h3><ul>{% for evidence in game.evidence %}<li><a href="{{ url_for('views.evidence_detail', evidence_id=evidence.id) }}">{{ evidence.skill }} / {{ evidence.operation }}, ply {{ evidence.ply }}</a></li>{% else %}<li>No accepted failure evidence.</li>{% endfor %}</ul>
+<p><a href="{{ url_for('repertoire_views.repertoire') }}">Back to repertoire</a></p>
+{% endblock %}
