@@ -273,6 +273,15 @@ cyclomatic complexity (CC <= 8) for each callable and maintainability index
 included. Tests, the virtual environment, and Git internals are not production
 code. Missing required source, unreadable files, and parse errors fail either mode.
 
+For JavaScript, install the locked development tools with `npm ci --ignore-scripts`
+and run `node scripts/js-quality.cjs`. CI and pre-commit check every JavaScript
+file in `src` and `scripts`, including the checker: ESLint enforces CC <= 8
+for every function, and TyphonJS/escomplex enforces normalized module MI > 50.
+TyphonJS uses per-function mean Halstead effort and logical source lines in its
+MI calculation, normalized from 0–171 to 0–100. This JavaScript variant is
+different from Radon’s Python formula below. npm audit checks the locked tools;
+Dependabot tracks their updates.
+
 MI uses Radon `mi_visit(source, multi=False)`: its normalized, clamped 0–100
 formula is `100/171 * (171 - 5.2 ln(V) - 0.23 G - 16.2 ln(L) +
 50 sin(sqrt(2.46 radians(C))))`, where V is Halstead volume, G is total

@@ -30,6 +30,30 @@
     const square = event.target.closest("button[data-square]");
     if (square && board.contains(square)) choose(square);
   });
+  function clearSelection() {
+    selected.setAttribute("aria-pressed", "false");
+    origin = null;
+    selected = null;
+    announcement.textContent = "Selection cleared.";
+  }
+  function horizontalIndex(key, index) {
+    if (key === "ArrowRight" && index % 8 < 7) return index + 1;
+    if (key === "ArrowLeft" && index % 8 > 0) return index - 1;
+    return null;
+  }
+  function nextIndex(key, index) {
+    if (key === "ArrowDown" && index < 56) return index + 8;
+    if (key === "ArrowUp" && index >= 8) return index - 8;
+    return horizontalIndex(key, index);
+  }
+  function navigate(event, square) {
+    const next = nextIndex(event.key, squares.indexOf(square));
+    if (next === null) return;
+    event.preventDefault();
+    square.tabIndex = -1;
+    squares[next].tabIndex = 0;
+    squares[next].focus();
+  }
   board.addEventListener("keydown", (event) => {
     const square = event.target.closest("button[data-square]");
     if (!square) return;
@@ -40,22 +64,9 @@
     }
     if (event.key === "Escape" && selected) {
       event.preventDefault();
-      selected.setAttribute("aria-pressed", "false");
-      origin = null;
-      selected = null;
-      announcement.textContent = "Selection cleared.";
+      clearSelection();
       return;
     }
-    const index = squares.indexOf(square);
-    let next = index;
-    if (event.key === "ArrowRight" && index % 8 < 7) next++;
-    else if (event.key === "ArrowLeft" && index % 8 > 0) next--;
-    else if (event.key === "ArrowDown" && index < 56) next += 8;
-    else if (event.key === "ArrowUp" && index >= 8) next -= 8;
-    else return;
-    event.preventDefault();
-    square.tabIndex = -1;
-    squares[next].tabIndex = 0;
-    squares[next].focus();
+    navigate(event, square);
   });
 })();
