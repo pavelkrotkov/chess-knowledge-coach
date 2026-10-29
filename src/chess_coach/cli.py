@@ -9,6 +9,7 @@ from . import cli_curriculum as curriculum
 from . import cli_deep_execution as deep_execution
 from . import cli_deep_selection as deep_selection
 from . import cli_pipeline
+from . import cli_public_training as public_training
 from . import cli_recovery as recovery
 from . import cli_snapshot as snapshot
 from .capabilities import capability_report
@@ -18,6 +19,9 @@ from .competency_graph import seed_competency_graph
 from .db import Database
 
 COMMANDS = {
+    "import-public-training": public_training.handle_import,
+    "list-public-training": public_training.handle_list,
+    "show-public-training": public_training.handle_show,
     "run-deep": deep_execution.handle_run,
     "select-deep": deep_selection.handle_select,
     "show-deep-selection": deep_selection.handle_show,

@@ -634,6 +634,8 @@ semantics. If external neural-network identity is not provably identical,
 the comparison is marked incomparable rather than guessing.
 
 
+For licensed direct-prompt PGN and FEN material, see the [public training guide](docs/public-training.md).
+
 ## Staged puzzle corpus
 
 The existing `import-puzzles` command preserves legacy behavior and labels those

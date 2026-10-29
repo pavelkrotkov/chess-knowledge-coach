@@ -3,15 +3,22 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.11.0"
+REGISTRY_VERSION = "1.12.0"
 
 CAPABILITIES = (
+    {
+        "id": "licensed_public_collections",
+        "area": "Training",
+        "name": "Licensed direct-prompt collections",
+        "status": "supported",
+        "details": "Bounded FEN and PGN collections retain declared license, attribution and legally validated lines. Playable sessions and general alternative grading remain planned.",
+    },
     {
         "id": "staged_puzzle_corpus",
         "area": "Training",
         "name": "Staged local puzzle corpus",
         "status": "supported",
-        "details": "Official snapshots can be acquired and staged in bounded batches with optional declared subset provenance; only legally validated, completed versions become available. Live broad activation remains planned.",
+        "details": "Official snapshots can be acquired and staged in bounded batches with optional declared subset provenance; only legally validated, completed versions become available. Broader related retrieval and grading remain planned.",
     },
     {
         "id": "competency_graph",
