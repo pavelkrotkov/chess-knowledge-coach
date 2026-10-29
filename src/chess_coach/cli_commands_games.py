@@ -10,6 +10,7 @@ from .ingest import ingest_pgn
 from .lichess import LichessClient
 from .mate_inspection import inspect_mate
 from .pawn_inspection import inspect_pawn
+from .pawn_structure_source import current_lesson
 
 
 def handle_init_db(db, args):
@@ -41,14 +42,10 @@ def handle_analyze_game(db, args):
 
 
 def handle_inspect_decision(db, args):
-    print(
-        json.dumps(
-            inspect_decision(
-                db, args.position_id, run_id=args.run_id, learner=os.environ.get("LICHESS_USERNAME")
-            ),
-            indent=2,
-        )
-    )
+    learner = os.environ.get("LICHESS_USERNAME")
+    result = inspect_decision(db, args.position_id, run_id=args.run_id, learner=learner)
+    result["pawn_structure_lesson"] = current_lesson(db, args.position_id, learner)
+    print(json.dumps(result, indent=2))
 
 
 def handle_inspect_mate(db, args):

@@ -2,14 +2,18 @@
 
 from .mate_worker import process_mates
 from .pawn_coach_worker import process_pawns
+from .pawn_structure_worker import process_structure_lessons
 from .pipeline_deep_config import combined_status
 from .pipeline_report import pipeline_report
 
 
 def worker_report(db, config, sync, scan, games, deep, material, forks, defenses):
+    structures = process_structure_lessons(db, config)
     mate = process_mates(db, config)
     pawns = process_pawns(db, config)
     result = pipeline_report(db, config, sync, scan, games, deep, material, forks, defenses, pawns)
     result["status"] = combined_status(result["status"], mate)
+    result["status"] = combined_status(result["status"], structures)
+    result["pawn_structure_lessons"] = structures
     result["mate"] = mate
     return result

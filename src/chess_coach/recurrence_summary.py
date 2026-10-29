@@ -2,6 +2,7 @@
 
 from collections import defaultdict
 
+from .lesson_examples import representatives
 from .recurrence_context import context
 from .recurrence_counts import counts
 
@@ -26,6 +27,7 @@ def summarize(items):
                 "strata": [
                     {"field": k[0], "value": k[1], **counts(v)} for k, v in sorted(strata.items())
                 ],
+                "lesson_examples": representatives(values),
                 "examples": [
                     {
                         k: item[k]

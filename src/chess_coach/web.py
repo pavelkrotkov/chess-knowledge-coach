@@ -6,6 +6,8 @@ from pathlib import Path
 from flask import Flask, g
 
 from .web_config import validate_config
+from .web_lesson_history import lesson_history_views
+from .web_lessons import lesson_views
 from .web_mate import mate_views
 from .web_pawn import pawn_views
 from .web_practice import practice
@@ -49,6 +51,8 @@ def create_app(
     install_security(app, login, origin, host if backend_host is None else backend_host)
     app.register_blueprint(related_capture)
     app.register_blueprint(views)
+    app.register_blueprint(lesson_views)
+    app.register_blueprint(lesson_history_views)
     app.register_blueprint(mate_views)
     app.register_blueprint(pawn_views)
     app.register_blueprint(practice)

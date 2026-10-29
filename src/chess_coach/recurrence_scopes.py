@@ -23,6 +23,7 @@ SCOPES = {
     DEFENSE: (DEFENSE_VERSION, DEFENSE_SCOPE),
     MATE: (MATE_VERSION, "bounded-mate-v1"),
     PAWN: (PAWN_VERSION, PAWN_SCOPE),
+    "pawn-structure-lesson-mapper": ("1.1.0", "pawn-structure-lesson"),
 }
 
 

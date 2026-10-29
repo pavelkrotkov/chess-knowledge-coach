@@ -3,9 +3,16 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.28.0"
+REGISTRY_VERSION = "1.31.0"
 
 CAPABILITIES = (
+    {
+        "id": "pawn_structure_lessons",
+        "area": "Skill coverage",
+        "name": "Pawn-structure plans from decisions",
+        "status": "observation-only",
+        "details": "Current attributable decisions show isolated and backward pawn plans and bounded immediate exchanges of pawn-supported pieces. The bounded worker distinguishes current replays, pending work and truncated coverage. Reviewable observations remain ambiguous and ineligible for mastery; overall compensation remains uncertain.",
+    },
     {
         "id": "pawn_opportunities",
         "area": "Skill coverage",
@@ -214,14 +221,14 @@ CAPABILITIES = (
         "area": "Explanation",
         "name": "Optional explanation adapter",
         "status": "supported",
-        "details": "A trusted injectable callable can store text from supplied facts; it is not wired into automatic coaching and is not a security sandbox.",
+        "details": "An optional trusted callable may order approved lesson examples; its output is validated with deterministic fallback and separate model, prompt, and input provenance. It is not a security sandbox.",
     },
     {
         "id": "grounded_coaching",
         "area": "Explanation",
         "name": "Grounded coaching explanations",
-        "status": "planned",
-        "details": "Automatic coach-like explanations, source-linked reasoning and practical advice are not yet available.",
+        "status": "observation-only",
+        "details": "Deterministic lessons recheck supported sources, replay legal lines, distinguish observed results from questions, and retain explicitly saved versions. Coverage is bounded and provisional; currentness, overall safety and later counterplay may remain unknown.",
     },
     {
         "id": "opening_classification",

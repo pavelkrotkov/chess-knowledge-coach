@@ -951,5 +951,68 @@ a source can have changed since its recorded observation. All counts are
 provisional descriptive candidates, not claims of confirmed weakness or mastery.
 Rejected, revoked and known-stale evidence is excluded. The linked individual
 evidence page performs its existing deeper source checks. No review, training,
-or mastery state is created by this report. Practice/game progress and grounded
-lessons are separate release work.
+or mastery state is created by this report. Practice/game progress remains
+separate release work; bounded source-linked lessons are described below.
+
+## Provisional pawn-structure lessons
+
+The private decision page and `inspect-decision` show attributable isolated and
+backward pawn geometry, plans and counterplans when a current decision source is
+available. Typical plans are ideas, not automatic recommendations. The worker
+uses its own rotating cursor and the material scan and decision limits. It checks
+current source fingerprints and immutable fact/mapping lineage before treating a
+position as a replay; current and opponent positions consume scan budget but not
+decision attempts. New, stale or unavailable decisions consume the decision
+budget. A truncated scan reports coverage as unknown and partial; a known pending
+decision is not skipped when the attempt budget is exhausted. It writes versioned descriptive facts and unreviewed,
+always ambiguous mappings, preserving prior reviews on supersession.
+
+When a pawn geometrically attacks the square of a friendly non-pawn piece,
+the lesson checks immediate legal captures of that piece after each available
+legal recorded root, verifies any legal pawn recapture, and can compare their
+bounded exchanges. A pinned pawn may have no legal recapture. This is a concrete local consequence, not proof
+of overall compensation or of why the player chose a move.
+
+A legally replayed best or played continuation may show a pawn capture and a
+bounded target-square exchange. The immediate comparison examines legal
+captures of the same pawn after a recorded root move, at most the existing
+exchange checker's 64 nodes and six plies. Checks, en passant, repetition,
+terminal positions, exhausted exchange bounds and unsupported captures remain
+unknown. A continuation is one possibility, not a forced loss or proof of a
+positional cause; activity, compensation, other plans and later tactics are not
+resolved. A legal alternative and a favorable immediate exchange do not prove
+it is the best plan. No outcome or mastery is inferred from a structure label,
+engine score or this bounded observation. This family remains ineligible for
+mastery even if a human accepts the descriptive mapping. See
+[qualification status](docs/pawn-structure-validation.md). Objective-aware
+practice and related training remain part of issues #141, #142 and #144.
+## Source-linked coaching lessons
+
+The private recurring-pattern report builds provisional coaching from rechecked,
+learner-owned sources in its bounded sample. It selects up to three independent
+games from at most ten candidate game identities per group; sources that no
+longer pass their own currentness and mapping checks are skipped. Each displayed
+continuation is replayed from the reconstructed decision board and must use
+canonical legal SAN. Missing or stale sources leave a diagnostic cue rather than
+an invented example. A candidate's review status is shown; unreviewed evidence
+remains unreviewed. Counts are partial samples, not rates or diagnoses.
+
+Pawn-structure observations can also be grouped as descriptive, always-ambiguous
+contexts. Repeated structures are not repeated mistakes or evidence of mastery;
+plans and counterplans are ideas, not conclusions about overall advantage.
+
+A lesson separates observed source facts, a possible mechanism to investigate,
+a diagnostic question, a habit and practice links. The source proofs are bounded:
+later counterplay, compensation and overall safety may remain unknown. The
+browser's explicit save action appends a lesson version; history remains a
+snapshot even if its source later changes. Saving does not create reviews,
+training attempts or mastery evidence.
+
+The Python `lesson_generator.generate` API can optionally call a trusted
+injected generator. The generator receives the deterministic lesson and may
+return only a JSON permutation of its example indices. Any other output or
+provider exception falls back to deterministic order. A validated response is
+recorded by the existing `enrichment.explain_position` adapter with model,
+prompt version and input provenance. Only configure a callable you trust; it is not a sandbox, and
+no external generator is enabled by default. Call it outside a transaction;
+otherwise it falls back to avoid committing unrelated caller work.

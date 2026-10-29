@@ -1,10 +1,11 @@
 """Keep all game-derived pawn-family evidence closed pending qualification."""
 
 from .pawn_coach_contract import FACT_TYPE, FAMILY_SKILLS, MAPPER, PRODUCER
+from .pawn_structure_mapping import MAPPER as STRUCTURE_MAPPER
 
 
 def mastery_allowed(db, row):
-    if row["skill"] in FAMILY_SKILLS or row["mapping_producer"] == MAPPER:
+    if row["skill"] in FAMILY_SKILLS or row["mapping_producer"] in {MAPPER, STRUCTURE_MAPPER}:
         return False
     if not row["link_count"]:
         return True

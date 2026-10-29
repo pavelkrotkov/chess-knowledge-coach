@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}Saved lesson — Chess coach{% endblock %}
+{% block content %}
+<h2>Saved lesson {{ record.id }}</h2>
+<p>Saved {{ record.generated_at }}. Generator: {{ record.generator_model }}; prompt: {{ record.prompt_version }}. This is a historical snapshot; source status may have changed since it was generated.</p>
+{% set lesson = record.lesson %}{% include "lesson_body.html" %}
+<p><a href="{{ url_for('recurrence_views.recurrence') }}">Return to recurring patterns</a></p>
+{% endblock %}

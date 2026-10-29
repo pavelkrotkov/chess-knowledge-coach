@@ -14,6 +14,7 @@ FAMILIES = {
     "bounded-mate-observation-mapper": ("bounded-mate-observation", "1.0.0", "bounded_mate"),
     "pawn-endgame-mapper": ("pawn-endgame-observation", "1.0.0", "pawn_endgame_opportunity"),
     "back-rank-observation-mapper": ("back-rank-observation", "1.0.0", "back_rank"),
+    "pawn-structure-lesson-mapper": ("pawn-structure-lesson", "1.1.0", "pawn_structure_lesson"),
 }
 
 
@@ -29,18 +30,30 @@ def _fork_ok(row, fact):
     )
 
 
+def _structure_ok(row, fact):
+    return (
+        (row["skill"], row["operation"], row["outcome"])
+        == ("pawn_structure", "evaluate", "ambiguous")
+        and fact["payload"].get("version") == "1.1.0"
+        and fact["payload"].get("mastery_eligible") is False
+    )
+
+
+VALIDATORS = {
+    FORK_MAPPER: _fork_ok,
+    DEFENSE_MAPPER: _fork_ok,
+    "bounded-mate-observation-mapper": mate_ok,
+    "pawn-endgame-mapper": pawn_ok,
+    "back-rank-observation-mapper": backrank_ok,
+    "pawn-structure-lesson-mapper": _structure_ok,
+}
+
+
 def family_ok(row, fact):
     family = row["mapping_producer"]
     if FAMILIES.get(family) != (fact["producer"], fact["detector_version"], fact["fact_type"]):
         return False
     if fact["detector_version"] != fact["run_detector_version"]:
         return False
-    if family in {FORK_MAPPER, DEFENSE_MAPPER}:
-        return _fork_ok(row, fact)
-    if family == "bounded-mate-observation-mapper":
-        return mate_ok(row, fact)
-    if family == "pawn-endgame-mapper":
-        return pawn_ok(row, fact)
-    if family == "back-rank-observation-mapper":
-        return backrank_ok(row, fact)
-    return False
+    validator = VALIDATORS.get(family)
+    return validator(row, fact) if validator else False

@@ -16,6 +16,7 @@ from .material_evidence_current import evidence_currentness
 from .material_explanation import explain_material
 from .pawn_coach_current import current_pawn
 from .pawn_coach_explanation import explain as explain_pawn
+from .pawn_structure_current import currentness as structure_currentness
 
 
 def inspect_evidence(db: Database, evidence_id: int) -> dict:
@@ -44,6 +45,8 @@ def inspect_evidence(db: Database, evidence_id: int) -> dict:
     if pawn:
         result["decision_fen"] = pawn["report"]["decision_fen"]
     result["back_rank_source_currentness"] = back_rank_currentness(db, result)
+
+    result["pawn_structure_currentness"] = structure_currentness(db, result)
     result["reviews"] = _reviews(db, evidence_id)
     return result
 

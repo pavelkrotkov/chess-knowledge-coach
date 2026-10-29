@@ -12,4 +12,5 @@ PAIRS = (
     ("king_pawn_endgame", "evaluate"),
     ("back_rank", "prevent"),
     ("back_rank", "execute"),
+    ("pawn_structure", "evaluate"),
 )

@@ -31,7 +31,8 @@ def fact_ok(db, row, fact):
     if not isinstance(payload, dict):
         return False
     if (
-        row["mapping_producer"] != "back-rank-observation-mapper"
+        row["mapping_producer"]
+        not in {"back-rank-observation-mapper", "pawn-structure-lesson-mapper"}
         and payload.get("outcome") != row["outcome"]
     ):
         return False
