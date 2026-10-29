@@ -186,6 +186,16 @@ def test_populated_library_renders_multiple_games_and_rechecks_versions(tmp_path
         return original(db, game_id, learner=learner)
 
     monkeypatch.setattr(history_module, "decision_context_boards", counted)
+    source_calls = []
+    import chess_coach.preview_sources as sources_module
+
+    original_source = sources_module.source_snapshot
+
+    def counted_source(db, game_id, learner):
+        source_calls.append(game_id)
+        return original_source(db, game_id, learner)
+
+    monkeypatch.setattr(sources_module, "source_snapshot", counted_source)
     db.close()
     app = create_app(
         db_path=tmp_path / "own.sqlite",
@@ -206,6 +216,7 @@ def test_populated_library_renders_multiple_games_and_rechecks_versions(tmp_path
         assert page.data.count(b"provisional") >= 2
         assert b"d4d5" not in page.data
     assert len(calls) == 4
+    assert sorted(source_calls) == [1, 1, 2, 2]
 
 
 def test_snapshot_restores_existing_readonly_flag_on_error(tmp_path):
@@ -490,3 +501,86 @@ def test_absent_subject_never_opens_snapshot(tmp_path, monkeypatch):
     assert result["excluded"] == {"subject unavailable": 1}
     assert result["scanned"] == 0
     db.close()
+
+
+def test_source_snapshot_reused_only_within_scoped_preview(tmp_path, monkeypatch):
+    import chess_coach.preview_sources as sources_module
+    from chess_coach.material_source import prepare
+
+    db, _evidence = fixture(tmp_path, monkeypatch)
+    original = sources_module.source_snapshot
+    calls = []
+
+    def counted(db, game_id, learner):
+        calls.append(game_id)
+        return original(db, game_id, learner)
+
+    monkeypatch.setattr(sources_module, "source_snapshot", counted)
+    with preview_history(db, LEARNER) as history:
+        history.targets([1])
+        first = prepare(db, 1, LEARNER, history=history)
+        second = prepare(db, 1, LEARNER, history=history)
+        assert first["source_marker"] == second["source_marker"]
+        assert len(calls) == 1
+        with pytest.raises(ValueError):
+            history.source(2, 1)
+        with pytest.raises(ValueError, match="position outside preview"):
+            history.source(1, 2)
+    assert not history.sources.values
+    with pytest.raises(ValueError, match="snapshot is closed"):
+        history.source(1, 1)
+    with preview_history(db, LEARNER) as history:
+        history.targets([1])
+        prepare(db, 1, LEARNER, history=history)
+    assert len(calls) == 2
+    db.close()
+
+
+def test_source_snapshot_cleared_when_preview_raises(tmp_path, monkeypatch):
+    from chess_coach.material_source import prepare
+
+    db, _evidence = fixture(tmp_path, monkeypatch)
+    with pytest.raises(RuntimeError, match="stop"):
+        with preview_history(db, LEARNER) as history:
+            history.targets([1])
+            prepare(db, 1, LEARNER, history=history)
+            assert history.sources.values
+            raise RuntimeError("stop")
+    assert not history.sources.values
+    assert db.connection.execute("PRAGMA query_only").fetchone()[0] == 0
+    db.close()
+
+
+def test_concurrent_connections_keep_preview_summaries_separate(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier, Lock
+
+    import chess_coach.preview_sources as sources_module
+
+    db, _evidence = fixture(tmp_path, monkeypatch)
+    db.close()
+    barrier, lock, calls = Barrier(2), Lock(), []
+    original = sources_module.source_snapshot
+
+    def counted(db, game_id, learner):
+        with lock:
+            calls.append(game_id)
+        return original(db, game_id, learner)
+
+    def preview():
+        db = Database(tmp_path / "own.sqlite")
+        with preview_history(db, LEARNER) as history:
+            history.targets([1])
+            barrier.wait(timeout=10)
+            first = history.source(1, 1)
+            barrier.wait(timeout=10)
+            assert history.source(1, 1) == first
+        assert not history.sources.values
+        db.close()
+        return first
+
+    monkeypatch.setattr(sources_module, "source_snapshot", counted)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(lambda _: preview(), range(2)))
+    assert results[0] == results[1]
+    assert len(calls) == 2

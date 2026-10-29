@@ -45,7 +45,9 @@ def inspect_decision(
         "best": None,
         "played": None,
         "status": "analysis_unavailable",
-        "deep": deep_for_position(db, position_id, learner, board, position["uci"]),
+        "deep": deep_for_position(
+            db, position_id, learner, board, position["uci"], _history=_history
+        ),
         "note": "Each line is a separate bounded search, not a skill or mastery assessment.",
     }
     if run is not None:

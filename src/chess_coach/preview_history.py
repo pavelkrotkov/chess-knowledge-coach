@@ -6,6 +6,7 @@ from .learner_context import decision_context_boards
 from .material_context import NotLearnerDecision
 from .preview_game import PreviewGame
 from .preview_guard import require_read_snapshot
+from .preview_sources import PreviewSources
 
 MAX_GAMES = 4
 
@@ -16,9 +17,13 @@ class PreviewHistory:
         self.learner = learner
         self.wanted = set()
         self.games = OrderedDict()
+        self.sources = PreviewSources(db, learner)
 
     def targets(self, position_ids):
+        # A changed request scope cannot retain boards or source summaries.
         self.wanted = {value for value in position_ids if value is not None}
+        self.games.clear()
+        self.sources.clear()
 
     def _game(self, game_id):
         game = self.games.get(game_id)
@@ -48,6 +53,13 @@ class PreviewHistory:
         _context, board = self._entry(game_id, position_id)
         return board.copy()
 
+    def source(self, game_id, position_id):
+        # Verify both snapshot and requested game/position before any reuse.
+        self._entry(game_id, position_id)
+        return self.sources.get(game_id)
+
     def clear(self):
+        # End-of-request cleanup also applies when a preview raises.
+        self.sources.clear()
         self.games.clear()
         self.wanted.clear()

@@ -22,7 +22,7 @@ def list_selections(db, learner, *, limit=25):
     ]
 
 
-def show_selection(db, game_id, learner, *, selection_id=None):
+def show_selection(db, game_id, learner, *, selection_id=None, _history=None, _position_id=None):
     key = learner_key(learner)
     current = db.connection.execute(
         "SELECT selection_id FROM deep_selection_current WHERE game_id=? AND learner_key=?",
@@ -37,7 +37,10 @@ def show_selection(db, game_id, learner, *, selection_id=None):
     ).fetchone()
     if run is None:
         raise ValueError("selection is unavailable")
-    state = selection_state(db, game_id, learner, current["selection_id"], run)
+    state = selection_state(
+        db, game_id, learner, current["selection_id"], run,
+        _history=_history, _position_id=_position_id,
+    )
     items = selection_items(db, run["id"], state)
     history = db.connection.execute(
         "SELECT id,created_at FROM deep_selection_runs WHERE game_id=? AND learner_key=? ORDER BY id DESC LIMIT 100",
