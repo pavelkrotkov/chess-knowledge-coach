@@ -10,6 +10,7 @@ from .deep_selection_views import list_selections, show_selection
 from .evidence_review import inspect_evidence, list_evidence, review_evidence
 from .pipeline_status import pipeline_status
 from .puzzle_import_report import corpus_report
+from .puzzle_snapshot_state import statuses
 from .web_board import board_rows
 from .web_db import database
 from .web_release import release_info
@@ -20,7 +21,12 @@ views = Blueprint("views", __name__)
 @views.get("/")
 def index():
     return render_template(
-        "status.html", status=pipeline_status(database()), release=release_info()
+        "status.html",
+        status=pipeline_status(database()),
+        release=release_info(),
+        acquisitions=statuses(current_app.config["PROJECT_ROOT"])
+        if current_app.config["PROJECT_ROOT"]
+        else [],
     )
 
 

@@ -9,6 +9,7 @@ from . import cli_curriculum as curriculum
 from . import cli_deep_selection as deep_selection
 from . import cli_pipeline
 from . import cli_recovery as recovery
+from . import cli_snapshot as snapshot
 from .capabilities import capability_report
 from .cli_parser import build_parser
 from .competency_coverage import competency_report
@@ -69,6 +70,9 @@ def main() -> None:
         return
     if args.command in recovery.COMMANDS:
         recovery.COMMANDS[args.command](args)
+        return
+    if args.command in snapshot.COMMANDS:
+        snapshot.COMMANDS[args.command](args)
         return
     db = Database(args.db)
     db.initialize()

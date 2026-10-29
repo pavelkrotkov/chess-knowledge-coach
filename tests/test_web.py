@@ -790,3 +790,26 @@ def test_real_unix_server_enforces_identity_origin_and_csrf(setup):
         finally:
             proc.kill()
             proc.wait(timeout=5)
+
+
+def test_private_status_shows_snapshot_progress_without_network(setup, tmp_path):
+    from chess_coach.puzzle_snapshot_paths import new_attempt, version_dir
+    from chess_coach.puzzle_snapshot_state import write_state
+
+    _, app, _ = setup
+    app.config["PROJECT_ROOT"] = str(tmp_path)
+    attempt = new_attempt(version_dir(tmp_path, "fixture-snapshot"))
+    write_state(
+        attempt,
+        {
+            "version": "fixture-snapshot",
+            "phase": "downloading",
+            "downloaded_bytes": 7,
+            "expected_bytes": 10,
+        },
+    )
+    client = app.test_client()
+    assert client.get("/", base_url=ORIGIN).status_code == 403
+    page = client.get("/", base_url=ORIGIN, headers=HEADERS)
+    assert page.status_code == 200
+    assert b"fixture-snapshot: downloading, 7 archive bytes of 10" in page.data

@@ -18,6 +18,7 @@ def main() -> None:
     socket_directory(socket)
     app = create_app(
         db_path=db_path,
+        project_root=root,
         subject=os.environ["CHESS_SUBJECT"],
         actor=os.environ["CHESS_REVIEW_ACTOR"],
         corpus=os.environ["CHESS_CORPUS"],
