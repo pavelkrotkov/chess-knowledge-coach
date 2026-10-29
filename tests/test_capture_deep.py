@@ -1,5 +1,6 @@
 """Development cases for checking replies in owned-deep capture observations."""
 
+import json
 from pathlib import Path
 
 import chess
@@ -89,3 +90,53 @@ def test_owned_deep_missed_capture_with_checking_played_reply(tmp_path, black, m
     assert page.status_code == 200
     assert b"tested best continuation captures material" in page.data
     assert b"Material source: current" in page.data and b"capture version 1.1.0" in page.data
+
+    from chess_coach.unified_own_game import VERSION, list_candidates
+    from chess_coach.unified_session_events import show, submit
+    from chess_coach.unified_sessions import start
+
+    tables = (
+        "evidence_mappings",
+        "evidence_review_events",
+        "mastery_events",
+        "mastery_states",
+        "training_items",
+        "training_attempts",
+    )
+    before = {
+        table: db.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        for table in tables
+    }
+    candidates = list_candidates(db, "fixture_learner")
+    assert len(candidates["candidates"]) == 1
+    candidate = candidates["candidates"][0]
+    answer = "d8d5" if black else "d1d4"
+    assert (
+        candidate["objective"] == "material_capture" and candidate["review_status"] == "unreviewed"
+    )
+    assert answer not in json.dumps(candidates)
+    started = start(
+        db,
+        attempt_id="capture-smoke",
+        subject="fixture_learner",
+        source_type="own-game",
+        version=VERSION,
+        key=candidate["key"],
+    )
+    assert started["review_status"] == "unreviewed" and answer not in json.dumps(started)
+    db.close()
+    db = Database(tmp_path / "deep.sqlite")
+    resumed = show(db, "capture-smoke", "fixture_learner")
+    assert resumed["fen"] == started["fen"] and answer not in json.dumps(resumed)
+    result = submit(db, "capture-smoke", "fixture_learner", event_id="capture-move", move=answer)
+    assert result["status"] == "line_completed"
+    assert (
+        submit(db, "capture-smoke", "fixture_learner", event_id="capture-move", move=answer)
+        == result
+    )
+    after = {
+        table: db.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        for table in tables
+    }
+    assert after == before
+    db.close()

@@ -1,4 +1,4 @@
-"""Synthetic own-game practice under the approved protection-only policy."""
+"""Synthetic own-game practice with exact validated material versions."""
 
 import json
 from argparse import Namespace
@@ -32,8 +32,12 @@ def begin(db, key, subject=LEARNER, attempt="a"):
 
 
 def test_capture_gate_and_unreviewed_protection_practice(tmp_path, monkeypatch, capsys):
+    from chess_coach import material_contract
+
     capture = make_game(tmp_path / "capture.sqlite", monkeypatch)
+    monkeypatch.setattr(material_contract, "CAPTURE_VERSION", "1.0.0")
     process_decision(capture, 1, LEARNER)
+    monkeypatch.setattr(material_contract, "CAPTURE_VERSION", "1.1.0")
     closed = list_candidates(capture, LEARNER)
     assert closed["candidates"] == []
     assert closed["excluded"]["detector family not independently validated"] == 1
@@ -454,3 +458,23 @@ def test_new_keys_resolve_only_newest_eligible_evidence_per_private_objective(mo
     assert resolver._current(None, LEARNER, rows, "material_protection", 1) == 1
     with pytest.raises(ValueError, match="unavailable"):
         resolver._current(None, LEARNER, rows, "material_protection", 2)
+
+
+def test_reviewed_capture_practice_retains_subject_and_review_gates(tmp_path, monkeypatch):
+    db = make_game(tmp_path / "reviewed-capture.sqlite", monkeypatch)
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 22
+    evidence = process_decision(db, 1, LEARNER)["evidence_ids"][0]
+    review_evidence(db, evidence, decision="accept", actor="fixture_reviewer")
+    choices = list_candidates(db, LEARNER)["candidates"]
+    assert len(choices) == 1 and choices[0]["review_status"] == "accepted"
+    assert choices[0]["objective"] == "material_capture"
+    assert "d1d4" not in json.dumps(choices)
+    with pytest.raises(ValueError):
+        begin(db, choices[0]["key"], subject="fixture_opponent")
+    session = begin(db, choices[0]["key"])
+    assert session["review_status"] == "accepted" and "d1d4" not in json.dumps(session)
+    assert submit(db, "a", LEARNER, event_id="m", move="d1d4")["status"] == "line_completed"
+    review_evidence(db, evidence, decision="revoke", actor="fixture_reviewer")
+    assert not list_candidates(db, LEARNER)["candidates"]
+    with pytest.raises(ValueError, match="stale"):
+        show(db, "a", LEARNER)
