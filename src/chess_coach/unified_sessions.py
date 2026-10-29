@@ -1,0 +1,67 @@
+"""Start immutable source snapshots without changing legacy puzzle attempts."""
+
+import hashlib
+import json
+
+from .unified_session_state import now, session_row, view
+from .unified_sources import resolve_source
+
+
+def start(db, *, attempt_id, subject, source_type, version, key):
+    if not all(
+        isinstance(v, str) and 0 < len(v) <= 256
+        for v in (attempt_id, subject, source_type, version, key)
+    ):
+        raise ValueError("practice identity is invalid")
+    if db.connection.in_transaction:
+        raise RuntimeError("cannot start during an existing transaction")
+    try:
+        db.connection.execute("BEGIN IMMEDIATE")
+        old = db.connection.execute(
+            "SELECT * FROM unified_sessions WHERE attempt_id=?", (attempt_id,)
+        ).fetchone()
+        if old:
+            if (old["subject"], old["source_type"], old["source_version"], old["source_key"]) != (
+                subject,
+                source_type,
+                version,
+                key,
+            ):
+                raise ValueError("attempt ID belongs to another source")
+        else:
+            _create(db, attempt_id, subject, source_type, version, key)
+        result = view(session_row(db, attempt_id, subject))
+        db.connection.commit()
+        return result
+    except BaseException:
+        db.connection.rollback()
+        raise
+
+
+def _create(db, attempt_id, subject, source_type, version, key):
+    snapshot = resolve_source(db, source_type, version, key)
+    encoded = json.dumps(snapshot, sort_keys=True, separators=(",", ":"))
+    fingerprint = hashlib.sha256(encoded.encode()).hexdigest()
+    lines = [line.split() for line in snapshot["lines"]]
+    db.connection.execute(
+        """INSERT INTO unified_sessions
+        (attempt_id,subject,source_type,source_version,source_key,snapshot_hash,prompt_fen,
+        learner_color,objective,lines_json,provenance_json,current_fen,candidates_json,next_index,status,started_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,0,\u0027active\u0027,?)""",
+        (
+            attempt_id,
+            subject,
+            source_type,
+            version,
+            key,
+            fingerprint,
+            snapshot["prompt_fen"],
+            snapshot["learner_color"],
+            snapshot["objective"],
+            json.dumps(lines),
+            json.dumps(snapshot["provenance"], sort_keys=True),
+            snapshot["prompt_fen"],
+            json.dumps(list(range(len(lines)))),
+            now(),
+        ),
+    )

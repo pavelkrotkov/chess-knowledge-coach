@@ -10,6 +10,7 @@ from .web_practice import practice
 from .web_repertoire import repertoire_views
 from .web_security import install_security
 from .web_style import style_views
+from .web_unified_practice import unified_practice
 from .web_views import views
 
 
@@ -43,6 +44,7 @@ def create_app(
     install_security(app, login, origin, host if backend_host is None else backend_host)
     app.register_blueprint(views)
     app.register_blueprint(practice)
+    app.register_blueprint(unified_practice)
     app.register_blueprint(repertoire_views)
     app.register_blueprint(style_views)
 

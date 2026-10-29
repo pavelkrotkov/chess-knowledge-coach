@@ -1,12 +1,16 @@
 {% extends "base.html" %}
 {% block title %}Library — Chess coach{% endblock %}
 {% block content %}
+<h2>Recent practice</h2>
+{% for attempt in recent_attempts %}<p><a href="{{ url_for('unified_practice.show_page', attempt=attempt.attempt_id) }}">{% if attempt.status == "active" %}Resume{% else %}View{% endif %} {{ attempt.source_type }}: {{ attempt.source_key }}</a> · {{ attempt.status }}</p>{% else %}<p>No direct-source attempts yet.</p>{% endfor %}
 <h2>Puzzle library</h2>
 <p>Only ready and legacy-ready versions are available for practice. Legacy imports have not been revalidated by the new importer.</p>
 {% for corpus in corpora %}
 <section>
 <h3>{{ corpus.version }}</h3>
 <p>State: {{ corpus.state }} · Available rows: {{ corpus.imported_rows }}</p>
+{% for item in corpus.practice_tasks %}<form method="post" action="{{ url_for('unified_practice.begin') }}">
+<input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="source_type" value="corpus"><input type="hidden" name="version" value="{{ corpus.version }}"><input type="hidden" name="key" value="{{ item.puzzle_id }}"><button>Practice {{ item.puzzle_id }}</button></form>{% endfor %}
 {% if corpus.selection %}
 <p>Declared source-order prefix: {{ corpus.selection.selected_count }} of {{ corpus.selection.fullsource_count }} source records; this selection is not representative.</p>
 <p>Parent decoded CSV SHA-256: {{ corpus.selection.parent_csv_sha256 }}</p>
@@ -26,13 +30,14 @@
 {% endfor %}
 <h2>Licensed direct-prompt collections</h2>
 <p>Showing up to 100 collections.</p>
-<p>These tasks preserve explicit, non-exhaustive lines and source attribution. Legal lines do not prove a forced win; playable sessions and broader alternative grading are not yet available.</p>
+<p>These tasks preserve explicit, non-exhaustive lines and source attribution. Legal lines do not prove a forced win; unlisted alternatives require further verification.</p>
 {% for collection in public_collections %}
 <section><h3>{{ collection.version }}</h3>
 <p>{{ collection.accepted }} supported · {{ collection.excluded }} excluded · {{ collection.license }} · {{ collection.attribution }}</p>
 <p>Source: {{ collection.source_url }} · Revision: {{ collection.source_revision }}</p>
 {% for reason in collection.reasons %}<p>Excluded: {{ reason.reason }} ({{ reason.count }})</p>{% endfor %}
-{% for task in collection.tasks %}<p>{{ task.task_id }} · {{ task.objective }} · {{ task.prompt_fen }}</p>{% endfor %}
+{% for task in collection.tasks %}<p>{{ task.task_id }} · {{ task.objective }} · {{ task.prompt_fen }}</p>
+<form method="post" action="{{ url_for('unified_practice.begin') }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="source_type" value="public"><input type="hidden" name="version" value="{{ collection.version }}"><input type="hidden" name="key" value="{{ task.task_id }}"><button>Practice {{ task.task_id }}</button></form>{% endfor %}
 {% if collection.accepted > 10 %}<p>Showing the first 10 tasks; use keyset pagination in the CLI for more.</p>{% endif %}</section>
 {% else %}<p>No licensed public collections are registered.</p>{% endfor %}
 {% endblock %}

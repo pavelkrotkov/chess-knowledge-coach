@@ -7,11 +7,18 @@ REGISTRY_VERSION = "1.14.0"
 
 CAPABILITIES = (
     {
+        "id": "direct_source_practice",
+        "area": "Training",
+        "name": "Corpus and direct-source practice",
+        "status": "supported",
+        "details": "Versioned corpus and licensed direct prompts support legal sessions. Unlisted legal moves need verification; own-game practice and generalized grading remain planned.",
+    },
+    {
         "id": "licensed_public_collections",
         "area": "Training",
         "name": "Licensed direct-prompt collections",
         "status": "supported",
-        "details": "Bounded FEN and PGN collections retain declared license, attribution and legally validated lines. Playable sessions and general alternative grading remain planned.",
+        "details": "Bounded FEN and PGN collections retain declared license, attribution and legally validated lines. Direct-source sessions are available; general alternative grading remains planned.",
     },
     {
         "id": "staged_puzzle_corpus",

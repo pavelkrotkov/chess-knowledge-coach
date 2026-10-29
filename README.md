@@ -772,3 +772,15 @@ or intent, and mappings start unreviewed. Independently validated protection
 version 1.0.0 can qualify for mastery only after review and all existing context
 and currentness checks. Capture remains ineligible pending the separate
 [material validation](docs/material-observation-validation.md) continuation.
+
+### Direct-source practice sessions
+
+The private Library can start sessions from ready corpus and licensed public
+collections. Corpus records retain their original setup convention; licensed
+tasks begin at their direct prompt. Sessions snapshot their source and explicit
+lines, preserve the learner orientation, and resume with idempotent move and
+hint events. A legal move outside the supplied lines is marked as needing
+verification, not incorrect. A completed line is not automatically a verified
+objective; explicitly validated checkmate is the currently verified case.
+These sessions do not write mastery evidence or FSRS reviews. Own-game sources
+and general objective-aware grading remain separate work.

@@ -1,4 +1,4 @@
-{% if board %}<table class="board" aria-label="Chess position; side to move at the bottom">
+{% if board %}<table class="board" aria-label="{{ board_label or "Chess position; side to move at the bottom" }}">
 <tbody>{% for row in board %}<tr>{% for square in row %}<td class="{{ square.color }}" aria-label="{{ square.name }} {{ square.description }}" title="{{ square.name }} {{ square.description }}">{{ square.piece }}<span class="coordinate">{{ square.name }}</span>
 </td>{% endfor %}</tr>{% endfor %}</tbody>
 </table>{% else %}<p>Position unavailable.</p>{% endif %}

@@ -15,6 +15,8 @@ from .pipeline_status import pipeline_status
 from .public_training_query import library_groups
 from .puzzle_import_report import corpus_report
 from .puzzle_snapshot_state import statuses
+from .unified_library import corpus_choices
+from .unified_session_state import recent as recent_unified
 from .web_board import board_rows
 from .web_db import database
 from .web_release import release_info
@@ -139,8 +141,9 @@ def deep_selection_detail(game_id: int):
 def library():
     return render_template(
         "library.html",
-        corpora=corpus_report(database()),
+        corpora=corpus_choices(database(), corpus_report(database())),
         public_collections=library_groups(database()),
+        recent_attempts=recent_unified(database(), current_app.config["SUBJECT"]),
     )
 
 
