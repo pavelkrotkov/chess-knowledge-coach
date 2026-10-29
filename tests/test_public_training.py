@@ -198,3 +198,46 @@ def test_all_unsupported_records_remain_visible_as_exclusions(tmp_path):
     with pytest.raises(sqlite3.IntegrityError):
         import_collection(db, path, path, manifest, project_root=tmp_path)
     assert collections(db)[0]["excluded"] == 1
+
+
+def test_pgn_rejects_unconsumed_tokens_after_and_between_valid_moves(tmp_path):
+    pgn = """[TaskId "valid"]
+[Objective "legal_line"]
+
+1. e4 {multi-line comment
+
+continues} e5 $1 (1... c5 {variation}) 2. Nf3!? *
+
+[TaskId "prefix"]
+[Objective "legal_line"]
+
+nonsense 1. d4 *
+
+[TaskId "middle"]
+[Objective "legal_line"]
+
+1. e4 e9 e5 *
+
+[TaskId "trailing"]
+[Objective "legal_line"]
+
+1. e4 e9 *
+"""
+    path, manifest, _ = file_set(tmp_path, fmt="pgn", text=pgn)
+    db = Database(tmp_path / "strict.sqlite")
+    db.initialize()
+    result = import_collection(db, path, path, manifest, project_root=tmp_path)
+    assert result["accepted"] == 1 and result["excluded"] == 3
+    result_tasks = tasks(db, "fixture")
+    assert len(result_tasks) == 1 and result_tasks[0]["task_id"] == "valid"
+    assert set(result_tasks[0]["lines"]) == {"e2e4 e7e5 g1f3", "e2e4 c7c5"}
+
+
+@pytest.mark.parametrize(
+    "movetext",
+    ["1. e4e9 *", "1. e4 $x *", "1. e4 (1. d4 *", "1. e4 {unterminated", "1. e4 * garbage"],
+)
+def test_pgn_lexical_boundary_rejects_partial_or_unbalanced_text(movetext):
+    from chess_coach.public_training_pgn_lex import valid_movetext
+
+    assert not valid_movetext(movetext)

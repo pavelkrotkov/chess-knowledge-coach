@@ -1,6 +1,11 @@
 """Read bounded PGN candidates and their explicitly supplied variations."""
 
+import io
+
 import chess.pgn
+
+from .public_training_pgn_lex import valid_movetext
+from .public_training_pgn_lines import pgn_lines
 
 
 class QuietBuilder(chess.pgn.GameBuilder):
@@ -9,14 +14,17 @@ class QuietBuilder(chess.pgn.GameBuilder):
 
 
 def read_pgn(path):
-    with path.open(encoding="utf-8") as stream:
+    text = path.read_text(encoding="utf-8")
+    with io.StringIO(text) as stream:
         for number in range(1, 5002):
+            start = stream.tell()
             game = chess.pgn.read_game(stream, Visitor=QuietBuilder)
+            raw = text[start : stream.tell()]
             if game is None:
                 return
             if number > 5000:
                 raise ValueError("collection record limit exceeded")
-            if game.errors:
+            if game.errors or not valid_movetext(raw):
                 yield number, None, "malformed PGN"
                 continue
             try:
@@ -24,24 +32,8 @@ def read_pgn(path):
                     "id": game.headers.get("TaskId", ""),
                     "fen": game.board().fen(),
                     "objective": game.headers.get("Objective", ""),
-                    "lines": _lines(game),
+                    "lines": pgn_lines(game),
                 }
                 yield number, task, None
             except (ValueError, TypeError):
                 yield number, None, "invalid PGN position or lines"
-
-
-def _lines(game):
-    stack = [(game, [])]
-    lines = []
-    while stack:
-        node, moves = stack.pop()
-        if not node.variations:
-            lines.append(" ".join(moves))
-            if len(lines) > 16:
-                raise ValueError("too many PGN lines")
-        for child in reversed(node.variations):
-            if len(moves) >= 64:
-                raise ValueError("PGN line too long")
-            stack.append((child, [*moves, child.move.uci()]))
-    return lines

@@ -21,7 +21,9 @@ and after parsing, and a version cannot be overwritten.
 
 FEN CSV uses the header `id,fen,objective,lines`, where `lines` is a JSON array
 of UCI move strings. PGN uses `TaskId` and `Objective` tags, an optional FEN
-setup, and mainline/variation moves. The initial FEN is the actual learner
+setup, and mainline/variation moves. PGN movetext must be fully consumed;
+malformed or unrecognized tokens are excluded rather than silently skipped.
+Comments, NAGs and legal variations are supported. The initial FEN is the actual learner
 prompt: there is no invented opponent setup move. Every line must be legal;
 `checkmate` requires each line to end in mate delivered by the learner, and
 `promotion` requires a learner pawn promotion. `legal_line` means only that
