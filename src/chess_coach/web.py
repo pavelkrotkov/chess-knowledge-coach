@@ -6,6 +6,7 @@ from pathlib import Path
 from flask import Flask, g
 
 from .web_config import validate_config
+from .web_mate import mate_views
 from .web_practice import practice
 from .web_repertoire import repertoire_views
 from .web_security import install_security
@@ -43,6 +44,7 @@ def create_app(
     )
     install_security(app, login, origin, host if backend_host is None else backend_host)
     app.register_blueprint(views)
+    app.register_blueprint(mate_views)
     app.register_blueprint(practice)
     app.register_blueprint(unified_practice)
     app.register_blueprint(repertoire_views)

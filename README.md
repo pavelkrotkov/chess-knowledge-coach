@@ -385,6 +385,11 @@ These are chess observations, not claims about calculation, recognition, or
 mastery. Descriptive fork and hanging-piece labels alone do not establish an
 opportunity or outcome.
 
+A separate private decision inspection checks immediate mates and bounded
+three-ply forced-mate proofs from current owned analysis. Unknown or exhausted
+searches do not establish failure, and this inspection does not update mastery.
+See [mate proof inspection](docs/mate-proof-inspection.md) for the proof boundary.
+
 To create an explicit ontology version and inspect a game using a learner
 identity supplied at runtime:
 

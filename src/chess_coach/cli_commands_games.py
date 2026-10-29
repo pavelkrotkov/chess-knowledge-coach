@@ -8,6 +8,7 @@ from .decision_inspection import inspect_decision
 from .enrichment import SubprocessMaiaAdapter, UnavailableMaiaAdapter, predict_maia
 from .ingest import ingest_pgn
 from .lichess import LichessClient
+from .mate_inspection import inspect_mate
 
 
 def handle_init_db(db, args):
@@ -43,6 +44,20 @@ def handle_inspect_decision(db, args):
         json.dumps(
             inspect_decision(
                 db, args.position_id, run_id=args.run_id, learner=os.environ.get("LICHESS_USERNAME")
+            ),
+            indent=2,
+        )
+    )
+
+
+def handle_inspect_mate(db, args):
+    print(
+        json.dumps(
+            inspect_mate(
+                db,
+                args.position_id,
+                learner=os.environ.get("LICHESS_USERNAME"),
+                expected_fingerprint=args.source_fingerprint,
             ),
             indent=2,
         )

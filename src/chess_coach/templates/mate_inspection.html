@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Mate inspection — Chess coach{% endblock %}
+{% block content %}
+<h2>Bounded mate inspection</h2>
+<p>Status: {{ mate.status }}.</p>
+{% if mate.status == "current" %}
+<p>Game {{ mate.game_id }}, ply {{ mate.ply }}. Played {{ mate.played.san }}. Current analysis run {{ mate.analysis_run_id }}.</p>
+<p>Immediate mating moves: {% if mate.immediate_mates %}{{ mate.immediate_mates | map(attribute="san") | join(", ") }}{% else %}none{% endif %}. Played checkmate: {{ mate.played_checkmate }}. Played stalemate: {{ mate.played_stalemate }}. Immediate mate not played: {{ mate.immediate_mate_not_played }}.</p>
+<p>Proof: {{ mate.proof.status }}, up to {{ mate.proof.max_plies }} plies; {{ mate.proof.nodes }} of {{ mate.proof.node_limit }} nodes, at most {{ mate.proof.reply_limit }} defender replies per position. Unknown means the bounds prevented a conclusion.</p>
+<ul>{% for root in mate.proof.alternatives %}<li>{{ root.move.san }}: {{ root.status }}{% if root.status == "proved" %} in at most {{ root.distance_plies }} plies{% if root.defenses %}<ul>{% for line in root.defenses %}<li>{{ line.defense.san }} {{ line.mate.san }}</li>{% endfor %}</ul>{% endif %}{% endif %}</li>{% endfor %}</ul>
+<p>This is a factual, bounded proof, not a skill or mastery assessment. Source fingerprint: {{ mate.source_fingerprint }}.</p>
+{% else %}<p>The owned current source is unavailable or has changed; no proof is shown.</p>{% endif %}
+{% endblock %}

@@ -3,15 +3,22 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.15.0"
+REGISTRY_VERSION = "1.16.0"
 
 CAPABILITIES = (
+    {
+        "id": "manual_mate_proof",
+        "area": "Analysis",
+        "name": "Private bounded mate inspection",
+        "status": "observation-only",
+        "details": "An owned current decision can be inspected for legal immediate mates and bounded three-ply forced mate proofs. Automatic coaching, practice grading and mastery eligibility remain planned.",
+    },
     {
         "id": "direct_source_practice",
         "area": "Training",
         "name": "Corpus and direct-source practice",
         "status": "supported",
-        "details": "Versioned corpus and licensed direct prompts support legal sessions. Unlisted legal moves need verification; own-game practice and generalized grading remain planned.",
+        "details": "Versioned corpus and licensed direct prompts support legal sessions. Unlisted legal moves need verification; own-game protection uses eligible evidence and generalized grading remains planned.",
     },
     {
         "id": "licensed_public_collections",
