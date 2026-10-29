@@ -13,10 +13,9 @@ def capture_observation(board, candidate, actual, best_line, played_line):
     gain, reason, check_proof = capture_gain(board, candidate, target)
     if reason:
         return ambiguous("material_capture", reason)
-    played_pv = continuation(board, played_line, actual.uci(), allow_checks=actual == candidate)
-    best_pv = continuation(board, best_line)
-    if played_pv is None or (actual != candidate and best_pv is None):
-        return ambiguous("material_capture", "continuation_unavailable")
+    played_pv, best_pv, reason = _lines(board, candidate, actual, best_line, played_line)
+    if reason:
+        return ambiguous("material_capture", reason)
     reason = conflict(board, candidate, actual, best_line, played_line, best_pv, played_pv)
     if reason:
         return ambiguous("material_capture", reason)
@@ -35,3 +34,17 @@ def capture_observation(board, candidate, actual, best_line, played_line):
             else "bounded legal immediate replies and recorded short engine lines only"
         ),
     }
+
+
+def _lines(board, candidate, actual, best_line, played_line):
+    if actual != candidate and board.gives_check(actual):
+        return None, None, "checking_alternative_unresolved"
+    played_pv = continuation(board, played_line, actual.uci(), allow_checks=actual == candidate)
+    if played_pv is None and actual != candidate:
+        played_pv = continuation(
+            board, played_line, actual.uci(), allow_checks=True, minimum_plies=4
+        )
+    best_pv = continuation(board, best_line, allow_checks=board.gives_check(candidate))
+    if played_pv is None or (actual != candidate and best_pv is None):
+        return None, None, "continuation_unavailable"
+    return played_pv, best_pv, None

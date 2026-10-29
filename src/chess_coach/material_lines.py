@@ -13,12 +13,12 @@ def material(board, color):
     )
 
 
-def continuation(board, line, expected=None, *, allow_checks=False):
+def continuation(board, line, expected=None, *, allow_checks=False, minimum_plies=2):
     moves = eligible_moves(line, expected, allow_checks=allow_checks)
     if moves is None or not valid_start(board):
         return None
     initial = material(board, board.turn)
-    result = replay_line(board, moves, allow_checks=allow_checks)
+    result = replay_line(board, moves, allow_checks=allow_checks, minimum_plies=minimum_plies)
     if result is None:
         return None
     replay, used, san = result

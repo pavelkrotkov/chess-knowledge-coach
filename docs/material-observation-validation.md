@@ -1,7 +1,8 @@
 # Material observation validation status
 
-The independent curated validation supports only the pair
-`material_protection`, detector version `1.0.0`, for possible eligibility. Its
+Independent curated validation supports `material_protection` detector version
+`1.0.0` and `material_capture` detector version `1.1.0` for possible eligibility.
+The protection family is restricted to `hanging_piece` / `prevent`; its
 success and preventable-loss failure were established for both colors. Current
 protection witnesses may be exercise candidates with their actual review state:
 unreviewed is explicitly provisional, accepted is reviewed, and rejected,
@@ -10,11 +11,46 @@ requires an explicit human acceptance and all existing source, independent-game,
 time and context checks. The source fact's exact kind, version, outcome and
 operation must match; a mapping label cannot grant eligibility.
 
-`material_capture` remains observation-only for all versions. Independent
-validation established capture success for both colors but did not establish
-black missed-capture failure or missed-capture failure on the owned-deep path
-for either color. #187 remains mandatory to complete and separately validate
-those outcomes. Missing or mismatched kinds and versions fail closed.
+The capture approval is restricted to `hanging_piece` / `execute` and factual
+`success` or `failure`; it requires the exact producer, fact type and matching
+fact/run detector version. The same subject, review, source currentness, time
+and independent-context gates apply. Current unreviewed exercise candidates are
+visibly provisional; rejected, revoked, stale and unverified sources are excluded.
+Capture version `1.0.0`, unknown or mismatched versions and other operations
+remain ineligible.
+
+For a missed capture, the candidate is the current engine best root, not an
+exhaustive search of all legal captures; a quiet best root can therefore leave a
+real capture outside coverage. Capture detector version `1.1.0` permits a
+checking reply in the recorded played line when a legal continuation resolves
+the check within eight plies. Ordinary played lines retain their original
+four-ply comparison; a checking continuation is evaluated for at least four
+plies. A checking played alternative remains ambiguous, and the candidate still
+has to pass its bounded legal-reply proof, exact score veto and concrete material
+comparison. A recorded line is not a proof against later counterplay. The
+protection detector remains at its independently validated version `1.0.0`. Old
+capture facts are superseded on reprocessing without deleting their reviews.
+Independent validation and a separate eligibility decision now cover this narrow
+scope; wider capture claims remain unvalidated.
+
+A fresh, separately sealed 24-case independent evaluation at commit `5f96b21`
+used complete current owned-deep sources for every case, with both roles qualified,
+no cheap fallback, no worker caps and no errors. The 12 intended positives yielded
+cheap four capture successes, five capture failures, one ambiguous and two
+protection successes; deep yielded two capture successes, five capture failures,
+three ambiguous and two protection successes. Deep capture results include White
+one success and two failures, Black one success and three failures. All 12
+negative/exclusion controls remained ambiguous on both paths: two each covered
+recapture, queen sacrifice, pawn target, checking played alternative, promotion
+and en passant. One positive was ambiguous on both paths due to a forcing reply;
+two bishop-captures-rook successes were supported cheaply but ambiguous in deep
+because the recorded played PV contained only its root. The two protection
+successes use the separately approved protection version. These curated counts
+are not an accuracy estimate. See the [independent decision](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/187#issuecomment-6490272316).
+
+The previous independent evaluation did not establish black missed captures or
+owned-deep missed captures, leading to the mandatory #187 continuation. Its
+preserved results follow.
 
 The fresh 44-case set plus a separately sealed ten-case supplement comprise 54
 curated cases: cheap analysis produced 13 success, three failure and 38

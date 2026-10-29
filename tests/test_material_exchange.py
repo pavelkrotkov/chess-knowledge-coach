@@ -258,3 +258,67 @@ def test_immediate_reply_budget_exhaustion_fails_closed(monkeypatch):
     board = chess.Board("4k3/8/8/8/3q4/8/8/3RK3 w - - 0 1")
     monkeypatch.setattr(material_reply_guard, "MAX_REPLIES", 0)
     assert material_reply_guard.unresolved_reply(board, chess.Move.from_uci("d1d4"))
+
+
+def test_missed_capture_checking_reply_still_requires_resolved_line_and_score_veto():
+    from chess_coach.material_observation import material_observation
+
+    board = chess.Board("4k3/7p/8/8/3q4/8/P7/3RK3 w - - 0 1")
+    best = {**line(["d1d4", "h7h6"]), "score_value": 600}
+    played = {**line(["e1f1", "d4d1", "f1g2", "d1e2", "g2g1", "e8e7"]), "score_value": -600}
+    result = material_observation(board, "e1f1", best, played)
+    assert result["outcome"] == "failure" and result["exchange_gain"] == 9
+    assert result["played"]["san"][1] == "Qxd1+"
+    unresolved = {**played, "pv": "e1f1 d4d1"}
+    assert (
+        material_observation(board, "e1f1", best, unresolved)["reason"]
+        == "continuation_unavailable"
+    )
+    equivalent = {**played, "score_value": 500}
+    assert (
+        material_observation(board, "e1f1", best, equivalent)["reason"]
+        == "engine_disagreement_or_compensation"
+    )
+    bounded = {**played, "score_bound": "lower"}
+    assert (
+        material_observation(board, "e1f1", best, bounded)["reason"] == "continuation_unavailable"
+    )
+
+
+def test_checking_played_alternative_remains_ambiguous():
+    from chess_coach.material_capture import capture_observation
+
+    board = chess.Board("8/8/8/8/3q4/8/4k3/3R3K w - - 0 1")
+    candidate = chess.Move.from_uci("d1d4")
+    actual = chess.Move.from_uci("d1d2")
+    assert board.is_valid() and actual in board.legal_moves and board.gives_check(actual)
+    result = capture_observation(board, candidate, actual, line(["d1d4", "e2f2"]), {})
+    assert (
+        result["outcome"] == "ambiguous" and result["reason"] == "checking_alternative_unresolved"
+    )
+
+
+def test_missed_capture_keeps_four_ply_material_compensation_check():
+    from chess_coach.material_observation import material_observation
+
+    board = chess.Board("7k/8/8/3b2r1/8/8/8/KNB5 w - - 0 1")
+    assert board.is_valid()
+    best = {**line(["c1g5", "h8h7", "g5h4", "h7g8"]), "score_value": 1000}
+    played = {**line(["b1c3", "h8g8", "c3d5", "g8h8"]), "score_value": 700}
+    result = material_observation(board, "b1c3", best, played)
+    assert result["outcome"] == "ambiguous"
+    assert result["reason"] == "alternative_material_or_compensation"
+
+
+def test_check_resolution_keeps_earlier_material_comparison_horizon():
+    from chess_coach.material_lines import continuation
+
+    board = chess.Board("4k3/8/8/3b2r1/8/8/8/KNB5 w - - 0 1")
+    played = line(["b1c3", "e8e7", "c3d5", "e7e8"])
+    assert board.is_valid()
+    assert continuation(board, played, "b1c3") is None
+    resolved = continuation(board, played, "b1c3", allow_checks=True, minimum_plies=4)
+    assert resolved["material_delta"] == 3 and len(resolved["uci"]) == 4
+    assert resolved["san"][2] == "Nxd5+"
+    short = line(["b1c3", "e8e7"])
+    assert continuation(board, short, "b1c3", allow_checks=True, minimum_plies=4) is None

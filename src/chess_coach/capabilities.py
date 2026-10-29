@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.16.0"
+REGISTRY_VERSION = "1.17.0"
 
 CAPABILITIES = (
     {
@@ -81,7 +81,7 @@ CAPABILITIES = (
         "area": "Skill coverage",
         "name": "Bounded material observations",
         "status": "observation-only",
-        "details": "Direct non-pawn captures and target-specific protection use bounded legal replies and current engine lines. Checking captures require every legal evasion to pass; unresolved checks, en passant, promotions and compensation remain ambiguous. Protection version 1.0.0 has scoped validation and may qualify after review and currentness checks; capture remains ineligible pending separate validation.",
+        "details": "Direct non-pawn captures and target-specific protection use bounded legal replies and current engine lines. Capture version 1.1.0 may replay a checking reply in the played line through a legal resolution; checking captures require every legal evasion to pass. Unresolved checks, en passant, promotions and compensation remain ambiguous. Protection version 1.0.0 and capture version 1.1.0 have scoped validation and may qualify after review and currentness checks; all other versions remain ineligible.",
     },
     {
         "id": "manual_deep_selection",
@@ -123,7 +123,7 @@ CAPABILITIES = (
         "area": "Training",
         "name": "Own-game exercises",
         "status": "observation-only",
-        "details": "Own-game material practice requires a current verified witness and eligible review state. Protection version 1.0.0 is validated; captures remain unavailable pending validation.",
+        "details": "Own-game material practice requires a current verified witness and eligible review state. Protection version 1.0.0 and capture version 1.1.0 have scoped validation; unreviewed sources remain provisional.",
     },
     {
         "id": "broader_practice",
