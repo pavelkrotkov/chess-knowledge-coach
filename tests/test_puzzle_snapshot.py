@@ -279,3 +279,55 @@ def test_corrupt_archive_retry_uses_new_attempt(tmp_path):
     assert len(calls) == 2
     assert manifest["archive_sha256"] == hashlib.sha256(data).hexdigest()
     assert len(list(tmp_path.glob("puzzle-snapshots/v1/attempt-*"))) == 2
+
+
+@pytest.mark.parametrize("target", ["attempt", "archive", "lock", "state", "manifest"])
+def test_rejects_existing_symlinks_without_touching_external_files(tmp_path, target):
+    from chess_coach.puzzle_snapshot_paths import new_attempt, version_dir
+    from chess_coach.puzzle_snapshot_state import write_state
+
+    project = tmp_path / "project"
+    project.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    outside_file = outside / "external"
+    outside_file.write_bytes(b"untouched")
+    version = version_dir(project, "v1")
+    if target == "attempt":
+        (version / "attempt-linked").symlink_to(outside, target_is_directory=True)
+    elif target == "archive":
+        attempt = new_attempt(version)
+        write_state(
+            attempt, {"phase": "failed", "resumable": True, "etag": '"v1"', "downloaded_bytes": 9}
+        )
+        (attempt / "archive.zst").symlink_to(outside_file)
+    elif target == "state":
+        attempt = new_attempt(version)
+        (attempt / "state.json").symlink_to(outside_file)
+    else:
+        (version / (".lock" if target == "lock" else "manifest.json")).symlink_to(outside_file)
+    calls = []
+    with (
+        client(lambda request: calls.append(request) or response(archive())) as c,
+        pytest.raises(ValueError, match="symlink"),
+    ):
+        acquire(project, "v1", limits(), client=c)
+    assert calls == []
+    assert outside_file.read_bytes() == b"untouched"
+
+
+def test_status_and_backoff_do_not_follow_linked_version(tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    base = project / "puzzle-snapshots"
+    base.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (base / "linked").symlink_to(outside, target_is_directory=True)
+    with pytest.raises(ValueError, match="symlink"):
+        statuses(project)
+    with (
+        client(lambda request: response(archive())) as c,
+        pytest.raises(ValueError, match="symlink"),
+    ):
+        acquire(project, "other", limits(), client=c)

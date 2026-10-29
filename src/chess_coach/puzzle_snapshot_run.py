@@ -6,6 +6,7 @@ import time
 import httpx
 
 from .puzzle_snapshot_attempt import select_attempt
+from .puzzle_snapshot_boundary import checked_path
 from .puzzle_snapshot_budget import check_budget
 from .puzzle_snapshot_client import make_client
 from .puzzle_snapshot_decode import decode
@@ -22,7 +23,7 @@ def acquire_locked(path, version, limits, client):
     own_client = client is None
     client = client or make_client(limits)
     try:
-        archive = attempt / "archive.zst"
+        archive = checked_path(attempt / "archive.zst", path.parents[1])
         if not state.get("archive_complete"):
             archive = transfer(attempt, state, limits, deadline, client)
         check_budget(attempt, limits, deadline, archive.stat().st_size, limits.max_archive_bytes)

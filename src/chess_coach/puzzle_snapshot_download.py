@@ -1,6 +1,7 @@
 """Stream an archive while persisting validated offsets."""
 
 from .puzzle_snapshot_backoff import retry_at
+from .puzzle_snapshot_boundary import checked_path
 from .puzzle_snapshot_budget import check_budget
 from .puzzle_snapshot_digest import partial_hash
 from .puzzle_snapshot_http import request_headers, validate_response
@@ -9,7 +10,7 @@ from .puzzle_snapshot_stream import write_response
 
 
 def transfer(attempt, state, limits, deadline, client):
-    archive = attempt / "archive.zst"
+    archive = checked_path(attempt / "archive.zst", attempt.parents[2])
     offset = archive.stat().st_size if archive.exists() else 0
     if offset != state.get("downloaded_bytes", 0):
         raise ValueError("partial archive differs from checkpoint")

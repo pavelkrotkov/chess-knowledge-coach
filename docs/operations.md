@@ -206,8 +206,9 @@ chess-coach acquisition-status --project-root "$CHESS_PROJECT_ROOT"
 Progress also appears on the authenticated browser status page; the browser
 never starts a download. The command stops on provider backoff, honoring
 `Retry-After` (at least one minute), and can be run again with the same version.
-Partial transfers resume only after matching a strong ETag, exact range and
-length, and a locally checked partial hash. Without a strong ETag, or after a
+Snapshot paths reject existing symlink components to keep reads and writes
+inside the selected project. Partial transfers resume only after matching a
+strong ETag, exact range and length, and a locally checked partial hash. Without a strong ETag, or after a
 mismatching response, the next attempt starts in a new directory. Failed and
 partial files remain in the project; ready versions are never overwritten.
 The transfer timeout is checked between reads, with each read bounded by the
