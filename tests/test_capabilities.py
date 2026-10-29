@@ -1,0 +1,59 @@
+"""The CLI and private browser share one truthful capability snapshot."""
+
+import html
+import json
+import sys
+
+from chess_coach.capabilities import capability_report
+from chess_coach.cli import main
+from chess_coach.web import create_app
+
+
+def test_registry_is_scoped_unique_and_defensive():
+    report = capability_report()
+    entries = report["capabilities"]
+    assert report["version"] == "1.0.0"
+    assert len({item["id"] for item in entries}) == len(entries)
+    assert {item["status"] for item in entries} == {"supported", "observation-only", "planned"}
+    states = {item["id"]: item["status"] for item in entries}
+    assert states["mate_in_one_execute"] == "supported"
+    assert states["tactical_geometry"] == "observation-only"
+    assert states["own_game_practice"] == "planned"
+    assert states["private_course_publication"] == "planned"
+    entries[0]["name"] = "modified"
+    assert capability_report()["capabilities"][0]["name"] != "modified"
+
+
+def test_cli_and_private_browser_report_the_same_registry(tmp_path, monkeypatch, capsys):
+    db_path = tmp_path / "unused.sqlite"
+    monkeypatch.setattr(sys, "argv", ["chess-coach", "--db", str(db_path), "capabilities"])
+    main()
+    report = json.loads(capsys.readouterr().out)
+    assert report == capability_report()
+    assert not db_path.exists()
+
+    app = create_app(
+        db_path=db_path,
+        subject="learner",
+        actor="operator",
+        corpus="fixture-v1",
+        login="fixture-login",
+        origin="https://coach.invalid",
+    )
+    app.testing = True
+    client = app.test_client()
+    assert client.get("/capabilities", base_url="https://coach.invalid").status_code == 403
+    response = client.get(
+        "/capabilities",
+        base_url="https://coach.invalid",
+        headers={"Tailscale-User-Login": "fixture-login"},
+    )
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "no-store"
+    page = response.get_data(as_text=True)
+    assert report["version"] in page
+    for item in report["capabilities"]:
+        assert html.escape(item["name"]) in page
+        assert html.escape(item["details"]) in page
+        assert item["status"] in page
+    assert not db_path.exists()

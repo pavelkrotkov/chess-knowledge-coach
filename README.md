@@ -1,6 +1,6 @@
 # Chess Knowledge Graph / Adaptive Coach
 
-Local-first foundations for turning chess games into reproducible skill evidence and adaptive training. This is deliberately not an engine-review UI: engines and detectors produce versioned facts; inference produces recomputable evidence; mastery and curriculum come later.
+Local-first chess coaching foundations: engines and detectors produce versioned facts, evidence is reviewed, and an uncalibrated mastery heuristic and narrow mate-in-one curriculum are available. The broader adaptive coach remains in development.
 
 ## Current vertical slice
 
@@ -72,9 +72,8 @@ seconds or HTTP dates. Errors do not advance the current window.
 
 Maia is optional and can run in a separate environment behind a small JSON
 subprocess adapter. Without a configured command, offline mode returns no Maia
-prediction and the canonical game/position tables remain unchanged. Explanations
-receive serialized facts and evidence only; they are stored separately and
-cannot mutate canonical state.
+prediction and the canonical game/position tables remain unchanged. The optional
+explanation adapter receives serialized facts and evidence and stores text separately. It is not a security sandbox: configure only trusted callables.
 
 For bulk analysis on newer hardware, copy the SQLite database or use a dedicated
 analysis database, run bounded `analyze-game` jobs with explicit nodes/depth,
@@ -99,13 +98,13 @@ from chess_coach.db import Database
 ## Design & decisions
 
 - [docs/adr/ADR.md](docs/adr/ADR.md) — architecture decision records: evidence-based
-  mastery (never centipawn-loss mastery), deterministic-first with sandboxed LLM
-  adapters, atomic imports/merges, reproducible engine configuration, provenance.
+  mastery (never centipawn-loss mastery), deterministic-first with trusted optional
+  explanation adapters, atomic imports/merges, reproducible engine configuration, provenance.
 - [kg.md](kg.md) — the original concept: learner model, knowledge graph, learning loop.
 
 ## Roadmap / glue work
 
-The GitHub issue tracker contains the implementation issues for the remaining build-order steps, including Lichess API sync, opening/structure datasets, detector validation, puzzle indexing, FSRS training, Maia enrichment, and explanation/publishing adapters.
+The next release and its mandatory delivery issues are tracked by [#119](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/119). See the [release contract](docs/adaptive-release-contract.md) for the original-vision audit, coverage, and acceptance scenarios. Run `uv run chess-coach capabilities` or open the private browser’s Capabilities page to see the versioned current coverage.
 
 ## Engine decision provenance
 

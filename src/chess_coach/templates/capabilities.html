@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Capabilities — Chess coach{% endblock %}
+{% block content %}
+<h2>Capabilities</h2>
+<p>Registry version {{ report.version }}. Coverage is intentionally limited to the behavior described here.</p>
+{% for item in report.capabilities %}
+<section>
+<h3>{{ item.name }}</h3>
+<p>{{ item.area }} · <strong>{{ item.status }}</strong></p>
+<p>{{ item.details }}</p>
+</section>
+{% endfor %}
+{% endblock %}

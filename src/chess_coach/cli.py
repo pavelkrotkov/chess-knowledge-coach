@@ -1,11 +1,14 @@
 """Command-line entry point."""
 
+import json
+
 from . import cli_commands_datasets as datasets
 from . import cli_commands_games as games
 from . import cli_commands_learning as learning
 from . import cli_curriculum as curriculum
 from . import cli_pipeline
 from . import cli_recovery as recovery
+from .capabilities import capability_report
 from .cli_parser import build_parser
 from .db import Database
 
@@ -44,6 +47,9 @@ COMMANDS = {
 
 def main() -> None:
     args = build_parser().parse_args()
+    if args.command == "capabilities":
+        print(json.dumps(capability_report(), indent=2))
+        return
     if args.command in recovery.COMMANDS:
         recovery.COMMANDS[args.command](args)
         return
