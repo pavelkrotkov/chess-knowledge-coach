@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.19.0"
+REGISTRY_VERSION = "1.20.0"
 
 CAPABILITIES = (
     {
@@ -74,7 +74,7 @@ CAPABILITIES = (
         "area": "Skill coverage",
         "name": "Tactical opportunities and defense",
         "status": "planned",
-        "details": "Verified loose-material, fork, pin, skewer, discovered-attack, back-rank and defensive opportunities and outcomes are not yet automatic.",
+        "details": "General fork, pin, skewer, discovered-attack, back-rank and defensive opportunity coverage remains incomplete; bounded fork and material observations are described separately.",
     },
     {
         "id": "positional_endgame",
@@ -89,6 +89,13 @@ CAPABILITIES = (
         "name": "Bounded material observations",
         "status": "observation-only",
         "details": "Direct non-pawn captures and target-specific protection use bounded legal replies and current engine lines. Capture version 1.1.0 may replay a checking reply in the played line through a legal resolution; checking captures require every legal evasion to pass. Unresolved checks, en passant, promotions and compensation remain ambiguous. Protection version 1.0.0 and capture version 1.1.0 have scoped validation and may qualify after review and currentness checks; all other versions remain ineligible.",
+    },
+    {
+        "id": "fork_opportunities",
+        "area": "Skill coverage",
+        "name": "Bounded material forks",
+        "status": "observation-only",
+        "details": "Noncapturing fork moves use bounded legal defenses and target captures with current engine continuations, accounting for defensive captures and subsequent replies against the original material position. Legal capturing, promotion and en passant fork shapes are reported as unsupported ambiguity; mate-only consequences, recaptures, unresolved checks, sacrifices and counterplay remain outside scope or ambiguous. Version 1.0.1 pawn and knight execute successes and failures may qualify for mastery after review and current source checks; other fork observations remain ineligible. Fork practice is not supported.",
     },
     {
         "id": "manual_deep_selection",

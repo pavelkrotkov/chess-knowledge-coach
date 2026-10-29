@@ -13,7 +13,7 @@ import httpx
 import pytest
 
 from chess_coach.db import Database
-from chess_coach.evidence_review import review_evidence
+from chess_coach.evidence_review import inspect_evidence, review_evidence
 from chess_coach.pipeline import process_pipeline
 from chess_coach.pipeline_config import PipelineConfig
 from chess_coach.pipeline_lock import pipeline_lock
@@ -89,29 +89,52 @@ def setup(tmp_path, monkeypatch, count=3):
     return db, config, transport(entries, calls), calls
 
 
+def evidence_ids(db, producer):
+    return [
+        row[0]
+        for row in db.connection.execute(
+            "SELECT e.id FROM evidence_mappings e JOIN mapping_runs r ON r.id=e.mapping_run_id WHERE r.producer=? ORDER BY e.id",
+            (producer,),
+        )
+    ]
+
+
 def test_end_to_end_replay_review_and_version_changes(tmp_path, monkeypatch):
     db, config, network, calls = setup(tmp_path, monkeypatch)
     result = process_pipeline(db, config, transport=network)
     assert result["sync"]["games"] == 3 and len(result["games"]) == 3
     assert all(item["status"] == "partial" for item in result["games"])
     assert all(item["stages"][2]["detail"] == "opening_not_configured" for item in result["games"])
-    assert result["mastery"][0]["status"] == "insufficient"
+    initial = {item["skill"]: item for item in result["mastery"]}
+    assert initial["mate_in_one"]["status"] == "insufficient"
     assert "learner" not in json.dumps(result).lower()
-    ids = [row[0] for row in db.connection.execute("SELECT id FROM evidence_mappings")]
-    assert len(ids) == 3
+    ids = evidence_ids(db, "mate-in-one-mapper")
+    fork_ids = evidence_ids(db, "fork-opportunity-mapper")
+    assert len(ids) == len(fork_ids) == 3
+    assert result["forks"]["outcomes"] == {"ambiguous": 3}
     for evidence in ids:
         review_evidence(db, evidence, decision="accept", actor="fixture-reviewer")
     replay = process_pipeline(db, config, transport=network)
     assert replay["games"] == []
-    assert replay["mastery"][0]["status"] == "sufficient"
-    assert replay["mastery"][0]["context_count"] == 3
+    assert evidence_ids(db, "mate-in-one-mapper") == ids
+    assert evidence_ids(db, "fork-opportunity-mapper") == fork_ids
+    assert replay["forks"]["replayed"] == 3
+    reports = {item["skill"]: item for item in replay["mastery"]}
+    assert reports["mate_in_one"]["status"] == "sufficient"
+    assert reports["mate_in_one"]["context_count"] == 3
+    assert reports["fork"]["status"] == "insufficient"
+    assert reports["fork"]["context_count"] == 0
+    assert all(
+        inspect_evidence(db, evidence)["review_status"] == "unreviewed" for evidence in fork_ids
+    )
     assert db.connection.execute("SELECT COUNT(*) FROM analysis_runs").fetchone()[0] == 3
     assert db.connection.execute("SELECT COUNT(*) FROM structure_runs").fetchone()[0] == 3
     changed = process_pipeline(db, replace(config, structure_version="v2"), transport=network)
     assert len(changed["games"]) == 3
     assert db.connection.execute("SELECT COUNT(*) FROM analysis_runs").fetchone()[0] == 3
     assert db.connection.execute("SELECT COUNT(*) FROM structure_runs").fetchone()[0] == 6
-    assert db.connection.execute("SELECT COUNT(*) FROM evidence_mappings").fetchone()[0] == 3
+    assert evidence_ids(db, "mate-in-one-mapper") == ids
+    assert evidence_ids(db, "fork-opportunity-mapper") == fork_ids
     assert len(calls) <= config.network_requests * 3
 
 
@@ -168,7 +191,8 @@ def test_replay_after_stage_commit_before_checkpoint(tmp_path, monkeypatch, inte
     assert db.connection.execute("SELECT COUNT(*) FROM analysis_runs").fetchone()[0] == 1
     assert db.connection.execute("SELECT COUNT(*) FROM structure_runs").fetchone()[0] == 1
     assert db.connection.execute("SELECT COUNT(*) FROM opening_runs").fetchone()[0] == 1
-    assert db.connection.execute("SELECT COUNT(*) FROM evidence_mappings").fetchone()[0] == 1
+    assert len(evidence_ids(db, "mate-in-one-mapper")) == 1
+    assert len(evidence_ids(db, "fork-opportunity-mapper")) == 1
     assert (
         db.connection.execute(
             "SELECT generation FROM pipeline_stages WHERE stage=?", (interrupted_stage,)
@@ -387,14 +411,26 @@ def test_engine_configuration_reprocesses_only_dependent_stages(tmp_path, monkey
     db, config, network, _ = setup(tmp_path, monkeypatch, count=1)
     first = process_pipeline(db, config, transport=network)
     assert first["games"][0]["stages"][0]["status"] == "complete"
-    before = db.connection.execute("SELECT COUNT(*) FROM evidence_mappings").fetchone()[0]
+    before = evidence_ids(db, "mate-in-one-mapper")
+    before_fork = evidence_ids(db, "fork-opportunity-mapper")
+    assert len(before) == 1
+    review_evidence(db, before[0], decision="accept", actor="fixture-reviewer")
     second = process_pipeline(db, replace(config, nodes=200), transport=network)
     stages = second["games"][0]["stages"]
     assert not stages[0]["replayed"] and stages[1]["replayed"] and stages[2]["replayed"]
     assert not stages[3]["replayed"]
     assert db.connection.execute("SELECT COUNT(*) FROM analysis_runs").fetchone()[0] == 2
     assert db.connection.execute("SELECT COUNT(*) FROM structure_runs").fetchone()[0] == 1
-    assert db.connection.execute("SELECT COUNT(*) FROM evidence_mappings").fetchone()[0] == before
+    assert evidence_ids(db, "mate-in-one-mapper") == before
+    mate = inspect_evidence(db, before[0])
+    assert mate["lifecycle_status"] == "active" and mate["review_status"] == "accepted"
+    after_fork = evidence_ids(db, "fork-opportunity-mapper")
+    assert len(before_fork) == 1 and len(after_fork) == 2
+    statuses = db.connection.execute(
+        "SELECT r.status FROM evidence_mappings e JOIN mapping_runs r ON r.id=e.mapping_run_id WHERE e.id IN (?,?) ORDER BY e.id",
+        (after_fork[0], after_fork[1]),
+    ).fetchall()
+    assert [row[0] for row in statuses] == ["superseded", "active"]
 
 
 def test_v12_migration_adds_pipeline_without_losing_existing_history(monkeypatch):
@@ -511,7 +547,7 @@ def test_superseded_outputs_trigger_new_current_generation(tmp_path, monkeypatch
         ).fetchone()
         assert tuple(row) == (expected, 2)
     row = db.connection.execute(
-        'SELECT detector_version,input_json FROM detector_runs WHERE status="active"'
+        'SELECT detector_version,input_json FROM detector_runs WHERE status="active" AND producer="mate-in-one"'
     ).fetchone()
     assert row["detector_version"] == config.tactical_version
     assert json.loads(row["input_json"])["detector_input"]["pipeline_generation"] == 2
@@ -765,7 +801,7 @@ def test_tactical_generation_superseded_after_interruption_advances(tmp_path, mo
         with pytest.raises(KeyboardInterrupt):
             process_pipeline(db, config, transport=empty)
     generation_one = db.connection.execute(
-        'SELECT input_json FROM detector_runs WHERE status="active"'
+        'SELECT input_json FROM detector_runs WHERE status="active" AND producer="mate-in-one"'
     ).fetchone()[0]
     assert json.loads(generation_one)["detector_input"]["pipeline_generation"] == 1
     record_game_opportunities(db, 1, learner="learner", detector_version="external2")
@@ -778,7 +814,7 @@ def test_tactical_generation_superseded_after_interruption_advances(tmp_path, mo
         == 2
     )
     current = db.connection.execute(
-        'SELECT input_json FROM detector_runs WHERE status="active"'
+        'SELECT input_json FROM detector_runs WHERE status="active" AND producer="mate-in-one"'
     ).fetchone()[0]
     assert json.loads(current)["detector_input"]["pipeline_generation"] == 2
 

@@ -1,11 +1,14 @@
 """Validate reviewed evidence content and detector-family eligibility."""
 
+from .fork_mastery_policy import mastery_allowed as fork_mastery_allowed
 from .mastery_provenance import valid_confidence, valid_links
 from .material_mastery_policy import mastery_allowed
 from .material_mastery_source import source_reason
 
 
 def content_reason(db, row) -> str | None:
+    if not fork_mastery_allowed(db, row):
+        return "fork_family_unvalidated"
     if not mastery_allowed(db, row):
         return "material_family_unvalidated"
     if row["outcome"] not in {"success", "failure"}:

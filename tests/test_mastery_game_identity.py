@@ -1,4 +1,4 @@
-"""A game imported through two real routes contributes only once."""
+"""A game imported through two real routes contributes only once for a generic skill."""
 
 from datetime import UTC, datetime
 
@@ -59,7 +59,7 @@ def map_game(db, game_id):
         producer="fixture",
         detector_version="v1",
         input_data={},
-        facts=[{"fact_type": "fork", "payload": {}}],
+        facts=[{"fact_type": "fixture_skill", "payload": {}}],
     )
     with mapping_transaction(db):
         result = record_mapping_run_in_transaction(
@@ -73,7 +73,7 @@ def map_game(db, game_id):
             input_data={},
             mappings=[
                 {
-                    "skill": "fork",
+                    "skill": "fixture_skill",
                     "outcome": "success",
                     "confidence": 1,
                     "fact_ids": fact["fact_ids"],
@@ -98,12 +98,16 @@ def test_cross_source_game_identity_ignores_pgn_formatting(monkeypatch):
     for game_id in range(1, 4):
         map_game(db, game_id)
     now = datetime.fromtimestamp(NOW, UTC)
-    partial = update_mastery(db, subject="learner", skill="fork", operation="execute", as_of=now)
+    partial = update_mastery(
+        db, subject="learner", skill="fixture_skill", operation="execute", as_of=now
+    )
     assert partial["context_count"] == 2 and partial["status"] == "insufficient"
     assert partial["exclusions"] == {"duplicate_context": 1}
     ingest_pgn(db, pgn("synthetic3", NOW - 180), source="local")
     map_game(db, 4)
-    result = update_mastery(db, subject="learner", skill="fork", operation="execute", as_of=now)
+    result = update_mastery(
+        db, subject="learner", skill="fixture_skill", operation="execute", as_of=now
+    )
     assert result["context_count"] == 3 and result["status"] == "sufficient"
     assert result["effective_weight"] == pytest.approx(3)
     assert result["mastery"] == 1 and result["uncertainty"] == pytest.approx(0.25)

@@ -7,9 +7,10 @@ MAX_REPLIES = 64
 MIN_GAIN = 3
 
 
-def unresolved_reply(board, move):
+def unresolved_reply(board, move, initial=None):
     color = board.turn
-    initial = material(board, color)
+    if initial is None:
+        initial = material(board, color)
     after = board.copy()
     after.push(move)
     replies = list(after.legal_moves)
@@ -25,4 +26,4 @@ def _unresolved(board, move, color, initial):
     after.push(move)
     if unclear(after):
         return True
-    return board.is_capture(move) and material(after, color) - initial < MIN_GAIN
+    return material(after, color) - initial < MIN_GAIN

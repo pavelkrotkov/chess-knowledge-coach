@@ -22,8 +22,9 @@ COVERAGE: dict[str, dict[str, Any]] = {
         "limits": "Game outcomes require review; hinted puzzle attempts add no skill evidence.",
     },
     "fork": {
-        "capabilities": ["tactical_geometry"],
-        "detector": "chess_coach.motif_detectors.detect_motifs",
+        "capabilities": ["tactical_geometry", "fork_opportunities"],
+        "detector": "chess_coach.fork_observation.observe",
+        "limits": "Version 1.0.1 pawn and knight noncapturing execute observations may qualify for mastery after review and current source checks; broader fork mastery and practice remain unsupported.",
     },
     "hanging_piece": {
         "capabilities": ["tactical_geometry", "material_opportunities"],

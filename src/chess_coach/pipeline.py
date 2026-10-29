@@ -1,19 +1,18 @@
 """Bounded restartable game processing without automatic human review."""
 
 from .db import Database
-from .mastery import mastery_report
+from .fork_worker import process_forks
 from .material_worker import process_material
 from .pipeline_config import PipelineConfig
 from .pipeline_cooldown import utc_now
 from .pipeline_cursor import save_cursor
 from .pipeline_deep import process_deep
-from .pipeline_deep_config import combined_status
 from .pipeline_game import process_game
-from .pipeline_health import finish_run, run_status, start_run
+from .pipeline_health import finish_run, start_run
 from .pipeline_inputs import engine_identity, scan_input
 from .pipeline_lock import pipeline_lock
 from .pipeline_pending import pending_games
-from .pipeline_report import public_report
+from .pipeline_report import pipeline_report
 from .pipeline_sync import sync_result
 
 
@@ -51,14 +50,5 @@ def _run_pipeline(db, config, token, transport, clock):
     scan["has_more"] |= scan_input(db, config, engine_hash) != scan_hash
     deep = process_deep(db, config)
     material = process_material(db, config)
-    reports = mastery_report(db, subject=config.learner)
-    status = combined_status(combined_status(run_status(db, sync, games, scan), deep), material)
-    return {
-        "status": status,
-        "sync": sync,
-        "scan": scan,
-        "deep": deep,
-        "material": material,
-        "games": games,
-        "mastery": [public_report(row) for row in reports],
-    }
+    forks = process_forks(db, config)
+    return pipeline_report(db, config, sync, scan, games, deep, material, forks)
