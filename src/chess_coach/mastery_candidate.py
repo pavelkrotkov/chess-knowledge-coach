@@ -16,7 +16,7 @@ HORIZON_DAYS = 365
 
 
 def prepare_candidate(db: Database, row, subject: str, as_of: datetime, cache: dict):
-    reason = basic_reason(row, subject)
+    reason = basic_reason(db, row, subject)
     if reason is not None:
         return None, reason
     observed = parse_utc(row["observation_at"])

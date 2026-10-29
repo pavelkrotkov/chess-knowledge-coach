@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Practice — Chess coach{% endblock %}
+{% block content %}
+<h2>Practice</h2>
+<p>Playing as {{ state.learner_color }}. Source: {{ state.source_type }} · Objective: {{ state.objective }} · Status: {{ state.status }}.</p>
+{% if state.source_type == "own-game" %}<p>Review status: {{ state.review_status }}{% if state.review_status != "accepted" %}; this observation is provisional{% endif %}. The supplied move is a bounded witness, not a complete forced objective. <a href="{{ url_for('views.evidence_detail', evidence_id=state.evidence_id) }}">View source evidence (reveals the move)</a>.</p>{% endif %}
+{% include "board.html" %}
+{% if notice %}<p role="status">{{ notice }}</p>{% endif %}
+{% if state.status == "active" %}
+<p>Enter a legal move using coordinates, for example e2e4. Add a promotion piece when needed.</p>
+<form method="post" action="{{ url_for('unified_practice.move') }}">
+<input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="attempt" value="{{ state.attempt_id }}"><input type="hidden" name="event" value="{{ event }}">
+<label for="move">Your move</label> <input id="move" name="move" required minlength="4" maxlength="5" autocomplete="off"><button>Play move</button>
+</form>
+<form method="post" action="{{ url_for('unified_practice.request_hint') }}">
+<input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="attempt" value="{{ state.attempt_id }}"><input type="hidden" name="event" value="{{ event }}"><button>Hint</button>
+</form>
+{% elif state.status == "needs_verification" %}
+<p>This legal move needs verification; it has not been marked incorrect.</p>
+{% elif state.status == "line_completed" %}
+<p>The supplied line is complete. Its objective may need further verification.</p>
+{% else %}
+<p>The stated checkmate objective was verified.</p>
+{% endif %}
+<p><a href="{{ url_for('views.library') }}">Return to library</a></p>
+{% endblock %}

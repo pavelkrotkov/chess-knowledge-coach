@@ -233,7 +233,9 @@ uv run chess-coach restore-db coach-backup.sqlite coach-restored.sqlite --projec
 Both paths must be inside the explicitly selected project root. The source is
 opened read-only, and SQLite's online backup API captures a consistent copy
 including committed WAL data. The copy is checked with `integrity_check` and
-`foreign_key_check` before publication; the new file has owner-only permissions.
+`foreign_key_check`, then its logical schema, metadata, rowids, storage types and
+values are compared with that same pinned source snapshot before publication. The
+new file has owner-only permissions.
 An existing destination or its SQLite journal, WAL, or shared-memory companion
 is never overwritten. Keep exclusive control of the destination directory while
 the operation runs so another process cannot create a companion afterward.
@@ -242,6 +244,21 @@ the destination directory and cleaned up after completion or a handled failure.
 Restoring does not replace the original database or run schema migrations. It
 requires a standalone rollback-journal backup, such as one produced by
 `backup-db`; use `backup-db` first for a WAL-mode source.
+
+The comparison supports ordinary rowid and WITHOUT ROWID tables and fails closed
+on virtual tables, inaccessible hidden rowids, unsupported schemas, oversized
+records, or a comparison error. A metadata-only preflight bounds each aggregate
+row, including conservative per-field overhead, before fetching payloads. It
+streams rows with a 16 MiB aggregate-row and SQLite value limit,
+a 4,096-object schema limit, a 512-column table limit and a 16 MiB total schema
+definition limit. The pinned snapshot has a five-minute cooperative deadline;
+an operating-system I/O call may exceed it. WAL readers do not normally block
+writers but can delay checkpointing and WAL truncation; rollback-journal readers
+can block writer commits during the snapshot.
+
+The restore comparison proves equality to the supplied backup, not that the backup
+matched some earlier source. It cannot detect common-mode faults or changes after
+verification. Independently preserved backups remain important.
 
 For a WAL database, keep the database and its SQLite-managed sidecars available
 to the live SQLite connection; copying the main file alone can omit committed
@@ -367,6 +384,11 @@ moves remain ambiguous, as does a decision with contradictory engine output.
 These are chess observations, not claims about calculation, recognition, or
 mastery. Descriptive fork and hanging-piece labels alone do not establish an
 opportunity or outcome.
+
+A separate private decision inspection checks immediate mates and bounded
+three-ply forced-mate proofs from current owned analysis. Unknown or exhausted
+searches do not establish failure, and this inspection does not update mastery.
+See [mate proof inspection](docs/mate-proof-inspection.md) for the proof boundary.
 
 To create an explicit ontology version and inspect a game using a learner
 identity supplied at runtime:
@@ -587,7 +609,7 @@ relative to the completed cheap checkpoint and its recorded engine/configuration
 provenance. Selection does not rehash the executable or infer unrun configuration
 changes. If source data or its cheap checkpoint changes, a selection becomes
 stale. Analysis handoff rejects
-source databases containing selection or deep history until a provenance-aware
+source databases containing selection, deep or material history until a provenance-aware
 merge is implemented; it never silently drops that history.
 
 ## Automatic selective deep analysis
@@ -728,3 +750,47 @@ judgments; a sample direction requires five opportunities across three games.
 Game outcomes and same-search score gaps are shown separately and cannot prove
 that a choice caused the result. Missing or incomplete comparisons never become
 preference evidence. Other style dimensions remain planned.
+
+## Provisional material observations
+
+The automatic worker separately scans up to 40 recorded positions and verifies
+at most four new learner decisions per invocation. It reuses only the current
+cheap checkpoint or individually verified lines from a current owned deep
+attempt and checks those inputs again before committing. An incomplete deep
+attempt can support only its independently valid played line; it is never
+combined with a cheap best line. Identical active observations replay without replacing
+reviews; changed source or analysis generations create new lineage. Use
+`process-pipeline --help` to set those bounds or `--no-material` to disable the
+pass for one invocation. Engine search is not repeated by this detector.
+
+The current family describes limited non-pawn captures and immediate material
+protection, using legal recaptures on one square and short recorded engine lines.
+It cannot prove an opportunity is safe against every forcing move or later
+compensation. Checking captures are used only when every legal immediate evasion passes a
+bounded material check; other unresolved checks, en passant, promotion, direct
+pawn-capture claims, pins, unclear exchanges and conflicting lines remain ambiguous
+or outside coverage. A pawn can protect a piece by capturing an unrecapturable
+attacker. A score difference only vetoes a potentially misleading failure; it
+never creates an observation on its own. The private evidence page displays
+SAN lines, source context and the boundary. Outcomes do not imply recognition
+or intent, and mappings start unreviewed. Independently validated protection
+version 1.0.0 can qualify for mastery only after review and all existing context
+and currentness checks. Capture remains ineligible pending the separate
+[material validation](docs/material-observation-validation.md) continuation.
+
+### Direct-source practice sessions
+
+The private Library can start sessions from ready corpus and licensed public
+collections. Corpus records retain their original setup convention; licensed
+tasks begin at their direct prompt. Sessions snapshot their source and explicit
+lines, preserve the learner orientation, and resume with idempotent move and
+hint events. A legal move outside the supplied lines is marked as needing
+verification, not incorrect. A completed line is not automatically a verified
+objective; explicitly validated checkmate is the currently verified case.
+Own-game material practice requires a current witness and independent validation of the
+detector family. Protection version 1.0.0 is validated; capture remains unavailable
+pending separate validation. Unreviewed observations are provisional, and rejected
+or revoked observations cannot be used.
+Its bounded first-move line does not establish a complete forced objective. Sessions are
+rechecked against their source and review when resumed or played. These sessions do not
+write mastery evidence or FSRS reviews. General objective-aware grading remains separate work.

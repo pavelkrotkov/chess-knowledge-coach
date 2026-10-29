@@ -20,6 +20,7 @@ from .puzzle_selection_schema import add_puzzle_selection
 from .puzzle_session_schema import add_puzzle_sessions
 from .training_completion_schema import add_training_completions
 from .training_schema import add_training_scheduler_config
+from .unified_session_schema import add_unified_sessions
 
 
 def upgrade_recent(connection: sqlite3.Connection, version: int) -> None:
@@ -42,6 +43,7 @@ def upgrade_recent(connection: sqlite3.Connection, version: int) -> None:
         (19, add_deep_execution),
         (20, add_puzzle_selection),
         (21, add_public_training),
+        (22, add_unified_sessions),
     )
     for target, apply_upgrade in upgrades:
         if version < target:

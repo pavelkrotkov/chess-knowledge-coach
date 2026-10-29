@@ -35,5 +35,8 @@ def configure(sub):
     parser.add_argument("--deep-nodes", type=int, default=50000)
     parser.add_argument("--deep-seconds", type=float, default=2.0)
     parser.add_argument("--deep-multipv", type=int, default=3)
+    parser.add_argument("--no-material", dest="material_enabled", action="store_false")
+    parser.add_argument("--material-max-scan", type=int, default=40)
+    parser.add_argument("--material-max-decisions", type=int, default=4)
 
     sub.add_parser("pipeline-status", help="Read durable processing status")

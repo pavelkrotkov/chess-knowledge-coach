@@ -12,6 +12,7 @@ from . import cli_pipeline
 from . import cli_public_training as public_training
 from . import cli_recovery as recovery
 from . import cli_snapshot as snapshot
+from . import cli_unified_practice as unified_practice
 from .capabilities import capability_report
 from .cli_parser import build_parser
 from .competency_coverage import competency_report
@@ -19,6 +20,11 @@ from .competency_graph import seed_competency_graph
 from .db import Database
 
 COMMANDS = {
+    "list-own-game-practice": unified_practice.handle_list,
+    "start-unified": unified_practice.handle_start,
+    "show-unified": unified_practice.handle_show,
+    "move-unified": unified_practice.handle_move,
+    "hint-unified": unified_practice.handle_hint,
     "import-public-training": public_training.handle_import,
     "list-public-training": public_training.handle_list,
     "show-public-training": public_training.handle_show,
@@ -32,6 +38,7 @@ COMMANDS = {
     "ingest-pgn": games.handle_ingest_pgn,
     "analyze-game": games.handle_analyze_game,
     "inspect-decision": games.handle_inspect_decision,
+    "inspect-mate": games.handle_inspect_mate,
     "predict-maia": games.handle_predict_maia,
     "sync-lichess": games.handle_sync_lichess,
     "import-openings": datasets.handle_import_openings,

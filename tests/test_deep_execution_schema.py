@@ -38,7 +38,7 @@ def test_v18_upgrade_is_atomic_and_idempotent(tmp_path, monkeypatch):
     )
     db.initialize()
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 21
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 22
     assert db.connection.execute("SELECT COUNT(*) FROM games").fetchone()[0] == 1
     assert (
         db.connection.execute(

@@ -3,18 +3,23 @@
 from __future__ import annotations
 
 from .db import Database
+from .material_contract import PRODUCER
 
 
 def evidence_rows(db: Database, subject: str, skill: str, operation: str):
     return db.connection.execute(
         """SELECT e.id, e.position_id, e.subject, e.skill, e.operation, e.outcome, e.confidence, e.observation_at,
                   e.human_validated, e.source_provenance, e.mapping_run_id, e.mapper_version,
-                  r.status AS mapping_status, r.subject AS mapping_subject,
+                  r.status AS mapping_status, r.producer AS mapping_producer, r.subject AS mapping_subject,
                   r.operation AS mapping_operation, r.position_id AS mapping_position,
                   p.game_id, p.ply, g.source, g.source_id,
                   v.decision AS review_decision, v.actor AS review_actor,
                   (SELECT COUNT(*) FROM evidence_fact_links l
                    WHERE l.evidence_id = e.id) AS link_count,
+                  (SELECT COUNT(*) FROM evidence_fact_links l
+                   JOIN detector_facts f ON f.id=l.fact_id JOIN detector_runs d ON d.id=f.run_id
+                   WHERE l.evidence_id=e.id AND (d.producer=? OR f.fact_type='material_opportunity'))
+                   AS material_fact_count,
                   (SELECT COUNT(*) FROM evidence_fact_links l
                    LEFT JOIN detector_facts f ON f.id = l.fact_id
                    LEFT JOIN detector_runs d ON d.id = f.run_id
@@ -31,5 +36,5 @@ def evidence_rows(db: Database, subject: str, skill: str, operation: str):
             SELECT id FROM evidence_review_events WHERE evidence_id = e.id ORDER BY id DESC LIMIT 1
         )
         WHERE e.subject = ? AND e.skill = ? AND e.operation = ? ORDER BY e.id""",
-        (subject, skill, operation),
+        (PRODUCER, subject, skill, operation),
     ).fetchall()

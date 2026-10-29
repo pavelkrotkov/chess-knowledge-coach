@@ -39,6 +39,9 @@ def handle_process_pipeline(db, args):
         "deep_nodes",
         "deep_seconds",
         "deep_multipv",
+        "material_enabled",
+        "material_max_scan",
+        "material_max_decisions",
     )
     learner = args.username or os.environ.get("LICHESS_USERNAME")
     if not learner:

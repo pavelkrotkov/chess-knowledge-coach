@@ -3,7 +3,7 @@
 import chess
 
 
-def board_rows(fen: str | None) -> list[list[dict]]:
+def board_rows(fen: str | None, orientation: str | None = None) -> list[list[dict]]:
     if not fen:
         return []
     try:
@@ -12,9 +12,14 @@ def board_rows(fen: str | None) -> list[list[dict]]:
             return []
     except (TypeError, ValueError):
         return []
-    ranks = range(7, -1, -1) if board.turn == chess.WHITE else range(8)
-    files = range(8) if board.turn == chess.WHITE else range(7, -1, -1)
+    white = _is_white(board, orientation)
+    ranks = range(7, -1, -1) if white else range(8)
+    files = range(8) if white else range(7, -1, -1)
     return [[_square(board, file, rank) for file in files] for rank in ranks]
+
+
+def _is_white(board, orientation):
+    return board.turn == chess.WHITE if orientation is None else orientation == "white"
 
 
 def _square(board: chess.Board, file: int, rank: int) -> dict:

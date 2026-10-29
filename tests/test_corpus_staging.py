@@ -380,12 +380,12 @@ def test_migration_rollback_from_real_v17_and_reopen(tmp_path, monkeypatch):
         row[1] for row in db.connection.execute("PRAGMA table_info(puzzle_corpora)")
     }
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 21
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 22
     assert corpus_report(db)[0]["state"] == "legacy_ready"
     db.close()
     reopened = Database(tmp_path / "old.sqlite")
     reopened.initialize()
-    assert reopened.connection.execute("PRAGMA user_version").fetchone()[0] == 21
+    assert reopened.connection.execute("PRAGMA user_version").fetchone()[0] == 22
     sql = reopened.connection.execute(
         "SELECT sql FROM sqlite_master WHERE type='trigger' AND name='curriculum_revision_puzzles_insert'"
     ).fetchone()[0]

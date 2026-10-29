@@ -38,6 +38,9 @@ class PipelineConfig:
     deep_nodes: int = 50000
     deep_seconds: float = 2.0
     deep_multipv: int = 3
+    material_enabled: bool = True
+    material_max_scan: int = 40
+    material_max_decisions: int = 4
 
     def validate(self) -> None:
         validate_learner(self.learner)
@@ -47,3 +50,6 @@ class PipelineConfig:
 
         validate_deep_config(self)
         deep_options(self)
+        from .material_worker_config import validate_material_config
+
+        validate_material_config(self)

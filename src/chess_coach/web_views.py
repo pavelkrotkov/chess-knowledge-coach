@@ -12,11 +12,10 @@ from .named_structure_report import structure_report
 from .named_structure_source import source_position
 from .named_structures import VERSION, VERSIONS
 from .pipeline_status import pipeline_status
-from .public_training_query import library_groups
-from .puzzle_import_report import corpus_report
 from .puzzle_snapshot_state import statuses
 from .web_board import board_rows
 from .web_db import database
+from .web_library import render_library
 from .web_release import release_info
 
 views = Blueprint("views", __name__)
@@ -137,11 +136,7 @@ def deep_selection_detail(game_id: int):
 
 @views.get("/library")
 def library():
-    return render_template(
-        "library.html",
-        corpora=corpus_report(database()),
-        public_collections=library_groups(database()),
-    )
+    return render_library()
 
 
 @views.get("/structures")

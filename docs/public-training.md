@@ -42,8 +42,11 @@ chess-coach --db "$VALIDATION_DB" show-public-training --version "$VERSION" --ta
 `--after-id` to continue. Collection lists return at most 100 versions; use
 `--after-version` to continue. Outputs carry source identity, attribution and the
 license notice. The authenticated Library page shows a bounded task sample and
-exclusion counts. Playable sessions, general alternative-aware grading and
-training outcomes remain separate work.
+exclusion counts, and can start a direct-prompt session. Supplied lines support
+idempotent moves and hints; an unlisted legal move needs verification instead of
+a failure. Completing an unverified line does not establish its objective or
+mastery. Own-game sources, general alternative-aware grading and scheduling
+remain separate work.
 
 ## Prepared material
 
@@ -73,4 +76,4 @@ validated examples:
 
 The local prepared CSVs and manifests are under `.runtime/public-training-139`.
 They were imported into an isolated validation database only. Production
-activation and playable practice remain outstanding.
+activation remains outstanding.
