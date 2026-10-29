@@ -56,15 +56,16 @@ class Engine:
         pass
 
 
-def make_game(path, monkeypatch):
+def make_game(path, monkeypatch, *, timed=True):
     board = chess.Board("4k3/8/8/8/3q4/8/8/3RK3 w - - 0 1")
     game = chess.pgn.Game()
     game.setup(board)
     game.headers["White"] = LEARNER
     game.headers["Black"] = "fixture_opponent"
     game.headers["Result"] = "*"
-    game.headers["UTCDate"] = "2026.01.01"
-    game.headers["UTCTime"] = "12:00:00"
+    if timed:
+        game.headers["UTCDate"] = "2026.01.01"
+        game.headers["UTCTime"] = "12:00:00"
     node = game.add_variation(board.parse_uci("e1f1"))
     board.push_uci("e1f1")
     node.add_variation(board.parse_uci("e8f8"))
@@ -518,3 +519,75 @@ def test_real_stockfish_bounded_worker_records_nonmate_observation(tmp_path):
     observation = json.loads(row["payload_json"])
     assert observation["kind"] in {"material_capture", "material_protection"}
     assert observation["outcome"] in {"success", "failure", "ambiguous"}
+
+
+def test_unknown_observation_time_stays_unknown_even_if_family_is_approved(tmp_path, monkeypatch):
+    from chess_coach import material_policy
+
+    db = make_game(tmp_path / "untimed.sqlite", monkeypatch, timed=False)
+    created = process_decision(db, 1, LEARNER)
+    evidence_id = created["evidence_ids"][0]
+    assert inspect_evidence(db, evidence_id)["observation_at"] is None
+    review_evidence(db, evidence_id, decision="accept", actor="fixture_reviewer")
+    monkeypatch.setattr(material_policy, "MASTERY_ELIGIBLE_VERSIONS", frozenset({"1.0.0"}))
+    eligible, excluded = eligible_contexts(
+        db, LEARNER, "hanging_piece", "execute", datetime.now(UTC)
+    )
+    assert eligible == [] and excluded["unknown_or_invalid_time"] == 1
+
+
+def test_automatic_material_pass_consumes_current_deep_lineage(tmp_path, monkeypatch):
+    import httpx
+
+    from chess_coach.pipeline import process_pipeline
+
+    db = make_game(tmp_path / "automatic-deep.sqlite", monkeypatch)
+
+    class Deep(Engine):
+        def analyse(self, board, limit, multipv, root_moves=None):
+            best = chess.Move.from_uci("d1d4")
+            moves = root_moves or [best, *[m for m in board.legal_moves if m != best][:2]]
+            result = []
+            for move in moves:
+                after = board.copy()
+                after.push(move)
+                reply = chess.Move.from_uci("e8f8")
+                if reply not in after.legal_moves:
+                    reply = next(iter(after.legal_moves))
+                score = 0 if root_moves else 500
+                result.append(
+                    {
+                        "score": chess.engine.PovScore(chess.engine.Cp(score), board.turn),
+                        "pv": [move, reply],
+                        "nodes": 100,
+                        "depth": 5,
+                        "time": 0.01,
+                    }
+                )
+            return result
+
+    def start(_binary, timeout=None):
+        return Engine() if timeout is None else Deep()
+
+    monkeypatch.setattr(chess.engine.SimpleEngine, "popen_uci", start)
+    config = PipelineConfig(
+        learner=LEARNER,
+        engine_path=sys.executable,
+        nodes=100,
+        deep_per_game=1,
+        deep_max_jobs=1,
+        deep_max_games=1,
+        deep_nodes=1000,
+        deep_seconds=0.5,
+        material_max_decisions=1,
+    )
+    result = process_pipeline(
+        db, config, transport=httpx.MockTransport(lambda request: httpx.Response(200, text=""))
+    )
+    assert result["deep"]["processed"] == 1 and result["material"]["outcomes"] == {"failure": 1}
+    row = db.connection.execute(
+        "SELECT id FROM evidence_mappings WHERE skill=?", ("hanging_piece",)
+    ).fetchone()
+    evidence = inspect_evidence(db, row["id"])
+    assert evidence["context"]["provenance"]["kind"] == "deep"
+    assert evidence["review_status"] == "unreviewed"

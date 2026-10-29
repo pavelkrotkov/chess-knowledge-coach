@@ -231,15 +231,17 @@ def test_changed_versions_revert_with_new_truthful_generations(tmp_path, monkeyp
             ("v1", "active", 3),
         ]
     facts = db.connection.execute(
-        "SELECT detector_version,status,input_json FROM detector_runs ORDER BY id"
+        "SELECT detector_version,status,input_json FROM detector_runs WHERE producer=? ORDER BY id",
+        ("mate-in-one",),
     ).fetchall()
     assert [row["detector_version"] for row in facts] == ["v1", "v2", "v1"]
     assert [row["status"] for row in facts] == ["superseded", "superseded", "active"]
     assert json.loads(facts[-1]["input_json"])["detector_input"]["pipeline_generation"] == 3
     assert (
-        db.connection.execute('SELECT COUNT(*) FROM mapping_runs WHERE status="active"').fetchone()[
-            0
-        ]
+        db.connection.execute(
+            "SELECT COUNT(*) FROM mapping_runs WHERE status=? AND producer=?",
+            ("active", "mate-in-one-mapper"),
+        ).fetchone()[0]
         == 1
     )
     assert db.connection.execute("SELECT COUNT(*) FROM analysis_runs").fetchone()[0] == 1
@@ -373,7 +375,12 @@ def test_position_budget_and_unknown_time_never_produce_candidates(tmp_path, mon
     assert db.connection.execute("SELECT COUNT(*) FROM analysis_runs").fetchone()[0] == 0
     done = process_pipeline(db, config, transport=empty)
     assert done["games"][0]["stages"][0]["status"] == "complete"
-    assert db.connection.execute("SELECT COUNT(*) FROM detector_runs").fetchone()[0] == 0
+    assert (
+        db.connection.execute(
+            "SELECT COUNT(*) FROM detector_runs WHERE producer=?", ("mate-in-one",)
+        ).fetchone()[0]
+        == 0
+    )
 
 
 def test_engine_configuration_reprocesses_only_dependent_stages(tmp_path, monkeypatch):
@@ -682,7 +689,8 @@ def test_only_timed_learner_moves_generate_tactical_facts(tmp_path, monkeypatch)
     plies = [
         row[0]
         for row in db.connection.execute(
-            "SELECT p.ply FROM detector_runs d JOIN positions p ON p.id=d.position_id"
+            "SELECT p.ply FROM detector_runs d JOIN positions p ON p.id=d.position_id WHERE d.producer=?",
+            ("mate-in-one",),
         )
     ]
     assert plies == [1]
