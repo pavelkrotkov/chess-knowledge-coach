@@ -95,7 +95,8 @@ def test_unreviewed_observation_replays_and_never_enters_mastery(tmp_path, monke
     eligible, excluded = eligible_contexts(
         db, LEARNER, "hanging_piece", "execute", datetime.now(UTC)
     )
-    assert eligible == [] and excluded["material_family_unvalidated"] == 1
+    assert len(eligible) == 1 and eligible[0]["outcome"] == "failure"
+    assert not excluded
     assert db.connection.execute("SELECT COUNT(*) FROM engine_outputs").fetchone()[0] == before
 
 
@@ -246,7 +247,7 @@ def test_automatic_worker_records_provisional_material_and_browser_explains(tmp_
     )
     assert page.status_code == 200
     assert b"tested best continuation captures material" in page.data
-    assert b"Rxd4" in page.data and b"captures remain provisional" in page.data
+    assert b"Rxd4" in page.data and b"capture version 1.1.0" in page.data
     assert b"pawn-capture claims" in page.data and b"en passant" in page.data
     assert b"Material source: current" in page.data
     assert inspect_evidence(db, evidence_id)["review_status"] == "unreviewed"
@@ -382,7 +383,8 @@ def test_private_opportunity_contract_rechecks_owner_source_and_witness(tmp_path
     assert detail["objective_witness"]["uci"][0] == "d1d4"
     assert detail["lineage"]["fact_id"] == created["fact_ids"][0]
     assert detail["lineage"]["analysis"]["kind"] == "cheap"
-    assert not detail["eligible_for_exercise_candidate"] and not detail["family_validated"]
+    assert detail["eligible_for_exercise_candidate"] and detail["family_validated"]
+    assert detail["exercise_qualification"] == "provisional"
     review_evidence(db, evidence_id, decision="reject", actor="fixture_reviewer")
     rejected = material_opportunities.inspect_material_opportunity(db, evidence_id, learner=LEARNER)
     assert (
@@ -907,3 +909,35 @@ def test_replay_rejects_malformed_fact_payload():
     row = {"detector_version": "1.1.0"}
     assert not current_version(row, [{"payload_json": "null"}])
     assert not current_version(row, [{"payload_json": "not-json"}])
+
+
+@pytest.mark.parametrize("played,outcome", [("e1f1", "failure"), ("d1d4", "success")])
+def test_capture_approval_retains_review_currentness_and_exercise_gates(
+    tmp_path, monkeypatch, played, outcome
+):
+    from chess_coach.material_opportunities import inspect_material_opportunity
+
+    db = make_game(tmp_path / "capture-approval.sqlite", monkeypatch, played=played)
+    result = process_decision(db, 1, LEARNER)
+    assert result["outcome"] == outcome
+    evidence_id = result["evidence_ids"][0]
+    view = inspect_material_opportunity(db, evidence_id, learner=LEARNER)
+    assert view["family_validated"] and view["eligible_for_exercise_candidate"]
+    assert view["review_status"] == "unreviewed" and view["exercise_qualification"] == "provisional"
+    eligible, excluded = eligible_contexts(
+        db, LEARNER, "hanging_piece", "execute", datetime.now(UTC)
+    )
+    assert not eligible and excluded["unreviewed_or_invalid_review"] == 1
+    review_evidence(db, evidence_id, decision="accept", actor="fixture_reviewer")
+    eligible, _ = eligible_contexts(db, LEARNER, "hanging_piece", "execute", datetime.now(UTC))
+    assert len(eligible) == 1 and eligible[0]["outcome"] == outcome
+    assert (
+        inspect_material_opportunity(db, evidence_id, learner=LEARNER)["exercise_qualification"]
+        == "reviewed"
+    )
+    review_evidence(db, evidence_id, decision="revoke", actor="fixture_reviewer")
+    assert not inspect_material_opportunity(db, evidence_id, learner=LEARNER)[
+        "eligible_for_exercise_candidate"
+    ]
+    eligible, _ = eligible_contexts(db, LEARNER, "hanging_piece", "execute", datetime.now(UTC))
+    assert not eligible

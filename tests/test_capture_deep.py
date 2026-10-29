@@ -61,7 +61,8 @@ def test_owned_deep_missed_capture_with_checking_played_reply(tmp_path, black, m
     view = inspect_material_opportunity(db, row["id"], learner="fixture_learner")
     assert view["lineage"]["detector_version"] == "1.1.0"
     assert view["currentness"] == "current" and view["objective_witness"]
-    assert not view["family_validated"] and not view["eligible_for_exercise_candidate"]
+    assert view["family_validated"] and view["eligible_for_exercise_candidate"]
+    assert view["exercise_qualification"] == "provisional"
 
     from chess_coach.cli import main
     from chess_coach.web import create_app
@@ -87,4 +88,4 @@ def test_owned_deep_missed_capture_with_checking_played_reply(tmp_path, black, m
     )
     assert page.status_code == 200
     assert b"tested best continuation captures material" in page.data
-    assert b"Material source: current" in page.data and b"captures remain provisional" in page.data
+    assert b"Material source: current" in page.data and b"capture version 1.1.0" in page.data

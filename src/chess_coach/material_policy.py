@@ -3,7 +3,8 @@
 from .material_contract import PRODUCER
 
 MAPPER = "material-opportunity-mapper"
-ELIGIBLE_KINDS = frozenset({("material_protection", "1.0.0")})
+ELIGIBLE_KINDS = frozenset({("material_protection", "1.0.0"), ("material_capture", "1.1.0")})
+OPERATIONS = {"material_protection": "prevent", "material_capture": "execute"}
 
 
 def fact_allowed(fact, *, skill, operation, outcome):
@@ -12,7 +13,7 @@ def fact_allowed(fact, *, skill, operation, outcome):
     payload = fact["payload"]
     return (
         skill == "hanging_piece"
-        and operation == "prevent"
+        and operation == OPERATIONS.get(payload["kind"])
         and outcome in {"success", "failure"}
         and payload.get("outcome") == outcome
     )

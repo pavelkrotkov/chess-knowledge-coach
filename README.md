@@ -777,9 +777,10 @@ attacker. A score difference only vetoes a potentially misleading failure; it
 never creates an observation on its own. The private evidence page displays
 SAN lines, source context and the boundary. Outcomes do not imply recognition
 or intent, and mappings start unreviewed. Independently validated protection
-version 1.0.0 can qualify for mastery only after review and all existing context
-and currentness checks. Capture remains ineligible pending the separate
-[material validation](docs/material-observation-validation.md) continuation.
+version 1.0.0 and capture version 1.1.0 can qualify for mastery only after review
+and all existing context and currentness checks. Current exercise candidates
+show their actual review state. Other versions remain ineligible; see the
+[material validation](docs/material-observation-validation.md) limits.
 
 ### Direct-source practice sessions
 
@@ -791,8 +792,8 @@ hint events. A legal move outside the supplied lines is marked as needing
 verification, not incorrect. A completed line is not automatically a verified
 objective; explicitly validated checkmate is the currently verified case.
 Own-game material practice requires a current witness and independent validation of the
-detector family. Protection version 1.0.0 is validated; capture remains unavailable
-pending separate validation. Unreviewed observations are provisional, and rejected
+detector family. Protection version 1.0.0 and capture version 1.1.0 have scoped
+validation. Unreviewed observations are provisional, and rejected
 or revoked observations cannot be used.
 Its bounded first-move line does not establish a complete forced objective. Sessions are
 rechecked against their source and review when resumed or played. These sessions do not
