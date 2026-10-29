@@ -2,11 +2,12 @@
 
 import chess
 
+from .pawn_structure_activity import activity
 from .pawn_structure_geometry import geometry
 from .pawn_structure_lines import line
 from .structure_features import extract_features
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 
 def _targets(board):
@@ -51,8 +52,9 @@ def lesson(board, played, best, played_line):
         "version": VERSION,
         "targets": targets,
         "lines": lines,
+        "activity": activity(board, targets, lines),
         "consequence": "A listed capture shows one legal continuation and bounded target-square exchange, not a forced outcome.",
-        "uncertainty": "Pawn geometry alone is not a mistake. Activity, compensation, other defenses and later tactics are not assessed. Plans are ideas, not verified recommendations or evidence of skill.",
+        "uncertainty": "Pawn geometry alone is not a mistake. Supported-piece exchanges are immediate and target-specific; overall activity, compensation, other defenses and later tactics are not assessed. Plans are ideas, not verified recommendations or evidence of skill.",
         "hypothesis": "Pressure on the pawn or activity for its owner may influence the choice; these possibilities are unverified.",
         "mastery_eligible": False,
     }

@@ -3,7 +3,8 @@
 from collections import Counter
 
 from .fork_worker_cursor import scan
-from .pawn_structure_worker_item import process_item
+from .pawn_structure_worker_report import new_report
+from .pawn_structure_worker_visit import visit
 from .pipeline_cursor import save_cursor
 
 POLICY = "pawn-structure-worker-v1"
@@ -14,30 +15,20 @@ def _scan(db, learner, limit):
 
 
 def process_structure_lessons(db, config):
-    report = {
-        "status": "disabled",
-        "examined": 0,
-        "processed": 0,
-        "replayed": 0,
-        "unavailable": 0,
-        "capped": False,
-        "outcomes": {},
-        "limits": {
-            "positions": config.material_max_scan,
-            "decisions": config.material_max_decisions,
-        },
-    }
+    report = new_report(config)
     if not config.material_enabled:
         return report
     report["status"] = "complete"
     key, rows = _scan(db, config.learner, config.material_max_scan)
     outcomes = Counter()
-    limit = min(config.material_max_scan, config.material_max_decisions)
-    for row in rows[:limit]:
+    for row in rows[: config.material_max_scan]:
         report["examined"] += 1
-        process_item(db, row["id"], config.learner, report, outcomes)
+        if not visit(db, config, row, report, outcomes):
+            report["pending"] = True
+            break
         save_cursor(db, key, row["id"], POLICY)
-    report["capped"] = len(rows) > limit
+    report["scan_limited"] = len(rows) > config.material_max_scan
+    report["capped"] = report["pending"] or report["scan_limited"]
     if report["capped"] or report["unavailable"]:
         report["status"] = "partial"
     report["outcomes"] = dict(sorted(outcomes.items()))

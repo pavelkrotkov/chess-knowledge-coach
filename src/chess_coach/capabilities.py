@@ -11,7 +11,7 @@ CAPABILITIES = (
         "area": "Skill coverage",
         "name": "Pawn-structure plans from decisions",
         "status": "observation-only",
-        "details": "Current attributable decisions show isolated and backward pawn plans and counterplans with bounded legal continuation witnesses. Descriptive observations are reviewable but ambiguous and ineligible for mastery; activity and compensation remain uncertain.",
+        "details": "Current attributable decisions show isolated and backward pawn plans and bounded immediate exchanges of pawn-supported pieces. The bounded worker distinguishes current replays, pending work and truncated coverage. Reviewable observations remain ambiguous and ineligible for mastery; overall compensation remains uncertain.",
     },
     {
         "id": "pawn_opportunities",

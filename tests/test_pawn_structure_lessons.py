@@ -2,6 +2,7 @@
 
 import json
 import sys
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import chess
@@ -15,6 +16,7 @@ from chess_coach.evidence_review import inspect_evidence, review_evidence
 from chess_coach.ingest import ingest_pgn
 from chess_coach.mastery_eligibility import eligible_contexts
 from chess_coach.pawn_structure_lesson import lesson
+from chess_coach.pawn_structure_probe import state
 from chess_coach.pawn_structure_publish import publish
 from chess_coach.pawn_structure_source import prepare_lesson
 from chess_coach.pawn_structure_worker import process_structure_lessons
@@ -137,7 +139,26 @@ def test_review_replay_supersession_and_mastery_gate(tmp_path, monkeypatch, caps
     evidence_id = first["mapping"]["evidence_ids"][0]
     assert inspect_evidence(db, evidence_id)["pawn_structure_currentness"] == "current"
     worker = process_structure_lessons(db, config)
-    assert worker["replayed"] == 1 and worker["examined"] <= config.material_max_decisions
+    assert worker["replayed"] == 1 and worker["attempted"] == 0
+    assert worker["status"] == "complete"
+    assert state(db, 1, "fixture_learner") == "current"
+    fact_row = db.connection.execute(
+        "SELECT id,payload_json FROM detector_facts WHERE fact_type='pawn_structure_lesson'"
+    ).fetchone()
+    db.connection.execute(
+        "UPDATE detector_facts SET payload_json='{}' WHERE id=?", (fact_row["id"],)
+    )
+    db.connection.commit()
+    assert state(db, 1, "fixture_learner") == "needed"
+    corrupted = process_structure_lessons(db, config)
+    assert corrupted["attempted"] == 1 and corrupted["status"] == "partial"
+    assert corrupted["unavailable"] == 1
+    db.connection.execute(
+        "UPDATE detector_facts SET payload_json=? WHERE id=?",
+        (fact_row["payload_json"], fact_row["id"]),
+    )
+    db.connection.commit()
+    assert state(db, 1, "fixture_learner") == "current"
     monkeypatch.setenv("LICHESS_USERNAME", "fixture_learner")
     monkeypatch.setattr(
         sys,
@@ -160,6 +181,22 @@ def test_review_replay_supersession_and_mastery_gate(tmp_path, monkeypatch, caps
     headers = {"Tailscale-User-Login": "fixture"}
     page = client.get("/decisions/1", base_url="https://coach.invalid", headers=headers)
     assert b"Pawn-structure plans" in page.data and b"not a forced outcome" in page.data
+    from chess_coach import web_views
+
+    board = chess.Board("4r2k/8/8/4N3/3P4/8/8/7K w - - 0 1")
+    activity_view = lesson(board, "d4d5", line("h1g1 e8e5"), line("d4d5 e8e5"))
+    activity_view["provenance"] = {"kind": "synthetic"}
+    with monkeypatch.context() as patch:
+        patch.setattr(web_views, "current_lesson", lambda *args: activity_view)
+        activity_page = client.get(
+            "/decisions/1", base_url="https://coach.invalid", headers=headers
+        )
+    assert (
+        b"pawn d4 geometrically attacks the square occupied by its knight on e5"
+        in activity_page.data
+    )
+    assert b"legally recapture with dxe5" in activity_page.data
+    assert b"-2 versus 3" in activity_page.data
     page = client.get(f"/evidence/{evidence_id}", base_url="https://coach.invalid", headers=headers)
     assert b"Pawn-structure lesson source: current" in page.data
     review_evidence(db, evidence_id, decision="accept", actor="fixture_reviewer")
@@ -174,11 +211,16 @@ def test_review_replay_supersession_and_mastery_gate(tmp_path, monkeypatch, caps
     )
     db.connection.commit()
     assert inspect_evidence(db, evidence_id)["pawn_structure_currentness"] == "stale"
+    assert state(db, 1, "fixture_learner") == "needed"
     with pytest.raises(ValueError, match="source changed"):
         publish(db, prepared, fact)
-    changed, fresh = prepare_lesson(db, 1, "fixture_learner")
-    second = publish(db, changed, fresh)
-    assert second["mapping"]["evidence_ids"] != [evidence_id]
+    worker = process_structure_lessons(db, config)
+    assert worker["attempted"] == worker["processed"] == 1
+    assert state(db, 1, "fixture_learner") == "current"
+    changed_id = db.connection.execute(
+        "SELECT MAX(id) FROM evidence_mappings WHERE skill='pawn_structure'"
+    ).fetchone()[0]
+    assert changed_id != evidence_id
     assert inspect_evidence(db, evidence_id)["review_status"] == "accepted"
     assert inspect_evidence(db, evidence_id)["lifecycle_status"] == "superseded"
     db.connection.execute(
@@ -192,6 +234,27 @@ def test_review_replay_supersession_and_mastery_gate(tmp_path, monkeypatch, caps
     assert inspect_evidence(db, new_id)["review_status"] == "unreviewed"
     assert inspect_evidence(db, new_id)["pawn_structure_currentness"] == "current"
     assert publish(db, restored, restored_fact)["mapping"]["evidence_ids"] == [new_id]
+    from chess_coach import pawn_structure_mapping, pawn_structure_publish
+
+    old_fact = {key: value for key, value in restored_fact.items() if key != "activity"}
+    old_fact["version"] = "1.0.0"
+    with monkeypatch.context() as patch:
+        patch.setattr(pawn_structure_publish, "VERSION", "1.0.0")
+        patch.setattr(pawn_structure_mapping, "VERSION", "1.0.0")
+        old = publish(db, restored, old_fact)
+    old_id = old["mapping"]["evidence_ids"][0]
+    review_evidence(db, old_id, decision="accept", actor="fixture_reviewer")
+    assert state(db, 1, "fixture_learner") == "needed"
+    upgrade = process_structure_lessons(db, config)
+    assert upgrade["processed"] == 1
+    upgraded_id = db.connection.execute(
+        "SELECT MAX(id) FROM evidence_mappings WHERE skill='pawn_structure'"
+    ).fetchone()[0]
+    assert upgraded_id != old_id
+    assert inspect_evidence(db, old_id)["review_status"] == "accepted"
+    assert inspect_evidence(db, old_id)["lifecycle_status"] == "superseded"
+    assert inspect_evidence(db, upgraded_id)["review_status"] == "unreviewed"
+    assert state(db, 1, "fixture_learner") == "current"
 
 
 def test_activity_from_isolated_pawn_is_not_a_failure():
@@ -216,6 +279,7 @@ def test_backward_pawn_attack_has_a_bounded_legal_capture_witness():
 
 def test_worker_counts_replayed_and_unavailable_against_budget(monkeypatch):
     from chess_coach import pawn_structure_worker as worker_module
+    from chess_coach import pawn_structure_worker_visit as visit_module
 
     rows = [{"id": n} for n in range(1, 6)]
     visited = []
@@ -227,11 +291,114 @@ def test_worker_counts_replayed_and_unavailable_against_budget(monkeypatch):
     def unavailable(db, position, learner, report, outcomes):
         report["unavailable"] += 1
 
-    monkeypatch.setattr(worker_module, "process_item", unavailable)
+    monkeypatch.setattr(visit_module, "state", lambda db, position, learner: "needed")
+    monkeypatch.setattr(visit_module, "process_item", unavailable)
     config = PipelineConfig(
         learner="fixture_learner", material_max_scan=5, material_max_decisions=2
     )
     result = worker_module.process_structure_lessons(None, config)
     assert visited == [1, 2]
-    assert result["examined"] == result["unavailable"] == 2
+    assert result["attempted"] == result["unavailable"] == 2
+    assert result["pending"]
     assert result["capped"] and result["status"] == "partial"
+
+
+@pytest.mark.parametrize("mirror", [False, True])
+def test_isolated_pawn_support_changes_immediate_piece_exchange(mirror):
+    board = chess.Board("4r2k/8/8/4N3/3P4/8/8/7K w - - 0 1")
+    if mirror:
+        board = board.mirror()
+        kept, lost, reply = "h8g8", "d5d4", "e1e4"
+    else:
+        kept, lost, reply = "h1g1", "d4d5", "e8e5"
+    result = lesson(board, lost, line(f"{kept} {reply}"), line(f"{lost} {reply}"))
+    support = result["activity"][0]
+    assert support["piece"] == "knight"
+    assert support["roots"]["best"]["support_retained"]
+    assert not support["roots"]["played"]["support_retained"]
+    assert support["roots"]["best"]["captures"][0]["gain"] == -2
+    assert support["roots"]["played"]["captures"][0]["gain"] == 3
+    assert support["roots"]["best"]["pawn_recaptures"] == [
+        {"capture": "Rxe5" if not mirror else "Rxe4", "reply": "dxe5" if not mirror else "dxe4"}
+    ]
+    assert support["roots"]["played"]["pawn_recaptures"] == []
+    assert support["comparison"]["best_gain"] == -2
+    assert support["comparison"]["played_gain"] == 3
+    assert not result["mastery_eligible"]
+
+
+def test_supported_piece_with_no_immediate_consequence():
+    board = chess.Board("7k/8/8/4N3/3P4/8/8/7K w - - 0 1")
+    result = lesson(board, "h1g1", line("h1g1 h8g7"), line("h1g1 h8g7"))
+    check = result["activity"][0]["roots"]["played"]
+    assert check["status"] == "checked" and check["captures"] == []
+    assert check["support_retained"]
+
+
+def test_worker_sweep_preserves_budget_and_cursor_fairness(monkeypatch):
+    from chess_coach import pawn_structure_worker as worker_module
+    from chess_coach import pawn_structure_worker_visit as visit_module
+
+    cursor = [0]
+    statuses = {1: "current", 2: "opponent", 3: "needed", 4: "current", 5: "needed"}
+
+    def scan(db, learner, limit):
+        rows = [{"id": n} for n in statuses if n > cursor[0]]
+        if not rows:
+            rows = [{"id": n} for n in statuses]
+        return "key", rows[: limit + 1]
+
+    def save(db, key, value, policy):
+        cursor[0] = value
+
+    def process(db, position, learner, report, outcomes):
+        statuses[position] = "current"
+        report["processed"] += 1
+
+    monkeypatch.setattr(worker_module, "_scan", scan)
+    monkeypatch.setattr(worker_module, "save_cursor", save)
+    monkeypatch.setattr(visit_module, "state", lambda db, position, learner: statuses[position])
+    monkeypatch.setattr(visit_module, "process_item", process)
+    config = PipelineConfig(
+        learner="fixture_learner", material_max_scan=10, material_max_decisions=1
+    )
+    first = worker_module.process_structure_lessons(None, config)
+    assert first["attempted"] == 1 and first["pending"] and cursor[0] == 4
+    second = worker_module.process_structure_lessons(None, config)
+    assert second["attempted"] == 1 and second["status"] == "complete" and cursor[0] == 5
+    replay = worker_module.process_structure_lessons(None, config)
+    assert replay["attempted"] == 0 and replay["status"] == "complete"
+    statuses[3] = "needed"
+    stale = worker_module.process_structure_lessons(None, config)
+    assert stale["attempted"] == stale["processed"] == 1
+    limited = worker_module.process_structure_lessons(None, replace(config, material_max_scan=2))
+    assert limited["scan_limited"] and limited["status"] == "partial"
+
+
+@pytest.mark.parametrize("mirror", [False, True])
+def test_attack_counterplan_uses_legal_captures_of_supported_piece(mirror):
+    board = chess.Board("4r2k/8/8/4N3/3P4/8/8/7K b - - 0 1")
+    if mirror:
+        board = board.mirror()
+        move, reply = "e1e4", "d5e4"
+    else:
+        move, reply = "e8e5", "d4e5"
+    result = lesson(board, move, line(f"{move} {reply}"), line(f"{move} {reply}"))
+    support = result["activity"][0]
+    assert support["current"]["status"] == "checked"
+    assert support["current"]["captures"][0]["gain"] == -2
+    assert all(root is None for root in support["roots"].values())
+
+
+@pytest.mark.parametrize("mirror", [False, True])
+def test_pinned_pawn_is_not_claimed_to_have_a_legal_recapture(mirror):
+    board = chess.Board("3rr2k/8/8/4N3/3P4/8/8/3K4 b - - 0 1")
+    if mirror:
+        board = board.mirror()
+        root = "e1e4"
+    else:
+        root = "e8e5"
+    result = lesson(board, root, None, None)
+    support = result["activity"][0]
+    assert support["current"]["captures"][0]["gain"] == 3
+    assert support["current"]["pawn_recaptures"] == []

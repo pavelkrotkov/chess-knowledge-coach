@@ -959,10 +959,19 @@ lessons are separate release work.
 The private decision page and `inspect-decision` show attributable isolated and
 backward pawn geometry, plans and counterplans when a current decision source is
 available. Typical plans are ideas, not automatic recommendations. The worker
-uses its own rotating cursor and the material scan and decision limits; every
-examined position consumes the decision limit, including unavailable and
-replayed positions. It writes versioned descriptive facts and unreviewed,
+uses its own rotating cursor and the material scan and decision limits. It checks
+current source fingerprints and immutable fact/mapping lineage before treating a
+position as a replay; current and opponent positions consume scan budget but not
+decision attempts. New, stale or unavailable decisions consume the decision
+budget. A truncated scan reports coverage as unknown and partial; a known pending
+decision is not skipped when the attempt budget is exhausted. It writes versioned descriptive facts and unreviewed,
 always ambiguous mappings, preserving prior reviews on supersession.
+
+When a pawn geometrically attacks the square of a friendly non-pawn piece,
+the lesson checks immediate legal captures of that piece after each available
+legal recorded root, verifies any legal pawn recapture, and can compare their
+bounded exchanges. A pinned pawn may have no legal recapture. This is a concrete local consequence, not proof
+of overall compensation or of why the player chose a move.
 
 A legally replayed best or played continuation may show a pawn capture and a
 bounded target-square exchange. The immediate comparison examines legal
