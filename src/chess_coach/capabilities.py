@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.26.0"
+REGISTRY_VERSION = "1.28.0"
 
 CAPABILITIES = (
     {
@@ -206,8 +206,8 @@ CAPABILITIES = (
         "id": "recurring_report",
         "area": "Progress",
         "name": "Recurring patterns and improvement",
-        "status": "planned",
-        "details": "Cross-skill recurring patterns with contextual opportunity counts and separate practice/game progress are not yet provided.",
+        "status": "observation-only",
+        "details": "Bounded source-linked recurring-pattern candidates compare game-start windows and context; unverified sources and sampling limits are explicit. Separate practice/game progress remains planned.",
     },
     {
         "id": "explanation_adapter",
