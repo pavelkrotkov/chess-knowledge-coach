@@ -2,12 +2,12 @@
 
 import json
 
-from .objective_pawn_contract import VERSION
+from .objective_pawn_contract import is_source
 from .objective_pawn_resume import resume
 
 
 def continuation(db, session):
-    if session["source_version"] != VERSION or session["status"] != "needs_verification":
+    if not is_source(session) or session["status"] != "needs_verification":
         return None
     row = db.connection.execute(
         """SELECT q.*,r.result_json FROM objective_requests q JOIN objective_results r

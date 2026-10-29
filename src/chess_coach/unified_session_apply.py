@@ -2,12 +2,7 @@
 
 import json
 
-from .objective_capture_contract import VERSIONS as CAPTURE_VERSIONS
-from .objective_contract import VERSION as MATE_ONE_VERSION
-from .objective_defense_source import VERSION as DEFENSE_VERSION
-from .objective_pawn_contract import VERSION as PAWN_VERSION
-from .objective_protection_contract import VERSION as PROTECTION_VERSION
-from .objective_short_source import VERSION as SHORT_VERSION
+from .objective_assistance_policy import objective_assistance
 from .unified_session_moves import apply_move
 from .unified_session_state import now, session_row, view
 
@@ -29,14 +24,7 @@ def record_event(db, row, event_id, kind, move):
             if move == "reveal"
             else {"feedback": "hint", "hint": square}
         )
-        if row["source_version"] in {
-            MATE_ONE_VERSION,
-            SHORT_VERSION,
-            DEFENSE_VERSION,
-            PROTECTION_VERSION,
-            PAWN_VERSION,
-            *CAPTURE_VERSIONS,
-        }:
+        if objective_assistance(row):
             detail["assistance_kind"] = "revealed" if move == "reveal" else "hinted"
     else:
         detail = apply_move(row, lines, candidates, move)

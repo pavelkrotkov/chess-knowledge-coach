@@ -6,6 +6,7 @@ import chess
 import pytest
 
 from chess_coach import pawn_proof, pawn_tables
+from chess_coach.db import Database
 from chess_coach.objective_pawn_bounds import verdict
 from chess_coach.objective_pawn_contract import VERSION
 from chess_coach.objective_pawn_judge import judge
@@ -536,3 +537,38 @@ def test_verified_opposition_with_overlapping_bounds_stays_unresolved(monkeypatc
     monkeypatch.setattr(root_module, "inspect", lambda board, **kw: proof)
     move = next(iter(board.legal_moves))
     assert judge(board, move, 0, lambda: 0.0, 0.0, 5.0, {}, data())["status"] == "unresolved"
+
+
+def test_public_collection_version_collision_does_not_route_as_owned_pawn(tmp_path):
+    from chess_coach.public_training import import_collection
+    from tests.test_public_training import file_set
+
+    source, manifest, metadata = file_set(
+        tmp_path, rows=[("collision", FEN, "legal_line", ["e3e4"])]
+    )
+    manifest.write_text(json.dumps(metadata | {"version": VERSION}))
+    db = Database(tmp_path / "collision.sqlite")
+    db.initialize()
+    import_collection(db, source, source, manifest, project_root=tmp_path)
+    start(
+        db,
+        attempt_id="public",
+        subject=SUBJECT,
+        source_type="public",
+        version=VERSION,
+        key="collision",
+    )
+    result = submit(db, "public", SUBJECT, event_id="move", move="e3e4")
+    assert result["status"] == "line_completed"
+    assert db.connection.execute("SELECT COUNT(*) FROM objective_requests").fetchone()[0] == 0
+    assert show(db, "public", SUBJECT)["status"] == "line_completed"
+
+
+def test_pawn_routing_requires_source_type_version_and_goal():
+    from chess_coach.objective_pawn_contract import is_source
+
+    row = {"source_type": "own-game", "source_version": VERSION, "objective": "preserve_pawn_win"}
+    assert is_source(row)
+    assert not is_source(row | {"source_type": "public"})
+    assert not is_source(row | {"source_version": "other"})
+    assert not is_source(row | {"objective": "promotion"})
