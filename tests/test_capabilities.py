@@ -16,6 +16,7 @@ def test_registry_is_scoped_unique_and_defensive():
     assert len({item["id"] for item in entries}) == len(entries)
     assert {item["status"] for item in entries} == {"supported", "observation-only", "planned"}
     states = {item["id"]: item["status"] for item in entries}
+    assert states["licensed_public_collections"] == "supported"
     assert states["staged_puzzle_corpus"] == "supported"
     staged = next(item for item in entries if item["id"] == "staged_puzzle_corpus")
     assert "subset provenance" in staged["details"]

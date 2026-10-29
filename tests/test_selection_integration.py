@@ -136,7 +136,7 @@ def test_v19_upgrade_preserves_legacy_and_rolls_back_failure(tmp_path, monkeypat
     }
     db.initialize()
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 20
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 21
     assert corpus_report(db)[0]["selection"] is None
 
 

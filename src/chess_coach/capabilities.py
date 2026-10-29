@@ -7,6 +7,13 @@ REGISTRY_VERSION = "1.11.0"
 
 CAPABILITIES = (
     {
+        "id": "licensed_public_collections",
+        "area": "Training",
+        "name": "Licensed direct-prompt collections",
+        "status": "supported",
+        "details": "Bounded FEN and PGN collections retain declared license, attribution and legally validated lines. Playable sessions and general alternative grading remain planned.",
+    },
+    {
         "id": "staged_puzzle_corpus",
         "area": "Training",
         "name": "Staged local puzzle corpus",
