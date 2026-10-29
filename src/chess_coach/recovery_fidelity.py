@@ -2,11 +2,12 @@
 
 import sqlite3
 
+from .recovery_fidelity_budget import preflight
 from .recovery_fidelity_rows import compare_rows
 from .recovery_fidelity_schema import schema
 from .recovery_fidelity_tables import tables
 
-# SQLite enforces this per value/record while streaming; no database-sized buffer.
+# Cap each SQLite value and the aggregate estimated result row before fetching.
 MAX_RECORD_BYTES = 16 * 1024 * 1024
 
 
@@ -30,6 +31,8 @@ def _compare(reader, writer, deadline):
             raise ValueError("database logical fidelity verification failed")
     for name, without_rowid in _tables(reader, writer):
         deadline.check()
+        preflight(reader, name, deadline, MAX_RECORD_BYTES)
+        preflight(writer, name, deadline, MAX_RECORD_BYTES)
         compare_rows(reader, writer, name, without_rowid, deadline)
     deadline.check()
 

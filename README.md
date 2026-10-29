@@ -247,7 +247,9 @@ requires a standalone rollback-journal backup, such as one produced by
 
 The comparison supports ordinary rowid and WITHOUT ROWID tables and fails closed
 on virtual tables, inaccessible hidden rowids, unsupported schemas, oversized
-records, or a comparison error. It streams rows with a 16 MiB SQLite record limit,
+records, or a comparison error. A metadata-only preflight bounds each aggregate
+row, including conservative per-field overhead, before fetching payloads. It
+streams rows with a 16 MiB aggregate-row and SQLite value limit,
 a 4,096-object schema limit, a 512-column table limit and a 16 MiB total schema
 definition limit. The pinned snapshot has a five-minute cooperative deadline;
 an operating-system I/O call may exceed it. WAL readers do not normally block

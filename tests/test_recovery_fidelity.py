@@ -195,3 +195,55 @@ def test_virtual_table_is_rejected_without_publish(tmp_path):
     with pytest.raises(ValueError, match="logical fidelity"):
         backup_database(source, target, project_root=tmp_path)
     assert not target.exists()
+
+
+@pytest.mark.parametrize("operation", [backup_database, restore_database])
+def test_multiple_large_values_are_rejected_before_payload_fetch(tmp_path, monkeypatch, operation):
+    from chess_coach import recovery_fidelity_rows
+
+    source, target = tmp_path / "source.sqlite", tmp_path / "copy.sqlite"
+    with sqlite3.connect(source) as db:
+        db.execute("CREATE TABLE sample(first BLOB, second BLOB)")
+        blob = bytes(9 * 1024 * 1024)
+        db.execute("INSERT INTO sample VALUES(?,?)", (blob, blob))
+
+    def payload_query(*args):
+        pytest.fail("payload query opened before aggregate-row preflight")
+
+    monkeypatch.setattr(recovery_fidelity_rows, "query_for", payload_query)
+    with pytest.raises(ValueError, match="logical fidelity"):
+        operation(source, target, project_root=tmp_path)
+    assert not target.exists() and not list(tmp_path.glob(".chess-recovery-*"))
+
+
+def test_row_budget_includes_per_field_overhead(tmp_path, monkeypatch):
+    from chess_coach import recovery_fidelity, recovery_fidelity_rows
+
+    source, target = tmp_path / "source.sqlite", tmp_path / "copy.sqlite"
+    with sqlite3.connect(source) as db:
+        db.execute("CREATE TABLE sample(first BLOB, second BLOB)")
+        db.execute("INSERT INTO sample VALUES(?,?)", (bytes(1900), bytes(1900)))
+    monkeypatch.setattr(recovery_fidelity, "MAX_RECORD_BYTES", 4096)
+    monkeypatch.setattr(
+        recovery_fidelity_rows, "query_for", lambda *args: pytest.fail("payload query opened")
+    )
+    with pytest.raises(ValueError, match="logical fidelity"):
+        backup_database(source, target, project_root=tmp_path)
+    assert not target.exists()
+
+
+def test_utf16_text_budget_bounds_utf8_decoding(tmp_path, monkeypatch):
+    from chess_coach import recovery_fidelity, recovery_fidelity_rows
+
+    source, target = tmp_path / "source.sqlite", tmp_path / "copy.sqlite"
+    with sqlite3.connect(source) as db:
+        db.execute("PRAGMA encoding='UTF-16le'")
+        db.execute("CREATE TABLE sample(value TEXT)")
+        db.execute("INSERT INTO sample VALUES(?)", ("\u4e00" * 1500,))
+    monkeypatch.setattr(recovery_fidelity, "MAX_RECORD_BYTES", 4096)
+    monkeypatch.setattr(
+        recovery_fidelity_rows, "query_for", lambda *args: pytest.fail("payload query opened")
+    )
+    with pytest.raises(ValueError, match="logical fidelity"):
+        backup_database(source, target, project_root=tmp_path)
+    assert not target.exists()
