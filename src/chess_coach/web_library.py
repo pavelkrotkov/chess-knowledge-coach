@@ -7,6 +7,7 @@ from .discovery_practice import list_candidates as discovery_candidates
 from .mate_practice import list_candidates as mate_candidates
 from .objective_capture_list import candidates as capture_candidates
 from .objective_defense_list import candidates as defense_candidates
+from .objective_fork_list import candidates as fork_candidates
 from .objective_mate_list import candidates as mate_one_candidates
 from .objective_pawn_contract import VERSION as PAWN_OBJECTIVE_VERSION
 from .objective_protection_list import candidates as protection_candidates
@@ -32,6 +33,7 @@ def render_library():
         own_game=list_candidates(database(), current_app.config["SUBJECT"]),
         discovery_game=discovery_candidates(database(), current_app.config["SUBJECT"]),
         mate_one_game=mate_one_candidates(database(), current_app.config["SUBJECT"]),
+        fork_game=fork_candidates(database(), current_app.config["SUBJECT"]),
         protection_game=protection_candidates(database(), current_app.config["SUBJECT"]),
         capture_game=capture_candidates(database(), current_app.config["SUBJECT"]),
         defense_game=defense_candidates(database(), current_app.config["SUBJECT"]),

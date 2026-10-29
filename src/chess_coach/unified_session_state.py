@@ -1,7 +1,8 @@
 """Load subject-owned attempts and expose only non-solution session state."""
 
-import json
 from datetime import UTC, datetime
+
+from .unified_owned_view import add_fields as add_owned_fields
 
 
 def now():
@@ -34,19 +35,7 @@ def view(row):
     if row["status"] == "active":
         result.pop("source_key")
     if row["source_type"] == "own-game":
-        provenance = json.loads(row["provenance_json"])
-        result["review_status"] = provenance["review_status"]
-        result["evidence_id"] = provenance["evidence_id"]
-        result["position_id"] = provenance["position_id"]
-        if row["objective"] in {"capture_named_target", "protect_threatened_piece"}:
-            result["objective_target"] = provenance["objective_target"]
-        if row["objective"] in {
-            "capture_named_target",
-            "bounded_material_gain",
-            "protect_threatened_piece",
-        }:
-            result["gain_threshold"] = provenance["gain_threshold"]
-        result.pop("source_key", None)
+        add_owned_fields(result, row)
     return result
 
 
