@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.2.0"
+REGISTRY_VERSION = "1.3.0"
 
 CAPABILITIES = (
     {
@@ -47,6 +47,13 @@ CAPABILITIES = (
         "name": "Positional and endgame decisions",
         "status": "planned",
         "details": "Grounded positional lessons and verified elementary endgame decisions are not yet available.",
+    },
+    {
+        "id": "manual_deep_selection",
+        "area": "Analysis",
+        "name": "Manual selection for deep analysis",
+        "status": "supported",
+        "details": "A bounded manual selector records possible opportunities and control samples; automatic deep analysis remains planned.",
     },
     {
         "id": "decision_comparison",

@@ -542,3 +542,31 @@ existing ontology tables without changing older versions. Seeding is idempotent
 and rejects a conflicting copy of the same version. Relations are directed from
 a prerequisite or supporting skill to the skill it helps; `contains` expresses
 taxonomy rather than a prerequisite.
+
+
+## Manual selection for later deep analysis
+
+After the bounded pipeline has completed a game’s current cheap analysis, set
+`LICHESS_USERNAME` in the environment and run:
+
+```bash
+uv run chess-coach --db coach.sqlite select-deep --game-id 1 --per-game 4 --total 12
+uv run chess-coach --db coach.sqlite show-deep-selection 1
+uv run chess-coach --db coach.sqlite list-deep-selections
+```
+
+Repeat `--game-id` to select multiple games, up to 20 per invocation. The
+per-game and total limits cap selected positions; a deterministic control
+sample is reserved before nominated score changes, uncertain scores and possible
+motifs. A limit of one can therefore select only a control. Coverage shows
+eligible, missing, overlapping, capped-out and omitted critical candidates,
+plus category targets and allocations. Static motifs are observations, and
+engine scores do not create mastery evidence. The private browser’s Deep
+selection page shows pending candidates and their immutable selection history.
+Selection is manual; deeper engine execution remains planned. Currentness is
+relative to the completed cheap checkpoint and its recorded engine/configuration
+provenance. Selection does not rehash the executable or infer unrun configuration
+changes. If source data or its cheap checkpoint changes, a selection becomes
+stale. Analysis handoff rejects
+source databases containing selection history until selection-aware merge is
+implemented; it never silently drops that history.

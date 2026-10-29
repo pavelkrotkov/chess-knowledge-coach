@@ -6,6 +6,7 @@ from . import cli_commands_datasets as datasets
 from . import cli_commands_games as games
 from . import cli_commands_learning as learning
 from . import cli_curriculum as curriculum
+from . import cli_deep_selection as deep_selection
 from . import cli_pipeline
 from . import cli_recovery as recovery
 from .capabilities import capability_report
@@ -15,6 +16,9 @@ from .competency_graph import seed_competency_graph
 from .db import Database
 
 COMMANDS = {
+    "select-deep": deep_selection.handle_select,
+    "show-deep-selection": deep_selection.handle_show,
+    "list-deep-selections": deep_selection.handle_list,
     "process-pipeline": cli_pipeline.handle_process_pipeline,
     "pipeline-status": cli_pipeline.handle_pipeline_status,
     "init-db": games.handle_init_db,

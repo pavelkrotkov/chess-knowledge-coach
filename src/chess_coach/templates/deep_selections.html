@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}Deep selection — Chess coach{% endblock %}
+{% block content %}
+<h2>Selected decisions</h2>
+<p>Showing up to 25 recent selections. These manually selected positions are candidates for later deep analysis, not skill findings.</p>
+{% if selections %}<ul>{% for item in selections %}<li><a href="{{ url_for('views.deep_selection_detail', game_id=item.game_id) }}">Game {{ item.game_id }}, selection {{ item.selection_id }}</a> — {{ item.created_at }}</li>{% endfor %}</ul>{% else %}<p>No selections yet.</p>{% endif %}
+{% endblock %}

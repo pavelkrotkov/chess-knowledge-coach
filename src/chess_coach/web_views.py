@@ -6,6 +6,7 @@ from .capabilities import capability_report
 from .competency_coverage import competency_report
 from .curriculum import daily_plan
 from .decision_inspection import inspect_decision
+from .deep_selection_views import list_selections, show_selection
 from .evidence_review import inspect_evidence, list_evidence, review_evidence
 from .pipeline_status import pipeline_status
 from .web_board import board_rows
@@ -93,3 +94,26 @@ def decision_detail(position_id: int):
 @views.get("/competencies")
 def competencies():
     return render_template("competencies.html", report=competency_report())
+
+
+@views.get("/deep-selections")
+def deep_selections():
+    return render_template(
+        "deep_selections.html",
+        selections=list_selections(database(), current_app.config["SUBJECT"]),
+    )
+
+
+@views.get("/deep-selections/<int:game_id>")
+def deep_selection_detail(game_id: int):
+    try:
+        selection_id = request.args.get("selection")
+        result = show_selection(
+            database(),
+            game_id,
+            current_app.config["SUBJECT"],
+            selection_id=int(selection_id) if selection_id else None,
+        )
+    except ValueError:
+        abort(404)
+    return render_template("deep_selection.html", selection=result)

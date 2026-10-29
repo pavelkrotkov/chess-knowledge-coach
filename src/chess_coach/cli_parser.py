@@ -6,6 +6,7 @@ from .cli_args_datasets import configure as datasets
 from .cli_args_games import configure as games
 from .cli_args_learning import configure as learning
 from .cli_args_pipeline import configure as pipeline
+from .cli_deep_selection import configure as deep_selection
 from .cli_recovery import configure as recovery
 
 
@@ -18,6 +19,7 @@ def build_parser() -> argparse.ArgumentParser:
     learning(sub)
     pipeline(sub)
     recovery(sub)
+    deep_selection(sub)
     sub.add_parser("capabilities", help="Report versioned product capabilities")
     sub.add_parser("competencies", help="Report competency coverage and prerequisites")
     sub.add_parser("seed-competencies", help="Store the current competency graph version")
