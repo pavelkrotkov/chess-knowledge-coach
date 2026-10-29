@@ -2,6 +2,9 @@
 
 import chess
 
+from .style_center_features import features as center_features
+from .style_transition_metrics import queens
+
 HORIZON = 4
 VALUES = {chess.PAWN: 1, chess.KNIGHT: 3, chess.BISHOP: 3, chess.ROOK: 5, chess.QUEEN: 9}
 
@@ -46,4 +49,10 @@ def metrics(board, color):
         if piece != chess.PAWN
         for side in chess.COLORS
     )
-    return {"material": material, "pieces": pieces, "enemy_half_attacks": _attacks(board, color)}
+    return {
+        "material": material,
+        "pieces": pieces,
+        **queens(board),
+        **center_features(board),
+        "enemy_half_attacks": _attacks(board, color),
+    }

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .back_rank_evidence import currentness as back_rank_currentness
 from .db import Database
+from .discovery_review_view import apply as discovery_view
 from .evidence_review_facts import facts_for_evidence
 from .evidence_review_json import decode
 from .evidence_review_state import _summary, evidence_row
@@ -42,6 +43,7 @@ def inspect_evidence(db: Database, evidence_id: int) -> dict:
     result["fork_defense_currentness"] = defense_currentness
     if defense_currentness == "current":
         result["decision_fen"] = defense_fen
+    discovery_view(db, result)
     result["mate_source_currentness"] = mate_currentness(db, result)
     pawn, pawn_currentness = current_pawn(db, result)
     result["pawn_source_currentness"] = pawn_currentness

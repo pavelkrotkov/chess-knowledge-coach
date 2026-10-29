@@ -12,5 +12,15 @@ def summarize(observations):
             "strata": strata(observations, name),
             "trend": trend(observations, name),
         }
-        for name in ("simplification", "material_activity")
+        for name in (
+            "simplification",
+            "material_activity",
+            "queenless",
+            "low_material_transition",
+            "center_contact",
+            "center_pawn_capture",
+            "center_pawn_exchange",
+            "center_file_opening",
+            "center_lock",
+        )
     }

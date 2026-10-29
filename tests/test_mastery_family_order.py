@@ -2,7 +2,7 @@
 
 import pytest
 
-from chess_coach import mastery_content
+from chess_coach import mastery_content, mastery_family_reasons
 
 
 @pytest.mark.parametrize(
@@ -17,13 +17,14 @@ from chess_coach import mastery_content
     ],
 )
 def test_family_gate_priority(monkeypatch, back_rank, mate, pawn, fork, material, expected):
-    monkeypatch.setattr(mastery_content, "pin_closed", lambda _row: False)
-    monkeypatch.setattr(mastery_content, "king_safety_closed", lambda _row: False)
-    monkeypatch.setattr(mastery_content, "back_rank_closed", lambda _row: back_rank)
-    monkeypatch.setattr(mastery_content, "mate_mastery_allowed", lambda *_: mate)
-    monkeypatch.setattr(mastery_content, "pawn_mastery_allowed", lambda *_: pawn)
-    monkeypatch.setattr(mastery_content, "family_reason", lambda *_: fork)
-    monkeypatch.setattr(mastery_content, "mastery_allowed", lambda *_: material)
+    monkeypatch.setattr(mastery_family_reasons, "discovery_closed", lambda _row: False)
+    monkeypatch.setattr(mastery_family_reasons, "pin_closed", lambda _row: False)
+    monkeypatch.setattr(mastery_family_reasons, "king_safety_closed", lambda _row: False)
+    monkeypatch.setattr(mastery_family_reasons, "back_rank_closed", lambda _row: back_rank)
+    monkeypatch.setattr(mastery_family_reasons, "mate_mastery_allowed", lambda *_: mate)
+    monkeypatch.setattr(mastery_family_reasons, "pawn_mastery_allowed", lambda *_: pawn)
+    monkeypatch.setattr(mastery_family_reasons, "family_reason", lambda *_: fork)
+    monkeypatch.setattr(mastery_family_reasons, "mastery_allowed", lambda *_: material)
     monkeypatch.setattr(mastery_content, "valid_confidence", lambda *_: True)
     monkeypatch.setattr(mastery_content, "valid_links", lambda *_: True)
     assert mastery_content.content_reason(None, {"outcome": "success", "confidence": 1}) == expected

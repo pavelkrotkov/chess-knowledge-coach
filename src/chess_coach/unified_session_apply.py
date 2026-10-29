@@ -2,6 +2,8 @@
 
 import json
 
+from .objective_contract import VERSION as MATE_ONE_VERSION
+from .objective_short_source import VERSION as SHORT_VERSION
 from .unified_session_moves import apply_move
 from .unified_session_state import now, session_row, view
 
@@ -23,13 +25,15 @@ def record_event(db, row, event_id, kind, move):
             if move == "reveal"
             else {"feedback": "hint", "hint": square}
         )
+        if row["source_version"] in {MATE_ONE_VERSION, SHORT_VERSION}:
+            detail["assistance_kind"] = "revealed" if move == "reveal" else "hinted"
     else:
         detail = apply_move(row, lines, candidates, move)
         _save_move(db, row, detail)
     result = view(session_row(db, row["attempt_id"], row["subject"])) | {
         key: value
         for key, value in detail.items()
-        if key in {"feedback", "hint", "opponent_move", "revealed_line"}
+        if key in {"feedback", "hint", "opponent_move", "revealed_line", "assistance_kind"}
     }
     db.connection.execute(
         "INSERT INTO unified_session_events VALUES(?,?,?,?,?,?)",

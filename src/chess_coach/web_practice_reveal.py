@@ -1,27 +1,23 @@
 """Reveal one supplied continuation only after recording a hint."""
 
-import json
-
 import chess
 
 from .puzzle_session_events import request_hint as puzzle_hint
 from .puzzle_session_state import _session
 from .puzzle_session_validate import solution_moves, validate_line
-from .unified_session_events import hint as unified_hint
+from .unified_session_events import reveal as unified_reveal_event
 from .unified_session_state import session_row
 from .unified_source_current import require_current
 from .web_board import board_rows
+from .web_move_history import unified_input_fen
 
 
 def unified_reveal(db, attempt, subject, event):
-    unified_hint(db, attempt, subject, event_id=event)
+    result = unified_reveal_event(db, attempt, subject, event_id=event)
     row = session_row(db, attempt, subject)
     require_current(db, row)
-    lines = json.loads(row["lines_json"])
-    candidates = json.loads(row["candidates_json"])
-    return _positions(
-        row["current_fen"], lines[candidates[0]][row["next_index"] :], row["learner_color"]
-    )
+    fen = unified_input_fen(db, attempt, subject, event, row["current_fen"])
+    return _positions(fen, result["revealed_line"].split(), row["learner_color"])
 
 
 def puzzle_reveal(db, attempt, event):

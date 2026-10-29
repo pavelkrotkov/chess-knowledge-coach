@@ -3,9 +3,30 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.36.0"
+REGISTRY_VERSION = "1.41.0"
 
 CAPABILITIES = (
+    {
+        "id": "short_mate_alternative_verification",
+        "area": "Training",
+        "name": "Owned mate-within-two alternative verification",
+        "status": "observation-only",
+        "details": "Current owned short-mate sources announce a two-move horizon. A bounded local worker checks all legal defenses of unlisted alternatives and stores legal witnesses; proved continuations remain playable until checkmate. Unresolved, assisted and incorrect outcomes do not update mastery or scheduling.",
+    },
+    {
+        "id": "discovery_execution",
+        "area": "Skill coverage",
+        "name": "Bounded discovered-attack execution",
+        "status": "observation-only",
+        "details": "Owned legal decisions may show a newly revealed slider line with immediate mate or a target capture after every legal defense. Other consequences and alternatives are unresolved. The worker, grounded lessons and provisional own-game lines do not establish mastery; independent qualification is pending.",
+    },
+    {
+        "id": "mate_one_alternative_verification",
+        "area": "Training",
+        "name": "Owned mate-in-one alternative verification",
+        "status": "observation-only",
+        "details": "Current owned mate-in-one sources offer an explicitly announced immediate objective. The existing retry service and pipeline process bounded local checks of unlisted legal moves with original history and append separate results. Assistance and unresolved outcomes remain visible; practice does not update mastery or scheduling.",
+    },
     {
         "id": "rook_plans",
         "area": "Skill coverage",
@@ -275,9 +296,9 @@ CAPABILITIES = (
     {
         "id": "style_choices",
         "area": "Style",
-        "name": "Material and simplification choice observations",
+        "name": "Material, simplification and transition choice observations",
         "status": "observation-only",
-        "details": "Current bounded MultiPV choices expose provisional four-ply material, piece-count and attack-map proxies with coverage and contextual strata. They do not establish personality, skill or playing strength.",
+        "details": "Current bounded MultiPV choices expose provisional four-ply material, piece-count, attack-map, queenless and low-material transition proxies with coverage and contextual strata. Projections are conditional, not observed outcomes; narrow central pawn contacts, captures, exchanges, d/e file openings and one locked skeleton are also compared. Broader initiative, defense and center choices remain planned. They do not establish personality, skill or playing strength.",
     },
     {
         "id": "repertoire_recommendations",

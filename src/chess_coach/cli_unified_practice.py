@@ -2,6 +2,9 @@
 
 import json
 
+from .objective_publication import cancel as cancel_objective
+from .objective_status import inspect as inspect_objective
+from .objective_worker import process as process_objectives
 from .pawn_practice_list import list_candidates as list_pawn_candidates
 from .unified_own_game import list_candidates
 from .unified_session_events import hint, show, submit
@@ -14,6 +17,14 @@ def configure(sub):
     pawn = sub.add_parser("list-pawn-practice")
     pawn.add_argument("--subject", required=True)
     pawn.add_argument("--before")
+    verify = sub.add_parser("process-objective-verifications")
+    verify.add_argument("--subject", required=True)
+    verify.add_argument("--limit", type=int, default=4)
+    for name in ("show-objective-verification", "cancel-objective-verification"):
+        action = sub.add_parser(name)
+        action.add_argument("--subject", required=True)
+        action.add_argument("--attempt", required=True)
+        action.add_argument("--event", required=True)
     begin = sub.add_parser("start-unified")
     begin.add_argument("--attempt", required=True)
     begin.add_argument("--subject", required=True)
@@ -72,3 +83,16 @@ def handle_list_pawn(db, args):
             list_pawn_candidates(db, args.subject, before=getattr(args, "before", None)), indent=2
         )
     )
+
+
+def handle_verify(db, args):
+    print(json.dumps(process_objectives(db, args.subject, limit=args.limit), indent=2))
+
+
+def handle_verify_status(db, args):
+    print(json.dumps(inspect_objective(db, args.subject, args.attempt, args.event), indent=2))
+
+
+def handle_verify_cancel(db, args):
+    cancel_objective(db, args.subject, args.attempt, args.event)
+    print(json.dumps(inspect_objective(db, args.subject, args.attempt, args.event), indent=2))

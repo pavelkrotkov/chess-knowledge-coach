@@ -1,6 +1,11 @@
 """Educational questions and practice habits for supported mechanisms."""
 
 CUES = {
+    "discovery-opportunity-mapper": (
+        "Can moving one piece reveal a useful line from another?",
+        "After considering the move, check both the moving piece and the newly revealed line, then test the defenses.",
+        "Replay the linked decisions and compare the recorded legal replies.",
+    ),
     "pin-execute-mapper": (
         "Can a slider pin a piece to its king or a more valuable piece?",
         "Check legal defenses and captures before relying on a pin.",

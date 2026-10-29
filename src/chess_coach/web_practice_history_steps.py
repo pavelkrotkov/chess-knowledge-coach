@@ -12,6 +12,8 @@ def _steps(prompt, current, rows):
         response = json.loads(row["response_json"])
         if response["feedback"] == "illegal":
             continue
+        if response.get("opponent_before_move"):
+            _append(board, response["opponent_before_move"], "Reply", steps)
         _append(board, row["submitted_move"], "You", steps)
         if response.get("opponent_move"):
             _append(board, response["opponent_move"], "Reply", steps)

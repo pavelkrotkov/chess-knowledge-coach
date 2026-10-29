@@ -1,27 +1,12 @@
 """Build one source-linked comparable choice observation."""
 
-import chess
-
-from .deep_execution_views import deep_for_position
-from .style_compare import candidates
 from .style_context import describe_context
 from .style_dimensions import dimensions
+from .style_observation_compare import compare
 
 
-def observation(db, learner, context, item, selected, opening):
-    board = chess.Board(context["pre_move_fen"])
-    deep = deep_for_position(db, context["position_id"], learner, board, context["played_move"])
-    compared = candidates(board, context["played_move"], deep)
-    status = compared["status"] if deep else item["status"]
-    covered = bool(
-        deep
-        and deep.get("result")
-        and any(
-            line["line"]["root_move"] == context["played_move"]
-            for line in deep["result"]["alternatives"]
-        )
-    )
-    completed = bool(deep and deep["status"] == "complete")
+def observation(db, learner, context, item, selected, opening, board):
+    status, compared, deep, covered, completed = compare(db, learner, context, item, board)
     if status != "comparable":
         return status, None, covered, completed
     result = compared["run"]

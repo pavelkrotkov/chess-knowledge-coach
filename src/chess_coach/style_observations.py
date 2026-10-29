@@ -2,8 +2,7 @@
 
 from collections import Counter
 
-from .style_observation_detail import observation
-from .style_opening import current_opening
+from .style_game_observations import collect
 from .style_selection import selection_coverage
 
 
@@ -19,19 +18,7 @@ def game_observations(db, learner, game, selected):
         counts["stale_selection"] += len(by_id)
         return counts, allocations, observations
     counts.update(selection_coverage(selected))
-    opening = current_opening(db, game["game_id"])
-    for context in game["contexts"]:
-        item = by_id.get(context["position_id"])
-        if item is None:
-            continue
-        status, result, covered, completed = observation(
-            db, learner, context, item, selected, opening
-        )
-        counts[status] += 1
-        counts["played_root_covered"] += covered
-        counts["completed"] += completed
-        if result:
-            observations.append(result)
+    collect(db, learner, game, selected, by_id, counts, observations)
     return counts, allocations, observations
 
 

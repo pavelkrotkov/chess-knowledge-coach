@@ -1,8 +1,9 @@
-"""Retry only due server backoffs without repeating analysis."""
+"""Retry due server backoffs and process bounded local verifications."""
 
 import os
 
 from .db import Database
+from .objective_worker import process as process_objectives
 from .ops_worker import database_path
 from .pipeline_config import PipelineConfig
 from .pipeline_sync import sync_result
@@ -22,6 +23,7 @@ def main() -> None:
             None,
             retry_only=True,
         )
+        process_objectives(db, learner)
         if result is not None and result.get("status") == "failed":
             raise SystemExit("cooldown retry synchronization failed")
     finally:

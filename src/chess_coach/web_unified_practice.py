@@ -12,8 +12,12 @@ from flask import (
     url_for,
 )
 
+from .objective_contract import VERSION as MATE_ONE_VERSION
+from .objective_short_history import append_reply
 from .unified_session_events import show
+from .unified_session_state import session_row
 from .unified_sessions import start
+from .unified_source_current import require_current
 from .web_board import board_rows
 from .web_db import database
 from .web_practice_history import selected_step, unified_history
@@ -43,9 +47,10 @@ def show_page(attempt):
     try:
         state = show(database(), attempt, current_app.config["SUBJECT"])
         steps = unified_history(database(), attempt, current_app.config["SUBJECT"])
+        steps = append_reply(database(), attempt, current_app.config["SUBJECT"], steps)
         index = selected_step(steps, request.args.get("step"))
     except ValueError:
-        abort(404)
+        return _unavailable(attempt)
     session["unified_attempt"] = attempt
     return render_template(
         "unified_practice.html",
@@ -58,3 +63,18 @@ def show_page(attempt):
         event=secrets.token_urlsafe(24),
         notice=session.pop("unified_notice", None),
     )
+
+
+def _unavailable(attempt):
+    try:
+        row = session_row(database(), attempt, current_app.config["SUBJECT"])
+        if row["source_version"] == MATE_ONE_VERSION:
+            try:
+                require_current(database(), row)
+            except (ValueError, TypeError, KeyError):
+                return render_template(
+                    "error.html", message="This practice source is unavailable or has changed."
+                ), 410
+    except ValueError:
+        pass
+    abort(404)

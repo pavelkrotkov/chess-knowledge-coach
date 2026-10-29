@@ -22,6 +22,9 @@ from .competency_graph import seed_competency_graph
 from .db import Database
 
 COMMANDS = {
+    "process-objective-verifications": unified_practice.handle_verify,
+    "show-objective-verification": unified_practice.handle_verify_status,
+    "cancel-objective-verification": unified_practice.handle_verify_cancel,
     "related-forks": related_fork.listing,
     "start-related-fork": related_fork.begin,
     "related-captures": related_capture.listing,
