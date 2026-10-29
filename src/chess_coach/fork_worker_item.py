@@ -4,9 +4,9 @@ from .fork_detector import process_decision
 from .material_source import NotLearnerDecision
 
 
-def process_item(db, position_id, learner, report, outcomes):
+def process_item(db, position_id, learner, report, outcomes, *, detector=process_decision):
     try:
-        result = process_decision(db, position_id, learner)
+        result = detector(db, position_id, learner)
     except NotLearnerDecision:
         return
     except Exception:

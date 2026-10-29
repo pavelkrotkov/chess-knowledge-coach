@@ -6,12 +6,12 @@ from .fact_fingerprint import digest
 POLICY = "fork-worker-v1"
 
 
-def scan(db, learner, limit):
-    key = digest("fork-worker-cursor-v1:" + learner_key(learner))
+def scan(db, learner, limit, *, namespace="fork-worker-cursor-v1:", policy=POLICY):
+    key = digest(namespace + learner_key(learner))
     row = db.connection.execute(
         "SELECT last_game_id,scan_hash FROM pipeline_cursors WHERE account_key=?", (key,)
     ).fetchone()
-    cursor = row[0] if row and row[1] == POLICY else 0
+    cursor = row[0] if row and row[1] == policy else 0
     rows = db.connection.execute(
         "SELECT id FROM positions WHERE id>? ORDER BY id LIMIT ?", (cursor, limit + 1)
     ).fetchall()

@@ -6,7 +6,7 @@ from .material_replay import source_inputs
 from .material_source_marker import source_marker
 
 
-def publish(db, prepared, fact):
+def publish(db, prepared, fact, *, fact_writer=fact_run, mapping_writer=mapping):
     if db.connection.in_transaction:
         raise RuntimeError("fork publication requires an idle database")
     inputs = source_inputs(prepared)
@@ -18,8 +18,8 @@ def publish(db, prepared, fact):
             != prepared["source_marker"]
         ):
             raise ValueError("fork source changed")
-        run = fact_run(db, prepared["position_id"], inputs, fact)
-        result = mapping(db, prepared, inputs, run, fact)
+        run = fact_writer(db, prepared["position_id"], inputs, fact)
+        result = mapping_writer(db, prepared, inputs, run, fact)
         db.connection.commit()
         return {
             "detector_run_id": run["run_id"],

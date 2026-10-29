@@ -6,6 +6,8 @@ from .db import Database
 from .evidence_review_facts import facts_for_evidence
 from .evidence_review_json import decode
 from .evidence_review_state import _summary, evidence_row
+from .fork_defense_evidence import current_defense
+from .fork_defense_explanation import explain as explain_defense
 from .fork_evidence_current import current_fork
 from .fork_explanation import explain_fork
 from .material_evidence_current import evidence_currentness
@@ -26,6 +28,11 @@ def inspect_evidence(db: Database, evidence_id: int) -> dict:
     result["fork_source_currentness"] = currentness
     if currentness == "current":
         result["decision_fen"] = fen
+    defense, defense_currentness, defense_fen = current_defense(db, result)
+    result["fork_defense_explanation"] = explain_defense(defense, defense_fen)
+    result["fork_defense_currentness"] = defense_currentness
+    if defense_currentness == "current":
+        result["decision_fen"] = defense_fen
     result["reviews"] = _reviews(db, evidence_id)
     return result
 

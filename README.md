@@ -842,3 +842,25 @@ alternatives remained ambiguous because their forced played continuations contai
 only the root move. These examples are not independent validation or an accuracy
 estimate; other checks, defended targets, counterplay and insufficient lines can
 remain ambiguous. The worker reports its scan, decision caps and unavailable inputs.
+
+
+## Provisional fork-defense observations
+
+A separate bounded worker scans reconstructed learner decisions with its own
+cursor and the material scan and decision limits. It may inspect a stackless
+opponent-to-move position only as a positional candidate filter; it does not
+insert a null move or make a historical claim from that position. An existing
+threat is reported only when a legal alternative learner move retains it and the
+fork has a bounded proof using the original game history. A newly exposed fork
+may be reported only from the actual legal played continuation with its concrete
+material consequence and a verified alternative. Equivalent quiet defenses can
+be successes. All legal in-scope immediate opponent fork candidates are checked
+within caps of 128 legal moves and 16 fork candidates per scan. The legal anchor
+search considers at most 64 learner moves and 32 fork proofs; exhausted anchor
+budgets are labeled. Direct material threats, unresolved candidates, checks,
+capturing defenses, promotions, counterplay, missing lines, draw or repetition
+boundaries and exhausted budgets are ambiguous or excluded. Score gaps only veto
+an otherwise supported failure. The private evidence page identifies the actual
+source and distinguishes a legal counterfactual from the played line. Fork-defense
+mastery and exercise eligibility remain closed pending independent validation;
+existing fork execution and material policies are separate.
