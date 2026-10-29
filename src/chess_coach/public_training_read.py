@@ -6,8 +6,8 @@ import json
 from .public_training_pgn import read_pgn
 
 
-def candidates(path, source_format):
-    if source_format == "fen_csv":
+def candidates(path, content_format):
+    if content_format == "fen_csv":
         yield from _csv(path)
     else:
         yield from read_pgn(path)

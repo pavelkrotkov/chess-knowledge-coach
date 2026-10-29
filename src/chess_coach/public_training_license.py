@@ -11,7 +11,7 @@ FIELDS = {
     "source_revision",
     "source_sha256",
     "content_sha256",
-    "source_format",
+    "content_format",
     "license",
     "attribution",
     "license_notice",
@@ -34,7 +34,7 @@ def _policy(value):
     url = urlsplit(value["source_url"])
     if url.scheme != "https" or not url.netloc or url.username or url.password:
         raise ValueError("source URL must be HTTPS")
-    if value["source_format"] not in {"fen_csv", "pgn"}:
+    if value["content_format"] not in {"fen_csv", "pgn"}:
         raise ValueError("unsupported collection format")
     validate_terms(value)
 

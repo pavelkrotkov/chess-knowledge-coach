@@ -11,7 +11,7 @@ TASK_SELECT = """SELECT t.task_id,t.prompt_fen,t.objective,t.lines_json,
 def collections(db, after_version=""):
     rows = db.connection.execute(
         """SELECT version,source_url,source_revision,source_sha256,
-        content_sha256,source_format,license,attribution,accepted,excluded FROM public_collections
+        content_sha256,content_format,license,attribution,accepted,excluded FROM public_collections
         WHERE state=\u0027ready\u0027 AND version>? ORDER BY version LIMIT 100""",
         (after_version,),
     ).fetchall()

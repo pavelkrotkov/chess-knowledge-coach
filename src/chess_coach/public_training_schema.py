@@ -7,7 +7,7 @@ def add_public_training(connection: sqlite3.Connection) -> None:
     connection.execute("""CREATE TABLE IF NOT EXISTS public_collections (
         id INTEGER PRIMARY KEY, version TEXT NOT NULL UNIQUE, source_url TEXT NOT NULL,
         source_revision TEXT NOT NULL, source_sha256 TEXT NOT NULL, content_sha256 TEXT NOT NULL,
-        source_format TEXT NOT NULL, license TEXT NOT NULL, attribution TEXT NOT NULL,
+        content_format TEXT NOT NULL, license TEXT NOT NULL, attribution TEXT NOT NULL,
         license_notice TEXT NOT NULL, accepted INTEGER NOT NULL, excluded INTEGER NOT NULL,
         state TEXT NOT NULL CHECK(state IN (\u0027staging\u0027,\u0027ready\u0027)))""")
     connection.execute("""CREATE TABLE IF NOT EXISTS public_tasks (

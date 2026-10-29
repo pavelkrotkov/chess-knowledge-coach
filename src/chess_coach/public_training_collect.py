@@ -4,9 +4,9 @@ from .public_training_read import candidates
 from .public_training_validate import validate_task
 
 
-def collect(path, source_format):
+def collect(path, content_format):
     tasks, excluded, ids = [], [], set()
-    for number, candidate, reason in candidates(path, source_format):
+    for number, candidate, reason in candidates(path, content_format):
         key = candidate.get("id") if isinstance(candidate, dict) else None
         if key and key in ids:
             raise ValueError("duplicate task identifier")

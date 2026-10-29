@@ -11,7 +11,7 @@ def import_collection(db, content, source, manifest_path, *, project_root):
     manifest, path, source_path, signatures = read_manifest(
         manifest_path, project_root, content, source
     )
-    tasks, excluded = collect(path, manifest["source_format"])
+    tasks, excluded = collect(path, manifest["content_format"])
     verify_snapshot((path, source_path), signatures, manifest)
     if not tasks and not excluded:
         raise ValueError("collection has no records")
@@ -23,14 +23,14 @@ def import_collection(db, content, source, manifest_path, *, project_root):
             "source_revision",
             "source_sha256",
             "content_sha256",
-            "source_format",
+            "content_format",
             "license",
             "attribution",
             "license_notice",
         )
         cursor = db.connection.execute(
             """INSERT INTO public_collections
-            (version,source_url,source_revision,source_sha256,content_sha256,source_format,license,
+            (version,source_url,source_revision,source_sha256,content_sha256,content_format,license,
              attribution,license_notice,accepted,excluded,state) VALUES(?,?,?,?,?,?,?,?,?,?,?,\u0027staging\u0027)""",
             (*[manifest[key] for key in fields], len(tasks), len(excluded)),
         )

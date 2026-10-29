@@ -33,7 +33,7 @@ def file_set(root, *, rows=None, license="CC0-1.0", fmt="fen_csv", text=None):
         "source_revision": "v1",
         "source_sha256": digest,
         "content_sha256": digest,
-        "source_format": fmt,
+        "content_format": fmt,
         "license": license,
         "attribution": "Fixture author",
         "license_notice": "CC0 1.0 https://creativecommons.org/publicdomain/zero/1.0/",

@@ -9,10 +9,12 @@ occurs during import. Keep the source and its full license notice with the
 collection. Do not import material whose terms have not been verified.
 
 The manifest has exactly these string fields: `version`, `source_url` (HTTPS),
-`source_revision`, `source_sha256`, `content_sha256`, `source_format`
+`source_revision`, `source_sha256`, `content_sha256`, `content_format`
 (`fen_csv` or `pgn`), `license` (`MIT` or `CC0-1.0`), `attribution`, and
 `license_notice`. The source and content digests refer to separate local
-files, which may be the same file. MIT imports require the full copyright and
+files, which may be the same file. `content_format` describes the normalized
+input, not necessarily the upstream source format. The source-to-content
+derivation is an operator declaration; the importer does not reconstruct it. MIT imports require the full copyright and
 permission notice; task exports retain the notice and attribution. Manifest
 and source sizes are bounded. Source and normalized content are hashed before
 and after parsing, and a version cannot be overwritten.
