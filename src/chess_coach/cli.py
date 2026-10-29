@@ -31,6 +31,7 @@ COMMANDS = {
     "import-openings": datasets.handle_import_openings,
     "classify-opening": datasets.handle_classify_opening,
     "extract-structures": datasets.handle_extract_structures,
+    "structure-history": datasets.handle_structure_history,
     "record-motifs": datasets.handle_record_motifs,
     "import-puzzles": datasets.handle_import_puzzles,
     "stage-puzzles": datasets.handle_stage_puzzles,

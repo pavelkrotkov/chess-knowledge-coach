@@ -3,6 +3,7 @@
 import json
 
 from .motifs import record_motif_opportunities
+from .named_structure_report import structure_report
 from .openings import classify_game, import_openings
 from .puzzle_import import stage_puzzles
 from .puzzle_import_report import corpus_report
@@ -106,3 +107,7 @@ def handle_stage_puzzles(db, args):
 
 def handle_corpus_status(db, args):
     print(json.dumps(corpus_report(db), indent=2))
+
+
+def handle_structure_history(db, args):
+    print(json.dumps(structure_report(db, args.learner), indent=2))

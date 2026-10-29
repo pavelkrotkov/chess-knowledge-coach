@@ -8,6 +8,8 @@ from .curriculum import daily_plan
 from .decision_inspection import inspect_decision
 from .deep_selection_views import list_selections, show_selection
 from .evidence_review import inspect_evidence, list_evidence, review_evidence
+from .named_structure_report import structure_report
+from .named_structure_source import source_position
 from .pipeline_status import pipeline_status
 from .puzzle_import_report import corpus_report
 from .puzzle_snapshot_state import statuses
@@ -129,3 +131,23 @@ def deep_selection_detail(game_id: int):
 @views.get("/library")
 def library():
     return render_template("library.html", corpora=corpus_report(database()))
+
+
+@views.get("/structures")
+def structures():
+    try:
+        report = structure_report(database(), current_app.config["SUBJECT"])
+    except ValueError:
+        report = None
+    return render_template("structures.html", report=report)
+
+
+@views.get("/structures/positions/<int:position_id>")
+def structure_position(position_id: int):
+    try:
+        position = source_position(database(), current_app.config["SUBJECT"], position_id)
+    except ValueError:
+        abort(404)
+    return render_template(
+        "structure_position.html", position=position, board=board_rows(position["fen"])
+    )

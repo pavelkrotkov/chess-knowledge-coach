@@ -15,6 +15,10 @@ def configure(sub):
     structures = sub.add_parser("extract-structures")
     structures.add_argument("game_id", type=int)
     structures.add_argument("--detector-version", default="0.1.0")
+    history = sub.add_parser(
+        "structure-history", help="Report named structures in attributable games"
+    )
+    history.add_argument("--learner", required=True)
     motifs = sub.add_parser("record-motifs")
     motifs.add_argument("position_id", type=int)
     motifs.add_argument("--detector-version", default="0.1.0")

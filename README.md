@@ -193,6 +193,18 @@ no-match opening is stored as a current classification with a NULL opening
 node and zero confidence. Old rows whose production time and run identity were
 never recorded retain NULLs and are not guessed into the current views.
 
+The private Structures page and `structure-history --learner NAME` derive
+named observations from positions covered by current atomic episodes. Matcher
+version 1.0.0 recognizes isolated d-file pawns and a deliberately narrow
+Carlsbad skeleton, for both colors. Each interval retains atomic run, detector
+version, source episode IDs and a source position; repeated extraction is safe.
+Counts describe games and contiguous matching intervals, not playing skill.
+Unmatched positions may contain other structures. Typical plans are educational
+ideas, not evaluated recommendations. The view examines at most 100 attributable
+games, scanning at most 1,000 candidates, and 1,000 covered positions per game; it reports truncation. The
+definitions and reference links are displayed in the report; changing matcher
+rules requires a new matcher version.
+
 ## Database upgrades
 
 Startup applies ordered schema upgrades atomically and records their version in

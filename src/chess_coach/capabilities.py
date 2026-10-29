@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.4.0"
+REGISTRY_VERSION = "1.5.0"
 
 CAPABILITIES = (
     {
@@ -39,7 +39,7 @@ CAPABILITIES = (
         "area": "Skill coverage",
         "name": "Pawn structures and board features",
         "status": "observation-only",
-        "details": "Atomic structure features and episodes describe positions; they do not establish positional skill failures.",
+        "details": "Atomic episodes and conservative IQP and Carlsbad history describe positions; they do not establish positional skill failures. Other named families remain planned.",
     },
     {
         "id": "tactical_decisions",
