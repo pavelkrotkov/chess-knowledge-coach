@@ -6,9 +6,12 @@ from .fork_contract import VERSION as FORK_VERSION
 from .fork_defense_contract import MAPPER as DEFENSE_MAPPER
 from .fork_defense_contract import PRODUCER as DEFENSE_PRODUCER
 from .fork_defense_contract import VERSION as DEFENSE_VERSION
+from .recurrence_fork_policy import fork_family_ok
+from .recurrence_pin_policy import PIN_FAMILIES, pin_family_ok
 from .recurrence_proof_policy import backrank_ok, mate_ok, pawn_ok
 
 FAMILIES = {
+    **PIN_FAMILIES,
     FORK_MAPPER: (FORK_PRODUCER, FORK_VERSION, "fork_opportunity"),
     DEFENSE_MAPPER: (DEFENSE_PRODUCER, DEFENSE_VERSION, "fork_defense_opportunity"),
     "bounded-mate-observation-mapper": ("bounded-mate-observation", "1.0.0", "bounded_mate"),
@@ -16,18 +19,6 @@ FAMILIES = {
     "back-rank-observation-mapper": ("back-rank-observation", "1.0.0", "back_rank"),
     "pawn-structure-lesson-mapper": ("pawn-structure-lesson", "1.1.0", "pawn_structure_lesson"),
 }
-
-
-def _fork_ok(row, fact):
-    family, payload = row["mapping_producer"], fact["payload"]
-    operation = "execute" if family == FORK_MAPPER else "prevent"
-    kind = "fork" if family == FORK_MAPPER else "fork_defense"
-    return (
-        row["mapper_version"] == fact["detector_version"]
-        and row["skill"] == "fork"
-        and row["operation"] == operation
-        and payload.get("kind") == kind
-    )
 
 
 def _structure_ok(row, fact):
@@ -40,8 +31,8 @@ def _structure_ok(row, fact):
 
 
 VALIDATORS = {
-    FORK_MAPPER: _fork_ok,
-    DEFENSE_MAPPER: _fork_ok,
+    FORK_MAPPER: fork_family_ok,
+    DEFENSE_MAPPER: fork_family_ok,
     "bounded-mate-observation-mapper": mate_ok,
     "pawn-endgame-mapper": pawn_ok,
     "back-rank-observation-mapper": backrank_ok,
@@ -55,5 +46,7 @@ def family_ok(row, fact):
         return False
     if fact["detector_version"] != fact["run_detector_version"]:
         return False
+    if family in PIN_FAMILIES:
+        return pin_family_ok(row, fact)
     validator = VALIDATORS.get(family)
     return validator(row, fact) if validator else False

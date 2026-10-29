@@ -5,9 +5,9 @@ from .fork_defense_contract import MAPPER as DEFENSE_MAPPER
 from .material_policy import MAPPER as MATERIAL_MAPPER
 from .pawn_structure_probe import state as structure_state
 from .recurrence_family_policy import family_ok
-from .recurrence_fork_marker import fork_state
 from .recurrence_marker import material_state
 from .recurrence_material_policy import material_ok
+from .recurrence_pin_policy import marker_state
 from .recurrence_policy import fact_ok, mapping_ok, ownership_ok
 from .recurrence_review import review
 from .recurrence_sources import linked_fact
@@ -25,8 +25,13 @@ def _state(db, row, fact, parts):
         return "unsupported"
     if row["mapping_producer"] == "pawn-structure-lesson-mapper":
         return _structure_state(db, row)
-    if row["mapping_producer"] in {FORK_MAPPER, DEFENSE_MAPPER}:
-        return fork_state(db, row, fact, parts)
+    if row["mapping_producer"] in {
+        FORK_MAPPER,
+        DEFENSE_MAPPER,
+        "pin-execute-mapper",
+        "pin-prevent-mapper",
+    }:
+        return marker_state(db, row, fact, parts)
     return "currentness unverified"
 
 

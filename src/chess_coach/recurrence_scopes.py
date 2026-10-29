@@ -16,9 +16,12 @@ from .material_policy import MAPPER as MATERIAL
 from .pawn_coach_contract import MAPPER as PAWN
 from .pawn_coach_contract import SCOPE as PAWN_SCOPE
 from .pawn_coach_contract import VERSION as PAWN_VERSION
+from .pin_pipeline import VERSION as PIN_VERSION
 
 SCOPES = {
     MATERIAL: (MATERIAL_VERSION, MATERIAL_SCOPE),
+    "pin-execute-mapper": (PIN_VERSION, "pin-execute-v1"),
+    "pin-prevent-mapper": (PIN_VERSION, "pin-prevent-v1"),
     FORK: (FORK_VERSION, FORK_SCOPE),
     DEFENSE: (DEFENSE_VERSION, DEFENSE_SCOPE),
     MATE: (MATE_VERSION, "bounded-mate-v1"),

@@ -13,6 +13,8 @@ def qualification(family):
         "These are provisional bounded observations, not a diagnosis of skill, intent or attention. "
         "Unreviewed sources remain unreviewed; later counterplay and overall safety may be unknown."
     )
+    if family in {"pin-execute-mapper", "pin-prevent-mapper"}:
+        text += " Pin mastery remains closed; the displayed lines are bounded, not proof of overall safety."
     if family == "pawn-structure-lesson-mapper":
         text += " Repeated structures are not repeated mistakes; plans are ideas and mastery remains closed."
     return text

@@ -828,8 +828,8 @@ is one supplied continuation, not proof that other legal moves fail.
 The pin workers inspect current learner decisions using reconstructed game history
 and independent rotating cursors. Detector and mapper version 1.0.1 reject repeated,
 fifty-move-rule or terminal roots before the tested move. Version 1.0.0 facts and
-reviews remain historical and cannot support a current claim. A pin is descriptive geometry until a bounded
-consequence is verified. The execute path considers newly created slider pins to
+reviews remain historical and cannot support a current claim. A pin is descriptive
+geometry until a bounded consequence is verified. The execute path considers newly created slider pins to
 a king or more valuable piece; it does not score a position where the same pin
 already existed or the pinned or rear piece could already be legally captured.
 Every legal immediate reply must admit a verified target capture followed by all
@@ -838,13 +838,22 @@ promotions, en passant, repetitions, and compensation outside the proof remain
 unresolved rather than inferred from a single engine line. Scans cap legal moves
 at 64, pin candidates at 16 and immediate replies at 64.
 
-Prevention includes moving an already relatively pinned piece off the line, or sliding an absolutely pinned piece along its pin. A verified capture of the exposed or pinned piece and an independently verified legal capture of the pinner supply the compared consequences. Either of multiple qualifying captures
-can be observed. The result addresses those tested lines, not overall safety or
+Prevention includes moving an already relatively pinned piece off the line, or
+sliding an absolutely pinned piece along its pin. A verified capture of the exposed
+or pinned piece and an independently verified legal capture of the pinner supply
+the compared consequences. Either of multiple qualifying captures can be observed. The result addresses those tested lines, not overall safety or
 the best move. The separate created-pin defense scan uses bounded alternatives;
 checks, unresolved exchanges, alternative compensation and unexamined branches
 remain ambiguous. Review displays the linked current source and proof; observations
 are provisional and all pin mastery remains closed pending independent held-out
 qualification. No general pin practice grading is implied.
+
+The recurrence report can filter each pin kind by execute or prevent, subject to
+its normal sampling limits. It checks the current source marker without replaying
+the proof for each count. A grounded lesson separately rechecks the current source,
+then displays legally replayed proof or unresolved-geometry lines, with practical
+questions that distinguish the recorded move from tested alternatives. It does not
+establish overall safety, compensation, intent or mastery.
 
 ## Provisional fork observations
 

@@ -13,4 +13,8 @@ PAIRS = (
     ("back_rank", "prevent"),
     ("back_rank", "execute"),
     ("pawn_structure", "evaluate"),
+    ("absolute_pin", "execute"),
+    ("absolute_pin", "prevent"),
+    ("relative_pin", "execute"),
+    ("relative_pin", "prevent"),
 )

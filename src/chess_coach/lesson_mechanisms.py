@@ -3,6 +3,7 @@
 from .lesson_backrank import back_rank
 from .lesson_lines import legal_san
 from .lesson_material import _material as material
+from .lesson_pin import pin
 from .lesson_proofs import _mate as mate
 from .lesson_proofs import _pawn as pawn
 from .lesson_structure import structure
@@ -10,6 +11,8 @@ from .lesson_tactics import _defense as defense
 from .lesson_tactics import _fork as fork
 
 ADAPTERS = {
+    "pin-execute-mapper": pin,
+    "pin-prevent-mapper": pin,
     "material-opportunity-mapper": material,
     "fork-opportunity-mapper": fork,
     "fork-defense-mapper": defense,
@@ -27,7 +30,9 @@ def describe(source):
     if not played:
         return None
     try:
-        facts, lines = ADAPTERS[evidence["mapping_producer"]](evidence, fen)
+        facts, lines = ADAPTERS[evidence["mapping_producer"]](
+            {**evidence, "lesson_played_san": decision["played_san"]}, fen
+        )
     except (ValueError, TypeError, KeyError, AttributeError):
         return None
     if not facts:
