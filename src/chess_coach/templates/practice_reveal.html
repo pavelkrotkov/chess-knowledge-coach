@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Revealed line — Chess coach{% endblock %}
+{% block content %}
+<h2>One supplied continuation</h2>
+<p>This line was revealed at your request. Other legal moves may also be possible.</p>
+<ol>{% for item in moves %}<li id="line-{{ loop.index }}">{{ item.san }}
+<details><summary>View position after {{ item.san }}</summary>
+{% set board = item.board %}{% set board_interactive = false %}{% set board_label = "Chess position; learner plays " + item.color + " at the bottom" %}{% include "board.html" %}
+</details>
+{% if not loop.first %}<a href="#line-{{ loop.index - 1 }}">Previous move</a>{% endif %}
+{% if not loop.last %}<a href="#line-{{ loop.index + 1 }}">Next move</a>{% endif %}
+</li>{% endfor %}</ol>
+<p><a href="{{ back }}">Return to practice</a></p>
+{% endblock %}

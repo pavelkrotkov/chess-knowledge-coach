@@ -24,7 +24,7 @@ dependencies = [
 chess-coach = "chess_coach.cli:main"
 
 [tool.setuptools.package-data]
-chess_coach = ["templates/*.html", "static/*.css", "data/openings/*.tsv"]
+chess_coach = ["templates/*.html", "static/*.css", "static/*.js", "data/openings/*.tsv"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

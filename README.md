@@ -798,3 +798,9 @@ or revoked observations cannot be used.
 Its bounded first-move line does not establish a complete forced objective. Sessions are
 rechecked against their source and review when resumed or played. These sessions do not
 write mastery evidence or FSRS reviews. General objective-aware grading remains separate work.
+
+In browser practice, choose squares with a mouse or keyboard, or enter a move in
+chess notation or coordinates. A text-only form works without JavaScript. The
+history controls show positions already played without changing the attempt.
+Hint and reveal are explicit actions and are recorded as hints; a revealed line
+is one supplied continuation, not proof that other legal moves fail.

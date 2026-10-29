@@ -11,8 +11,12 @@ from flask import (
     url_for,
 )
 
-from .unified_session_events import hint, submit
+from .unified_session_events import hint, show, submit
 from .web_db import database
+from .web_move_history import unified_input_fen
+from .web_move_input import normalize_move
+from .web_practice_messages import move_notice
+from .web_unified_reveal import reveal_action
 
 unified_practice = Blueprint("unified_practice", __name__)
 
@@ -30,16 +34,24 @@ def move():
     if request.form.get("attempt") != attempt:
         abort(409)
     try:
+        state = show(database(), attempt, current_app.config["SUBJECT"])
+        event = request.form.get("event", "")
+        original = unified_input_fen(
+            database(), attempt, current_app.config["SUBJECT"], event, state["fen"]
+        )
+        move_text = normalize_move(
+            original, request.form.get("move", ""), request.form.get("promotion", "")
+        )
         result = submit(
             database(),
             attempt,
             current_app.config["SUBJECT"],
-            event_id=request.form.get("event", ""),
-            move=request.form.get("move", "").strip(),
+            event_id=event,
+            move=move_text,
         )
     except ValueError:
         return render_template("error.html", message="The practice attempt has changed."), 400
-    session["unified_notice"] = result["feedback"]
+    session["unified_notice"] = move_notice(result["feedback"])
     return redirect(url_for("unified_practice.show_page", attempt=attempt), code=303)
 
 
@@ -59,3 +71,8 @@ def request_hint():
         return render_template("error.html", message="The practice attempt has changed."), 400
     session["unified_notice"] = "Hint: consider a piece on " + result["hint"]
     return redirect(url_for("unified_practice.show_page", attempt=attempt), code=303)
+
+
+@unified_practice.post("/unified/reveal")
+def reveal():
+    return reveal_action(_current)

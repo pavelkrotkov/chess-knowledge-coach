@@ -1,0 +1,5 @@
+<nav aria-label="Move history">
+{% if step > 0 %}<a href="{{ navigation_url }}?step={{ step - 1 }}" aria-label="Previous position">Previous</a>{% endif %}
+<span>Position {{ step + 1 }} of {{ steps|length }} · {{ steps[step].label }}</span>
+{% if step + 1 < steps|length %}<a href="{{ navigation_url }}?step={{ step + 1 }}" aria-label="Next position">Next</a> <a href="{{ navigation_url }}">Return to current position</a>{% endif %}
+</nav>

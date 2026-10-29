@@ -4,7 +4,6 @@ import secrets
 
 from flask import (
     Blueprint,
-    abort,
     current_app,
     redirect,
     render_template,
@@ -16,10 +15,11 @@ from flask import (
 from .puzzle_sessions import start_attempt
 from .training import create_training_item
 from .training_feedback import puzzle_training_ref, show_training_puzzle, submit_training_move
-from .web_board import board_rows
-from .web_completion import completion
 from .web_db import current_training, database, form_matches
+from .web_move_history import puzzle_input_fen
+from .web_move_input import normalize_move
 from .web_recommendation import recommended
+from .web_training_page import render_training_page
 
 practice = Blueprint("practice", __name__)
 
@@ -47,21 +47,7 @@ def start():
 
 @practice.get("/practice")
 def show():
-    attempt, item_id = current_training()
-    try:
-        state = show_training_puzzle(database(), attempt, item_id=item_id)
-    except ValueError:
-        abort(404)
-    feedback = completion(database(), attempt, item_id)
-    return render_template(
-        "practice.html",
-        state=state,
-        item_id=item_id,
-        board=board_rows(state["fen"]),
-        completion=feedback,
-        notice=session.pop("notice", None),
-        event=secrets.token_urlsafe(24),
-    )
+    return render_training_page()
 
 
 @practice.post("/practice/move")
@@ -72,11 +58,17 @@ def move():
             "error.html", message="The practice attempt has changed. Return to the daily plan."
         ), 409
     try:
+        state = show_training_puzzle(database(), attempt, item_id=item_id)
+        event = request.form.get("event", "")
+        original = puzzle_input_fen(database(), attempt, event, state["fen"])
+        move_text = normalize_move(
+            original, request.form.get("move", ""), request.form.get("promotion", "")
+        )
         result = submit_training_move(
             database(),
             attempt,
-            event_id=request.form.get("event", ""),
-            move=request.form.get("move", "").strip(),
+            event_id=event,
+            move=move_text,
             item_id=item_id,
             subject=current_app.config["SUBJECT"],
         )

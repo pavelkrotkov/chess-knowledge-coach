@@ -6,7 +6,7 @@
 <h2>Own-game material practice</h2>
 <p>Only current opportunities from independently validated detector families are available. Unreviewed observations remain provisional; rejected or revoked observations are excluded. Showing at most 100 observations; exclusions can have multiple reasons. Scanned: {{ own_game.scanned }}{% if own_game.truncated %} (more exist){% endif %}.</p>
 {% for reason, count in own_game.excluded.items() %}<p>{{ reason }}: {{ count }}</p>{% endfor %}
-{% for item in own_game.candidates %}<form method="post" action="{{ url_for('unified_practice.begin') }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="source_type" value="own-game"><input type="hidden" name="version" value="{{ own_game.version }}"><input type="hidden" name="key" value="{{ item.key }}"><button>Practice {{ item.objective | replace('_', ' ') }} ({{ item.review_status }})</button></form>{% else %}<p>No eligible own-game exercises are available.</p>{% endfor %}
+{% for item in own_game.candidates %}<form method="post" action="{{ url_for('unified_practice.begin') }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="source_type" value="own-game"><input type="hidden" name="version" value="{{ own_game.version }}"><input type="hidden" name="key" value="{{ item.key }}"><button>Practice {{ item.objective | replace('_', ' ') }} ({{ "reviewed" if item.review_status == "accepted" else "provisional" }})</button></form>{% else %}<p>No eligible own-game exercises are available.</p>{% endfor %}
 <h2>Puzzle library</h2>
 <p>Only ready and legacy-ready versions are available for practice. Legacy imports have not been revalidated by the new importer.</p>
 {% for corpus in corpora %}

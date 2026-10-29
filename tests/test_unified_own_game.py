@@ -107,7 +107,9 @@ def test_private_browser_own_game_and_unlisted_move(tmp_path, monkeypatch):
     headers = {"Tailscale-User-Login": "fixture"}
     library = client.get("/library", base_url="https://coach.invalid", headers=headers)
     assert (
-        library.status_code == 200 and b"unreviewed" in library.data and b"d4d5" not in library.data
+        library.status_code == 200
+        and b"provisional" in library.data
+        and b"d4d5" not in library.data
     )
     csrf = token(library, "csrf")
     posted = client.post(
@@ -164,7 +166,7 @@ def test_private_browser_own_game_and_unlisted_move(tmp_path, monkeypatch):
         },
     )
     page = client.get(posted.headers["Location"], base_url="https://coach.invalid", headers=headers)
-    assert b"line_completed" in page.data and b"objective_verified" not in page.data
+    assert b"Line complete" in page.data and b"Checkmate verified" not in page.data
 
 
 def test_analysis_change_invalidates_live_session_and_retains_history(tmp_path, monkeypatch):

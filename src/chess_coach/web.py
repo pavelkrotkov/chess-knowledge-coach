@@ -8,6 +8,7 @@ from flask import Flask, g
 from .web_config import validate_config
 from .web_mate import mate_views
 from .web_practice import practice
+from .web_practice_tools import practice_tools
 from .web_repertoire import repertoire_views
 from .web_security import install_security
 from .web_style import style_views
@@ -46,6 +47,7 @@ def create_app(
     app.register_blueprint(views)
     app.register_blueprint(mate_views)
     app.register_blueprint(practice)
+    app.register_blueprint(practice_tools)
     app.register_blueprint(unified_practice)
     app.register_blueprint(repertoire_views)
     app.register_blueprint(style_views)

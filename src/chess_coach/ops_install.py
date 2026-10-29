@@ -50,7 +50,12 @@ def _verify(
         "from pathlib import Path; import sys; "
         "assert Path(chess_coach.__file__).resolve().is_relative_to(Path(sys.prefix).resolve()), 'module outside release'; "
         "assert files('chess_coach').joinpath('templates/practice.html').is_file(), 'missing practice template'; "
-        "assert files('chess_coach').joinpath('static/coach.css').is_file(), 'missing stylesheet'"
+        "assert files('chess_coach').joinpath('templates/board.html').is_file(), 'missing board template'; "
+        "assert files('chess_coach').joinpath('templates/practice_move_form.html').is_file(), 'missing move form'; "
+        "assert files('chess_coach').joinpath('templates/practice_navigation.html').is_file(), 'missing navigation template'; "
+        "assert files('chess_coach').joinpath('templates/practice_reveal.html').is_file(), 'missing reveal template'; "
+        "assert files('chess_coach').joinpath('static/coach.css').is_file(), 'missing stylesheet'; "
+        "assert files('chess_coach').joinpath('static/board.js').is_file(), 'missing board script'"
     )
     run_checked(
         [str(release / "venv/bin/python"), "-I", "-B", "-c", script],
