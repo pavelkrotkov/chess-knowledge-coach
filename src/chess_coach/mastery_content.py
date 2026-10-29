@@ -1,5 +1,6 @@
 """Validate reviewed evidence content and detector-family eligibility."""
 
+from .back_rank_mastery import closed as back_rank_closed
 from .fork_family_policy import family_reason
 from .mastery_provenance import valid_confidence, valid_links
 from .mate_mastery_policy import mastery_allowed as mate_mastery_allowed
@@ -9,6 +10,8 @@ from .pawn_mastery_policy import mastery_allowed as pawn_mastery_allowed
 
 
 def content_reason(db, row) -> str | None:
+    if back_rank_closed(row):
+        return "back_rank_family_unvalidated"
     if not mate_mastery_allowed(db, row):
         return "mate_family_unvalidated"
     if not pawn_mastery_allowed(db, row):

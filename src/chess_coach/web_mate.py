@@ -2,6 +2,7 @@
 
 from flask import Blueprint, abort, current_app, render_template, request
 
+from .back_rank_view import automatic_view as back_rank_view
 from .mate_auto_view import automatic_view
 from .mate_inspection import inspect_mate
 from .web_db import database
@@ -24,4 +25,5 @@ def detail(position_id: int):
         "mate_inspection.html",
         mate=result,
         automatic=automatic_view(database(), position_id, current_app.config["SUBJECT"]),
+        back_rank=back_rank_view(database(), position_id, current_app.config["SUBJECT"]),
     )

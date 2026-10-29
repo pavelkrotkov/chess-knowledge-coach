@@ -42,6 +42,13 @@ CAPABILITIES = (
         "details": "A rotating worker enumerates immediate mates and selectively proves short mates within explicit limits. Unselected or exhausted searches are unknown; current provisional own-game lines are playable, while new-family mastery remains closed.",
     },
     {
+        "id": "back_rank_observations",
+        "area": "Skill coverage",
+        "name": "Bounded back-rank observations",
+        "status": "observation-only",
+        "details": "Current owned games can show legal back-rank mates and immediate defensive alternatives within explicit budgets. Incomplete searches and other immediate mates remain unresolved; prepared lines do not establish overall safety or mastery. Independent family validation is pending.",
+    },
+    {
         "id": "direct_source_practice",
         "area": "Training",
         "name": "Corpus and direct-source practice",

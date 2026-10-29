@@ -2,7 +2,7 @@
 {% block title %}Practice — Chess coach{% endblock %}
 {% block content %}
 <h2>Practice</h2>
-{% set objectives = {"legal_line": "Find a continuation", "checkmate": "Find checkmate", "promotion": "Promote a pawn", "material_capture": "Capture material", "material_protection": "Protect material", "pawn_win": "Preserve a win", "pawn_draw": "Hold a draw"} %}
+{% set objectives = {"legal_line": "Find a continuation", "checkmate": "Find checkmate", "back_rank_defense": "Avoid immediate mate", "promotion": "Promote a pawn", "material_capture": "Capture material", "material_protection": "Protect material", "pawn_win": "Preserve a win", "pawn_draw": "Hold a draw"} %}
 {% set sources = {"own-game": "Your game", "public": "Public collection", "corpus": "Puzzle collection"} %}
 {% set statuses = {"active": "In progress", "needs_verification": "Needs verification", "line_completed": "Line complete", "objective_verified": "Checkmate verified"} %}
 <p>Playing as {{ state.learner_color }}. Source: {{ sources.get(state.source_type, "Practice") }} · Objective: {{ objectives.get(state.objective, "Find a continuation") }} · Status: {{ statuses.get(state.status, "Unavailable") }}.</p>
