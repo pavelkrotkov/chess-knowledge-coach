@@ -14,6 +14,7 @@ def add_deep_execution(connection: sqlite3.Connection) -> None:
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         UNIQUE(selection_id, position_id, config_fingerprint),
+        UNIQUE(id, selection_id, position_id),
         FOREIGN KEY(selection_id, position_id)
             REFERENCES deep_selection_items(selection_id, position_id)
     )""")
@@ -36,6 +37,14 @@ def add_deep_execution(connection: sqlite3.Connection) -> None:
         rank INTEGER NOT NULL CHECK(rank > 0),
         line_json TEXT NOT NULL,
         PRIMARY KEY(attempt_id, rank)
+    )""")
+    connection.execute("""CREATE TABLE IF NOT EXISTS deep_analysis_current (
+        selection_id INTEGER NOT NULL,
+        position_id INTEGER NOT NULL,
+        job_id INTEGER NOT NULL,
+        PRIMARY KEY(selection_id, position_id),
+        FOREIGN KEY(job_id, selection_id, position_id)
+            REFERENCES deep_analysis_jobs(id, selection_id, position_id)
     )""")
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_deep_jobs_selection ON deep_analysis_jobs(selection_id, status, id)"
