@@ -2,7 +2,7 @@
 
 from .fact_runs import record_fact_run_in_transaction
 from .mapping_runs import record_mapping_run_in_transaction
-from .mate_contract import MAPPER, PRODUCER, VERSION
+from .mate_contract import MAPPER, MAPPER_VERSION, PRODUCER, VERSION
 from .mate_inspection_source import still_current
 
 
@@ -13,11 +13,12 @@ def publish(db, position, learner, fingerprint, fact, context):
             raise ValueError("mate source changed")
         inputs = {"source_fingerprint": fingerprint}
         run = _fact_run(db, position["id"], inputs, fact)
+        mapping = None
         if fact["status"] == "opportunity":
-            _mapping(db, position, fingerprint, fact, run, context)
+            mapping = _mapping(db, position, fingerprint, fact, run, context)
         db.connection.commit()
         return {
-            "replayed": run["replayed"],
+            "replayed": run["replayed"] and (mapping is None or mapping["replayed"]),
             "run_id": run["run_id"],
             "observation_status": fact["status"],
         }
@@ -54,19 +55,18 @@ def _mapping(db, position, fingerprint, fact, run, context):
         "pre_move_fen": context["pre_move_fen"],
         "qualification": "Bounded chess observation; no ability or cause inferred.",
     }
-    skill = "mate_in_one" if fact["immediate_mates"] else "calculation"
-    record_mapping_run_in_transaction(
+    return record_mapping_run_in_transaction(
         db,
         position_id=position["id"],
         producer=MAPPER,
-        mapper_version=VERSION,
+        mapper_version=MAPPER_VERSION,
         subject=context["subject"],
         operation="execute",
         scope_key="bounded-mate-v1",
         input_data={"source_fingerprint": fingerprint, "fact_run": run["run_id"]},
         mappings=[
             {
-                "skill": skill,
+                "skill": _skill(fact),
                 "outcome": fact["outcome"],
                 "confidence": 0.5,
                 "fact_ids": run["fact_ids"],
@@ -75,3 +75,10 @@ def _mapping(db, position, fingerprint, fact, run, context):
             }
         ],
     )
+
+
+def _skill(fact):
+    immediate_result = fact["immediate_mates"] and (
+        fact["outcome"] != "success" or fact["played_checkmate"]
+    )
+    return "mate_in_one" if immediate_result else "calculation"

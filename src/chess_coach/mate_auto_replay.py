@@ -3,7 +3,7 @@
 import json
 
 from .fact_inputs import fact_batch
-from .mate_contract import MAPPER, PRODUCER, VERSION
+from .mate_contract import LEGACY_MAPPER_VERSION, MAPPER, MAPPER_VERSION, PRODUCER, VERSION
 
 
 def replay(db, position_id, fingerprint, subject):
@@ -26,16 +26,20 @@ def replay(db, position_id, fingerprint, subject):
         return None
     if items[0][0] != row["fact_key"] or output_hash != row["output_hash"]:
         raise ValueError("stored mate output is invalid")
-    if fact.get("status") == "opportunity" and not _has_mapping(db, row["fact_id"], subject):
+    if fact.get("status") == "opportunity" and not _has_mapping(
+        db, row["fact_id"], subject, MAPPER_VERSION
+    ):
+        if _has_mapping(db, row["fact_id"], subject, LEGACY_MAPPER_VERSION):
+            return None
         raise ValueError("stored mate mapping is unavailable")
     return {"replayed": True, "run_id": row["id"], "observation_status": fact["status"]}
 
 
-def _has_mapping(db, fact_id, subject):
+def _has_mapping(db, fact_id, subject, version):
     row = db.connection.execute(
         """SELECT COUNT(*) FROM evidence_fact_links l JOIN evidence_mappings e ON e.id=l.evidence_id
         JOIN mapping_runs r ON r.id=e.mapping_run_id WHERE l.fact_id=? AND l.active=1
         AND l.subject=? AND r.subject=? AND r.producer=? AND r.mapper_version=? AND r.status='active'""",
-        (fact_id, subject, subject, MAPPER, VERSION),
+        (fact_id, subject, subject, MAPPER, version),
     ).fetchone()
     return row[0] == 1

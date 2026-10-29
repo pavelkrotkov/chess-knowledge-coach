@@ -84,6 +84,58 @@ def test_prefilter_is_unknown_and_equivalent_mates_are_not_false_failures():
     assert observe(black, black.parse_uci("g3g2"), short_candidate=False)["outcome"] == "success"
 
 
+def test_short_mate_success_does_not_claim_immediate_mate_success(tmp_path, monkeypatch):
+    from chess_coach.mastery import update_mastery
+
+    fen = "7k/5Q2/6K1/8/8/8/8/8 w - - 0 1"
+    db = owned_game(tmp_path / "alternative-short.sqlite", monkeypatch, fen=fen, move="Qa7")
+    process_decision(db, 1, "fixture_a")
+    row = db.connection.execute(
+        """SELECT e.id,e.skill,e.outcome FROM evidence_mappings e
+        JOIN mapping_runs r ON r.id=e.mapping_run_id WHERE r.producer=?""",
+        (MAPPER,),
+    ).fetchone()
+    assert (row["skill"], row["outcome"]) == ("calculation", "success")
+    evidence = inspect_evidence(db, row["id"])
+    observation = evidence["context"]["observation"]
+    assert observation["immediate_mate_not_played"] and not observation["played_checkmate"]
+    played = next(
+        root for root in observation["proof"]["alternatives"] if root["move"]["uci"] == "f7a7"
+    )
+    assert played["status"] == "proved" and played["distance_plies"] == 3
+    review_evidence(db, row["id"], decision="accept", actor="reviewer")
+    result = update_mastery(db, skill="calculation", operation="execute", subject="fixture_a")
+    assert result["status"] == "insufficient"
+    assert result["exclusions"]["mate_family_unvalidated"] == 1
+
+
+def test_mapper_upgrade_supersedes_without_reinterpreting_reviewed_history(tmp_path, monkeypatch):
+    from chess_coach import mate_auto_publish
+    from chess_coach.mate_contract import LEGACY_MAPPER_VERSION, MAPPER_VERSION
+
+    fen = "7k/5Q2/6K1/8/8/8/8/8 w - - 0 1"
+    db = owned_game(tmp_path / "mapper-upgrade.sqlite", monkeypatch, fen=fen, move="Qa7")
+    with monkeypatch.context() as patch:
+        patch.setattr(mate_auto_publish, "MAPPER_VERSION", LEGACY_MAPPER_VERSION)
+        patch.setattr(mate_auto_publish, "_skill", lambda fact: "mate_in_one")
+        first = process_decision(db, 1, "fixture_a")
+    old = db.connection.execute(
+        "SELECT id FROM evidence_mappings WHERE mapper_version=?", (LEGACY_MAPPER_VERSION,)
+    ).fetchone()[0]
+    review_evidence(db, old, decision="accept", actor="reviewer")
+    upgraded = process_decision(db, 1, "fixture_a")
+    current = db.connection.execute(
+        "SELECT id,skill,outcome FROM evidence_mappings WHERE mapper_version=?", (MAPPER_VERSION,)
+    ).fetchone()
+    assert first["run_id"] == upgraded["run_id"] and not upgraded["replayed"]
+    assert (current["skill"], current["outcome"]) == ("calculation", "success")
+    prior = inspect_evidence(db, old)
+    assert prior["skill"] == "mate_in_one"
+    assert prior["review_status"] == "accepted" and prior["lifecycle_status"] == "superseded"
+    assert inspect_evidence(db, current["id"])["review_status"] == "unreviewed"
+    assert process_decision(db, 1, "fixture_a")["replayed"]
+
+
 def test_worker_bounds_and_unknown_result(tmp_path, monkeypatch):
     db = owned_game(tmp_path / "worker.sqlite", monkeypatch, fen=FEN, move="Qg1")
     config = PipelineConfig(learner="fixture_a", mate_max_scan=1, mate_max_decisions=1)

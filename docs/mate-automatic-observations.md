@@ -12,7 +12,11 @@ outcome counts and revisits the backlog over subsequent ticks.
 Current, separately versioned facts and provisional evidence record whether
 played and alternative moves satisfy the bounded objective. A missed immediate
 mate is factual even if another move also forces mate; the observation does not
-infer the player's ability, intent, or psychological cause. Other wins beyond
+infer the player's ability, intent, or psychological cause. Mapper 1.1.0
+records a played, proved mate in two as calculation success even if an immediate
+mate was available; it does not call that move an immediate-mate success. The
+detector remains at version 1.0.0. Reprocessing a 1.0.0 mapping creates a new
+mapping and preserves the superseded evidence and its reviews. Other wins beyond
 the bound remain possible. The private evidence and mate pages show provenance,
 limits, alternatives and stale or unknown status. Existing mate-v1 history is
 not rewritten. The new family is explicitly excluded from mastery, including
