@@ -506,3 +506,60 @@ def test_live_cursor_survives_staging_but_invalidates_on_publication(tmp_path):
     stage(db, path, digest, max_rows=0, batch_size=1)
     with pytest.raises(ValueError, match="sources changed"):
         daily_plan(db, subject="learner", corpus_version="legacy", scan_limit=1, cursor=cursor)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("Rating", str(2**63)),
+        ("Rating", "-1"),
+        ("RatingDeviation", str(2**63)),
+        ("RatingDeviation", "-1"),
+        ("NbPlays", str(2**63)),
+        ("NbPlays", "-1"),
+        ("Popularity", str(2**63)),
+        ("Popularity", "101"),
+        ("Popularity", "-101"),
+    ],
+)
+def test_numeric_out_of_range_fails_without_publishing(tmp_path, field, value):
+    path = tmp_path / "numbers.csv"
+    valid = ["good", FEN, "g8h8 c5f8", "1200", "80", "90", "12", "mate", "", ""]
+    invalid = valid.copy()
+    invalid[0] = "invalid"
+    invalid[FIELDS.index(field)] = value
+    with path.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(FIELDS)
+        writer.writerow(valid)
+        writer.writerow(invalid)
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    db = db_at(tmp_path)
+    stage(db, path, digest, max_rows=1)
+    with pytest.raises(ValueError, match="invalid numeric fields"):
+        stage(db, path, digest, max_rows=0)
+    report = corpus_report(db)[0]
+    assert report["state"] == "failed" and report["accepted"] == 1
+    assert report["error"] == "CSV record has invalid numeric fields"
+    assert query_puzzles(db, version="bulk") == []
+    with pytest.raises(ValueError, match="unknown versioned puzzle"):
+        start_attempt(db, attempt_id="hidden", version="bulk", puzzle_id="good")
+
+
+@pytest.mark.parametrize("popularity", [-100, 100])
+def test_numeric_boundaries_fit_sqlite(tmp_path, popularity):
+    path = tmp_path / "boundaries.csv"
+    maximum = str(2**63 - 1)
+    with path.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(FIELDS)
+        writer.writerow(
+            ["edge", FEN, "g8h8 c5f8", maximum, maximum, popularity, maximum, "mate", "", ""]
+        )
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    db = db_at(tmp_path)
+    assert stage(db, path, digest, max_rows=0)["state"] == "ready"
+    row = db.connection.execute(
+        "SELECT rating,rating_deviation,play_count,popularity FROM puzzles"
+    ).fetchone()
+    assert tuple(row) == (2**63 - 1, 2**63 - 1, 2**63 - 1, popularity)

@@ -23,6 +23,9 @@ def record_failure(db, corpus_id, exc):
     if isinstance(exc, ImportBudgetError):
         fail(db, corpus_id, "project storage reserve reached")
         raise ImportBudgetError("project storage reserve reached") from None
+    if str(exc) == "CSV record has invalid numeric fields":
+        fail(db, corpus_id, "CSV record has invalid numeric fields")
+        raise ValueError("CSV record has invalid numeric fields") from None
     fail(db, corpus_id, "source is invalid, changed, or contains duplicate IDs")
     raise ValueError(
         "corpus import stopped; source is invalid, changed, or has duplicate IDs"
