@@ -33,6 +33,9 @@ def evidence_rows(db: Database, subject: str, skill: str, operation: str):
                    AS fork_defense_fact_count,
                   (SELECT COUNT(*) FROM evidence_fact_links l
                    JOIN detector_facts f ON f.id=l.fact_id JOIN detector_runs d ON d.id=f.run_id
+                   WHERE l.evidence_id=e.id AND (d.producer IN ('pin-execute', 'pin-prevent') OR f.fact_type IN ('pin_execute_opportunity', 'pin_prevent_opportunity'))) AS pin_fact_count,
+                  (SELECT COUNT(*) FROM evidence_fact_links l
+                   JOIN detector_facts f ON f.id=l.fact_id JOIN detector_runs d ON d.id=f.run_id
                    WHERE l.evidence_id=e.id AND (d.producer='bounded-mate-observation' OR f.fact_type='bounded_mate'))
                    AS bounded_mate_fact_count,
                   (SELECT COUNT(*) FROM evidence_fact_links l

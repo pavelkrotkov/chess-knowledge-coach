@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.31.0"
+REGISTRY_VERSION = "1.29.0"
 
 CAPABILITIES = (
     {
@@ -12,6 +12,13 @@ CAPABILITIES = (
         "name": "Pawn-structure plans from decisions",
         "status": "observation-only",
         "details": "Current attributable decisions show isolated and backward pawn plans and bounded immediate exchanges of pawn-supported pieces. The bounded worker distinguishes current replays, pending work and truncated coverage. Reviewable observations remain ambiguous and ineligible for mastery; overall compensation remains uncertain.",
+    },
+    {
+        "id": "pin_opportunities",
+        "area": "Skill coverage",
+        "name": "Bounded pin opportunities",
+        "status": "observation-only",
+        "details": "New noncapturing slider pins use bounded legal replies and verified material or immediate mate; already capturable targets remain unresolved. Relative-pin exposure and absolute-pin slides are compared with verified captures of the pinner. Checks, recaptures, compensation and unsupported branches remain unresolved. Pin mastery is closed pending independent qualification.",
     },
     {
         "id": "pawn_opportunities",

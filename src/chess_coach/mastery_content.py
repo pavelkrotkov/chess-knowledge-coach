@@ -10,6 +10,12 @@ from .pawn_mastery_policy import mastery_allowed as pawn_mastery_allowed
 
 
 def _family_reason(db, row):
+    if (
+        row["skill"] in {"absolute_pin", "relative_pin"}
+        or row["mapping_producer"] in {"pin-execute-mapper", "pin-prevent-mapper"}
+        or row["pin_fact_count"]
+    ):
+        return "pin_family_unvalidated"
     if back_rank_closed(row):
         return "back_rank_family_unvalidated"
     if not mate_mastery_allowed(db, row):

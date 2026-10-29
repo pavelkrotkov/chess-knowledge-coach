@@ -54,6 +54,7 @@ def test_registry_is_scoped_unique_and_defensive():
     assert states["tactical_geometry"] == "observation-only"
     assert states["fork_opportunities"] == "observation-only"
     assert states["fork_defense"] == "observation-only"
+    assert states["pin_opportunities"] == "observation-only"
     assert states["material_opportunities"] == "observation-only"
     material = next(item for item in entries if item["id"] == "material_opportunities")
     assert "version 1.1.0" in material["details"]

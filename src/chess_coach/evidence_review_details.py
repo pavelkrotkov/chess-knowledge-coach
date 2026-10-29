@@ -17,6 +17,8 @@ from .material_explanation import explain_material
 from .pawn_coach_current import current_pawn
 from .pawn_coach_explanation import explain as explain_pawn
 from .pawn_structure_current import currentness as structure_currentness
+from .pin_evidence import current_pin
+from .pin_explanation import explain as explain_pin
 
 
 def inspect_evidence(db: Database, evidence_id: int) -> dict:
@@ -47,6 +49,13 @@ def inspect_evidence(db: Database, evidence_id: int) -> dict:
     result["back_rank_source_currentness"] = back_rank_currentness(db, result)
 
     result["pawn_structure_currentness"] = structure_currentness(db, result)
+    for operation in ("execute", "prevent"):
+        pin, currentness, pin_fen = current_pin(db, result, operation)
+        if currentness:
+            result["pin_explanation"] = explain_pin(pin, pin_fen)
+            result["pin_source_currentness"] = currentness
+            if currentness == "current":
+                result["decision_fen"] = pin_fen
     result["reviews"] = _reviews(db, evidence_id)
     return result
 
