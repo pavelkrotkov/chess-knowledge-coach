@@ -12,8 +12,8 @@ from chess_coach.related_fork_features import corpus_fork_features, fork_feature
 from chess_coach.related_fork_start import start_related
 from chess_coach.unified_session_events import show, submit
 from chess_coach.web import create_app
+from tests.fork_concealment_support import assert_collision, assert_concealed
 from tests.test_fork_pipeline import LEARNER, make_game
-from tests.test_unified_sessions import token
 
 PRE = "r2k4/6pp/8/1N6/8/8/6P1/7K b - - 0 1"
 LINE = "d8e8 b5c7 e8f8 c7a8"
@@ -121,9 +121,21 @@ def test_setup_colors_and_full_line_legality():
     assert fork_features(prompt, ["h1g1", "e8f8", "b5c7"]) is None
 
 
-def test_browser_entry_from_evidence_and_protected_start(tmp_path, monkeypatch):
+@pytest.mark.parametrize("collision", ["none", "reference", "csrf"])
+def test_browser_entry_from_evidence_and_protected_start(tmp_path, monkeypatch, collision):
     db, evidence = fixture(tmp_path, monkeypatch)
+    if collision == "reference":
+        monkeypatch.setattr("chess_coach.related_capture.digest", lambda value: "b5c7" + "a" * 60)
+        monkeypatch.setattr(
+            "chess_coach.related_transfer_admission.digest", lambda value: "b5c7" + "a" * 60
+        )
+    expected = preview(db, LEARNER, evidence, "test")["items"][0]["reference"]
     db.close()
+    csrf_value = ("b5c7" + "A" * 39) if collision == "csrf" else "A" * 43
+    monkeypatch.setattr(
+        "chess_coach.web_security.secrets.token_urlsafe",
+        lambda n: csrf_value if n == 32 else "B" * 32,
+    )
     app = create_app(
         db_path=tmp_path / "fork-transfer.sqlite",
         subject=LEARNER,
@@ -139,8 +151,12 @@ def test_browser_entry_from_evidence_and_protected_start(tmp_path, monkeypatch):
     page = client.get(
         f"/evidence/{evidence}/related-forks", base_url="https://coach.invalid", headers=headers
     )
-    assert page.status_code == 200 and b"missed fork" in page.data and b"b5c7" not in page.data
-    data = {"csrf": token(page, "csrf"), "reference": token(page, "reference")}
+    assert b"missed fork" in page.data
+    with client.session_transaction(base_url="https://coach.invalid") as session:
+        session_csrf = session["csrf"]
+    assert_collision(page, collision)
+    assert_concealed(page, session_csrf, expected)
+    data = {"csrf": session_csrf, "reference": expected}
     url = f"/evidence/{evidence}/related-forks/start"
     assert (
         client.post(url, base_url="https://coach.invalid", headers=headers, data=data).status_code
@@ -156,7 +172,7 @@ def test_browser_entry_from_evidence_and_protected_start(tmp_path, monkeypatch):
     practice = client.get(
         response.headers["Location"], base_url="https://coach.invalid", headers=headers
     )
-    assert practice.status_code == 200 and b"b5c7" not in practice.data
+    assert_concealed(practice, session_csrf)
 
 
 def add_public(db, evidence):
