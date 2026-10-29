@@ -9,7 +9,7 @@ from .material_mastery_source import source_reason
 from .pawn_mastery_policy import mastery_allowed as pawn_mastery_allowed
 
 
-def content_reason(db, row) -> str | None:
+def _family_reason(db, row):
     if back_rank_closed(row):
         return "back_rank_family_unvalidated"
     if not mate_mastery_allowed(db, row):
@@ -21,6 +21,13 @@ def content_reason(db, row) -> str | None:
         return reason
     if not mastery_allowed(db, row):
         return "material_family_unvalidated"
+    return None
+
+
+def content_reason(db, row) -> str | None:
+    reason = _family_reason(db, row)
+    if reason:
+        return reason
     if row["outcome"] not in {"success", "failure"}:
         return "ambiguous"
     if not valid_confidence(row["confidence"]):

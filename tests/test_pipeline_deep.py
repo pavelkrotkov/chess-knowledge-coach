@@ -303,7 +303,16 @@ def test_aggregate_completion_waits_for_deep_backlog(tmp_path, monkeypatch):
     assert second["deep"]["pending"] == 1 and second["status"] == "partial"
     third = process_pipeline(db, settings, transport=network())
     assert third["deep"]["pending"] == 0 and third["deep"]["status"] == "complete"
-    assert third["status"] == "complete"
+    assert third["mate"]["capped"] and third["status"] == "partial"
+    assert third["mate"]["back_rank"]["attempted"] == 4
+    assert third["mate"]["back_rank"]["replayed"] == 4
+    assert third["mate"]["back_rank"]["processed"] == 0
+    fourth = process_pipeline(db, settings, transport=network())
+    assert fourth["deep"]["pending"] == 0 and fourth["deep"]["status"] == "complete"
+    assert not fourth["mate"]["capped"] and fourth["status"] == "complete"
+    assert fourth["mate"]["back_rank"]["attempted"] == 2
+    assert fourth["mate"]["back_rank"]["replayed"] == 2
+    assert fourth["mate"]["back_rank"]["processed"] == 0
 
 
 def test_status_scales_and_preserves_currentness(tmp_path, monkeypatch):
