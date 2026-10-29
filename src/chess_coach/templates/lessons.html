@@ -1,0 +1,5 @@
+{% extends "base.html" %}{% block content %}
+<h2>Saved lesson history</h2><p>Each version is a historical snapshot; recheck its sources for current status.</p>
+<ul>{% for item in items %}<li><a href="{{ url_for('lesson_views.show', lesson_id=item.id) }}">{{ item.skill }} / {{ item.operation }} — {{ item.generated_at }}</a></li>{% else %}<li>No saved lessons.</li>{% endfor %}</ul>
+{% if next_before %}<a href="{{ url_for('lesson_history_views.history', before=next_before) }}">Older lessons</a>{% endif %}
+<p><a href="{{ url_for('recurrence_views.recurrence') }}">Return to recurring patterns</a></p>{% endblock %}

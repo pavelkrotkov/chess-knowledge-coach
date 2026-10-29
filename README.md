@@ -986,3 +986,29 @@ engine score or this bounded observation. This family remains ineligible for
 mastery even if a human accepts the descriptive mapping. See
 [qualification status](docs/pawn-structure-validation.md). Objective-aware
 practice and related training remain part of issues #141, #142 and #144.
+## Source-linked coaching lessons
+
+The private recurring-pattern report builds provisional coaching from rechecked,
+learner-owned sources in its bounded sample. It selects up to three independent
+games from at most ten candidate game identities per group; sources that no
+longer pass their own currentness and mapping checks are skipped. Each displayed
+continuation is replayed from the reconstructed decision board and must use
+canonical legal SAN. Missing or stale sources leave a diagnostic cue rather than
+an invented example. A candidate's review status is shown; unreviewed evidence
+remains unreviewed. Counts are partial samples, not rates or diagnoses.
+
+A lesson separates observed source facts, a possible mechanism to investigate,
+a diagnostic question, a habit and practice links. The source proofs are bounded:
+later counterplay, compensation and overall safety may remain unknown. The
+browser's explicit save action appends a lesson version; history remains a
+snapshot even if its source later changes. Saving does not create reviews,
+training attempts or mastery evidence.
+
+The Python `lesson_generator.generate` API can optionally call a trusted
+injected generator. The generator receives the deterministic lesson and may
+return only a JSON permutation of its example indices. Any other output or
+provider exception falls back to deterministic order. A validated response is
+recorded by the existing `enrichment.explain_position` adapter with model,
+prompt version and input provenance. Only configure a callable you trust; it is not a sandbox, and
+no external generator is enabled by default. Call it outside a transaction;
+otherwise it falls back to avoid committing unrelated caller work.

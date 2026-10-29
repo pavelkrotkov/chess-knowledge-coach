@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.29.0"
+REGISTRY_VERSION = "1.31.0"
 
 CAPABILITIES = (
     {
@@ -221,14 +221,14 @@ CAPABILITIES = (
         "area": "Explanation",
         "name": "Optional explanation adapter",
         "status": "supported",
-        "details": "A trusted injectable callable can store text from supplied facts; it is not wired into automatic coaching and is not a security sandbox.",
+        "details": "An optional trusted callable may order approved lesson examples; its output is validated with deterministic fallback and separate model, prompt, and input provenance. It is not a security sandbox.",
     },
     {
         "id": "grounded_coaching",
         "area": "Explanation",
         "name": "Grounded coaching explanations",
-        "status": "planned",
-        "details": "Automatic coach-like explanations, source-linked reasoning and practical advice are not yet available.",
+        "status": "observation-only",
+        "details": "Deterministic lessons recheck supported sources, replay legal lines, distinguish observed results from questions, and retain explicitly saved versions. Coverage is bounded and provisional; currentness, overall safety and later counterplay may remain unknown.",
     },
     {
         "id": "opening_classification",

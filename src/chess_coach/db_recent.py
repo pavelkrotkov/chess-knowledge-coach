@@ -10,6 +10,7 @@ from .deep_selection_schema import add_deep_selection
 from .evidence_review_schema import add_evidence_reviews
 from .evidence_schema import add_evidence_lineage
 from .fact_schema import add_fact_lineage
+from .lesson_schema import add_lessons
 from .lichess_schema import add_sync_turn
 from .mastery_schema import allow_unknown_trend
 from .pipeline_cooldown_schema import add_pipeline_cooldown
@@ -46,6 +47,7 @@ def upgrade_recent(connection: sqlite3.Connection, version: int) -> None:
         (22, add_unified_sessions),
         (23, add_engine_output_index),
         (24, add_position_fen_index),
+        (25, add_lessons),
     )
     for target, apply_upgrade in upgrades:
         if version < target:

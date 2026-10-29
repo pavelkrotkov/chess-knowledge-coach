@@ -8,6 +8,7 @@ from .curriculum import daily_plan
 from .decision_inspection import inspect_decision
 from .deep_selection_views import list_selections, show_selection
 from .evidence_review import inspect_evidence, list_evidence, review_evidence
+from .lesson_decision import lessons as decision_lessons
 from .named_structure_report import structure_report
 from .named_structure_source import source_position
 from .named_structures import VERSION, VERSIONS
@@ -107,6 +108,7 @@ def decision_detail(position_id: int):
         decision=result,
         board=board_rows(result["decision_fen"]),
         pawn_lesson=current_lesson(database(), position_id, current_app.config["SUBJECT"]),
+        lessons=decision_lessons(database(), current_app.config["SUBJECT"], position_id),
     )
 
 
