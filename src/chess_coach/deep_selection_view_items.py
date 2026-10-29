@@ -22,8 +22,10 @@ def selection_state(db, game_id, learner, current_id, run):
 
 def selection_items(db, selection_id, state):
     rows = db.connection.execute(
-        """SELECT i.position_id,i.rank,i.allocation,i.reasons_json,p.ply
+        """SELECT i.position_id,i.rank,i.allocation,i.reasons_json,p.ply,j.status AS job_status
         FROM deep_selection_items i JOIN positions p ON p.id=i.position_id
+        LEFT JOIN deep_analysis_current c ON c.selection_id=i.selection_id AND c.position_id=i.position_id
+        LEFT JOIN deep_analysis_jobs j ON j.id=c.job_id
         WHERE i.selection_id=? ORDER BY i.rank""",
         (selection_id,),
     ).fetchall()
@@ -34,7 +36,9 @@ def selection_items(db, selection_id, state):
             "rank": row["rank"],
             "allocation": row["allocation"],
             "reasons": json.loads(row["reasons_json"]),
-            "status": "pending_deep" if state == "current" else "not_current",
+            "status": (row["job_status"] or "pending_deep")
+            if state == "current"
+            else "not_current",
         }
         for row in rows
     ]

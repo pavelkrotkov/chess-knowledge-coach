@@ -259,7 +259,7 @@ def test_private_cli_browser_and_handoff_guard(tmp_path, monkeypatch, capsys):
     target = setup_game(tmp_path / "target.sqlite", monkeypatch)
     target.connection.execute("DELETE FROM analysis_runs")
     target.connection.commit()
-    with pytest.raises(ValueError, match="does not support selection history"):
+    with pytest.raises(ValueError, match="does not support selection or deep history"):
         merge_analysis_outputs(target, db)
     assert target.connection.execute("SELECT COUNT(*) FROM analysis_runs").fetchone()[0] == 0
 
