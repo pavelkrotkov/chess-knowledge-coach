@@ -20,10 +20,19 @@ def puzzle_input_fen(db, attempt, event, current):
 
 def _input_fen(db, table, attempt, event, prompt, current):
     row = db.connection.execute(
-        f"SELECT rowid FROM {table} WHERE attempt_id=? AND event_id=?", (attempt, event)
+        f"SELECT rowid,response_json FROM {table} WHERE attempt_id=? AND event_id=?",
+        (attempt, event),
     ).fetchone()
     if row is None:
         return current
+    try:
+        input_fen = json.loads(row[1]).get("input_fen")
+    except (ValueError, TypeError, AttributeError):
+        raise ValueError("practice history unavailable") from None
+    if input_fen is not None:
+        if not isinstance(input_fen, str):
+            raise ValueError("practice history unavailable")
+        return input_fen
     prior = db.connection.execute(
         f"SELECT response_json FROM {table} WHERE attempt_id=? AND rowid<? ORDER BY rowid DESC LIMIT 1",
         (attempt, row[0]),

@@ -13,6 +13,7 @@ from flask import (
 )
 
 from .objective_contract import VERSION as MATE_ONE_VERSION
+from .objective_short_history import append_reply
 from .unified_session_events import show
 from .unified_session_state import session_row
 from .unified_sessions import start
@@ -46,6 +47,7 @@ def show_page(attempt):
     try:
         state = show(database(), attempt, current_app.config["SUBJECT"])
         steps = unified_history(database(), attempt, current_app.config["SUBJECT"])
+        steps = append_reply(database(), attempt, current_app.config["SUBJECT"], steps)
         index = selected_step(steps, request.args.get("step"))
     except ValueError:
         return _unavailable(attempt)

@@ -5,11 +5,15 @@ import json
 from .learner_identity import normalize_identity
 from .objective_contract import VERSION
 from .objective_events import prefix, prefix_hash
+from .objective_short_source import VERSION as SHORT_VERSION
 from .unified_session_state import now
 
 
 def enqueue(db, session, event_id, result):
-    if session["source_type"] != "own-game" or session["source_version"] != VERSION:
+    if session["source_type"] != "own-game" or session["source_version"] not in {
+        VERSION,
+        SHORT_VERSION,
+    }:
         return
     if result.get("feedback") != "needs_verification":
         return

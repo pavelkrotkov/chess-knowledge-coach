@@ -1,8 +1,8 @@
 """Apply and persist subject-owned practice moves and hints exactly once."""
 
 from .objective_request import enqueue
+from .objective_session_dispatch import record
 from .objective_session_view import display
-from .unified_session_apply import record_event
 from .unified_session_replay import previous as _previous
 from .unified_session_state import session_row
 from .unified_source_current import require_current
@@ -45,7 +45,7 @@ def _event(db, attempt_id, subject, event_id, kind, move):
         result = (
             _previous(previous, kind, move, row["source_type"])
             if previous
-            else record_event(db, row, event_id, kind, move)
+            else record(db, row, event_id, kind, move)
         )
         if previous is None:
             enqueue(db, row, event_id, result)

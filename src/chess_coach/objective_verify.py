@@ -5,6 +5,8 @@ from .objective_current import current
 from .objective_events import assistance
 from .objective_history import before_answer
 from .objective_judge import judge
+from .objective_short_horizon import verify as verify_short
+from .objective_short_source import OBJECTIVE as SHORT_OBJECTIVE
 
 VERSION = "mate-one-verifier-v1"
 SECONDS = 5.0
@@ -26,18 +28,21 @@ def compute(db, request, clock, *, seconds=SECONDS):
         board, move = before_answer(db, session, events)
     except (ValueError, KeyError, TypeError, IndexError):
         return {**base, "status": "unresolved", "reason": "history_unavailable"}
+    if request["objective_version"] == SHORT_OBJECTIVE:
+        return verify_short(board, move, request, events, clock, start, seconds, base)
     return judge(board, move, request, events, clock, start, seconds, base)
 
 
 def provenance(request, seconds=SECONDS):
+    short = request["objective_version"] == SHORT_OBJECTIVE
     return {
-        "verifier": VERSION,
+        "verifier": "mate-two-verifier-v1" if short else VERSION,
         "objective_version": request["objective_version"],
         "history_mode": request["history_mode"],
         "snapshot_hash": request["snapshot_hash"],
         "event_prefix_hash": request["event_prefix_hash"],
         "source_hash": request["source_hash"],
-        "limits": {"plies": 1, "compute_timeout_seconds": seconds},
+        "limits": {"plies": 3 if short else 1, "compute_timeout_seconds": seconds},
         "learning_eligible": False,
     }
 

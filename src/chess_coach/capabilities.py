@@ -3,9 +3,16 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.39.0"
+REGISTRY_VERSION = "1.40.0"
 
 CAPABILITIES = (
+    {
+        "id": "short_mate_alternative_verification",
+        "area": "Training",
+        "name": "Owned mate-within-two alternative verification",
+        "status": "observation-only",
+        "details": "Current owned short-mate sources announce a two-move horizon. A bounded local worker checks all legal defenses of unlisted alternatives and stores legal witnesses; proved continuations remain playable until checkmate. Unresolved, assisted and incorrect outcomes do not update mastery or scheduling.",
+    },
     {
         "id": "discovery_execution",
         "area": "Skill coverage",

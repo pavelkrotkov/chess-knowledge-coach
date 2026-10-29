@@ -855,6 +855,10 @@ then displays legally replayed proof or unresolved-geometry lines, with practica
 questions that distinguish the recorded move from tested alternatives. It does not
 establish overall safety, compensation, intent or mastery.
 
+## Owned mate-within-two alternative verification
+
+Current owned short-mate observations can offer an explicitly announced mate-within-two objective. One supplied root is shown through its legal defensive branches; an unlisted legal root is queued for the existing local verification worker. The worker uses original game history and a bounded three-ply search, checking every legal defense and retaining a mating witness for each. A proved alternative remains playable against a stored legal defense; only a played checkmate completes the objective. A definitive refutation is incorrect for this horizon, while exhausted node or time limits and unavailable history remain ungraded. Current ownership, source version and review are rechecked before results and continuation. Hints and reveals remain distinct, and this provisional practice does not update mastery or scheduling.
+
 ## Provisional discovered-attack execution
 
 A bounded rotating worker inspects current owned decisions and records one scoped
