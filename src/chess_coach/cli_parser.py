@@ -18,4 +18,5 @@ def build_parser() -> argparse.ArgumentParser:
     learning(sub)
     pipeline(sub)
     recovery(sub)
+    sub.add_parser("capabilities", help="Report versioned product capabilities")
     return parser

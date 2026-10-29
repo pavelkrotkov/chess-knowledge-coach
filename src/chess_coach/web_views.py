@@ -2,6 +2,7 @@
 
 from flask import Blueprint, abort, current_app, redirect, render_template, request, url_for
 
+from .capabilities import capability_report
 from .curriculum import daily_plan
 from .evidence_review import inspect_evidence, list_evidence, review_evidence
 from .pipeline_status import pipeline_status
@@ -68,3 +69,8 @@ def plan():
             "plan.html", error="The plan changed. Restart planning.", plan=None
         ), 400
     return render_template("plan.html", plan=result, error=None)
+
+
+@views.get("/capabilities")
+def capabilities():
+    return render_template("capabilities.html", report=capability_report())

@@ -17,19 +17,20 @@ Mastery conclusions are gated behind evidence:
 - Engines and deterministic detectors produce **versioned facts** only.
 - Facts become **evidence records** that preserve success, failure, and ambiguity —
   an opportunity with no outcome is recorded as ambiguous, never silently scored.
-- Mastery aggregation is designed to require multiple evidence contexts, human
-  validation gating where appropriate, temporal weighting (recent games matter
-  more), confidence/weight calculations, and stale-state invalidation. As of the
-  issues 1–10 build this is the intended gate, not a fully enforced one: the
-  current implementation can produce mastery state from a single validated
-  evidence record and does not yet recency-weight the mastery value itself.
+- The initial issues 1–10 implementation did not enforce the intended multi-context
+  and recency gates. The current mastery-v2 policy requires at least three
+  independent, current, explicitly accepted, provenance-linked contexts. It
+  confidence-weights outcomes with a 90-day half-life and a 365-day horizon.
+  Duplicate game and practice contexts are collapsed; practice matching a game
+  decision does not count twice. Insufficient evidence invalidates a stale score
+  while retaining history. See the README mastery section for the full gates.
 - New linked evidence carries detector and mapper identity, context, and an
   observation time when known. Legacy unproven lineage remains explicitly unknown.
 
 ## Consequences
 
-- You cannot get a "player rating" out of one analyzed game; the design refuses
-  this, though enforcing the multi-context gate is tracked as follow-up work.
+- One analyzed game cannot establish a mastery score. The resulting statistic is
+  an uncalibrated outcome heuristic, not a player rating.
 - Detector/mapper upgrades recompute cleanly because versions are stored per fact.
 - Raw game data stays immutable; all interpretation is revisable downstream data.
 
