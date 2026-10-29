@@ -10,12 +10,12 @@ def continuation(db, session):
     if not is_source(session) or session["status"] != "needs_verification":
         return None
     row = db.connection.execute(
-        """SELECT q.*,r.result_json FROM objective_requests q JOIN objective_results r
+        """SELECT q.*,r.result_json FROM objective_requests q LEFT JOIN objective_results r
         ON r.attempt_id=q.attempt_id AND r.event_id=q.event_id
         WHERE q.attempt_id=? ORDER BY q.rowid DESC LIMIT 1""",
         (session["attempt_id"],),
     ).fetchone()
-    if row is None:
+    if row is None or row["result_json"] is None:
         return None
     result = json.loads(row["result_json"])
     if (

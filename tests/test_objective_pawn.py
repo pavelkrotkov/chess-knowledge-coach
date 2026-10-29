@@ -3,6 +3,7 @@
 import json
 
 import chess
+import chess.syzygy
 import pytest
 
 from chess_coach import pawn_proof, pawn_tables
@@ -152,6 +153,10 @@ def test_owned_unlisted_result_and_legal_training_continuation(tmp_path, monkeyp
     next_move = next(iter(board.legal_moves)).uci()
     event = submit(db, "pawn", SUBJECT, event_id="continue", move=next_move)
     assert event["feedback"] == "needs_verification" and event["status"] == "needs_verification"
+    pending = show(db, "pawn", SUBJECT)
+    assert (
+        pending["status"] == "needs_verification" and pending["verification"]["status"] == "pending"
+    )
     assert process(db, SUBJECT)["outcomes"] == {"correct": 1}
     assert inspect(db, SUBJECT, "pawn", "continue")["status"] == "correct"
     assert show(db, "pawn", SUBJECT)["pawn_continuation"]
@@ -438,6 +443,10 @@ def test_browser_and_cli_resume_multiple_checked_turns(tmp_path, monkeypatch, ca
         },
     )
     assert second.status_code == 303
+    pending = client.get(
+        second.headers["Location"], base_url="https://coach.invalid", headers=headers
+    )
+    assert pending.status_code == 200 and b"Verification is queued" in pending.data
     db = Database(path)
     assert process(db, SUBJECT)["outcomes"] == {"correct": 1}
     assert show(db, attempt, SUBJECT)["pawn_continuation"]
