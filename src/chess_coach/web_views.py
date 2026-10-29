@@ -25,7 +25,7 @@ views = Blueprint("views", __name__)
 def index():
     return render_template(
         "status.html",
-        status=pipeline_status(database(), current_app.config["SUBJECT"]),
+        status=pipeline_status(database(), current_app.config["SUBJECT"], include_stages=False),
         release=release_info(),
         acquisitions=statuses(current_app.config["PROJECT_ROOT"])
         if current_app.config["PROJECT_ROOT"]

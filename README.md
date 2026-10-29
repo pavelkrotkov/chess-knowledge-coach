@@ -523,9 +523,10 @@ To classify openings, supply both `--opening-version` and `--opening-source`
 for an imported dataset. Missing or unconfigured opening data is shown as a
 skipped stage and does not fabricate a classification. Run status includes
 sanitized sync diagnostics, the scan count, and per-game stage codes; use
-`pipeline-status` to read persisted timestamps and the last sync/run outcome
-without starting work. A `running` status left by an interrupted process is
-resolved by the next invocation. The lock is local to the database host.
+`pipeline-status` to read persisted timestamps, all per-game stage details and
+the last sync/run outcome without starting work. The private dashboard shows
+aggregate stage counts without loading the full detail list. A `running` status
+left by an interrupted process is resolved by the next invocation. The lock is local to the database host.
 Run the synchronous worker as a dedicated process on its main thread; its
 network deadline uses the process timer and will refuse to replace an active
 timer or run inside a request thread.

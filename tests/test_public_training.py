@@ -151,7 +151,7 @@ def test_v20_upgrade_is_atomic_and_keeps_legacy_data(tmp_path, monkeypatch):
         "SELECT 1 FROM sqlite_master WHERE name=\u0027public_tasks\u0027"
     ).fetchone()
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 22
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 23
     assert db.connection.execute("SELECT version FROM puzzle_corpora").fetchone()[0] == "old"
 
 
