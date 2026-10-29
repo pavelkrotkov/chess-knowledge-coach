@@ -7,6 +7,11 @@ legal witnesses against every legal defense, preserving the game history and
 draw rules. Proof is limited to three plies, 6,000 nodes and 100 replies.
 Unsupported, incomplete and exhausted searches remain unknown.
 
+Each pipeline run limits back-rank attempts to the configured
+`mate_max_decisions` value. Replays and failed attempts count toward that limit;
+the report includes both the attempted count and the limit. When capped, the
+cursor resumes with the next unattempted position on a later run.
+
 Defensive comparisons enumerate legal learner moves and every immediate reply
 under a shared 6,000-node budget. An alternative is prepared only when no
 immediate checkmate of any kind follows. An opponent-turn geometry probe only

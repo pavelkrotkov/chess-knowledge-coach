@@ -4,6 +4,7 @@ from .back_rank_auto import process_decision
 
 
 def process(db, position_id, learner, report):
+    report["attempted"] += 1
     try:
         result = process_decision(db, position_id, learner)
     except Exception:

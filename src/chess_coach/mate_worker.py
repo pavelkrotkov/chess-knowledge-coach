@@ -3,7 +3,7 @@
 from .back_rank_worker_item import process as process_back_rank
 from .mate_auto import process_decision
 from .mate_worker_cursor import POLICY, scan
-from .mate_worker_report import finish, initial
+from .mate_worker_report import capped, finish, initial
 from .material_context import NotLearnerDecision
 from .pipeline_cursor import save_cursor
 
@@ -15,7 +15,7 @@ def process_mates(db, config):
     report["status"] = "complete"
     key, rows = scan(db, config.learner, config.mate_max_scan)
     for row in rows[: config.mate_max_scan]:
-        if report["processed"] >= config.mate_max_decisions:
+        if capped(report):
             report["capped"] = True
             break
         report["examined"] += 1
