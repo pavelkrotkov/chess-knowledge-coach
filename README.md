@@ -728,6 +728,7 @@ judgments; a sample direction requires five opportunities across three games.
 Game outcomes and same-search score gaps are shown separately and cannot prove
 that a choice caused the result. Missing or incomplete comparisons never become
 preference evidence. Other style dimensions remain planned.
+
 ## Provisional material observations
 
 The automatic worker separately scans up to 40 recorded positions and verifies
