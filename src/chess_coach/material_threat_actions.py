@@ -1,26 +1,25 @@
-"""Classify candidate capture threats in a validated hypothetical position."""
+"""Classify candidate capture threats by the piece they target."""
 
 import chess
 
+from .material_check_proof import checking_capture
 from .material_exchange import exchange
 from .material_exchange_rules import has_legal_recapture
 
 
 def collect(probe):
     targets = {}
-    ambiguous = any(
-        not probe.is_capture(move) and probe.gives_check(move) for move in probe.legal_moves
-    )
+    uncertain = {}
     for move in probe.generate_pseudo_legal_captures():
         target = probe.piece_at(move.to_square)
         if not _supported_target(target):
             continue
         value = _gain(probe, move)
         if value is None:
-            ambiguous = True
+            uncertain.setdefault(move.to_square, []).append(move.uci())
         elif value >= 3:
             targets.setdefault(move.to_square, []).append(move.uci())
-    return {"targets": targets, "ambiguous": ambiguous}
+    return {"targets": targets, "uncertain": uncertain}
 
 
 def _supported_target(target):
@@ -28,6 +27,11 @@ def _supported_target(target):
 
 
 def _gain(probe, move):
-    if move not in probe.legal_moves or has_legal_recapture(probe, move):
+    if move not in probe.legal_moves:
+        return None
+    if probe.gives_check(move):
+        proof = checking_capture(probe, move)
+        return proof["minimum_gain"] if proof else None
+    if has_legal_recapture(probe, move):
         return None
     return exchange(probe, move)

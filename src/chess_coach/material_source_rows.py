@@ -48,8 +48,8 @@ def alternatives(connection, attempt_id):
 def completed(row):
     if (
         row
-        and row["job_status"] == "complete"
-        and row["attempt_status"] == "complete"
+        and row["job_status"] in {"complete", "insufficient"}
+        and row["attempt_status"] in {"complete", "insufficient"}
         and row["analysis_run_id"] is not None
     ):
         return row

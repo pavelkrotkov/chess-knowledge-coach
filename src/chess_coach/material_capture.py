@@ -10,12 +10,12 @@ from .material_lines import continuation
 
 def capture_observation(board, candidate, actual, best_line, played_line):
     target = board.piece_at(candidate.to_square)
-    gain, reason = capture_gain(board, candidate, target)
+    gain, reason, check_proof = capture_gain(board, candidate, target)
     if reason:
         return ambiguous("material_capture", reason)
+    played_pv = continuation(board, played_line, actual.uci(), allow_checks=actual == candidate)
     best_pv = continuation(board, best_line)
-    played_pv = continuation(board, played_line, actual.uci())
-    if best_pv is None or played_pv is None:
+    if played_pv is None or (actual != candidate and best_pv is None):
         return ambiguous("material_capture", "continuation_unavailable")
     reason = conflict(board, candidate, actual, best_line, played_line, best_pv, played_pv)
     if reason:
@@ -26,7 +26,12 @@ def capture_observation(board, candidate, actual, best_line, played_line):
         "target": chess.square_name(candidate.to_square),
         "target_piece": chess.piece_name(target.piece_type),
         "exchange_gain": gain,
+        "checking_reply_proof": check_proof,
         "best": best_pv,
         "played": played_pv,
-        "boundary": "legal recaptures on target square and recorded short engine lines only",
+        "boundary": (
+            "all legal check evasions and recorded short engine lines only"
+            if check_proof
+            else "bounded legal immediate replies and recorded short engine lines only"
+        ),
     }

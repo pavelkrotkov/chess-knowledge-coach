@@ -26,7 +26,7 @@ def prepare(db, position_id, learner):
     cheap = source_snapshot(db, game_id, learner)
     board = decision_board(db, position)
     analysis = inspect_decision(db, position_id, run_id=cheap["cheap_run_id"], learner=learner)
-    best, played, provenance = current_lines(analysis, cheap["cheap_run_id"])
+    best, played, provenance = current_lines(db, analysis, cheap["cheap_run_id"], board)
     if source_marker(db, position_id, game_id, learner) != marker:
         raise ValueError("source changed during preparation")
     return {

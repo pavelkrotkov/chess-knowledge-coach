@@ -16,6 +16,8 @@ def assess(board, candidate, best_pv, played_pv):
         return ambiguous("material_protection", "protected_piece_unavailable")
     if target not in following["targets"] and before["targets"]:
         outcome = "success" if played_pv["material_delta"] >= 0 else "ambiguous"
+    elif best_pv is None:
+        return ambiguous("material_protection", "continuation_unavailable")
     else:
         outcome = _loss_outcome(target, following, best_pv, played_pv)
     return {

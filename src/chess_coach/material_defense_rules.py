@@ -1,12 +1,16 @@
-"""Resolve the target and reject ambiguous pre-move threats."""
+"""Resolve the target and validate ordinary moves that remove its attacker."""
 
 
 def before_reason(before):
     if before is None:
         return "invalid_hypothetical_probe"
-    if before["ambiguous"]:
+    if len(before["targets"]) > 1:
+        return "multiple_material_threats"
+    if not before["targets"] and before["uncertain"]:
         return "illegal_or_unresolved_attack"
-    return "multiple_material_threats" if len(before["targets"]) > 1 else None
+    if before["targets"] and next(iter(before["targets"])) in before["uncertain"]:
+        return "illegal_or_unresolved_attack"
+    return None
 
 
 def target(before, following, move):

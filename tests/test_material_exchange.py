@@ -140,3 +140,121 @@ def test_preventable_loss_requires_a_concrete_verified_defense():
     played = line(["a2a3", "c5d4"])
     result = material_observation(board, "a2a3", best, played)
     assert result["outcome"] == "ambiguous" and result["reason"] == "alternative_defense_unverified"
+
+
+def test_played_capture_succeeds_with_unavailable_best_line():
+    from chess_coach.material_observation import material_observation
+
+    board = chess.Board("4k3/8/8/8/3q4/8/8/3RK3 w - - 0 1")
+    played = line(["d1d4", "e8f8"])
+    result = material_observation(board, "d1d4", {"status": "unavailable"}, played)
+    assert result["kind"] == "material_capture" and result["outcome"] == "success"
+    assert result["best"] is None and result["played"]["san"][0] == "Rxd4"
+
+
+def test_capture_of_attacker_can_protect_own_piece_without_best_line():
+    from chess_coach.material_observation import material_observation
+
+    board = chess.Board("4k3/8/8/2b5/1P1R4/8/8/7K w - - 0 1")
+    played = line(["b4c5", "e8f8"])
+    result = material_observation(board, "b4c5", {"status": "unavailable"}, played)
+    assert result["kind"] == "material_protection" and result["outcome"] == "success"
+    assert result["target"] == "d4" and result["best"] is None
+
+
+def test_checking_capture_requires_all_legal_evasions_to_preserve_material():
+    from chess_coach.material_observation import material_observation
+
+    board = chess.Board("3k4/7p/8/8/3q4/8/P7/3R3K w - - 0 1")
+    assert board.is_valid()
+    played = line(["d1d4", "d8c7"])
+    result = material_observation(board, "d1d4", {"status": "unavailable"}, played)
+    assert result["outcome"] == "success"
+    assert result["checking_reply_proof"]["legal_replies"] > 1
+    assert result["checking_reply_proof"]["minimum_gain"] >= 3
+    defended = chess.Board("3k4/7p/8/2b5/3q4/8/P7/3R3K w - - 0 1")
+    assert defended.is_valid()
+    result = material_observation(defended, "d1d4", {"status": "unavailable"}, played)
+    assert result["outcome"] == "ambiguous"
+
+
+def test_quiet_protection_succeeds_with_unavailable_best_line():
+    from chess_coach.material_observation import material_observation
+
+    board = chess.Board("4k3/8/8/2b5/3R4/8/P7/7K w - - 0 1")
+    played = line(["d4d5", "e8f8"])
+    result = material_observation(board, "d4d5", {"status": "unavailable"}, played)
+    assert result["kind"] == "material_protection" and result["outcome"] == "success"
+    assert result["best"] is None
+
+
+def test_unrelated_uncertain_target_does_not_veto_a_proven_target():
+    from chess_coach.material_defense_rules import before_reason
+
+    threatened = chess.D4
+    other = chess.H4
+    before = {"targets": {threatened: ["c5d4"]}, "uncertain": {other: ["g5h4"]}}
+    assert before_reason(before) is None
+    before["uncertain"][threatened] = ["e5d4"]
+    assert before_reason(before) == "illegal_or_unresolved_attack"
+
+
+def test_checking_capture_is_ambiguous_if_an_unplayed_evasion_recaptures():
+    from chess_coach.material_check_proof import checking_capture
+    from chess_coach.material_observation import material_observation
+
+    board = chess.Board("3k4/7p/8/2b5/3q4/8/P7/3R3K w - - 0 1")
+    move = chess.Move.from_uci("d1d4")
+    after = board.copy()
+    after.push(move)
+    assert chess.Move.from_uci("c5d4") in after.legal_moves
+    assert checking_capture(board, move) is None
+    played = line(["d1d4", "d8c7"])
+    result = material_observation(board, "d1d4", {"status": "unavailable"}, played)
+    assert result["outcome"] == "ambiguous" and result["reason"] == "checking_capture_unresolved"
+
+
+def test_unplayed_reply_capturing_different_material_prevents_decisive_claim():
+    from chess_coach.material_observation import material_observation
+
+    board = chess.Board("r3k3/8/8/8/3q4/8/Q7/3R3K w - - 0 1")
+    assert board.is_valid()
+    move = chess.Move.from_uci("d1d4")
+    after = board.copy()
+    after.push(move)
+    assert chess.Move.from_uci("a8a2") in after.legal_moves
+    played = line(["d1d4", "e8f8"])
+    result = material_observation(board, "d1d4", {"status": "unavailable"}, played)
+    assert result["outcome"] == "ambiguous"
+    assert result["reason"] == "continuation_or_forcing_reply"
+
+
+def test_protection_from_checking_material_threat_requires_all_evasions():
+    from chess_coach.material_observation import material_observation
+    from chess_coach.material_threats import threats
+
+    board = chess.Board("3r4/p6k/5B2/3Q4/8/8/7P/3K4 w - - 0 1")
+    assert board.is_valid()
+    before = threats(board, hypothetical=True)
+    assert before is not None and chess.D5 in before["targets"]
+    played = line(["f6d8", "h7h6"])
+    result = material_observation(board, "f6d8", {"status": "unavailable"}, played)
+    assert result["kind"] == "material_protection" and result["outcome"] == "success"
+
+
+def test_protection_that_exposes_new_material_remains_ambiguous():
+    from chess_coach.material_observation import material_observation
+
+    board = chess.Board("3r4/p6k/R4B2/3Q4/8/8/7P/3K4 w - - 0 1")
+    assert board.is_valid()
+    played = line(["a6d6", "a7a6"])
+    result = material_observation(board, "a6d6", {"status": "unavailable"}, played)
+    assert result["outcome"] == "ambiguous" and result["reason"] == "new_material_threat"
+
+
+def test_immediate_reply_budget_exhaustion_fails_closed(monkeypatch):
+    from chess_coach import material_reply_guard
+
+    board = chess.Board("4k3/8/8/8/3q4/8/8/3RK3 w - - 0 1")
+    monkeypatch.setattr(material_reply_guard, "MAX_REPLIES", 0)
+    assert material_reply_guard.unresolved_reply(board, chess.Move.from_uci("d1d4"))

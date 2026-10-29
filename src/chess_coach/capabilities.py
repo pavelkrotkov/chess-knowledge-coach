@@ -67,7 +67,7 @@ CAPABILITIES = (
         "area": "Skill coverage",
         "name": "Bounded material observations",
         "status": "observation-only",
-        "details": "Legal direct non-pawn captures and immediate protection use bounded exchange and current engine lines. Checks, en passant, promotions, uncertain replies and compensation remain ambiguous. Independent validation is required before mastery eligibility.",
+        "details": "Direct non-pawn captures and target-specific protection use bounded legal replies and current engine lines. Checking captures require every legal evasion to pass; unresolved checks, en passant, promotions and compensation remain ambiguous. Independent validation is required before mastery eligibility.",
     },
     {
         "id": "manual_deep_selection",

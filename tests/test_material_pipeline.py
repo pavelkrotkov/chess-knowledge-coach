@@ -56,7 +56,7 @@ class Engine:
         pass
 
 
-def make_game(path, monkeypatch, *, timed=True):
+def make_game(path, monkeypatch, *, timed=True, played="e1f1"):
     board = chess.Board("4k3/8/8/8/3q4/8/8/3RK3 w - - 0 1")
     game = chess.pgn.Game()
     game.setup(board)
@@ -66,8 +66,8 @@ def make_game(path, monkeypatch, *, timed=True):
     if timed:
         game.headers["UTCDate"] = "2026.01.01"
         game.headers["UTCTime"] = "12:00:00"
-    node = game.add_variation(board.parse_uci("e1f1"))
-    board.push_uci("e1f1")
+    node = game.add_variation(board.parse_uci(played))
+    board.push_uci(played)
     node.add_variation(board.parse_uci("e8f8"))
     db = Database(path)
     db.initialize()
@@ -248,10 +248,46 @@ def test_automatic_worker_records_provisional_material_and_browser_explains(tmp_
     assert b"tested best continuation captures material" in page.data
     assert b"Rxd4" in page.data and b"awaiting independent validation" in page.data
     assert b"Pawn captures" in page.data and b"en passant" in page.data
+    assert b"Material source: current" in page.data
     assert inspect_evidence(db, evidence_id)["review_status"] == "unreviewed"
     process_pipeline(db, config, transport=network)
     replay = process_pipeline(db, config, transport=network)
     assert replay["material"]["replayed"] == 1 and len(calls) == 1
+
+
+def test_material_evidence_page_labels_stale_source_as_historical(tmp_path, monkeypatch):
+    from chess_coach.web import create_app
+
+    path = tmp_path / "stale-view.sqlite"
+    db = make_game(path, monkeypatch)
+    created = process_decision(db, 1, LEARNER)
+    evidence_id = created["evidence_ids"][0]
+    app = create_app(
+        db_path=path,
+        subject=LEARNER,
+        actor="fixture_reviewer",
+        corpus="test",
+        login="fixture-login",
+        origin="https://coach.invalid",
+    )
+    client = app.test_client()
+    headers = {"Tailscale-User-Login": "fixture-login"}
+    initial = client.get(
+        f"/evidence/{evidence_id}", base_url="https://coach.invalid", headers=headers
+    )
+    assert b"Material source: current" in initial.data
+    db.connection.execute(
+        "UPDATE decision_analysis_lines SET score_value=score_value+1 WHERE position_id=1 AND role=?",
+        ("best",),
+    )
+    db.connection.commit()
+    stale = client.get(
+        f"/evidence/{evidence_id}", base_url="https://coach.invalid", headers=headers
+    )
+    assert b"Material source: stale" in stale.data and b"explanation is historical" in stale.data
+    assert b"tested best continuation captures material" not in stale.data
+    listing = client.get("/evidence", base_url="https://coach.invalid", headers=headers)
+    assert b"source currentness not checked here" in listing.data
 
 
 def test_old_source_reactivation_creates_new_lineage_then_replays(tmp_path, monkeypatch):
@@ -591,3 +627,45 @@ def test_automatic_material_pass_consumes_current_deep_lineage(tmp_path, monkeyp
     evidence = inspect_evidence(db, row["id"])
     assert evidence["context"]["provenance"]["kind"] == "deep"
     assert evidence["review_status"] == "unreviewed"
+
+
+def test_current_incomplete_deep_attempt_can_prove_only_its_valid_played_line(
+    tmp_path, monkeypatch
+):
+    from chess_coach.deep_execution_config import DeepOptions
+    from chess_coach.deep_execution_worker import run_deep
+    from chess_coach.deep_selection import select_deep
+
+    db = make_game(tmp_path / "partial-deep.sqlite", monkeypatch, played="d1d4")
+    selected = select_deep(db, [1], learner=LEARNER, per_game=1, total=1)
+    selection_id = selected["games"][0]["selection_id"]
+
+    class Partial(Engine):
+        def analyse(self, board, limit, multipv, root_moves=None):
+            root = root_moves[0] if root_moves else chess.Move.from_uci("d1d4")
+            info = {
+                "pv": [root, chess.Move.from_uci("e8f8")],
+                "nodes": 100,
+                "depth": 5,
+                "time": 0.01,
+            }
+            if root_moves:
+                info["score"] = chess.engine.PovScore(chess.engine.Cp(500), board.turn)
+            return [info]
+
+    monkeypatch.setattr(chess.engine.SimpleEngine, "popen_uci", lambda _, timeout: Partial())
+    report = run_deep(
+        db,
+        selection_id,
+        learner=LEARNER,
+        options=DeepOptions(engine_path=sys.executable, nodes=1000, seconds=0.5, max_jobs=1),
+    )
+    assert report["processed"][0]["status"] == "insufficient"
+    prepared = prepare(db, 1, LEARNER)
+    assert prepared["provenance"]["kind"] == "deep"
+    assert prepared["provenance"]["qualified_roles"] == ["played"] and prepared["best"] is None
+    result = process_decision(db, 1, LEARNER)
+    assert result["outcome"] == "success"
+    evidence = inspect_evidence(db, result["evidence_ids"][0])
+    assert evidence["context"]["provenance"]["job_status"] == "insufficient"
+    assert evidence["context"]["material_observation"]["best"] is None

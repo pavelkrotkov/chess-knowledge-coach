@@ -18,7 +18,7 @@ def explain_material(context):
         "boundary": fact.get("boundary")
         or "The current inputs do not establish a bounded outcome.",
         "qualification": "These are short bounded observations, not proof against all tactics or compensation. They do not establish intent or mastery and are awaiting independent validation.",
-        "exclusions": "Pawn captures, checks, en passant, promotion, recaptures, sacrifices and unresolved lines are outside coverage or ambiguous.",
+        "exclusions": "Pawn captures, en passant, promotion, recaptures, sacrifices and unresolved checks or lines are outside coverage or ambiguous. A checking capture requires every legal evasion to pass the bounded proof.",
     }
 
 

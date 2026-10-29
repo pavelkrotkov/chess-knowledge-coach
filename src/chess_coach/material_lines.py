@@ -1,6 +1,8 @@
 """Replay short verified continuations and measure their concrete material change."""
 
-from .material_line_rules import eligible_moves, valid_end, valid_start, valid_step
+from .material_line_positions import valid_start
+from .material_line_replay import replay_line
+from .material_line_rules import eligible_moves
 from .material_values import VALUES
 
 
@@ -11,26 +13,16 @@ def material(board, color):
     )
 
 
-def continuation(board, line, expected=None):
-    moves = eligible_moves(line, expected)
+def continuation(board, line, expected=None, *, allow_checks=False):
+    moves = eligible_moves(line, expected, allow_checks=allow_checks)
     if moves is None or not valid_start(board):
         return None
-    replay = board.copy()
-    initial = material(replay, replay.turn)
-    color = replay.turn
-    san = []
-    for text in moves:
-        try:
-            move = replay.parse_uci(text)
-        except ValueError:
-            return None
-        if not valid_step(replay, move):
-            return None
-        san.append(replay.san(move))
-        replay.push(move)
-        if not valid_end(replay):
-            return None
-    return {"uci": moves, "san": san, "material_delta": material(replay, color) - initial}
+    initial = material(board, board.turn)
+    result = replay_line(board, moves, allow_checks=allow_checks)
+    if result is None:
+        return None
+    replay, used, san = result
+    return {"uci": used, "san": san, "material_delta": material(replay, board.turn) - initial}
 
 
 def unopposed_material_loss(best_line, played_line):

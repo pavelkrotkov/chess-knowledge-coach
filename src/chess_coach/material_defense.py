@@ -11,9 +11,9 @@ def defense_observation(board, played, best_line, played_line):
     probe = candidate(board, played)
     if probe is None or "outcome" in probe:
         return probe
+    played_pv = continuation(board, played_line, played, allow_checks=True)
     best_pv = continuation(board, best_line)
-    played_pv = continuation(board, played_line, played)
-    if best_pv is None or played_pv is None:
+    if played_pv is None:
         return ambiguous("material_protection", "continuation_unavailable")
     outcome = assess(board, probe, best_pv, played_pv)
     reason = _failure_reason(outcome, board, probe, best_pv, best_line, played_line)
