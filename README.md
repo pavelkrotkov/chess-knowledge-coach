@@ -828,8 +828,11 @@ not exhaustively proven. A missed fork additionally requires legal source lines,
 a concrete material comparison and a score veto; a score gap alone never
 creates an outcome. Capturing fork moves, mate-only consequences, promotions,
 recaptures, unresolved checks, sacrifices and counterplay are outside scope or
-ambiguous. Evidence starts unreviewed and fork mastery and exercise access remain
-closed pending separate independent validation. The browser shows source
+ambiguous. Evidence starts unreviewed. Independently qualified version 1.0.1
+pawn and knight noncapturing execute successes and failures may contribute to
+mastery only after explicit review and current source checks. Other game-derived
+fork evidence remains readable as history but is not mastery-eligible. Fork
+exercise access remains closed. The browser shows source
 currentness and a representative legal line; stale evidence is historical.
 
 The initial development smoke checks used synthetic mirrored positions with

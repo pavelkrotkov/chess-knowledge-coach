@@ -24,7 +24,7 @@ COVERAGE: dict[str, dict[str, Any]] = {
     "fork": {
         "capabilities": ["tactical_geometry", "fork_opportunities"],
         "detector": "chess_coach.fork_observation.observe",
-        "limits": "Bounded material forks are provisional and remain ineligible pending independent validation.",
+        "limits": "Version 1.0.1 pawn and knight noncapturing execute observations may qualify for mastery after review and current source checks; broader fork mastery and practice remain unsupported.",
     },
     "hanging_piece": {
         "capabilities": ["tactical_geometry", "material_opportunities"],
