@@ -17,6 +17,18 @@ def existing_projection(connection):
     return True
 
 
+def ingest_projection_available(connection):
+    version = connection.execute("PRAGMA user_version").fetchone()[0]
+    present = existing_projection(connection)
+    if version < 28:
+        if present:
+            raise RuntimeError("style time projection exists under legacy schema")
+        return False
+    if version != 28 or not present:
+        raise RuntimeError("unsupported or missing style time projection")
+    return True
+
+
 def add_style_game_times(connection):
     if existing_projection(connection):
         return
