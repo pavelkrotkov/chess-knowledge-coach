@@ -175,16 +175,16 @@ def test_owned_queenless_choice_reaches_cli_and_private_browser(tmp_path, monkey
 
     use_engine(monkeypatch, Engine(db))
     run_deep(db, selection_id, learner=LEARNER, options=options(multipv=2, max_jobs=20))
-    from chess_coach import style_history
+    from chess_coach import preview_history
 
-    replay = style_history.decisions
+    replay = preview_history.decision_context_boards
     calls = []
 
-    def counted(*args):
+    def counted(*args, **kwargs):
         calls.append(1)
-        return replay(*args)
+        return replay(*args, **kwargs)
 
-    monkeypatch.setattr(style_history, "decisions", counted)
+    monkeypatch.setattr(preview_history, "decision_context_boards", counted)
     started = time.perf_counter()
     report = style_report(db, LEARNER)
     elapsed = time.perf_counter() - started

@@ -38,6 +38,7 @@ def prepare(db, learner, games):
         "protection_checks": {},
         "protection_seen": set(),
         "protection_requests": set(),
+        "protection_sources": {},
         "observations": [],
     }
 

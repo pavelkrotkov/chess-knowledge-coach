@@ -78,7 +78,103 @@ def test_current_source_and_purpose_comparison_contribute_one_protection_vote(
 
         from chess_coach.cli import main
         from chess_coach.evidence_review import review_evidence
+        from chess_coach.style_protection_schedule_schema import STATEMENTS
         from tests.purpose_browser_fixtures import app, browser_get
+
+        latest = db.connection.execute(
+            """SELECT p.id,p.binding_json FROM style_protection_allocations p
+            JOIN style_schedule_cycles c ON c.id=p.cycle_id ORDER BY c.sequence DESC LIMIT 1"""
+        ).fetchone()
+        for allocation_status in ("interrupted", "insufficient", "stale"):
+            db.connection.execute("SAVEPOINT incomplete")
+            db.connection.execute(
+                "UPDATE style_protection_allocations SET status=? WHERE id=?",
+                (allocation_status, latest["id"]),
+            )
+            incomplete = style_report(db, learner)
+            assert incomplete["dimensions"]["protect_move_target"]["opportunities"] == 1
+            assert incomplete["purpose_coverage"]["counts"][f"protection_{allocation_status}"] == 1
+            assert (
+                incomplete["protection_coverage"]["used"] == report["protection_coverage"]["used"]
+            )
+            db.connection.execute("ROLLBACK TO incomplete")
+            db.connection.execute("RELEASE incomplete")
+
+        other_slot = db.connection.execute(
+            "SELECT id FROM style_schedule_slots ORDER BY id DESC LIMIT 1"
+        ).fetchone()[0]
+        db.connection.execute("SAVEPOINT wrong_slot")
+        db.connection.execute("DROP TRIGGER style_protection_identity")
+        db.connection.execute(
+            "UPDATE style_protection_allocations SET slot_id=? WHERE id=?",
+            (other_slot, latest["id"]),
+        )
+        db.connection.execute(STATEMENTS["style_protection_identity"])
+        unlinked = style_report(db, learner)
+        assert unlinked["dimensions"]["protect_move_target"]["opportunities"] == 1
+        assert unlinked["purpose_coverage"]["counts"]["protection_unknown"] == 1
+        assert unlinked["protection_coverage"]["used"] == report["protection_coverage"]["used"]
+        db.connection.execute("ROLLBACK TO wrong_slot")
+        db.connection.execute("RELEASE wrong_slot")
+
+        wrong_binding = json.loads(latest["binding_json"])
+        wrong_binding["source_contract"] = "synthetic-wrong-version"
+        db.connection.execute("SAVEPOINT wrong_binding")
+        db.connection.execute("DROP TRIGGER style_protection_identity")
+        db.connection.execute(
+            "UPDATE style_protection_allocations SET binding_json=? WHERE id=?",
+            (json.dumps(wrong_binding), latest["id"]),
+        )
+        db.connection.execute(STATEMENTS["style_protection_identity"])
+        bound = style_report(db, learner)
+        assert bound["dimensions"]["protect_move_target"]["opportunities"] == 1
+        assert bound["purpose_coverage"]["counts"]["protection_original_source_changed"] == 1
+        assert bound["protection_coverage"]["used"] == report["protection_coverage"]["used"]
+        db.connection.execute("ROLLBACK TO wrong_binding")
+        db.connection.execute("RELEASE wrong_binding")
+
+        older = db.connection.execute(
+            """SELECT p.id FROM style_protection_allocations p
+            JOIN style_schedule_cycles c ON c.id=p.cycle_id ORDER BY c.sequence LIMIT 1"""
+        ).fetchone()[0]
+        db.connection.execute("SAVEPOINT invalid_older")
+        db.connection.execute("DROP TRIGGER style_protection_identity")
+        db.connection.execute(
+            "UPDATE style_protection_allocations SET binding_json=? WHERE id=?",
+            (json.dumps(wrong_binding), older),
+        )
+        db.connection.execute(STATEMENTS["style_protection_identity"])
+        invalid_older = style_report(db, learner)
+        assert invalid_older["dimensions"]["protect_move_target"]["opportunities"] == 1
+        assert (
+            invalid_older["purpose_coverage"]["counts"]["protection_original_source_changed"] == 1
+        )
+        assert invalid_older["purpose_coverage"]["counts"]["protection_duplicate"] == 0
+        assert invalid_older["protection_coverage"]["used"] == report["protection_coverage"]["used"]
+        db.connection.execute("ROLLBACK TO invalid_older")
+        db.connection.execute("RELEASE invalid_older")
+
+        from chess_coach.ingest import ingest_pgn
+        from tests.test_style_schedule import CONTROL
+
+        ingest_pgn(db, CONTROL.replace("2026.01.01", "2026.03.01"))
+        other_game = db.connection.execute("SELECT MAX(id) FROM games").fetchone()[0]
+        other_position = db.connection.execute(
+            "SELECT id FROM positions WHERE game_id=? AND ply=2", (other_game,)
+        ).fetchone()[0]
+        db.connection.execute("SAVEPOINT wrong_game")
+        db.connection.execute("DROP TRIGGER style_protection_identity")
+        db.connection.execute(
+            "UPDATE style_protection_allocations SET game_id=?,position_id=? WHERE id=?",
+            (other_game, other_position, latest["id"]),
+        )
+        db.connection.execute(STATEMENTS["style_protection_identity"])
+        crosslinked = style_report(db, learner)
+        assert crosslinked["dimensions"]["protect_move_target"]["opportunities"] == 1
+        assert crosslinked["purpose_coverage"]["counts"]["protection_source_unknown"] == 1
+        assert crosslinked["protection_coverage"]["used"] == report["protection_coverage"]["used"]
+        db.connection.execute("ROLLBACK TO wrong_game")
+        db.connection.execute("RELEASE wrong_game")
 
         monkeypatch.setattr(
             sys,
@@ -138,7 +234,7 @@ def test_current_source_and_purpose_comparison_contribute_one_protection_vote(
             == 0
         )
         monkeypatch.setattr(collector, "selection", lambda *_args: None)
-        import chess_coach.style_protection_purpose_source as source_module
+        import chess_coach.style_protection_purpose_cache as source_module
         from chess_coach.db import Database
 
         db.connection.commit()
@@ -235,9 +331,21 @@ def test_current_original_proof_remains_separate_from_unsupported_comparison(mon
         "counts": Counter(),
         "protection_checks": {},
         "protection_seen": set(),
+        "protection_requests": set(),
+        "protection_sources": {},
         "observations": [],
     }
-    evaluator.evaluate(None, "synthetic", {"id": 3}, {}, {}, state, {}, {}, None)
+    evaluator.evaluate(
+        None,
+        "synthetic",
+        {"id": 3, "request_id": 9, "game_id": 1, "position_id": 2},
+        {},
+        {},
+        state,
+        {},
+        {},
+        None,
+    )
     assert state["protection_checks"][3]["source_state"] == "current"
     assert state["protection_checks"][3]["comparison_state"] == "unsupported"
     assert state["counts"]["protection_unsupported"] == 1

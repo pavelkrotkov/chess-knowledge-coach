@@ -9,18 +9,20 @@ from .style_protection_purpose_source import inspect
 from .style_protection_schedule_status_fields import provenance
 
 
-def observation(db, learner, context, slot, snapshot, view, budget, history):
+def observation(db, learner, context, slot, snapshot, view, budget, history, cache, duplicate):
     state, compared = comparison(context, snapshot, view)
     if compared is None:
         return state, None, False
     before = budget["skipped"]
     budget["considered"] += 1
     proofs, state = inspect(
-        db, learner, context, snapshot["board"], compared, slot, budget, history
+        db, learner, context, snapshot["board"], compared, slot, budget, history, cache, duplicate
     )
+    if state == "duplicate":
+        return "duplicate", None, True
     if budget["skipped"] > before:
         budget["skipped_decisions"] += 1
-    if not proofs or any(item["status"] != "supported" for item in proofs.values()):
+    if not _supported(proofs):
         budget["unsupported"] += 1
         return state if state != "current" else "unsupported", None, state == "current"
     budget["completed"] += 1
@@ -28,6 +30,10 @@ def observation(db, learner, context, slot, snapshot, view, budget, history):
         pair["played"]["protection"] = proofs[compared["played"]["root_move"]]
         pair["alternative"]["protection"] = proofs[pair["alternative_line"]["root_move"]]
     return "comparable", _item(db, context, slot, snapshot, view, compared), True
+
+
+def _supported(proofs):
+    return bool(proofs) and all(item["status"] == "supported" for item in proofs.values())
 
 
 def _item(db, context, slot, snapshot, view, compared):

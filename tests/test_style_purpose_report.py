@@ -119,7 +119,7 @@ def test_changed_policy_makes_purpose_result_unknown(tmp_path, monkeypatch):
         item for item in report["observations"] if item.get("provenance") == "purpose_candidate_set"
     ]
     assert report["purpose_coverage"]["counts"]["target_stale"] == 1
-    assert report["purpose_schedule"]["slots"][0]["source_state"] == "unavailable"
+    assert report["purpose_schedule"]["slots"][0]["source_state"] == "stale"
 
 
 def test_duplicate_purpose_slots_count_one_vote(tmp_path, monkeypatch):
