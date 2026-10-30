@@ -578,3 +578,139 @@ def test_exhausted_budget_stops_candidate_processing(monkeypatch):
 
     monkeypatch.setattr(related_pin_match, "_candidate", unexpected)
     assert related_pin_match.scorer(budget)({}, {}, set(), None) is None
+
+
+def _long_candidate(source):
+    import random
+
+    for branch in source["provenance"]["pin_certificate"]["branches"]:
+        if branch["mate"]:
+            continue
+        sample = dict(source)
+        creation = source["provenance"]["pin_certificate"]["move"]
+        sample["lines"] = [" ".join((creation, branch["reply"], branch["capture"]))]
+        fen, initial = _candidate(sample)
+        for seed in range(20):
+            rng = random.Random(seed)
+            board = chess.Board(fen)
+            words = initial.split()
+            for move in words:
+                board.push_uci(move)
+            while len(words) < 66:
+                choices = list(board.legal_moves)
+                rng.shuffle(choices)
+                for move in choices:
+                    board.push(move)
+                    if not board.is_game_over(claim_draw=True):
+                        words.append(move.uci())
+                        break
+                    board.pop()
+                else:
+                    break
+            if len(words) == 66:
+                return fen, words
+    raise AssertionError("no long synthetic pin witness")
+
+
+@pytest.mark.parametrize(
+    "source_kind,length,accepted",
+    [("corpus", 64, True), ("corpus", 66, False), ("public", 64, True), ("public", 65, False)],
+)
+def test_transfer_source_length_bound_matches_session_admission(
+    tmp_path, monkeypatch, source_kind, length, accepted
+):
+    from chess_coach import related_pin_certificate
+    from chess_coach.unified_sources import resolve_source
+
+    db, evidence = owned_pin(tmp_path / "boundary.sqlite", monkeypatch, relative=True)
+    source = source_for_evidence(db, SUBJECT, evidence)
+    fen, full = _long_candidate(source)
+    board = chess.Board(fen)
+    board.push_uci(full[0])
+    db.connection.execute(
+        "INSERT INTO puzzle_corpora(version,source,checksum,state) VALUES('test','fixture','checksum','staging')"
+    )
+    corpus = db.connection.execute("SELECT id FROM puzzle_corpora WHERE version='test'").fetchone()[
+        0
+    ]
+    if source_kind == "corpus":
+        db.connection.execute(
+            """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,rating_deviation,themes_json,objective)
+            VALUES('boundary',?,?,'https://example.invalid',?,1200,80,'[]','unknown')""",
+            (corpus, fen, " ".join(full[:length])),
+        )
+        db.connection.execute(
+            "INSERT INTO puzzle_themes VALUES(?,?,'pin',1200)", (corpus, "boundary")
+        )
+        version, key = "test", "boundary"
+    else:
+        db.connection.execute("""INSERT INTO public_collections(version,source_url,source_revision,source_sha256,
+            content_sha256,content_format,license,attribution,license_notice,accepted,excluded,state)
+            VALUES('public-boundary','https://example.invalid','v1','a','b','fen_csv','CC0-1.0','fixture','notice',1,0,'staging')""")
+        collection = db.connection.execute(
+            "SELECT id FROM public_collections WHERE version='public-boundary'"
+        ).fetchone()[0]
+        db.connection.execute(
+            "INSERT INTO public_tasks VALUES(?,?,?,?,?)",
+            (
+                collection,
+                "boundary",
+                board.fen(),
+                "legal_line",
+                json.dumps([" ".join(full[1 : length + 1])]),
+            ),
+        )
+        db.connection.execute(
+            "UPDATE public_collections SET state='ready' WHERE id=?", (collection,)
+        )
+        version, key = "public-boundary", "boundary"
+    db.connection.execute("UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus,))
+    db.connection.commit()
+    if not accepted:
+        monkeypatch.setattr(
+            related_pin_certificate, "proven", lambda *_: pytest.fail("oversize proof")
+        )
+    result = preview(db, SUBJECT, evidence, "test")
+    if accepted:
+        assert len(result["items"]) == 1
+        state = start_related(
+            db,
+            attempt_id="boundary",
+            subject=SUBJECT,
+            evidence_id=evidence,
+            corpus_version="test",
+            reference=result["items"][0]["reference"],
+        )
+        assert state["status"] == "active"
+    else:
+        assert result["items"] == [] and result["pin_scan"]["root_proofs"] == 0
+        with pytest.raises(ValueError):
+            resolve_source(db, source_kind, version, key, subject=SUBJECT)
+        with pytest.raises(ValueError):
+            start_related(
+                db,
+                attempt_id="boundary",
+                subject=SUBJECT,
+                evidence_id=evidence,
+                corpus_version="test",
+                reference="stale-reference",
+            )
+
+
+def test_old_selection_version_reference_is_rejected(tmp_path, monkeypatch):
+    from chess_coach import related_pin_contract
+
+    db, evidence, _, _ = fixture(tmp_path / "old-reference.sqlite", monkeypatch)
+    monkeypatch.setattr(related_pin_contract, "VERSION", "pin-execution-transfer-v1")
+    old_reference = preview(db, SUBJECT, evidence, "test")["items"][0]["reference"]
+    monkeypatch.setattr(related_pin_contract, "VERSION", "pin-execution-transfer-v2")
+    assert preview(db, SUBJECT, evidence, "test")["items"][0]["reference"] != old_reference
+    with pytest.raises(ValueError):
+        start_related(
+            db,
+            attempt_id="old",
+            subject=SUBJECT,
+            evidence_id=evidence,
+            corpus_version="test",
+            reference=old_reference,
+        )

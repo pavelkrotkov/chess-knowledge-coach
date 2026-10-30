@@ -5,7 +5,7 @@ import chess
 from .objective_promotion_source import decorate
 from .public_training_query import task as public_task
 from .public_training_validate import validate_task
-from .puzzle_session_validate import solution_moves, validate_line
+from .puzzle_session_validate import CORPUS_PLIES_LIMIT, solution_moves, validate_line
 
 
 def resolve_source(db, source_type, version, key, *, subject=None):
@@ -30,7 +30,7 @@ def _corpus(db, version, key):
     if row is None:
         raise ValueError("practice source is unavailable")
     moves = solution_moves(row["solution"])
-    if len(moves) > 65:
+    if len(moves) > CORPUS_PLIES_LIMIT:
         raise ValueError("practice line exceeds the supported bound")
     prompt = validate_line(row["fen"], row["solution"])
     line = " ".join(moves[1:])
