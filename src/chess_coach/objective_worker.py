@@ -3,10 +3,11 @@
 import time
 
 from .learner_identity import normalize_identity
-from .objective_fork_defense_budget import scope as fork_budget_scope
 from .objective_fork_defense_reporting import work_limit
+from .objective_pin_prevent_reporting import work_limit as pin_work_limit
 from .objective_publication import publish
 from .objective_verify import SECONDS, compute
+from .objective_work_scope import scope as work_scope
 
 
 def process(db, subject, *, limit=4, clock=time.monotonic, seconds=SECONDS, verifier=compute):
@@ -34,10 +35,11 @@ def process(db, subject, *, limit=4, clock=time.monotonic, seconds=SECONDS, veri
         "capped": capped,
     }
     result.update(work_limit(rows[:limit]))
+    result.update(pin_work_limit(rows[:limit]))
     return result
 
 
 def _process_one(db, row, clock, seconds, verifier):
-    with fork_budget_scope():
+    with work_scope(row):
         result = verifier(db, row, clock, seconds=seconds)
         return publish(db, row, result)

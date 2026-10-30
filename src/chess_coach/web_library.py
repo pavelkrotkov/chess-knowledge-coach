@@ -7,11 +7,13 @@ from .discovery_practice import list_candidates as discovery_candidates
 from .mate_practice import list_candidates as mate_candidates
 from .objective_capture_list import candidates as capture_candidates
 from .objective_defense_list import candidates as defense_candidates
+from .objective_fork_avoidance_list import candidates as fork_avoidance_candidates
 from .objective_fork_defense_list import candidates as fork_defense_candidates
 from .objective_fork_list import candidates as fork_candidates
 from .objective_mate_list import candidates as mate_one_candidates
 from .objective_pawn_contract import VERSION as PAWN_OBJECTIVE_VERSION
 from .objective_pin_list import candidates as pin_candidates
+from .objective_pin_prevent_list import candidates as pin_prevent_candidates
 from .objective_protection_list import candidates as protection_candidates
 from .objective_short_list import candidates as short_mate_candidates
 from .pawn_practice_list import list_candidates as list_pawn_candidates
@@ -37,7 +39,9 @@ def render_library():
         mate_one_game=mate_one_candidates(database(), current_app.config["SUBJECT"]),
         fork_game=fork_candidates(database(), current_app.config["SUBJECT"]),
         fork_defense_game=fork_defense_candidates(database(), current_app.config["SUBJECT"]),
+        fork_avoidance_game=fork_avoidance_candidates(database(), current_app.config["SUBJECT"]),
         pin_game=pin_candidates(database(), current_app.config["SUBJECT"]),
+        pin_prevent_game=pin_prevent_candidates(database(), current_app.config["SUBJECT"]),
         protection_game=protection_candidates(database(), current_app.config["SUBJECT"]),
         capture_game=capture_candidates(database(), current_app.config["SUBJECT"]),
         defense_game=defense_candidates(database(), current_app.config["SUBJECT"]),

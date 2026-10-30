@@ -4,28 +4,24 @@ from .fork_defense_safety import quiet_after, safe_material
 from .mate_proof_moves import immediate_mates
 from .material_ambiguity import ambiguous
 from .material_lines import continuation
-from .pin_scan import scan
+from .pin_defense_success_witness import witness
+
+MAX_ROOT_MOVES = 64
+MAX_COUNTERFACTUAL_ROOTS = 16
 
 
 def success(board, actual, played_line, played_after):
     moves = list(board.legal_moves)
-    if len(moves) > 64:
+    if len(moves) > MAX_ROOT_MOVES:
         return None
-    for move in moves[:16]:
+    for move in moves[:MAX_COUNTERFACTUAL_ROOTS]:
         if move == actual:
             continue
         after = quiet_after(board, move)
-        found = _witness(after)
+        found = witness(after)
         if found:
             return _assess(board, actual, move, played_line, played_after, found)
     return None
-
-
-def _witness(after):
-    if after is None:
-        return None
-    found = scan(after)
-    return found["proven"][0] if found and found["proven"] else None
 
 
 def _assess(board, actual, move, played_line, played_after, witness):
