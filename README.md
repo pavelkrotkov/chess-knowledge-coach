@@ -763,8 +763,13 @@ preference evidence. Other style dimensions remain planned.
 
 ## Provisional material observations
 
-The automatic worker separately scans up to 40 recorded positions and verifies
-at most four new learner decisions per invocation. It reuses only the current
+By default, each material-family worker scans up to 200 recorded positions and
+verifies at most 50 new learner decisions per invocation. The same limits also
+apply independently to fork, fork-defense, discovery, pin, pawn-structure,
+rook-plan and king-safety workers; their combined work can extend a cycle. The
+mate worker independently uses the same default scan and decision limits. Each
+short-mate proof is bounded to 6,000 nodes; back-rank attack and defense proofs
+each have their own 6,000-node bound. The material worker reuses only the current
 cheap checkpoint or individually verified lines from a current owned deep
 attempt and checks those inputs again before committing. An incomplete deep
 attempt can support only its independently valid played line; it is never

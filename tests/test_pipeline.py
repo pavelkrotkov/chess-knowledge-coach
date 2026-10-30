@@ -12,6 +12,7 @@ import chess.pgn
 import httpx
 import pytest
 
+from chess_coach.cli_parser import build_parser
 from chess_coach.db import Database
 from chess_coach.evidence_review import inspect_evidence, review_evidence
 from chess_coach.pipeline import process_pipeline
@@ -101,6 +102,11 @@ def evidence_ids(db, producer):
 
 def test_end_to_end_replay_review_and_version_changes(tmp_path, monkeypatch):
     db, config, network, calls = setup(tmp_path, monkeypatch)
+    args = build_parser().parse_args(["process-pipeline"])
+    for worker in ("mate", "material"):
+        for limit, expected in (("max_scan", 200), ("max_decisions", 50)):
+            name = f"{worker}_{limit}"
+            assert getattr(args, name) == getattr(config, name) == expected
     result = process_pipeline(db, config, transport=network)
     assert result["sync"]["games"] == 3 and len(result["games"]) == 3
     assert all(item["status"] == "partial" for item in result["games"])

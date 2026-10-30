@@ -40,11 +40,11 @@ class PipelineConfig:
     deep_seconds: float = 2.0
     deep_multipv: int = 3
     mate_enabled: bool = True
-    mate_max_scan: int = 40
-    mate_max_decisions: int = 4
+    mate_max_scan: int = 200
+    mate_max_decisions: int = 50
     material_enabled: bool = True
-    material_max_scan: int = 40
-    material_max_decisions: int = 4
+    material_max_scan: int = 200
+    material_max_decisions: int = 50
     pawn_enabled: bool = True
     pawn_max_scan: int = 40
     pawn_max_decisions: int = 4
