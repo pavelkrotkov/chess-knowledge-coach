@@ -3,9 +3,16 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.63.0"
+REGISTRY_VERSION = "1.64.0"
 
 CAPABILITIES = (
+    {
+        "id": "owned_anchored_fork_defense",
+        "area": "Training",
+        "name": "Owned anchored knight-fork defense",
+        "status": "observation-only",
+        "details": "Current owned pre-existing knight-fork observations can generate a queued bounded defense task. Unsupported moves and unresolved counterplay stay ungraded; results do not establish mastery or a game outcome.",
+    },
     {
         "id": "owned_pin_objectives",
         "area": "Training",

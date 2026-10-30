@@ -13,6 +13,10 @@ def add_fields(result, row):
     if row["objective"] == "execute_named_pin":
         for key in ("pin_attacker", "pin_pinned", "pin_rear", "pin_type"):
             result[key] = provenance[key]
+    if row["objective"] == "avoid_anchored_knight_fork":
+        result["fork_defense_attacker"] = provenance["fork_attacker"]
+        result["fork_defense_targets"] = provenance["fork_targets"]
+        result["source_outcome"] = provenance["source_outcome"]
     if row["objective"] == "execute_named_fork":
         add_fork_fields(result, provenance)
     if row["objective"] in {"capture_named_target", "protect_threatened_piece"}:

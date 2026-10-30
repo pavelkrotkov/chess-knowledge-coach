@@ -4,6 +4,8 @@ import json
 
 from .learner_identity import normalize_identity
 from .objective_current import current
+from .objective_fork_defense_budget import BudgetExceeded
+from .objective_fork_defense_publication import current_existing
 from .objective_verify import unresolved
 from .unified_session_state import now
 
@@ -13,10 +15,13 @@ def publish(db, request, result):
         db.connection.execute("BEGIN IMMEDIATE")
         existing = _existing(db, request)
         if existing is not None:
+            existing = current_existing(db, request, existing)
             db.connection.commit()
             return existing
         try:
             current(db, request)
+        except BudgetExceeded:
+            result = unresolved(request, "fork_proof_budget_exhausted")
         except (ValueError, KeyError, TypeError, IndexError):
             result = unresolved(request, "source_unavailable")
         _insert(db, request, result)

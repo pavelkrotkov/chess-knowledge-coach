@@ -7,6 +7,8 @@ from .objective_capture_judge import verify as verify_capture
 from .objective_defense_judge import verify as verify_defense
 from .objective_defense_source import OBJECTIVE as DEFENSE_OBJECTIVE
 from .objective_fork_contract import OBJECTIVE as FORK_OBJECTIVE
+from .objective_fork_defense_contract import OBJECTIVE as FORK_DEFENSE_OBJECTIVE
+from .objective_fork_defense_judge import verify as verify_fork_defense
 from .objective_fork_verify import verify as verify_fork
 from .objective_judge import judge
 from .objective_pawn_contract import OBJECTIVE as PAWN_OBJECTIVE
@@ -22,7 +24,11 @@ from .objective_short_source import OBJECTIVE as SHORT_OBJECTIVE
 
 
 def verify(board, move, request, events, clock, start, seconds, base, session):
-    named = {PIN_OBJECTIVE: verify_pin, FORK_OBJECTIVE: verify_fork}
+    named = {
+        PIN_OBJECTIVE: verify_pin,
+        FORK_OBJECTIVE: verify_fork,
+        FORK_DEFENSE_OBJECTIVE: verify_fork_defense,
+    }
     verifier = named.get(request["objective_version"])
     if verifier:
         return verifier(
