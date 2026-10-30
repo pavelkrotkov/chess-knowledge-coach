@@ -1,6 +1,7 @@
-"""Bind one learner-owned decision to its current full-history cheap source."""
+"""Bind one learner-owned decision to its verified full game history."""
 
-from .deep_selection_source import learner_key, source_snapshot
+from .deep_selection_source import MAX_DECISIONS, learner_key
+from .purpose_source_binding import history_fingerprint, owned_game
 from .style_history import selected_boards
 from .style_history_lines import history_safe
 
@@ -12,21 +13,25 @@ def source(db, position_id, learner):
     ).fetchone()
     if position is None:
         raise ValueError("decision is unavailable")
-    snapshot = source_snapshot(db, position["game_id"], learner)
-    board = selected_boards(db, position["game_id"], {position_id}).get(position_id)
+    game, color = owned_game(db, position["game_id"], learner)
+    rows = db.connection.execute(
+        "SELECT id,ply,fen,uci FROM positions WHERE game_id=? ORDER BY ply", (game["id"],)
+    ).fetchall()
+    if len(rows) > MAX_DECISIONS:
+        raise ValueError("game exceeds the decision limit")
+    board = selected_boards(db, game["id"], {position_id}).get(position_id)
     if board is None:
         raise ValueError("verified standard-start history is unavailable")
     mover = "white" if board.turn else "black"
-    if mover != snapshot["color"]:
+    if mover != color:
         raise ValueError("decision is unavailable")
     move = board.parse_uci(position["uci"])
     if not history_safe(board) or move.promotion:
         raise ValueError("draw-sensitive or promotion history is unsupported")
     return {
-        "game_id": position["game_id"],
+        "game_id": game["id"],
         "position": position,
         "board": board,
         "learner_key": key,
-        "cheap_run_id": snapshot["cheap_run_id"],
-        "fingerprint": snapshot["input_fingerprint"],
+        "fingerprint": history_fingerprint(game, color, rows),
     }

@@ -6,7 +6,7 @@ STATEMENTS = {
         "CREATE TABLE purpose_analysis_requests (id INTEGER PRIMARY KEY, "
         "game_id INTEGER NOT NULL REFERENCES games(id), position_id INTEGER NOT NULL REFERENCES positions(id), "
         "learner_key TEXT NOT NULL, purpose TEXT NOT NULL, policy_version TEXT NOT NULL, "
-        "cheap_run_id INTEGER NOT NULL REFERENCES analysis_runs(id), source_fingerprint TEXT NOT NULL, "
+        "source_fingerprint TEXT NOT NULL, "
         "config_json TEXT NOT NULL CHECK(json_valid(config_json)), request_fingerprint TEXT NOT NULL UNIQUE, "
         f"status TEXT NOT NULL CHECK(status IN ({Q}pending{Q},{Q}running{Q},{Q}complete{Q},"
         f"{Q}insufficient{Q},{Q}stale{Q},{Q}interrupted{Q})), "
@@ -35,7 +35,7 @@ STATEMENTS = {
     ),
     "purpose_request_identity_immutable": (
         "CREATE TRIGGER purpose_request_identity_immutable BEFORE UPDATE OF "
-        "game_id,position_id,learner_key,purpose,policy_version,cheap_run_id,source_fingerprint,"
+        "game_id,position_id,learner_key,purpose,policy_version,source_fingerprint,"
         "config_json,request_fingerprint,created_at ON purpose_analysis_requests "
         f"BEGIN SELECT RAISE(ABORT,{Q}purpose request identity is immutable{Q}); END"
     ),

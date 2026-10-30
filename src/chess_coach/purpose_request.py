@@ -15,7 +15,6 @@ def fingerprint(snapshot, config):
                 "game": snapshot["game_id"],
                 "position": snapshot["position"]["id"],
                 "source": snapshot["fingerprint"],
-                "cheap_run": snapshot["cheap_run_id"],
                 "config": config,
             }
         )
@@ -37,16 +36,15 @@ def create(db, position_id, learner, *, engine_path="/usr/games/stockfish"):
             raise ValueError("source changed while creating request")
         db.connection.execute(
             """INSERT OR IGNORE INTO purpose_analysis_requests
-            (game_id,position_id,learner_key,purpose,policy_version,cheap_run_id,
+            (game_id,position_id,learner_key,purpose,policy_version,
              source_fingerprint,config_json,request_fingerprint,status)
-            VALUES(?,?,?,?,?,?,?,?,?,?)""",
+            VALUES(?,?,?,?,?,?,?,?,?)""",
             (
                 snapshot["game_id"],
                 position_id,
                 snapshot["learner_key"],
                 PURPOSE,
                 VERSION,
-                snapshot["cheap_run_id"],
                 snapshot["fingerprint"],
                 canonical(config),
                 key,

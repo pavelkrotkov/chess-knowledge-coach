@@ -57,7 +57,20 @@ def show(db, request_id, learner):
         try:
             snapshot, config = current(db, row, learner)
         except ValueError:
-            return {**base, "source_state": "stale", "attempts": []}
+            rows = db.connection.execute(
+                "SELECT attempt_number,status,detail FROM purpose_analysis_attempts "
+                "WHERE request_id=? ORDER BY attempt_number",
+                (request_id,),
+            )
+            attempts = [
+                {
+                    "number": item["attempt_number"],
+                    "status": item["status"],
+                    "detail": item["detail"],
+                }
+                for item in rows
+            ]
+            return {**base, "source_state": "stale", "attempts": attempts}
         keys = (
             "scout_nodes",
             "scout_seconds",

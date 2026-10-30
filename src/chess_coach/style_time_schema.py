@@ -18,13 +18,15 @@ def existing_projection(connection):
 
 
 def ingest_projection_available(connection):
+    from .db_versioning import CURRENT_VERSION
+
     version = connection.execute("PRAGMA user_version").fetchone()[0]
     present = existing_projection(connection)
     if version < 28:
         if present:
             raise RuntimeError("style time projection exists under legacy schema")
         return False
-    if version != 28 or not present:
+    if version > CURRENT_VERSION or not present:
         raise RuntimeError("unsupported or missing style time projection")
     return True
 

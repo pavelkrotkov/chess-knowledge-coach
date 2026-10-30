@@ -19,14 +19,24 @@ def claim(db, request_id, learner, *, retry):
         if row["attempt_count"] >= MAX_ATTEMPTS or (row["attempt_count"] and not retry):
             db.connection.commit()
             return None, "retry_required_or_exhausted"
-        snapshot, config = current(db, row, learner)
-        db.connection.execute(
-            "UPDATE purpose_analysis_requests SET status=?,attempt_count=attempt_count+1 WHERE id=?",
-            ("running", request_id),
-        )
-        row = owned(db, request_id, learner)
+        try:
+            snapshot, config = current(db, row, learner)
+        except ValueError:
+            row = started(db, request_id, learner)
+            record(db, row, "stale", "source_changed", {})
+            db.connection.commit()
+            return None, "stale"
+        row = started(db, request_id, learner)
         db.connection.commit()
         return (row, snapshot, config), None
     except BaseException:
         db.connection.rollback()
         raise
+
+
+def started(db, request_id, learner):
+    db.connection.execute(
+        "UPDATE purpose_analysis_requests SET status=?,attempt_count=attempt_count+1 WHERE id=?",
+        ("running", request_id),
+    )
+    return owned(db, request_id, learner)

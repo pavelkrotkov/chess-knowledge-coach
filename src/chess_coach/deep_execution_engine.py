@@ -6,9 +6,9 @@ from types import SimpleNamespace
 import chess.engine
 
 
-def start_engine(binary, config):
+def start_engine(binary, config, *, timeout=5.0):
     try:
-        engine = chess.engine.SimpleEngine.popen_uci(str(binary), timeout=5.0)
+        engine = chess.engine.SimpleEngine.popen_uci(str(binary), timeout=timeout)
         settings = {"Threads": config["threads"], "Hash": config["hash_mb"]}
         config["native_wdl_requested"] = "UCI_ShowWDL" in engine.options
         if config["native_wdl_requested"]:

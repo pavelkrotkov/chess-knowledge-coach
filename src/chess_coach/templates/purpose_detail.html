@@ -11,5 +11,5 @@
 {% if attempt.scout %}<p>Scout for nomination only: {{ attempt.scout.work }}.</p>{% endif %}
 {% if attempt.final %}<p>Restricted candidate search work: {{ attempt.final.work }}. Comparison: {{ attempt.final.comparison_issue or "comparable within stated bounds" }}.</p><ol>{% for line in attempt.final.lines %}<li>Candidate rank {{ line.rank }}: {{ line.san | join(' ') }}, score {{ line.score_kind }} {{ line.score_value }} ({{ line.score_bound }}), depth {{ line.depth }}.</li>{% endfor %}</ol>{% else %}<p>Candidate lines are unavailable or unsupported.</p>{% endif %}</section>
 {% else %}<p>No terminal attempt yet.</p>{% endfor %}
-{% else %}<p>The source has changed or is unavailable; stored lines are withheld.</p>{% endif %}
+{% else %}<p>The source has changed or is unavailable; stored lines are withheld.</p>{% for attempt in result.attempts %}<p>Attempt {{ attempt.number }} — {{ attempt.status }}: {{ attempt.detail }}.</p>{% endfor %}{% endif %}
 {% endblock %}

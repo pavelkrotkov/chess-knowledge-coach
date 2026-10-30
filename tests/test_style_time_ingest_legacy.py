@@ -54,10 +54,10 @@ def test_foreign_or_incomplete_projection_fails_before_inserting(version):
 
 
 def test_current_schema_requires_projection_and_future_schema_is_rejected():
-    for version in (28, 29):
+    for version in (28, 29, 30):
         db = Database(":memory:")
         db.initialize()
-        if version == 28:
+        if version in (28, 29):
             for name in ("style_time_insert", "style_time_invalidate"):
                 db.connection.execute(f"DROP TRIGGER {name}")
             db.connection.execute("DROP TABLE style_game_times")
@@ -71,9 +71,11 @@ def test_current_schema_requires_projection_and_future_schema_is_rejected():
         db.close()
 
 
-def test_current_projection_is_populated_for_new_ingest():
+@pytest.mark.parametrize("version", [28, 29])
+def test_current_projection_is_populated_for_new_ingest(version):
     db = Database(":memory:")
     db.initialize()
+    db.connection.execute(f"PRAGMA user_version={version}")
     assert ingest_pgn(db, PGN)["games"] == 1
     row = db.connection.execute(
         "SELECT status,version,started_at,white_identity,black_identity FROM style_game_times"
