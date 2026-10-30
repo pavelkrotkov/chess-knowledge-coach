@@ -6,6 +6,8 @@ from .objective_capture_contract import GAIN_OBJECTIVE, TARGET_OBJECTIVE
 from .objective_capture_judge import verify as verify_capture
 from .objective_defense_judge import verify as verify_defense
 from .objective_defense_source import OBJECTIVE as DEFENSE_OBJECTIVE
+from .objective_fork_avoidance_contract import OBJECTIVE as FORK_AVOIDANCE_OBJECTIVE
+from .objective_fork_avoidance_judge import verify as verify_fork_avoidance
 from .objective_fork_contract import OBJECTIVE as FORK_OBJECTIVE
 from .objective_fork_defense_contract import OBJECTIVE as FORK_DEFENSE_OBJECTIVE
 from .objective_fork_defense_judge import verify as verify_fork_defense
@@ -31,6 +33,7 @@ def verify(board, move, request, events, clock, start, seconds, base, session):
         PIN_PREVENT_OBJECTIVE: verify_pin_prevent,
         FORK_OBJECTIVE: verify_fork,
         FORK_DEFENSE_OBJECTIVE: verify_fork_defense,
+        FORK_AVOIDANCE_OBJECTIVE: verify_fork_avoidance,
     }
     verifier = named.get(request["objective_version"])
     if verifier:

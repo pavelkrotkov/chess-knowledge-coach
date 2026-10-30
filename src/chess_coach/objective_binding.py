@@ -1,5 +1,6 @@
 """Bind supported owned objective versions to the session snapshot."""
 
+from .objective_binding_forks import BINDINGS as FORK_BINDINGS
 from .objective_binding_scope import owned_scope
 from .objective_capture_contract import (
     GAIN_OBJECTIVE,
@@ -10,10 +11,6 @@ from .objective_capture_contract import (
 from .objective_contract import OBJECTIVE, VERSION
 from .objective_defense_source import OBJECTIVE as DEFENSE_OBJECTIVE
 from .objective_defense_source import VERSION as DEFENSE_VERSION
-from .objective_fork_contract import OBJECTIVE as FORK_OBJECTIVE
-from .objective_fork_contract import VERSION as FORK_VERSION
-from .objective_fork_defense_contract import OBJECTIVE as FORK_DEFENSE_OBJECTIVE
-from .objective_fork_defense_contract import VERSION as FORK_DEFENSE_VERSION
 from .objective_pawn_contract import OBJECTIVE as PAWN_OBJECTIVE
 from .objective_pawn_contract import VERSION as PAWN_VERSION
 from .objective_pin_contract import OBJECTIVE as PIN_OBJECTIVE
@@ -38,8 +35,7 @@ def _binding(session, data, request):
         data.get("objective_version") == request["objective_version"]
         and (session["source_version"], data.get("objective_version"))
         in {
-            (FORK_VERSION, FORK_OBJECTIVE),
-            (FORK_DEFENSE_VERSION, FORK_DEFENSE_OBJECTIVE),
+            *FORK_BINDINGS,
             (PIN_VERSION, PIN_OBJECTIVE),
             (PIN_PREVENT_VERSION, PIN_PREVENT_OBJECTIVE),
             (PAWN_VERSION, PAWN_OBJECTIVE),

@@ -32,6 +32,7 @@ COMMANDS = {
     "list-pin-practice": unified_practice.handle_list_pin,
     "list-fork-defense-practice": unified_practice.handle_list_fork_defense,
     "list-pin-prevention": unified_practice.handle_list_pin_prevent,
+    "list-fork-avoidance-practice": unified_practice.handle_list_fork_avoidance,
     "start-unified": unified_practice.handle_start,
     "show-unified": unified_practice.handle_show,
     "move-unified": unified_practice.handle_move,

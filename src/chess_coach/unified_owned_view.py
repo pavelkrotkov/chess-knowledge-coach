@@ -19,6 +19,11 @@ def add_fields(result, row):
         result["fork_defense_attacker"] = provenance["fork_attacker"]
         result["fork_defense_targets"] = provenance["fork_targets"]
         result["source_outcome"] = provenance["source_outcome"]
+    if row["objective"] == "avoid_created_knight_fork":
+        result["source_check_limits"] = {
+            "fork_proof_units": 48,
+            "boundary": "History replay, hypothetical enumeration and material checks are separate.",
+        }
     if row["objective"] == "execute_named_fork":
         add_fork_fields(result, provenance)
     if row["objective"] in {"capture_named_target", "protect_threatened_piece"}:

@@ -3,6 +3,7 @@
 from .objective_capture_contract import VERSIONS as CAPTURE_VERSIONS
 from .objective_contract import VERSION
 from .objective_defense_source import VERSION as DEFENSE_VERSION
+from .objective_fork_avoidance_contract import is_source as owned_fork_avoidance
 from .objective_fork_contract import is_source as owned_fork
 from .objective_fork_defense_contract import is_source as owned_fork_defense
 from .objective_promotion_contract import OBJECTIVES as PROMOTION_OBJECTIVES
@@ -21,6 +22,7 @@ def _owned(row):
         owned_pawn(row)
         or owned_fork(row)
         or owned_fork_defense(row)
+        or owned_fork_avoidance(row)
         or owned_pin_family(row)
         or (
             row["source_type"] == "own-game"

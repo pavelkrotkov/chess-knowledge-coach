@@ -3,9 +3,16 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.65.0"
+REGISTRY_VERSION = "1.66.0"
 
 CAPABILITIES = (
+    {
+        "id": "owned_created_fork_avoidance",
+        "area": "Training",
+        "name": "Owned created knight-fork avoidance",
+        "status": "observation-only",
+        "details": "Current owned created-fork observations support queued, bounded alternative verification; uncertain threats and later counterplay remain unresolved and no mastery is inferred.",
+    },
     {
         "id": "owned_pin_prevention",
         "area": "Training",

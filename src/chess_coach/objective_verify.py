@@ -3,6 +3,7 @@
 from .objective_contract import UNAVAILABLE
 from .objective_current import current
 from .objective_events import assistance
+from .objective_fork_avoidance_contract import OBJECTIVE as FORK_AVOIDANCE_OBJECTIVE
 from .objective_fork_defense_budget import BudgetExceeded
 from .objective_fork_defense_contract import OBJECTIVE as FORK_DEFENSE_OBJECTIVE
 from .objective_history_dispatch import replay, supported
@@ -19,7 +20,11 @@ from .recurrence_snapshot import read_snapshot
 
 def compute(db, request, clock, *, seconds=SECONDS):
     with work_scope(request):
-        if request["objective_version"] in {FORK_DEFENSE_OBJECTIVE, PIN_PREVENT_OBJECTIVE}:
+        if request["objective_version"] in {
+            FORK_DEFENSE_OBJECTIVE,
+            FORK_AVOIDANCE_OBJECTIVE,
+            PIN_PREVENT_OBJECTIVE,
+        }:
             with read_snapshot(db):
                 return _compute(db, request, clock, seconds=seconds)
         return _compute(db, request, clock, seconds=seconds)

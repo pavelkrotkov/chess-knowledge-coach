@@ -1,12 +1,9 @@
 """Check exact owned objective scope before any source work."""
 
+from .objective_binding_forks import SCOPES as FORK_SCOPES
 from .objective_capture_contract import GAIN_VERSION, TARGET_VERSION
 from .objective_contract import VERSION
 from .objective_defense_source import VERSION as DEFENSE_VERSION
-from .objective_fork_contract import GOAL as FORK_GOAL
-from .objective_fork_contract import VERSION as FORK_VERSION
-from .objective_fork_defense_contract import GOAL as FORK_DEFENSE_GOAL
-from .objective_fork_defense_contract import VERSION as FORK_DEFENSE_VERSION
 from .objective_pawn_contract import VERSION as PAWN_VERSION
 from .objective_pin_contract import GOAL as PIN_GOAL
 from .objective_pin_contract import VERSION as PIN_VERSION
@@ -21,8 +18,7 @@ def owned_scope(session, request):
         session["source_type"] == "own-game"
         and (session["source_version"], session["objective"])
         in {
-            (FORK_VERSION, FORK_GOAL),
-            (FORK_DEFENSE_VERSION, FORK_DEFENSE_GOAL),
+            *FORK_SCOPES,
             (PIN_VERSION, PIN_GOAL),
             (PIN_PREVENT_VERSION, PIN_PREVENT_GOAL),
             (PAWN_VERSION, "preserve_pawn_win"),

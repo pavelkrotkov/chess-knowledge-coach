@@ -4,6 +4,8 @@ from .objective_capture_contract import GAIN_OBJECTIVE, TARGET_OBJECTIVE
 from .objective_capture_judge import VERSION as CAPTURE_VERIFIER
 from .objective_defense_judge import VERSION as DEFENSE_VERIFIER
 from .objective_defense_source import OBJECTIVE as DEFENSE_OBJECTIVE
+from .objective_fork_avoidance_contract import OBJECTIVE as FORK_AVOIDANCE_OBJECTIVE
+from .objective_fork_avoidance_contract import VERIFIER as FORK_AVOIDANCE_VERIFIER
 from .objective_fork_contract import OBJECTIVE as FORK_OBJECTIVE
 from .objective_fork_contract import VERIFIER as FORK_VERIFIER
 from .objective_fork_defense_contract import OBJECTIVE as FORK_DEFENSE_OBJECTIVE
@@ -26,6 +28,7 @@ SECONDS = 5.0
 VERIFIERS = {
     FORK_OBJECTIVE: FORK_VERIFIER,
     FORK_DEFENSE_OBJECTIVE: FORK_DEFENSE_VERIFIER,
+    FORK_AVOIDANCE_OBJECTIVE: FORK_AVOIDANCE_VERIFIER,
     PIN_OBJECTIVE: PIN_VERIFIER,
     PIN_PREVENT_OBJECTIVE: PIN_PREVENT_VERIFIER,
     PROMOTION_VERSION: PROMOTION_VERIFIER,
@@ -40,6 +43,7 @@ VERIFIERS = {
 PLIES = {
     FORK_OBJECTIVE: 3,
     FORK_DEFENSE_OBJECTIVE: 3,
+    FORK_AVOIDANCE_OBJECTIVE: 3,
     PIN_OBJECTIVE: 3,
     PIN_PREVENT_OBJECTIVE: 3,
     PROMOTION_VERSION: 3,

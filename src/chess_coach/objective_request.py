@@ -7,6 +7,7 @@ from .objective_capture_contract import VERSIONS as CAPTURE_VERSIONS
 from .objective_contract import VERSION
 from .objective_defense_source import VERSION as DEFENSE_VERSION
 from .objective_events import prefix, prefix_hash
+from .objective_fork_avoidance_contract import is_source as fork_avoidance_source
 from .objective_fork_contract import is_source as fork_source
 from .objective_fork_defense_contract import is_source as fork_defense_source
 from .objective_pawn_contract import is_source as pawn_source
@@ -53,6 +54,7 @@ def _supported(session):
         return session["objective"] in PROMOTION_OBJECTIVES
     return (
         fork_source(session)
+        or fork_avoidance_source(session)
         or fork_defense_source(session)
         or pawn_source(session)
         or pin_source(session)
