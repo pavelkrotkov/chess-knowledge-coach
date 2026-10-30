@@ -71,7 +71,7 @@ def test_ordered_upgrade_and_rollback_preserve_existing_rows(tmp_path, monkeypat
     assert snapshot(db) == before
     db.initialize()
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 30
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 31
     assert {
         "diagnostic_probes",
         "diagnostic_probe_events",
@@ -121,7 +121,7 @@ def test_populated_schema26_probe_history_is_preserved(tmp_path, monkeypatch):
         )
     }
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 30
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 31
     after = {
         table: [
             tuple(row) for row in db.connection.execute(f"SELECT * FROM {table} ORDER BY rowid")

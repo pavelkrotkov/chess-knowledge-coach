@@ -28,7 +28,7 @@ def assert_legacy_data(before):
 def assert_upgraded(db, tables, before, objects):
     assert typed_rows(db, tables) == before
     assert objects <= schema_objects(db)
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 30
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 31
     assert db.connection.execute("PRAGMA foreign_key_check").fetchall() == []
 
 

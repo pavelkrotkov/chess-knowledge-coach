@@ -20,4 +20,4 @@ def allocate(db, learner, key, sequence):
     coverage = summarize_coverage(
         db, games, coverage, skipped, duplicates, exhausted, reconstructed
     )
-    return coverage, (("target", target), ("control", control))
+    return coverage, (("target", target), ("control", control)), candidates

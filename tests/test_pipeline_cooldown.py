@@ -233,7 +233,7 @@ def test_v14_upgrade_preserves_existing_health_and_adds_unknown_deadline(monkeyp
     before_cursor = tuple(db.connection.execute("SELECT * FROM pipeline_cursors").fetchone())
     before = tuple(db.connection.execute("SELECT * FROM pipeline_health").fetchone())
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 30
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 31
     after = tuple(db.connection.execute("SELECT * FROM pipeline_health").fetchone())
     assert after[:-1] == before and after[-1] is None
     assert (

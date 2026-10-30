@@ -2,10 +2,15 @@
 
 from .deep_selection_source import learner_key
 from .fact_fingerprint import canonical
+from .style_protection_schedule_discover import HISTORY_LIMIT, discover
+from .style_protection_schedule_store import insert as insert_protection
 from .style_schedule_budget import CURRENT
 from .style_schedule_candidates import allocate
 from .style_schedule_rotation import advance
 from .style_schedule_schema import validate_style_schedule
+from .style_schedule_slots import insert_slot
+from .style_schedule_slots import pending as pending
+from .style_schedule_slots import update_slot as update_slot
 
 
 def next_sequence(db, learner):
@@ -26,10 +31,14 @@ def create_cycle(db, learner):
     original_limit = budget["limit"]
     budget["limit"] = min(original_limit, budget["used"] + 500)
     try:
-        coverage, slots = allocate(db, learner, key, sequence)
+        coverage, slots, candidates = allocate(db, learner, key, sequence)
     finally:
         budget["limit"] = original_limit
-    coverage["scan_history_units"] = budget["used"]
+    before_protection = budget["used"]
+    candidate, binding, reason, used = discover(db, learner, key, candidates, slots, budget)
+    coverage["protection_history_units"] = used
+    coverage["protection_history_unit_limit"] = HISTORY_LIMIT
+    coverage["scan_history_units"] = before_protection
     coverage["scan_history_unit_limit"] = 500
     try:
         db.connection.execute("BEGIN IMMEDIATE")
@@ -37,47 +46,14 @@ def create_cycle(db, learner):
             "INSERT INTO style_schedule_cycles(learner_key,sequence,coverage_json) VALUES(?,?,?)",
             (key, sequence, canonical(coverage)),
         )
+        slot_ids = {}
         for kind, item in slots:
-            _insert_slot(db, cursor.lastrowid, kind, item)
+            slot_ids[kind] = insert_slot(db, cursor.lastrowid, kind, item)
             if item is not None:
                 advance(db, key, kind, item["game_id"])
+        insert_protection(db, cursor.lastrowid, key, candidate, binding, reason, slot_ids, slots)
         db.connection.commit()
         return cursor.lastrowid
     except BaseException:
         db.connection.rollback()
         raise
-
-
-def _insert_slot(db, cycle_id, kind, item):
-    if item is None:
-        item = {
-            "game_id": None,
-            "position_id": None,
-            "status": "unknown",
-            "detail": "target_not_found_in_scanned_sample"
-            if kind == "target"
-            else "control_not_found_in_scanned_sample",
-        }
-    db.connection.execute(
-        """INSERT INTO style_schedule_slots(cycle_id,kind,game_id,position_id,status,detail)
-        VALUES(?,?,?,?,?,?)""",
-        (cycle_id, kind, item["game_id"], item["position_id"], item["status"], item["detail"]),
-    )
-
-
-def pending(db, learner):
-    return db.connection.execute(
-        """SELECT s.* FROM style_schedule_slots s JOIN style_schedule_cycles c ON c.id=s.cycle_id
-        WHERE c.learner_key=? AND s.status IN ('ready','pending','running','interrupted')
-        ORDER BY c.sequence,s.id LIMIT 2""",
-        (learner_key(learner),),
-    ).fetchall()
-
-
-def update_slot(db, slot_id, status, detail, request_id=None):
-    with db.connection:
-        db.connection.execute(
-            """UPDATE style_schedule_slots SET status=?,detail=?,request_id=COALESCE(?,request_id)
-            WHERE id=?""",
-            (status, detail, request_id, slot_id),
-        )

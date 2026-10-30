@@ -4,6 +4,8 @@ import json
 
 from .deep_selection_source import learner_key
 from .purpose_view import show
+from .style_protection_schedule_status import status as protection_status
+from .style_protection_schedule_store import pending_count
 from .style_schedule_schema import validate_style_schedule
 from .style_schedule_view_state import view_state
 
@@ -32,6 +34,8 @@ def status(db, learner, *, views=None):
         "coverage": json.loads(cycle["coverage_json"]),
         "slots": [_slot(db, learner, row, views) for row in rows],
         "pending": pending,
+        "protection_pending": pending_count(db, key),
+        "protection": protection_status(db, learner, cycle["id"], views=views),
     }
 
 

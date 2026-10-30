@@ -3,9 +3,16 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.56.0"
+REGISTRY_VERSION = "1.57.0"
 
 CAPABILITIES = (
+    {
+        "id": "style_protection_scheduling",
+        "area": "Style",
+        "name": "Bounded protection diagnostic scheduling",
+        "status": "observation-only",
+        "details": "The worker can allocate one separately source-bound threatened-piece diagnostic per cycle. A shared control uses one request; unresolved proof, review, history or budget remains unknown. This does not requalify evidence or establish defensive skill.",
+    },
     {
         "id": "style_purpose_check_responses",
         "area": "Style",

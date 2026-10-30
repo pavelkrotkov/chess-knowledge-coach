@@ -287,7 +287,7 @@ def test_schema30_upgrade_rollback_and_legacy_rows_survive(monkeypatch):
     assert typed_rows(db, tables) == before_rows
     monkeypatch.setattr(db_recent, "add_style_schedule", original)
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 30
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 31
     assert schema_objects(db) >= before_objects
     assert typed_rows(db, tables) == before_rows
     assert not db.connection.execute("PRAGMA foreign_key_check").fetchall()

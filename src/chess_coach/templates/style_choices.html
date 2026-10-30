@@ -10,9 +10,10 @@ material {{ endpoint.material }}, non-pawn pieces {{ endpoint.pieces }}, queens 
 <h2>Choice profile</h2>
 {% if report and report.purpose_schedule %}
 <h3>Recent purpose comparisons</h3>
-<p>Scheduling state {{ report.purpose_schedule.state }}; pending slots {{ report.purpose_schedule.pending }}.
+<p>Scheduling state {{ report.purpose_schedule.state }}; pending standard slots {{ report.purpose_schedule.pending }}, pending protection allocations {{ report.purpose_schedule.protection_pending|default(0) }} (overlapping allocations share a job).
 Allocation uses a deterministic recent-game check target and an independently hashed control; it is not a random or representative sample. Unavailable and budget-limited decisions remain unknown.</p>
 {% if report.purpose_schedule.coverage %}<p>Cycle {{ report.purpose_schedule.cycle }}, coverage {{ report.purpose_schedule.coverage }}.</p>{% endif %}
+{% if report.purpose_schedule.protection %}<p>Protection allocation: {{ report.purpose_schedule.protection.state }} ({{ report.purpose_schedule.protection.detail }}); labels {{ report.purpose_schedule.protection.allocations|join(', ') }}. {% if report.purpose_schedule.protection.source_state == 'current' %}Original <a href="{{ url_for('views.evidence_detail', evidence_id=report.purpose_schedule.protection.evidence_id) }}">evidence {{ report.purpose_schedule.protection.evidence_id }}</a>, target {{ report.purpose_schedule.protection.target }}, review {{ report.purpose_schedule.protection.review_status }}. {% endif %}Source revalidation is separately bounded and is not a wall-clock guarantee.</p>{% endif %}
 <ul>{% for slot in report.purpose_schedule.slots %}<li>{{ slot.kind }}: {{ slot.status }} ({{ slot.detail }}), source {{ slot.source_state or 'unknown' }}{% if slot.request_id %}; <a href="{{ url_for('purpose_views.detail', request_id=slot.request_id) }}">inspect diagnostic</a>{% endif %}.</li>{% else %}<li>No scheduled slots yet.</li>{% endfor %}</ul>
 {% endif %}
 {% if report %}
