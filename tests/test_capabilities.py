@@ -16,6 +16,10 @@ def test_registry_is_scoped_unique_and_defensive():
     assert len({item["id"] for item in entries}) == len(entries)
     assert {item["status"] for item in entries} == {"supported", "observation-only", "planned"}
     states = {item["id"]: item["status"] for item in entries}
+    assert states["related_protection_practice"] == "observation-only"
+    assert states["style_protection_purpose_report"] == "observation-only"
+    assert states["style_protection_scheduling"] == "observation-only"
+    assert states["purpose_candidate_comparison"] == "observation-only"
     assert states["back_rank_observations"] == "observation-only"
     assert states["accessible_practice_board"] == "supported"
     assert states["direct_source_practice"] == "supported"

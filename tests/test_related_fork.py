@@ -442,3 +442,34 @@ def test_public_matching_uses_any_validated_alternative(tmp_path, monkeypatch):
             show(db, "public", LEARNER)
     result = submit(db, "public", LEARNER, event_id="unlisted", move="h1g1")
     assert result["status"] == "needs_verification"
+
+
+def test_shared_filter_and_new_admission_use_current_fork_version(monkeypatch):
+    from chess_coach import related_fork_lines
+    from chess_coach.related_session_filter import apply_filter
+    from chess_coach.related_transfer_admission import _binding
+
+    lines = [["b5c7", "e8f8"]]
+    item = {}
+    related_fork_lines.bind_lines(item, lines, [0])
+    source = {
+        "provenance": {
+            "position_id": 1,
+            "evidence_id": 2,
+            "source_fingerprint": "synthetic",
+            "review_event_id": None,
+        }
+    }
+    old = _binding(source, "fixture-v1", "fork", item)
+    monkeypatch.setattr(related_fork_lines, "FILTER_VERSION", "future-filter")
+    with pytest.raises(ValueError, match="filter changed"):
+        apply_filter({"lines": lines.copy()}, old, "related_fork", lines)
+    fresh = _binding(source, "fixture-v1", "fork", item)
+    assert fresh["line_filter_version"] == "future-filter"
+    snapshot = {"lines": lines.copy()}
+    apply_filter(snapshot, fresh, "related_fork", lines)
+    assert snapshot["lines"] == lines
+    item.update(objective_target="d4", protection_mechanism="move_threatened_piece")
+    protection = _binding(source, "fixture-v1", "protection", item)
+    assert protection["line_filter_version"] == "protection-prevent-lines-v1"
+    apply_filter({"lines": lines.copy()}, protection, "related_protection", lines)

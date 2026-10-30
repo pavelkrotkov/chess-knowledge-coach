@@ -1,7 +1,7 @@
 """Resolve opaque transfer references and bind immutable source lineage."""
 
+from . import related_fork_lines
 from .fact_fingerprint import canonical, digest
-from .related_fork_lines import FILTER_VERSION
 from .related_protection_contract import FILTER_VERSION as PROTECTION_FILTER
 from .unified_source_current import snapshot_hash
 
@@ -44,7 +44,9 @@ def _binding(source, version, motif, item):
 
     if motif in {"fork", "protection"}:
         binding.update(
-            line_filter_version=PROTECTION_FILTER if motif == "protection" else FILTER_VERSION,
+            line_filter_version=PROTECTION_FILTER
+            if motif == "protection"
+            else related_fork_lines.FILTER_VERSION,
             selected_line_indices=item["matching_line_indices"],
             source_lines_hash=item["source_lines_hash"],
         )
