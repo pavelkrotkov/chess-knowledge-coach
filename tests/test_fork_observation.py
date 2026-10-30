@@ -40,6 +40,17 @@ def test_checking_knight_fork_has_witness_for_every_legal_evasion(black):
     assert result["outcome"] == "success" and result["proof"] == proof
 
 
+@pytest.mark.parametrize("played", ["h1g1", "g2g3"])
+def test_missed_fork_depends_on_available_continuation_not_played_piece(played):
+    board = chess.Board("r3k3/7p/8/1N6/8/8/6P1/7K w - - 0 1")
+    best = line("b5c7", "e8f8", "c7a8", "h7h6", score=600)
+    short = observe(board, played, best, line(played, score=0))
+    assert short == {"kind": "fork", "outcome": "ambiguous", "reason": "continuation_unavailable"}
+    complete = observe(board, played, best, line(played, "e8f8", "b5c7", "h7h6", score=0))
+    assert complete["outcome"] == "failure"
+    assert complete["proof"] == fork_proof(board, chess.Move.from_uci("b5c7"))
+
+
 def test_pseudo_fork_with_recapturable_rook_is_not_supported():
     board = chess.Board("r3k3/7p/1b6/1N6/8/8/6P1/7K w - - 0 1")
     assert board.is_valid()
