@@ -2,6 +2,7 @@
 
 
 def require_current(db, row, snapshot_hash):
+    from .related_backrank_current import require_current as require_backrank
     from .related_fork_avoidance_current import require_current as require_avoidance
     from .related_fork_current import require_current as require_fork
     from .related_fork_prevention_current import require_current as require_prevention
@@ -15,3 +16,4 @@ def require_current(db, row, snapshot_hash):
     require_avoidance(db, row, snapshot_hash)
     require_mate(db, row, snapshot_hash)
     require_pin(db, row, snapshot_hash)
+    require_backrank(db, row, snapshot_hash)

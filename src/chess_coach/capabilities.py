@@ -3,9 +3,16 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.67.0"
+REGISTRY_VERSION = "1.68.0"
 
 CAPABILITIES = (
+    {
+        "id": "related_backrank_attack",
+        "area": "Training",
+        "name": "Related back-rank attacking practice",
+        "status": "observation-only",
+        "details": "A selected proved current back-rank attack retrieves bounded matching supplied mating lines; ambiguous source alternatives and later play remain unknown. No mastery is inferred.",
+    },
     {
         "id": "owned_created_fork_avoidance",
         "area": "Training",

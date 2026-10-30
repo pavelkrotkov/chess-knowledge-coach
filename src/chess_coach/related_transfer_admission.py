@@ -61,10 +61,20 @@ def _binding(source, version, motif, item):
     if motif == "pin":
         binding["candidate_certificates"] = item["candidate_certificates"]
 
-    if motif == "mate":
+    if motif in {"mate", "backrank_attack"}:
         binding["mate_timing"] = source["objective"]
+    if motif == "backrank_attack":
+        binding["root_move"] = provenance["selected_root"]
 
-    if motif in {"fork", "protection", "fork_prevention", "fork_avoidance", "mate", "pin"}:
+    if motif in {
+        "fork",
+        "protection",
+        "fork_prevention",
+        "fork_avoidance",
+        "mate",
+        "pin",
+        "backrank_attack",
+    }:
         binding.update(
             line_filter_version=filter_version(motif),
             selected_line_indices=item["matching_line_indices"],
