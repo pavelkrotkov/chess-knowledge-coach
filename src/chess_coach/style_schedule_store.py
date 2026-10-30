@@ -4,6 +4,7 @@ from .deep_selection_source import learner_key
 from .fact_fingerprint import canonical
 from .style_schedule_budget import CURRENT
 from .style_schedule_candidates import allocate
+from .style_schedule_rotation import advance
 from .style_schedule_schema import validate_style_schedule
 
 
@@ -38,6 +39,8 @@ def create_cycle(db, learner):
         )
         for kind, item in slots:
             _insert_slot(db, cursor.lastrowid, kind, item)
+            if item is not None:
+                advance(db, key, kind, item["game_id"])
         db.connection.commit()
         return cursor.lastrowid
     except BaseException:

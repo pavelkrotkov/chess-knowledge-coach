@@ -13,6 +13,13 @@ STATEMENTS = {
         "status TEXT NOT NULL, detail TEXT NOT NULL, request_id INTEGER REFERENCES purpose_analysis_requests(id), "
         "UNIQUE(cycle_id,kind), UNIQUE(cycle_id,game_id))"
     ),
+    "style_schedule_rotation": (
+        "CREATE TABLE style_schedule_rotation (learner_key TEXT NOT NULL, "
+        "game_id INTEGER NOT NULL REFERENCES games(id), "
+        "kind TEXT NOT NULL CHECK(kind IN ('target','control')), "
+        "next_index INTEGER NOT NULL CHECK(next_index>=0), "
+        "PRIMARY KEY(learner_key,game_id,kind))"
+    ),
     "idx_style_schedule_owner": (
         "CREATE INDEX idx_style_schedule_owner ON style_schedule_cycles(learner_key,sequence)"
     ),

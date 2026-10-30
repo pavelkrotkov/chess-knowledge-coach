@@ -4,6 +4,7 @@ import time
 
 from .pipeline_deep import process_deep
 from .pipeline_deep_config import combined_status
+from .pipeline_deep_preflight import sequence_or_none
 from .style_schedule_store import next_sequence
 from .style_schedule_worker import process_schedule
 
@@ -14,8 +15,13 @@ FAMILY_SECONDS = 25.0
 def process_deep_cycle(db, config):
     if not config.deep_enabled:
         return process_deep(db, config), {"status": "disabled"}
-    _, sequence = next_sequence(db, config.learner)
     deadline = time.monotonic() + CYCLE_SECONDS
+    sequence = sequence_or_none(db, config.learner, next_sequence)
+    if sequence is None:
+        return _normal(db, config, deadline), {
+            "status": "partial",
+            "detail": "purpose_schedule_unavailable",
+        }
     if sequence % 2:
         purpose = _purpose(db, config, deadline)
         normal = _normal(db, config, deadline)
