@@ -2,6 +2,7 @@
 <p>Pin source: {{ evidence.pin_source_currentness }}.{% if evidence.pin_source_currentness != "current" %} This historical observation cannot support a current claim.{% endif %}</p>
 {% if evidence.pin_source_currentness == "current" %}{% set pin = evidence.pin_explanation %}
 <p>Source position: {{ pin.fen }}. {{ pin.kind | replace("_", " ") | capitalize }}: {{ pin.outcome }}.</p>
+{% if evidence.operation == "execute" and pin.outcome == "success" %}<p><a href="{{ url_for('related_pin.show', evidence_id=evidence.id) }}">Find related pin practice</a></p>{% endif %}
 {% if evidence.operation == "execute" and pin.outcome == "success" %}<form method="post" action="{{ url_for('unified_practice.begin') }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="source_type" value="own-game"><input type="hidden" name="version" value="pin-execution-own-v1"><input type="hidden" name="key" value="{{ evidence.id }}"><button>Practice this pin</button></form>{% endif %}
 {% if evidence.operation == "prevent" and pin.outcome in ["success", "failure"] %}<form method="post" action="{{ url_for('unified_practice.begin') }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="source_type" value="own-game"><input type="hidden" name="version" value="pin-prevention-own-v1"><input type="hidden" name="key" value="{{ evidence.id }}"><button>Practice pin prevention</button></form>{% endif %}
 {% if pin.alternative %}<p>Legal alternative {{ pin.alternative.san }} is a counterfactual, not a played move.</p>{% endif %}

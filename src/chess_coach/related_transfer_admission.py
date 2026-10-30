@@ -58,10 +58,13 @@ def _binding(source, version, motif, item):
             target_roles=item["target_roles"],
         )
 
+    if motif == "pin":
+        binding["candidate_certificates"] = item["candidate_certificates"]
+
     if motif == "mate":
         binding["mate_timing"] = source["objective"]
 
-    if motif in {"fork", "protection", "fork_prevention", "fork_avoidance", "mate"}:
+    if motif in {"fork", "protection", "fork_prevention", "fork_avoidance", "mate", "pin"}:
         binding.update(
             line_filter_version=filter_version(motif),
             selected_line_indices=item["matching_line_indices"],
