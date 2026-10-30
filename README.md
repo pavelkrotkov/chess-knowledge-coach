@@ -855,6 +855,18 @@ then displays legally replayed proof or unresolved-geometry lines, with practica
 questions that distinguish the recorded move from tested alternatives. It does not
 establish overall safety, compensation, intent or mastery.
 
+## Explicit public promotion objectives
+
+The project-authored CC0 canonical promotion collection declares either `promote_now` or `force_promotion_within_two`. A source exemplar is independently checked before practice starts; all submitted moves, including a listed example, receive their own durable bounded verdict. The forcing proof checks every legal opponent reply and retains a legal promotion witness for each. Missing history, draw claims, limits or timeouts remain ungraded. A promotion, including an underpromotion, a capturing promotion or a move that stalemates, does not establish a win. A proved two-move task can continue with a legal opponent reply and a final promotion without rewriting the first result.
+
+This collection is a new explicit source and is not an upgrade of existing generic promotion tags or owned pawn win/draw lessons. Its import and provenance are documented in [the public training guide](docs/public-training.md); no existing collection is replaced.
+
+## Owned pawn-ending result verification
+
+Current owned pawn-ending sources can bind a proved win or a draw as a one-move objective. The existing verified local WDL tables and bounded, original-history search compare result intervals from the learner’s perspective: a bound proving the announced result is correct, a strictly worse bound refutes it, and overlapping or unavailable bounds stay ungraded. A win also preserves a draw objective; promotion alone does not prove a win.
+
+When a separately bounded proof supports a legal opponent reply that preserves the original result goal, the session labels it as a training reply, not a best or forced move. The learner can continue and each subsequent turn is queued for a fresh bounded verification on the accepted full history. A proved result remains separate from an unavailable continuation. Promotion descendants use only the verified local tables and supported four-piece scope; missing tables, history, timeout or node limits remain unresolved. These provisional results do not update evidence, scheduling or mastery.
+
 ## Owned threatened-piece protection
 
 Current owned protection observations can offer a task to save the specified original piece from an immediate legal capture that gains at least three material points. The original threat and the example defense are independently checked on the full game history; the historical observation or engine line alone is not a proof. An alternative move is checked against bounded legal replies. A supported profitable capture is a concrete refutation; absence of any supported attack verifies only this immediate objective. Checks, other captures, uncertain exchange branches, sacrifices, draws, incomplete scans and timeouts remain ungraded. The result does not establish overall safety, longer compensation, mastery or scheduling progress.

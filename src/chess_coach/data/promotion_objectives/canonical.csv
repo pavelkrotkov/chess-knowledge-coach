@@ -1,0 +1,9 @@
+id,fen,objective,lines
+direct-white,8/P7/8/8/8/8/8/k6K w - - 0 1,promote_now,"[""a7a8q"", ""a7a8r"", ""a7a8b"", ""a7a8n""]"
+direct-black,K6k/8/8/8/8/8/p7/8 b - - 0 1,promote_now,"[""a2a1q"", ""a2a1r"", ""a2a1b"", ""a2a1n""]"
+capture-white,r6k/1PK5/8/8/8/8/8/8 w - - 0 1,promote_now,"[""b7a8q"", ""b7a8r"", ""b7a8b"", ""b7a8n""]"
+capture-black,8/8/8/8/8/8/1pk5/R6K b - - 0 1,promote_now,"[""b2a1q"", ""b2a1r"", ""b2a1b"", ""b2a1n""]"
+stalemate-white,7k/P4K2/8/5B2/8/8/8/8 w - - 0 1,promote_now,"[""a7a8n""]"
+stalemate-black,8/8/8/8/5b2/8/p4k2/7K b - - 0 1,promote_now,"[""a2a1n""]"
+forced-white,7k/8/P1K5/8/8/8/8/8 w - - 0 1,force_promotion_within_two,"[""a6a7 h8g7 a7a8q""]"
+forced-black,8/8/8/8/8/p1k5/8/7K b - - 0 1,force_promotion_within_two,"[""a3a2 h1g2 a2a1q""]"

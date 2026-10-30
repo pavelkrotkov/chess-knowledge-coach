@@ -1,0 +1,11 @@
+{
+  "version": "canonical-promotion-v1",
+  "source_url": "https://github.com/pavelkrotkov/chess-knowledge-coach",
+  "source_revision": "project-authored-canonical-promotion-v1",
+  "source_sha256": "2202c8c0a699779816b478ecabb7f2a8c5b206a94649f2968199def6a0aaeb75",
+  "content_sha256": "2202c8c0a699779816b478ecabb7f2a8c5b206a94649f2968199def6a0aaeb75",
+  "content_format": "fen_csv",
+  "license": "CC0-1.0",
+  "attribution": "Chess Knowledge Coach project contributors",
+  "license_notice": "Project-authored canonical exercises dedicated under CC0 1.0: https://creativecommons.org/publicdomain/zero/1.0/"
+}

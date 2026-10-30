@@ -3,6 +3,7 @@
 import hashlib
 import json
 
+from .objective_promotion_contract import OBJECTIVES as PROMOTION_OBJECTIVES
 from .unified_sources import resolve_source
 
 
@@ -16,7 +17,8 @@ def require_current(db, row):
     from .related_fork_current import require_current as require_fork_current
 
     require_fork_current(db, row, snapshot_hash)
-    if row["source_type"] != "own-game":
+    public = row["source_type"] == "public" and row["objective"] in PROMOTION_OBJECTIVES
+    if row["source_type"] != "own-game" and not public:
         return
     try:
         snapshot = resolve_source(

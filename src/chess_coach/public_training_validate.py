@@ -2,13 +2,14 @@
 
 import chess
 
+from .objective_promotion_contract import OBJECTIVES
 from .public_training_line import validate_line
 
 
 def validate_task(task):
     task_id, fen, objective, lines = (task.get(key) for key in ("id", "fen", "objective", "lines"))
     _task_id(task_id)
-    if objective not in {"legal_line", "checkmate", "promotion"}:
+    if objective not in {"legal_line", "checkmate", "promotion", *OBJECTIVES}:
         raise ValueError("unsupported objective")
     if not isinstance(lines, list) or not 1 <= len(lines) <= 16:
         raise ValueError("invalid solution lines")

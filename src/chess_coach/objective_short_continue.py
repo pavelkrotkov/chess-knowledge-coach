@@ -9,7 +9,12 @@ from .objective_short_witness import binding, resume
 
 
 def continuation(db, session):
-    if session["source_version"] != VERSION or session["status"] != "needs_verification":
+    if (
+        session["source_type"] != "own-game"
+        or session["source_version"] != VERSION
+        or session["objective"] != "mate_within_two"
+        or session["status"] != "needs_verification"
+    ):
         return None
     row = db.connection.execute(
         """SELECT q.*,r.result_json FROM objective_requests q JOIN objective_results r

@@ -2,6 +2,7 @@
 
 import chess
 
+from .objective_promotion_source import decorate
 from .public_training_query import task as public_task
 from .public_training_validate import validate_task
 from .puzzle_session_validate import solution_moves, validate_line
@@ -53,6 +54,7 @@ def _public(db, version, key):
         "license_notice",
     )
     provenance = {field: row[field] for field in fields}
+    decorate(provenance, row, candidate, version, key)
     return _snapshot(candidate["fen"], candidate["objective"], candidate["lines"], provenance)
 
 

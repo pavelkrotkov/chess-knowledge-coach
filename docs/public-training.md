@@ -77,3 +77,37 @@ validated examples:
 The local prepared CSVs and manifests are under `.runtime/public-training-139`.
 They were imported into an isolated validation database only. Production
 activation remains outstanding.
+
+
+## Explicit promotion objectives
+
+The separately project-authored CC0 `canonical-promotion-v1` collection lives in
+`src/chess_coach/data/promotion_objectives/`. Its CSV is both the authored source
+and the normalized input; the adjacent manifest binds SHA-256
+`2202c8c0a699779816b478ecabb7f2a8c5b206a94649f2968199def6a0aaeb75`.
+It contains eight tasks: direct promotion, capturing promotion, a stalemate
+underpromotion, and promotion forced within two moves, each in both colors.
+It is project-authored canonical content, not an external or Lichess source.
+
+`promote_now` requires an immediate legal promotion. `force_promotion_within_two`
+requires a first move that promotes immediately or permits a legal promotion after
+every legal opponent reply within the bounded horizon. A task is admitted only
+when its first supplied example is independently verified. Existing generic
+`promotion` tags remain generic; neither they nor an owned win/draw lesson are
+silently converted to these weaker objectives. A promotion alone does not prove a
+win. Public positions whose repetition-relevant history is unavailable remain
+ungraded. Source identity, content hash and task snapshot are rechecked before
+verification and publication.
+
+Import into a chosen validation database using the existing command:
+
+```sh
+chess-coach --db "$VALIDATION_DB" import-public-training \
+  "$CHESS_PROJECT_ROOT/src/chess_coach/data/promotion_objectives/canonical.csv" \
+  --source "$CHESS_PROJECT_ROOT/src/chess_coach/data/promotion_objectives/canonical.csv" \
+  --manifest "$CHESS_PROJECT_ROOT/src/chess_coach/data/promotion_objectives/manifest.json" \
+  --project-root "$CHESS_PROJECT_ROOT"
+```
+
+Import is an explicit operator action; adding these files does not activate the
+collection in a production database or replace existing collections.
