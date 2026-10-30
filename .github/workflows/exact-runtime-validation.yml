@@ -36,8 +36,11 @@ jobs:
           test "$(git rev-parse HEAD)" = "$TARGET_SHA"
           test -z "$(git status --porcelain --untracked-files=no)"
           echo "Commit: $(git rev-parse HEAD)"
-          echo "Tree: $(git rev-parse HEAD^{tree})"
-          test -f package-lock.json && test -f scripts/js-quality.cjs || { echo "Target requires package-lock.json and scripts/js-quality.cjs"; exit 1; }
+          echo "Tree: $(git rev-parse 'HEAD^{tree}')"
+          if ! test -f package-lock.json || ! test -f scripts/js-quality.cjs; then
+            echo "Target requires package-lock.json and scripts/js-quality.cjs"
+            exit 1
+          fi
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
         with:
