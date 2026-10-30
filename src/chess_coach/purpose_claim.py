@@ -14,8 +14,9 @@ def claim(db, request_id, learner, *, retry):
             db.connection.commit()
             return None, "interrupted"
         if row["status"] == "complete":
+            state = completed_state(db, row, learner)
             db.connection.commit()
-            return None, "complete"
+            return None, state
         if row["attempt_count"] >= MAX_ATTEMPTS or (row["attempt_count"] and not retry):
             db.connection.commit()
             return None, "retry_required_or_exhausted"
@@ -40,3 +41,11 @@ def started(db, request_id, learner):
         ("running", request_id),
     )
     return owned(db, request_id, learner)
+
+
+def completed_state(db, row, learner):
+    try:
+        current(db, row, learner)
+    except ValueError:
+        return "stale"
+    return "complete"

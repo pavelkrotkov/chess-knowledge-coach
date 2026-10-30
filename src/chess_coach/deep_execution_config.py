@@ -21,7 +21,7 @@ class DeepOptions:
     retry_insufficient: bool = False
 
 
-def prepare_config(db, game_id, options):
+def prepare_config(db, game_id, options, *, allow_transaction=False):
     validate_options(options)
     try:
         binary, game = prepare(
@@ -33,6 +33,7 @@ def prepare_config(db, game_id, options):
             options.multipv,
             options.threads,
             options.hash_mb,
+            allow_transaction=allow_transaction,
         )
     except RuntimeError:
         raise RuntimeError("deep engine is unavailable") from None

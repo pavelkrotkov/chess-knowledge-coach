@@ -23,7 +23,7 @@ def configuration(db, game_id, engine_path):
         min_depth=4,
         max_jobs=1,
     )
-    binary, _, config = prepare_config(db, game_id, options)
+    binary, _, config = prepare_config(db, game_id, options, allow_transaction=True)
     config.update(
         {
             "purpose": PURPOSE,
