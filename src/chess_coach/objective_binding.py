@@ -14,6 +14,9 @@ from .objective_fork_contract import OBJECTIVE as FORK_OBJECTIVE
 from .objective_fork_contract import VERSION as FORK_VERSION
 from .objective_pawn_contract import OBJECTIVE as PAWN_OBJECTIVE
 from .objective_pawn_contract import VERSION as PAWN_VERSION
+from .objective_pin_contract import GOAL as PIN_GOAL
+from .objective_pin_contract import OBJECTIVE as PIN_OBJECTIVE
+from .objective_pin_contract import VERSION as PIN_VERSION
 from .objective_promotion_binding import public_binding, public_scope
 from .objective_protection_contract import OBJECTIVE as PROTECTION_OBJECTIVE
 from .objective_protection_contract import VERSION as PROTECTION_VERSION
@@ -33,6 +36,7 @@ def _scope(session, request):
         and (session["source_version"], session["objective"])
         in {
             (FORK_VERSION, FORK_GOAL),
+            (PIN_VERSION, PIN_GOAL),
             (PAWN_VERSION, "preserve_pawn_win"),
             (PAWN_VERSION, "preserve_pawn_draw"),
             (PROTECTION_VERSION, "protect_threatened_piece"),
@@ -54,6 +58,7 @@ def _binding(session, data, request):
         and (session["source_version"], data.get("objective_version"))
         in {
             (FORK_VERSION, FORK_OBJECTIVE),
+            (PIN_VERSION, PIN_OBJECTIVE),
             (PAWN_VERSION, PAWN_OBJECTIVE),
             (PROTECTION_VERSION, PROTECTION_OBJECTIVE),
             (TARGET_VERSION, TARGET_OBJECTIVE),

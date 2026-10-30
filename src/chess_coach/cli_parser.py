@@ -14,6 +14,7 @@ from .cli_recovery import configure as recovery
 from .cli_recurrence import configure as recurrence
 from .cli_related_capture import configure as related_capture
 from .cli_related_fork import configure as related_fork
+from .cli_related_fork_avoidance import configure as related_fork_avoidance
 from .cli_related_fork_prevention import configure as related_fork_prevention
 from .cli_related_mate import configure as related_mate
 from .cli_related_protection import configure as related_protection
@@ -40,6 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
     related_capture(sub)
     related_fork(sub)
     related_fork_prevention(sub)
+    related_fork_avoidance(sub)
     related_mate(sub)
     related_protection(sub)
     sub.add_parser("capabilities", help="Report versioned product capabilities")

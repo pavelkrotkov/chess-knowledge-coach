@@ -32,7 +32,9 @@ def _binding(source, version, motif, item):
         "review_event_id": provenance["review_event_id"],
         "rank_version": version,
         "motif": motif,
-        "operation": "prevent" if motif in {"protection", "fork_prevention"} else "execute",
+        "operation": "prevent"
+        if motif in {"protection", "fork_prevention", "fork_avoidance"}
+        else "execute",
         "pattern_cued": True,
     }
 
@@ -48,10 +50,18 @@ def _binding(source, version, motif, item):
             target_roles=item["target_roles"],
         )
 
+    if motif == "fork_avoidance":
+        binding.update(
+            threat_origin="created_by_played_move",
+            created_witness=item["created_witness"],
+            defense_role=item["defense_role"],
+            target_roles=item["target_roles"],
+        )
+
     if motif == "mate":
         binding["mate_timing"] = source["objective"]
 
-    if motif in {"fork", "protection", "fork_prevention", "mate"}:
+    if motif in {"fork", "protection", "fork_prevention", "fork_avoidance", "mate"}:
         binding.update(
             line_filter_version=filter_version(motif),
             selected_line_indices=item["matching_line_indices"],

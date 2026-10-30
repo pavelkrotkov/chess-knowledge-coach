@@ -3,9 +3,23 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.61.0"
+REGISTRY_VERSION = "1.63.0"
 
 CAPABILITIES = (
+    {
+        "id": "owned_pin_objectives",
+        "area": "Training",
+        "name": "Owned pin execution",
+        "status": "observation-only",
+        "details": "Verify qualified pin creation and bounded material-or-mate consequences without mastery inference.",
+    },
+    {
+        "id": "related_created_fork_avoidance",
+        "area": "Training",
+        "name": "Avoiding created knight forks",
+        "status": "observation-only",
+        "details": "Current owned created-by-play knight-fork evidence can retrieve bounded supplied defenses with a separately verified legal bad-move witness. Other threats, compensation, exhausted work and later play remain unknown; no mastery is inferred.",
+    },
     {
         "id": "related_mate_execution",
         "area": "Training",

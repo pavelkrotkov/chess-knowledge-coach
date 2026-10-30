@@ -7,3 +7,6 @@ def add_fields(result, row):
     binding = json.loads(row["provenance_json"]).get("related_fork_prevention")
     if binding is not None:
         result["related_fork_prevention"] = True
+
+    if json.loads(row["provenance_json"]).get("related_fork_avoidance") is not None:
+        result["related_fork_avoidance"] = True

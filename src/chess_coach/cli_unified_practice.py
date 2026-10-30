@@ -2,6 +2,7 @@
 
 import json
 
+from .objective_pin_list import candidates as pin_candidates
 from .objective_publication import cancel as cancel_objective
 from .objective_status import inspect as inspect_objective
 from .objective_worker import process as process_objectives
@@ -14,6 +15,8 @@ from .unified_sessions import start
 def configure(sub):
     listing = sub.add_parser("list-own-game-practice")
     listing.add_argument("--subject", required=True)
+    pin = sub.add_parser("list-pin-practice")
+    pin.add_argument("--subject", required=True)
     pawn = sub.add_parser("list-pawn-practice")
     pawn.add_argument("--subject", required=True)
     pawn.add_argument("--before")
@@ -75,6 +78,10 @@ def handle_hint(db, args):
 
 def handle_list(db, args):
     print(json.dumps(list_candidates(db, args.subject), indent=2))
+
+
+def handle_list_pin(db, args):
+    print(json.dumps(pin_candidates(db, args.subject), indent=2))
 
 
 def handle_list_pawn(db, args):

@@ -10,6 +10,9 @@ def add_fields(result, row):
     result["review_status"] = provenance["review_status"]
     result["evidence_id"] = provenance["evidence_id"]
     result["position_id"] = provenance["position_id"]
+    if row["objective"] == "execute_named_pin":
+        for key in ("pin_attacker", "pin_pinned", "pin_rear", "pin_type"):
+            result[key] = provenance[key]
     if row["objective"] == "execute_named_fork":
         add_fork_fields(result, provenance)
     if row["objective"] in {"capture_named_target", "protect_threatened_piece"}:
