@@ -2,7 +2,7 @@
 
 import json
 
-from . import cli_related_fork_prevention
+from . import cli_related_fork_avoidance, cli_related_fork_prevention
 from .related_fork import preview
 from .related_fork_start import start_related
 
@@ -40,6 +40,7 @@ def begin(db, args):
 
 COMMANDS = {
     **cli_related_fork_prevention.COMMANDS,
+    **cli_related_fork_avoidance.COMMANDS,
     "related-forks": listing,
     "start-related-fork": begin,
 }

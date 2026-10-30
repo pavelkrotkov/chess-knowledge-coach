@@ -3,6 +3,7 @@
 from flask import render_template
 
 from .fork_defense_mastery_root import supported_threat
+from .related_fork_avoidance_display import available as avoidance_available
 from .web_board import board_rows
 
 
@@ -25,6 +26,7 @@ def available(evidence):
 
 def render_evidence(evidence):
     evidence["anchored_fork_prevention"] = available(evidence)
+    evidence["created_fork_avoidance"] = avoidance_available(evidence)
     return render_template(
         "evidence.html", evidence=evidence, board=board_rows(evidence["decision_fen"])
     )

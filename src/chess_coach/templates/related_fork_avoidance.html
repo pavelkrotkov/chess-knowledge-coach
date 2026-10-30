@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Avoid creating a knight fork — Chess coach{% endblock %}
+{% block content %}
+<h2>Practice avoiding a move that creates a knight fork</h2>
+{% if result.scanned is defined %}
+<p>The source is a {{ "reviewed" if result.review_status == "accepted" else "provisional" }} recorded bad move. Each example has a separately verified alternative move that creates a particular immediate fork; this does not assert that no other fork existed beforehand or that a later game result was forced.</p>
+<p>{{ result.status }}. Inspected {{ result.scanned }} corpus records and {{ result.public_scanned }} public tasks. Checked {{ result.avoidance_scan.lines }} supplied lines, {{ result.avoidance_scan.anchors }} legal alternatives and {{ result.avoidance_scan.proofs }} reserved fork-proof units across good and bad scans, with {{ result.avoidance_scan.unknown }} unsupported or unqualified checks; {% if result.avoidance_scan.truncated %}the work limit was reached and additional candidates are unknown{% else %}the bounded pool was inspected{% endif %}. {{ result.source_verification }} Later compensation remains unknown.</p>
+{% if result.selection %}<p>The corpus is a nonrepresentative source-order prefix of {{ result.selection.fullsource_count }} records.</p>{% else %}<p>Corpus selection metadata is unavailable.</p>{% endif %}
+{% if result.baseline %}<p>The source-game rating is a content filter, not calibrated puzzle skill.</p>{% else %}<p>Cold start: the displayed bounds are a content filter and 1400 is a sorting anchor, not an estimate of learner skill.</p>{% endif %}
+<p>Excluded {{ result.excluded.exact_source }} exact sources, {{ result.excluded.familiar }} familiar positions and {{ result.excluded.duplicate }} duplicate prompts or source games.</p>
+{% else %}<p>{{ result.status }}</p>{% endif %}
+{% for item in result["items"] %}<section><h3>Transfer example {{ loop.index }}</h3>
+<p>Choose the supplied defense without creating a supported knight-fork threat. Source: {{ item.type }} · version {{ item.version }}{% if item.rating is not none %} · content rating {{ item.rating }}{% endif %}.</p>
+{% set board = item.board %}{% set board_label = "Transfer position; side to move at the bottom" %}{% include "board.html" %}
+<form method="post" action="{{ url_for('related_fork_avoidance.begin', evidence_id=evidence_id) }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="reference" value="{{ item.reference }}"><button>Start this example</button></form></section>{% endfor %}
+{% if result.next_cursor %}<p><a href="{{ url_for('related_fork_avoidance.show', evidence_id=evidence_id, cursor=result.next_cursor) }}">More examples</a></p>{% endif %}
+{% endblock %}

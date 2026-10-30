@@ -12,6 +12,7 @@ from .lesson_rook import rook
 from .lesson_structure import structure
 from .lesson_tactics import _defense as defense
 from .lesson_tactics import _fork as fork
+from .related_fork_avoidance_display import available as avoidance_available
 from .related_fork_prevention_display import available as prevention_available
 
 ADAPTERS = {
@@ -48,6 +49,7 @@ def describe(source):
         "evidence_id": evidence["id"],
         "operation": evidence["operation"],
         "anchored_fork_prevention": prevention_available(evidence),
+        "created_fork_avoidance": avoidance_available(evidence),
         "fact_id": evidence["facts"][0]["id"],
         "detector_version": evidence["facts"][0]["detector_version"],
         "mapping_run_id": evidence["mapping_run_id"],
