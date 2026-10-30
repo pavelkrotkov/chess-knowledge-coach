@@ -3,9 +3,16 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.62.0"
+REGISTRY_VERSION = "1.63.0"
 
 CAPABILITIES = (
+    {
+        "id": "owned_pin_objectives",
+        "area": "Training",
+        "name": "Owned pin execution",
+        "status": "observation-only",
+        "details": "Verify qualified pin creation and bounded material-or-mate consequences without mastery inference.",
+    },
     {
         "id": "related_created_fork_avoidance",
         "area": "Training",

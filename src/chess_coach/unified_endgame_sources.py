@@ -16,6 +16,8 @@ from .objective_fork_source import resolve as resolve_fork
 from .objective_mate_source import resolve as resolve_mate_one
 from .objective_pawn_contract import VERSION as PAWN_OBJECTIVE_VERSION
 from .objective_pawn_source import resolve as resolve_pawn_objective
+from .objective_pin_contract import VERSION as PIN_VERSION
+from .objective_pin_source import resolve as resolve_pin
 from .objective_protection_contract import VERSION as PROTECTION_VERSION
 from .objective_protection_source import resolve as resolve_protection
 from .objective_short_source import VERSION as SHORT_VERSION
@@ -36,12 +38,14 @@ VERSIONS = frozenset(
         SHORT_VERSION,
         DEFENSE_VERSION,
         FORK_VERSION,
+        PIN_VERSION,
     )
 )
 
 
 OBJECTIVE_RESOLVERS = {
     FORK_VERSION: resolve_fork,
+    PIN_VERSION: resolve_pin,
     DEFENSE_VERSION: resolve_defense,
     SHORT_VERSION: resolve_short,
     PROTECTION_VERSION: resolve_protection,

@@ -9,6 +9,7 @@ from .objective_defense_source import VERSION as DEFENSE_VERSION
 from .objective_events import prefix, prefix_hash
 from .objective_fork_contract import is_source as fork_source
 from .objective_pawn_contract import is_source as pawn_source
+from .objective_pin_contract import is_source as pin_source
 from .objective_promotion_contract import OBJECTIVES as PROMOTION_OBJECTIVES
 from .objective_protection_contract import VERSION as PROTECTION_VERSION
 from .objective_short_source import VERSION as SHORT_VERSION
@@ -51,6 +52,7 @@ def _supported(session):
     return (
         fork_source(session)
         or pawn_source(session)
+        or pin_source(session)
         or (
             session["source_type"] == "own-game"
             and session["source_version"]

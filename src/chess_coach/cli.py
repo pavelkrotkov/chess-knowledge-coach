@@ -29,6 +29,7 @@ COMMANDS = {
     "cancel-objective-verification": unified_practice.handle_verify_cancel,
     "list-own-game-practice": unified_practice.handle_list,
     "list-pawn-practice": unified_practice.handle_list_pawn,
+    "list-pin-practice": unified_practice.handle_list_pin,
     "start-unified": unified_practice.handle_start,
     "show-unified": unified_practice.handle_show,
     "move-unified": unified_practice.handle_move,
