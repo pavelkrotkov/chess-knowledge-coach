@@ -41,3 +41,10 @@ independent review and passing CI. Production Python must meet CC <= 8 per calla
 and MI > 50 per module; see the metric policy in `README.md`. CI and pre-commit
 enforce these thresholds. Issue #29 remains open for final verification after the
 remaining release work.
+
+## Proportional testing
+
+Keep at most 200 collected pytest cases, including parametrized cases. Prefer a
+small set of meaningful workflow, integrity, and privacy regressions over helper
+mirrors and redundant edge-case matrices. CI reports coverage for visibility;
+it is not a target or a substitute for useful tests.

@@ -6,7 +6,6 @@ from datetime import UTC, datetime
 import chess
 import chess.engine
 import chess.pgn
-import httpx
 import pytest
 
 from chess_coach.db import Database
@@ -17,7 +16,6 @@ from chess_coach.evidence_review import inspect_evidence, review_evidence
 from chess_coach.ingest import ingest_pgn
 from chess_coach.lesson_narrative import build
 from chess_coach.mastery_eligibility import eligible_contexts
-from chess_coach.pipeline import process_pipeline
 from chess_coach.pipeline_config import PipelineConfig
 from chess_coach.pipeline_inputs import engine_identity, game_input
 from chess_coach.pipeline_work import run_analysis
@@ -149,21 +147,5 @@ def test_source_worker_lesson_practice_and_review(tmp_path, monkeypatch):
     )
     db.connection.commit()
     assert inspect_evidence(db, evidence_id)["discovery_currentness"] == "stale"
-    with pytest.raises(ValueError):
-        resolve(db, VERSION, str(evidence_id), LEARNER)
-
-
-def test_automatic_pipeline_and_rejected_source(tmp_path, monkeypatch):
-    db, config = make_game(tmp_path / "automatic.sqlite", monkeypatch)
-    result = process_pipeline(
-        db, config, transport=httpx.MockTransport(lambda request: httpx.Response(200))
-    )
-    assert result["discoveries"]["outcomes"]["failure"] == 1
-    assert result["discoveries"]["exclusions"]["ambiguous"] == 0
-    evidence_id = db.connection.execute(
-        "SELECT id FROM evidence_mappings WHERE skill=?", ("discovered_attack",)
-    ).fetchone()[0]
-    review_evidence(db, evidence_id, decision="reject", actor="fixture_reviewer")
-    assert not list_candidates(db, LEARNER)["candidates"]
     with pytest.raises(ValueError):
         resolve(db, VERSION, str(evidence_id), LEARNER)

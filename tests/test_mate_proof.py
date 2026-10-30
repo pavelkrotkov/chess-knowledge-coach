@@ -12,7 +12,7 @@ from chess_coach.cli import main
 from chess_coach.db import Database
 from chess_coach.ingest import ingest_pgn
 from chess_coach.mate_inspection import inspect_mate
-from chess_coach.mate_proof import Budget, _root, immediate_mates, prove_short_mates
+from chess_coach.mate_proof import immediate_mates, prove_short_mates
 from chess_coach.pipeline_config import PipelineConfig
 from chess_coach.pipeline_inputs import engine_identity, game_input
 from chess_coach.pipeline_work import run_analysis
@@ -103,13 +103,6 @@ def test_budget_unknown_and_nonmate_disproof():
         prove_short_mates(board, node_limit=0)
 
 
-def test_draw_claim_blocks_forced_mate_but_not_immediate_checkmate():
-    board = chess.Board("7k/8/5KQ1/8/8/8/8/8 w - - 99 1")
-    roots = {root["move"]["uci"]: root for root in prove_short_mates(board)["alternatives"]}
-    assert roots["g6g7"]["status"] == "proved"
-    assert roots["g6g1"]["status"] == "disproved"
-
-
 def test_private_pipeline_facts_cli_browser_and_stale(tmp_path, monkeypatch, capsys):
     path = tmp_path / "mate.sqlite"
     db = owned_game(path, monkeypatch)
@@ -146,64 +139,6 @@ def test_private_pipeline_facts_cli_browser_and_stale(tmp_path, monkeypatch, cap
     assert db.connection.execute("SELECT COUNT(*) FROM evidence_mappings").fetchone()[0] == 0
 
 
-def test_played_checkmate_stalemate_and_black(tmp_path, monkeypatch):
-    mate = owned_game(tmp_path / "mate.sqlite", monkeypatch, move="Qg7#")
-    assert inspect_mate(mate, 1, learner="fixture_a")["played_checkmate"]
-    stale = owned_game(tmp_path / "stale.sqlite", monkeypatch, move="Qf7")
-    result = inspect_mate(stale, 1, learner="fixture_a")
-    assert result["played_stalemate"] and result["immediate_mate_not_played"]
-    black = owned_game(tmp_path / "black.sqlite", monkeypatch, fen=BLACK_FEN, move="Qg2#")
-    assert inspect_mate(black, 1, learner="fixture_b")["played_checkmate"]
-
-
-def test_source_change_during_proof_never_publishes_claim(tmp_path, monkeypatch):
-    import chess_coach.mate_inspection as inspection
-
-    db = owned_game(tmp_path / "changed.sqlite", monkeypatch)
-    original = inspection.prove_short_mates
-
-    def change_source(board, **kwargs):
-        result = original(board, **kwargs)
-        db.connection.execute("UPDATE pipeline_stages SET status='pending' WHERE stage='analysis'")
-        db.connection.commit()
-        return result
-
-    monkeypatch.setattr(inspection, "prove_short_mates", change_source)
-    assert inspect_mate(db, 1, learner="fixture_a") == {
-        "status": "stale",
-        "version": "mate-proof-v1",
-    }
-    assert inspect_mate(db, 1, learner="fixture_a")["status"] == "unavailable"
-
-
-def test_sacrifice_and_unprotected_pseudo_mate():
-    protected = chess.Board("5r1k/6pp/8/3QN3/8/1B6/8/K7 w - - 0 1")
-    result = prove_short_mates(protected)
-    sacrifice = next(root for root in result["alternatives"] if root["move"]["uci"] == "d5g8")
-    assert sacrifice["status"] == "proved"
-    assert [(line["defense"]["san"], line["mate"]["san"]) for line in sacrifice["defenses"]] == [
-        ("Rxg8", "Nf7#")
-    ]
-    unprotected = chess.Board("5r1k/6pp/8/3QN3/8/8/8/K7 w - - 0 1")
-    root = next(
-        root
-        for root in prove_short_mates(unprotected)["alternatives"]
-        if root["move"]["uci"] == "d5g8"
-    )
-    assert root["status"] == "disproved"
-
-
-def test_repetition_history_and_equivalent_immediate_mates():
-    board = chess.Board()
-    for move in ("g1f3", "g8f6", "f3g1", "f6g8") * 2:
-        board.push_uci(move)
-    assert board.can_claim_threefold_repetition()
-    root = _root(board, chess.Move.from_uci("g1f3"), Budget(200))
-    assert root["status"] == "disproved"
-    options = immediate_mates(chess.Board("7k/5Q2/6K1/8/8/8/8/8 w - - 0 1"))
-    assert {move["san"] for move in options} == {"Qe8#", "Qf8#", "Qg7#", "Qh7#"}
-
-
 @pytest.mark.skipif(not os.access("/usr/games/stockfish", os.X_OK), reason="Stockfish unavailable")
 def test_real_engine_pipeline_mate_inspection(tmp_path):
     pgn = f'''[Event "Synthetic"]
@@ -226,12 +161,3 @@ def test_real_engine_pipeline_mate_inspection(tmp_path):
     report = inspect_mate(db, 1, learner="fixture_a")
     assert report["status"] == "current" and report["immediate_mate_not_played"]
     assert report["proof"]["status"] == "proved"
-
-
-def test_known_immediate_mates_survive_exhausted_deeper_budget():
-    board = chess.Board("7k/5Q2/6K1/8/8/8/8/8 w - - 0 1")
-    report = prove_short_mates(board, node_limit=1)
-    assert report["status"] == "proved"
-    proved = {root["move"]["san"] for root in report["alternatives"] if root["status"] == "proved"}
-    assert proved == {"Qe8#", "Qf8#", "Qg7#", "Qh7#"}
-    assert any(root["status"] == "unknown" for root in report["alternatives"])

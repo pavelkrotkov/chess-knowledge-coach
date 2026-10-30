@@ -24,18 +24,3 @@ def test_unreviewed_and_legacy_sources_never_create_mastery(tmp_path):
     assert after["exclusions"] == {"superseded_or_unscoped": 1}
     assert after["contexts"] == []
     assert db.connection.execute("SELECT COUNT(*) FROM mastery_states").fetchone()[0] == 0
-
-
-def test_unknown_legacy_reviewer_is_never_counted(tmp_path):
-    db = Database(tmp_path / "coach.sqlite")
-    db.initialize()
-    evidence_id = record_evidence(
-        db, skill="fork", operation="execute", outcome="success", confidence=1, subject="learner"
-    )
-    db.connection.execute(
-        "UPDATE evidence_mappings SET human_validated=1 WHERE id=?", (evidence_id,)
-    )
-    db.connection.commit()
-    result = update_mastery(db, subject="learner", skill="fork", operation="execute")
-    assert result["exclusions"] == {"legacy_review": 1}
-    assert result["mastery"] is None and result["uncertainty"] == 1

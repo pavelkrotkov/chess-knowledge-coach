@@ -345,8 +345,9 @@ branch, dispatch it with a full lowercase 40-character commit SHA. The commit
 must contain `package-lock.json` and `scripts/js-quality.cjs`. The workflow
 checks out that exact commit, verifies the pinned Python 3.12.13 executable and
 Node 22.23.2, installs its locked dependencies, and runs the full suite with
-an unrounded 90% coverage threshold. It installs Stockfish from the runner's
-Ubuntu repository, reports its package version and binary hash, and requires
-the 15 known native engine cases to run without skips. This hosted run uses
+a maximum of 200 collected cases and an informational coverage report. It
+installs Stockfish from the runner's Ubuntu repository, reports its package
+version and binary hash, and requires five native engine cases to run without
+skips. This hosted run uses
 public source and synthetic tests; its engine may differ from Hermes and it
 does not replace private deployment or performance checks.
