@@ -9,6 +9,8 @@ from .objective_fork_source import resolve as resolve_fork
 from .objective_pawn_contract import VERSION as PAWN_OBJECTIVE_VERSION
 from .objective_pawn_source import resolve as resolve_pawn_objective
 from .objective_pin_contract import VERSION as PIN_VERSION
+from .objective_pin_prevent_contract import VERSION as PIN_PREVENT_VERSION
+from .objective_pin_prevent_source import resolve as resolve_pin_prevent
 from .objective_pin_source import resolve as resolve_pin
 from .objective_protection_contract import VERSION as PROTECTION_VERSION
 from .objective_protection_source import resolve as resolve_protection
@@ -19,6 +21,7 @@ OBJECTIVE_RESOLVERS = {
     FORK_VERSION: resolve_fork,
     FORK_DEFENSE_VERSION: resolve_fork_defense,
     PIN_VERSION: resolve_pin,
+    PIN_PREVENT_VERSION: resolve_pin_prevent,
     DEFENSE_VERSION: resolve_defense,
     SHORT_VERSION: resolve_short,
     PROTECTION_VERSION: resolve_protection,

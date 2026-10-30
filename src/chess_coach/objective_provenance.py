@@ -12,6 +12,8 @@ from .objective_pawn_contract import OBJECTIVE as PAWN_OBJECTIVE
 from .objective_pawn_contract import VERIFIER as PAWN_VERIFIER
 from .objective_pin_contract import OBJECTIVE as PIN_OBJECTIVE
 from .objective_pin_contract import VERIFIER as PIN_VERIFIER
+from .objective_pin_prevent_contract import OBJECTIVE as PIN_PREVENT_OBJECTIVE
+from .objective_pin_prevent_contract import VERIFIER as PIN_PREVENT_VERIFIER
 from .objective_promotion_contract import VERIFIER as PROMOTION_VERIFIER
 from .objective_promotion_contract import VERSION as PROMOTION_VERSION
 from .objective_protection_contract import OBJECTIVE as PROTECTION_OBJECTIVE
@@ -25,6 +27,7 @@ VERIFIERS = {
     FORK_OBJECTIVE: FORK_VERIFIER,
     FORK_DEFENSE_OBJECTIVE: FORK_DEFENSE_VERIFIER,
     PIN_OBJECTIVE: PIN_VERIFIER,
+    PIN_PREVENT_OBJECTIVE: PIN_PREVENT_VERIFIER,
     PROMOTION_VERSION: PROMOTION_VERIFIER,
     PAWN_OBJECTIVE: PAWN_VERIFIER,
     PROTECTION_OBJECTIVE: PROTECTION_VERIFIER,
@@ -38,6 +41,7 @@ PLIES = {
     FORK_OBJECTIVE: 3,
     FORK_DEFENSE_OBJECTIVE: 3,
     PIN_OBJECTIVE: 3,
+    PIN_PREVENT_OBJECTIVE: 3,
     PROMOTION_VERSION: 3,
     PAWN_OBJECTIVE: PAWN_MAX_PLIES,
     PROTECTION_OBJECTIVE: 3,

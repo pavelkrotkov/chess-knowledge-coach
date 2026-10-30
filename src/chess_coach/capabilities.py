@@ -3,9 +3,16 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.64.0"
+REGISTRY_VERSION = "1.65.0"
 
 CAPABILITIES = (
+    {
+        "id": "owned_pin_prevention",
+        "area": "Training",
+        "name": "Owned pin prevention",
+        "status": "observation-only",
+        "details": "Verify supported existing-pin captures or prevention of bounded newly created pins without mastery inference.",
+    },
     {
         "id": "owned_anchored_fork_defense",
         "area": "Training",

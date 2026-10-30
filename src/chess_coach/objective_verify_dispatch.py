@@ -15,6 +15,8 @@ from .objective_pawn_contract import OBJECTIVE as PAWN_OBJECTIVE
 from .objective_pawn_verify import verify as verify_pawn
 from .objective_pin_contract import OBJECTIVE as PIN_OBJECTIVE
 from .objective_pin_judge import verify as verify_pin
+from .objective_pin_prevent_contract import OBJECTIVE as PIN_PREVENT_OBJECTIVE
+from .objective_pin_prevent_judge import verify as verify_pin_prevent
 from .objective_promotion_contract import VERSION as PROMOTION_VERSION
 from .objective_promotion_judge import judge as judge_promotion
 from .objective_protection_contract import OBJECTIVE as PROTECTION_OBJECTIVE
@@ -26,6 +28,7 @@ from .objective_short_source import OBJECTIVE as SHORT_OBJECTIVE
 def verify(board, move, request, events, clock, start, seconds, base, session):
     named = {
         PIN_OBJECTIVE: verify_pin,
+        PIN_PREVENT_OBJECTIVE: verify_pin_prevent,
         FORK_OBJECTIVE: verify_fork,
         FORK_DEFENSE_OBJECTIVE: verify_fork_defense,
     }

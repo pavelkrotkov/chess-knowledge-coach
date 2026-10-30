@@ -4,6 +4,7 @@ import json
 
 from .objective_fork_defense_list import candidates as fork_defense_candidates
 from .objective_pin_list import candidates as pin_candidates
+from .objective_pin_prevent_list import candidates as pin_prevent_candidates
 from .objective_publication import cancel as cancel_objective
 from .objective_status import inspect as inspect_objective
 from .objective_worker import process as process_objectives
@@ -18,6 +19,8 @@ def configure(sub):
     listing.add_argument("--subject", required=True)
     fork_defense = sub.add_parser("list-fork-defense-practice")
     fork_defense.add_argument("--subject", required=True)
+    prevention = sub.add_parser("list-pin-prevention")
+    prevention.add_argument("--subject", required=True)
     pin = sub.add_parser("list-pin-practice")
     pin.add_argument("--subject", required=True)
     pawn = sub.add_parser("list-pawn-practice")
@@ -85,6 +88,10 @@ def handle_list(db, args):
 
 def handle_list_fork_defense(db, args):
     print(json.dumps(fork_defense_candidates(db, args.subject), indent=2))
+
+
+def handle_list_pin_prevent(db, args):
+    print(json.dumps(pin_prevent_candidates(db, args.subject), indent=2))
 
 
 def handle_list_pin(db, args):
