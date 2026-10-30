@@ -20,6 +20,9 @@ def require_current(db, row):
     from .related_protection_current import require_current as require_protection_current
 
     require_protection_current(db, row, snapshot_hash)
+    from .related_fork_prevention_current import require_current as require_prevention_current
+
+    require_prevention_current(db, row, snapshot_hash)
     public = row["source_type"] == "public" and row["objective"] in PROMOTION_OBJECTIVES
     if row["source_type"] != "own-game" and not public:
         return

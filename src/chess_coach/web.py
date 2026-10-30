@@ -17,6 +17,7 @@ from .web_purpose import purpose_views
 from .web_recurrence import recurrence_views
 from .web_related_capture import related_capture
 from .web_related_fork import related_fork
+from .web_related_fork_prevention import related_fork_prevention
 from .web_related_protection import related_protection
 from .web_repertoire import repertoire_views
 from .web_security import install_security
@@ -55,6 +56,7 @@ def create_app(
     install_security(app, login, origin, host if backend_host is None else backend_host)
     app.register_blueprint(related_capture)
     app.register_blueprint(related_fork)
+    app.register_blueprint(related_fork_prevention)
     app.register_blueprint(related_protection)
     app.register_blueprint(views)
     app.register_blueprint(lesson_views)

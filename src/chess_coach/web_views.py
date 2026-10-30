@@ -47,13 +47,13 @@ def evidence_list():
 
 @views.get("/evidence/<int:evidence_id>")
 def evidence_detail(evidence_id: int):
+    from .related_fork_prevention_display import render_evidence
+
     try:
         evidence = inspect_evidence(database(), evidence_id)
     except ValueError:
         abort(404)
-    return render_template(
-        "evidence.html", evidence=evidence, board=board_rows(evidence["decision_fen"])
-    )
+    return render_evidence(evidence)
 
 
 @views.post("/evidence/<int:evidence_id>/review")
