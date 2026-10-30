@@ -10,7 +10,7 @@ from .style_schedule_schema import validate_style_schedule
 from .style_schedule_view_state import view_state
 
 
-def status(db, learner, *, views=None):
+def status(db, learner, *, views=None, protection_checks=None):
     validate_style_schedule(db.connection)
     key = learner_key(learner)
     cycle = db.connection.execute(
@@ -35,7 +35,9 @@ def status(db, learner, *, views=None):
         "slots": [_slot(db, learner, row, views) for row in rows],
         "pending": pending,
         "protection_pending": pending_count(db, key),
-        "protection": protection_status(db, learner, cycle["id"], views=views),
+        "protection": protection_status(
+            db, learner, cycle["id"], views=views, checks=protection_checks
+        ),
     }
 
 
@@ -49,8 +51,11 @@ def _slot(db, learner, row, views):
     if row["request_id"] is None:
         return result
     try:
-        view = views.get(row["request_id"]) if views else None
-        if view is None:
+        if views is not None:
+            view = views.get(row["request_id"])
+            if view is None:
+                return {**result, "source_state": "unavailable", "status": "unknown"}
+        else:
             view = show(db, row["request_id"], learner)
     except ValueError:
         return {**result, "source_state": "unavailable"}

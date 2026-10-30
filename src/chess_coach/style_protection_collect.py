@@ -6,8 +6,16 @@ from .style_protection_proof import original, proof
 from .style_protection_source import load, recheck
 
 
-def collect(db, learner, context, board, compared, evidence, budget):
-    source = load(db, learner, evidence, budget)
+def collect(db, learner, context, board, compared, evidence, budget, *, source=None, history=None):
+    if source is None:
+        source = load(
+            db,
+            learner,
+            evidence,
+            budget,
+            verified_board=board if history else None,
+            history=history,
+        )
     if source is None or source["provenance"]["position_id"] != context["position_id"]:
         return None
     target = chess.parse_square(source["provenance"]["objective_target"])
@@ -15,7 +23,7 @@ def collect(db, learner, context, board, compared, evidence, budget):
     if before is None:
         return None
     results = _qualify(board, target, before, evidence, compared, budget)
-    if not recheck(db, learner, evidence, source["provenance"], budget):
+    if not recheck(db, learner, evidence, source["provenance"], budget, history=history):
         return None
     _attach_source(results, source["provenance"])
     return results

@@ -7,7 +7,7 @@ from .style_protection_collect import collect
 from .style_protection_source import reference
 
 
-def inspect(db, learner, context, board, deep, compared, budget):
+def inspect(db, learner, context, board, deep, compared, budget, *, history=None):
     if not take(budget, "lookups"):
         return None
     # A missing reference stays unknown; it is never a negative threat finding.
@@ -18,14 +18,16 @@ def inspect(db, learner, context, board, deep, compared, budget):
     if not take(budget, "resolutions"):
         return None
     try:
+        if history is not None:
+            return _within(db, learner, context, board, deep, compared, evidence, budget, history)
         with preview_history(db, learner) as history:
+            history.targets([context["position_id"]])
             return _within(db, learner, context, board, deep, compared, evidence, budget, history)
     except (ValueError, TypeError, KeyError, IndexError):
         return None
 
 
 def _within(db, learner, context, board, deep, compared, evidence, budget, history):
-    history.targets([context["position_id"]])
     # Rebind the exact board and engine result to the same read-only snapshot.
     fresh = history.board(context["game_id"], context["position_id"])
     if not _same_history(fresh, board) or not _same_deep(
@@ -36,7 +38,7 @@ def _within(db, learner, context, board, deep, compared, evidence, budget, histo
         return None
     if reference(db, learner, context["position_id"]) != (evidence, None):
         return None
-    return collect(db, learner, context, fresh, compared, evidence, budget)
+    return collect(db, learner, context, fresh, compared, evidence, budget, history=history)
 
 
 def _same_history(fresh, board):

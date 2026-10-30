@@ -6,8 +6,10 @@ from .material_policy import MAPPER
 from .unified_own_game_evidence import _inspect
 
 
-def current(db, evidence_id, subject, *, kind="material_capture", operation="execute"):
-    view, review, reasons = _inspect(db, evidence_id, subject)
+def current(
+    db, evidence_id, subject, *, kind="material_capture", operation="execute", _history=None
+):
+    view, review, reasons = _inspect(db, evidence_id, subject, history=_history)
     if reasons or view["objective"]["kind"] != kind:
         raise ValueError("capture source unavailable")
     row = db.connection.execute(

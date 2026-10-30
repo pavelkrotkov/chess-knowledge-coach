@@ -68,13 +68,13 @@ def test_report_reuses_each_game_history_and_private_views_are_read_only(
     db.initialize()
     scheduled(db, monkeypatch)
     calls = []
-    original = collect.selected_boards
+    original = collect.game_boards
 
-    def counted(database, game_id, ids):
+    def counted(database, game_id, ids, history):
         calls.append(game_id)
-        return original(database, game_id, ids)
+        return original(database, game_id, ids, history)
 
-    monkeypatch.setattr(collect, "selected_boards", counted)
+    monkeypatch.setattr(collect, "game_boards", counted)
     monkeypatch.setattr(
         source,
         "selected_boards",
@@ -119,7 +119,7 @@ def test_changed_policy_makes_purpose_result_unknown(tmp_path, monkeypatch):
         item for item in report["observations"] if item.get("provenance") == "purpose_candidate_set"
     ]
     assert report["purpose_coverage"]["counts"]["target_stale"] == 1
-    assert report["purpose_schedule"]["slots"][0]["source_state"] == "stale"
+    assert report["purpose_schedule"]["slots"][0]["source_state"] == "unavailable"
 
 
 def test_duplicate_purpose_slots_count_one_vote(tmp_path, monkeypatch):
@@ -405,7 +405,7 @@ def test_changed_game_source_is_excluded_as_unknown(tmp_path, monkeypatch):
     db.connection.commit()
     report = style_report(db, LEARNER)
     assert report["purpose_coverage"]["counts"]["target_outside_sample"] == 1
-    assert report["purpose_schedule"]["slots"][0]["source_state"] == "stale"
+    assert report["purpose_schedule"]["slots"][0]["source_state"] == "unavailable"
     assert not [
         item for item in report["observations"] if item.get("provenance") == "purpose_candidate_set"
     ]
@@ -430,25 +430,25 @@ def test_report_snapshot_rechecks_changed_source_on_next_read(tmp_path, monkeypa
     db.initialize()
     db.connection.execute("PRAGMA journal_mode=WAL")
     scheduled(db, monkeypatch)
-    original = collect.selected_boards
+    original = collect.game_boards
     changed = []
 
-    def concurrent_change(database, game_id, ids):
+    def concurrent_change(database, game_id, ids, history):
         if not changed and game_id == 1:
             other = sqlite3.connect(path)
             other.execute("UPDATE games SET pgn=pgn || ? WHERE id=1", (" ",))
             other.commit()
             other.close()
             changed.append(True)
-        return original(database, game_id, ids)
+        return original(database, game_id, ids, history)
 
-    monkeypatch.setattr(collect, "selected_boards", concurrent_change)
+    monkeypatch.setattr(collect, "game_boards", concurrent_change)
     first = style_report(db, LEARNER)
     assert first["purpose_coverage"]["counts"]["target_comparable"] == 1
     assert changed == [True]
     second = style_report(db, LEARNER)
     assert second["purpose_coverage"]["counts"]["target_outside_sample"] == 1
-    assert second["purpose_schedule"]["slots"][0]["source_state"] == "stale"
+    assert second["purpose_schedule"]["slots"][0]["source_state"] == "unavailable"
     db.close()
 
 
@@ -459,12 +459,12 @@ def test_unavailable_shared_history_is_not_replayed_for_status(tmp_path, monkeyp
     db = Database(tmp_path / "missing-history.sqlite")
     db.initialize()
     scheduled(db, monkeypatch)
-    original = collect.selected_boards
+    original = collect.game_boards
 
-    def missing(database, game_id, ids):
-        return {} if game_id == 1 else original(database, game_id, ids)
+    def missing(database, game_id, ids, history):
+        return {} if game_id == 1 else original(database, game_id, ids, history)
 
-    monkeypatch.setattr(collect, "selected_boards", missing)
+    monkeypatch.setattr(collect, "game_boards", missing)
     monkeypatch.setattr(source, "selected_boards", lambda *_a: pytest.fail("history replayed"))
     report = style_report(db, LEARNER)
     assert report["purpose_coverage"]["counts"]["target_source_unknown"] == 1

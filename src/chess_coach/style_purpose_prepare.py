@@ -35,6 +35,9 @@ def prepare(db, learner, games):
         "counts": counts,
         "limits": limits,
         "views": {},
+        "protection_checks": {},
+        "protection_seen": set(),
+        "protection_requests": set(),
         "observations": [],
     }
 

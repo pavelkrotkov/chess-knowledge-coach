@@ -12,7 +12,7 @@ from .style_schedule_status import status as schedule_status
 from .style_sources import source_games
 from .style_summary import summarize
 
-VERSION = "style-choices-v10"
+VERSION = "style-choices-v11"
 MATE_SEARCH_LIMIT = 100
 
 
@@ -64,11 +64,13 @@ def _style_report(db, learner, *, max_games):
     )
     return {
         "version": VERSION,
-        "purpose_schedule": schedule_status(db, learner, views=purpose["views"]),
+        "purpose_schedule": schedule_status(
+            db, learner, views=purpose["views"], protection_checks=purpose["protection_checks"]
+        ),
         "purpose_coverage": {
             **purpose["limits"],
             "counts": dict(purpose["counts"]),
-            "sample_note": "Targeted and deterministic controls are small, biased samples; older cycles and excluded records remain unknown.",
+            "sample_note": "Check and protection targets and deterministic controls are small, biased samples; overlapping allocations share one decision. Older cycles and excluded records remain unknown.",
         },
         "transition_method": (
             "Four-ply conditional projections, not observed outcomes or intent: queenless "
@@ -114,7 +116,7 @@ def _style_report(db, learner, *, max_games):
             "requires the same current, same-search, same-depth exact CP gate as other choices."
         ),
         "protection_method": (
-            "Only a unique owned protection source current within the read snapshot and "
+            "A purpose comparison and its independently owned original protection source must both be current within the same read snapshot. Only a unique owned protection source "
             "with original history is eligible. Later requests recheck it. "
             "The same-search choices are compared only when each bounded verifier supports "
             "the same originally threatened piece. Moving that piece and capturing a proved "

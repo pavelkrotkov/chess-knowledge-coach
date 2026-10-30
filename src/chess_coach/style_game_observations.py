@@ -6,7 +6,9 @@ from .style_observation_detail import observation
 from .style_opening import current_opening
 
 
-def collect(db, learner, game, selected, by_id, counts, observations, budget, *, boards=None):
+def collect(
+    db, learner, game, selected, by_id, counts, observations, budget, *, boards=None, history=None
+):
     opening = current_opening(db, game["game_id"])
     if boards is None:
         boards = selected_boards(db, game["game_id"], by_id.keys())
@@ -23,6 +25,7 @@ def collect(db, learner, game, selected, by_id, counts, observations, budget, *,
             opening,
             boards.get(context["position_id"]),
             budget,
+            history=history,
         )
         record_check_context(counts, boards.get(context["position_id"]), context, status)
         counts[status] += 1

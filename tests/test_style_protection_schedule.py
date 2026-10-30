@@ -122,12 +122,14 @@ def test_revoked_original_source_is_unknown_on_read_without_search_or_writes(
     )
     main()
     report = json.loads(capsys.readouterr().out)
-    assert report["purpose_schedule"]["protection"]["evidence_id"] == evidence
+    assert report["protection_coverage"]["used"] == report["protection_coverage"]["limit"]
+    assert report["purpose_schedule"]["protection"]["state"] == "unknown"
+    assert report["purpose_schedule"]["protection"]["detail"] == "report_budget_exhausted"
     client = app(tmp_path / "revoked.sqlite", subject=learner).test_client()
     page = browser_get(client, "/style-choices")
     assert page.status_code == 200
     assert b"Protection allocation:" in page.data
-    assert f"evidence {evidence}".encode() in page.data
+    assert b"report_budget_exhausted" in page.data
     review_evidence(db, evidence, decision="reject", actor="fixture_reviewer")
     changes = db.connection.total_changes
     monkeypatch.setattr(

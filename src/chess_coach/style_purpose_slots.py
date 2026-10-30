@@ -12,7 +12,13 @@ def slots(db, learner):
     ).fetchall()
     retained = cycles[:CYCLE_LIMIT]
     if not retained:
-        return [], {"examined_cycles": 0, "cycle_limit": CYCLE_LIMIT, "older_cycles_unknown": False}
+        return [], {
+            "examined_cycles": 0,
+            "cycle_limit": CYCLE_LIMIT,
+            "allocation_labels_examined": 0,
+            "allocation_label_limit": 3 * CYCLE_LIMIT,
+            "older_cycles_unknown": False,
+        }
     ids = [row["id"] for row in retained]
     placeholders = ",".join("?" for _ in ids)
     rows = db.connection.execute(
@@ -21,8 +27,17 @@ def slots(db, learner):
         WHERE s.cycle_id IN ({placeholders}) ORDER BY c.sequence DESC,s.id DESC""",
         ids,
     ).fetchall()
+    protection = db.connection.execute(
+        f"""SELECT p.*, c.sequence FROM style_protection_allocations p
+        JOIN style_schedule_cycles c ON c.id=p.cycle_id
+        WHERE p.cycle_id IN ({placeholders}) ORDER BY c.sequence DESC,p.id DESC""",
+        ids,
+    ).fetchall()
+    rows = [dict(row) for row in rows] + [{**dict(row), "kind": "protection"} for row in protection]
     return rows, {
         "examined_cycles": len(retained),
+        "allocation_labels_examined": len(rows),
+        "allocation_label_limit": 3 * CYCLE_LIMIT,
         "cycle_limit": CYCLE_LIMIT,
         "older_cycles_unknown": len(cycles) > CYCLE_LIMIT,
     }

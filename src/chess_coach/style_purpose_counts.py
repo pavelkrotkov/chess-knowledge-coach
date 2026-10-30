@@ -2,7 +2,7 @@
 
 from collections import Counter
 
-KINDS = ("target", "control")
+KINDS = ("target", "control", "protection")
 STATES = (
     "slots",
     "pending",

@@ -23,16 +23,20 @@ def reference(db, subject, position_id):
     return None, "multiple_sources" if rows else "no_source"
 
 
-def load(db, subject, evidence, budget):
+def load(db, subject, evidence, budget, *, verified_board=None, history=None):
     if not take(budget, "resolutions") or not take(budget, "proofs"):
         return None
-    return resolve(db, VERSION, str(evidence), subject)
+    return resolve(
+        db, VERSION, str(evidence), subject, _verified_board=verified_board, _history=history
+    )
 
 
-def recheck(db, subject, evidence, provenance, budget):
+def recheck(db, subject, evidence, provenance, budget, *, history=None):
     if not take(budget, "resolutions"):
         return False
-    view, review = current(db, evidence, subject, kind="material_protection", operation="prevent")
+    view, review = current(
+        db, evidence, subject, kind="material_protection", operation="prevent", _history=history
+    )
     return (
         view["source_fingerprint"] == provenance["source_fingerprint"]
         and (review["id"] if review else None) == provenance["review_event_id"]

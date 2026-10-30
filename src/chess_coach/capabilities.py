@@ -3,9 +3,16 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.57.0"
+REGISTRY_VERSION = "1.58.0"
 
 CAPABILITIES = (
+    {
+        "id": "style_protection_purpose_report",
+        "area": "Style",
+        "name": "Source-bound protection comparisons",
+        "status": "observation-only",
+        "details": "A current diagnostic comparison can describe only supported responses to a separately current original protection proof. Unknown, stale or unsupported evidence remains unknown; the comparison does not requalify a fact or establish skill.",
+    },
     {
         "id": "style_protection_scheduling",
         "area": "Style",

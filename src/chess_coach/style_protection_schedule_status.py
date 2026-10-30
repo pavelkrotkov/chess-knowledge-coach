@@ -7,7 +7,7 @@ from .style_protection_schedule_use import source_issue
 from .style_schedule_budget import BudgetExceeded, history_budget
 
 
-def status(db, learner, cycle_id, *, views=None):
+def status(db, learner, cycle_id, *, views=None, checks=None):
     validate(db.connection)
     row = db.connection.execute(
         "SELECT * FROM style_protection_allocations WHERE cycle_id=?", (cycle_id,)
@@ -23,6 +23,11 @@ def status(db, learner, cycle_id, *, views=None):
     }
     if row["binding_json"] is None:
         return result
+    if checks is not None:
+        return {
+            **result,
+            **checks.get(row["id"], {"state": "unknown", "detail": "not_revalidated_in_report"}),
+        }
     try:
         with history_budget() as history, resolution_budget() as proof:
             issue = source_issue(db, learner, row)

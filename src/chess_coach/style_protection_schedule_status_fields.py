@@ -17,9 +17,11 @@ def provenance(row):
         "review_status": provenance["review_status"],
         "review_event_id": provenance["review_event_id"],
         "source_contract": binding["source_contract"],
+        "mapper": binding["mapper"],
         "mapper_version": binding["mapper_version"],
         "verifier": binding["verifier"],
         "history_mode": provenance["history_mode"],
+        "source_fingerprint": provenance["source_fingerprint"],
     }
 
 

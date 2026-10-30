@@ -3,10 +3,10 @@
 from .style_protection_snapshot import inspect
 
 
-def annotate(db, learner, context, board, deep, compared, budget):
+def annotate(db, learner, context, board, deep, compared, budget, *, history=None):
     budget["considered"] += 1
     previous_skips = budget["skipped"]
-    results = inspect(db, learner, context, board, deep, compared, budget)
+    results = inspect(db, learner, context, board, deep, compared, budget, history=history)
     if budget["skipped"] > previous_skips:
         budget["skipped_decisions"] += 1
     unknown = {"status": "unknown", "reason": "source_or_proof_unavailable"}
