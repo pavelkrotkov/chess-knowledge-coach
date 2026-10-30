@@ -4,15 +4,15 @@ from collections import Counter
 
 from .recurrence_snapshot import read_snapshot
 from .repertoire_sources import MAX_GAMES
-from .style_observations import game_observations
 from .style_protection_budget import MAX_WORK as PROTECTION_WORK_LIMIT
 from .style_protection_budget import create as protection_budget
+from .style_purpose_collect import collect_game
+from .style_purpose_prepare import prepare
 from .style_schedule_status import status as schedule_status
-from .style_selection import selection
 from .style_sources import source_games
 from .style_summary import summarize
 
-VERSION = "style-choices-v9"
+VERSION = "style-choices-v10"
 MATE_SEARCH_LIMIT = 100
 
 
@@ -52,22 +52,24 @@ def _style_report(db, learner, *, max_games):
         "skipped": 0,
         "protection": protection_budget(limit=PROTECTION_WORK_LIMIT),
     }
+    purpose = prepare(db, learner, source["games"])
     for game in source["games"]:
-        selected = selection(db, game["game_id"], learner)
-        if selected is None:
-            counts["games_without_selection"] += 1
-        game_counts, game_allocations, items = game_observations(
-            db, learner, game, selected, budget
-        )
+        game_counts, game_allocations, items = collect_game(db, learner, game, budget, purpose)
         counts.update(game_counts)
         allocations.update(game_allocations)
         observations.extend(items)
+    observations.extend(purpose["observations"])
     counts["unselected_decisions"] = max(
         0, source["decisions"] - counts["selected"] + counts["selected_without_learner_context"]
     )
     return {
         "version": VERSION,
-        "purpose_schedule": schedule_status(db, learner),
+        "purpose_schedule": schedule_status(db, learner, views=purpose["views"]),
+        "purpose_coverage": {
+            **purpose["limits"],
+            "counts": dict(purpose["counts"]),
+            "sample_note": "Targeted and deterministic controls are small, biased samples; older cycles and excluded records remain unknown.",
+        },
         "transition_method": (
             "Four-ply conditional projections, not observed outcomes or intent: queenless "
             "contrasts zero queens with one per side from such a root; imbalanced "

@@ -5,9 +5,10 @@ import json
 from .deep_selection_source import learner_key
 from .purpose_view import show
 from .style_schedule_schema import validate_style_schedule
+from .style_schedule_view_state import view_state
 
 
-def status(db, learner):
+def status(db, learner, *, views=None):
     validate_style_schedule(db.connection)
     key = learner_key(learner)
     cycle = db.connection.execute(
@@ -29,12 +30,12 @@ def status(db, learner):
         "state": "current",
         "cycle": cycle["sequence"],
         "coverage": json.loads(cycle["coverage_json"]),
-        "slots": [_slot(db, learner, row) for row in rows],
+        "slots": [_slot(db, learner, row, views) for row in rows],
         "pending": pending,
     }
 
 
-def _slot(db, learner, row):
+def _slot(db, learner, row, views):
     result = {
         "kind": row["kind"],
         "status": row["status"],
@@ -44,14 +45,11 @@ def _slot(db, learner, row):
     if row["request_id"] is None:
         return result
     try:
-        view = show(db, row["request_id"], learner)
+        view = views.get(row["request_id"]) if views else None
+        if view is None:
+            view = show(db, row["request_id"], learner)
     except ValueError:
         return {**result, "source_state": "unavailable"}
-    state = view["status"]
-    if state == "complete" and view["attempts"]:
-        state = view["attempts"][-1]["status"]
-    return {
-        **result,
-        "source_state": view["source_state"],
-        "status": "stale" if view["source_state"] == "stale" else state,
-    }
+    if view["game_id"] != row["game_id"] or view["position_id"] != row["position_id"]:
+        return {**result, "source_state": "unavailable", "status": "unknown"}
+    return {**result, "source_state": view["source_state"], "status": view_state(view)}

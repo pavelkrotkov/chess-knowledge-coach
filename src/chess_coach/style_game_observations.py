@@ -6,9 +6,10 @@ from .style_observation_detail import observation
 from .style_opening import current_opening
 
 
-def collect(db, learner, game, selected, by_id, counts, observations, budget):
+def collect(db, learner, game, selected, by_id, counts, observations, budget, *, boards=None):
     opening = current_opening(db, game["game_id"])
-    boards = selected_boards(db, game["game_id"], by_id.keys())
+    if boards is None:
+        boards = selected_boards(db, game["game_id"], by_id.keys())
     for context in game["contexts"]:
         item = by_id.get(context["position_id"])
         if item is None:

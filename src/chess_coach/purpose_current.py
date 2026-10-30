@@ -4,7 +4,7 @@ import json
 
 from .deep_selection_source import learner_key
 from .purpose_config import PURPOSE, VERSION, configuration
-from .purpose_request import fingerprint
+from .purpose_snapshot_match import matches
 from .purpose_source import source
 
 
@@ -20,18 +20,15 @@ def owned(db, request_id, learner):
     return row
 
 
-def current(db, row, learner):
+def current(db, row, learner, *, snapshot=None):
     if row["purpose"] != PURPOSE or row["policy_version"] != VERSION:
         raise ValueError("purpose request is stale")
     try:
         config = json.loads(row["config_json"])
-        snapshot = source(db, row["position_id"], learner)
+        if snapshot is None:
+            snapshot = source(db, row["position_id"], learner)
         _, fresh = configuration(db, snapshot["game_id"], config["engine_path"])
-        if (
-            not isinstance(config, dict)
-            or config != fresh
-            or fingerprint(snapshot, config) != row["request_fingerprint"]
-        ):
+        if not matches(snapshot, row, learner, config) or config != fresh:
             raise ValueError("purpose request is stale")
     except (ValueError, TypeError, KeyError, RuntimeError, OSError):
         raise ValueError("purpose request is stale") from None

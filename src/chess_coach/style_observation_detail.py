@@ -13,6 +13,7 @@ def observation(db, learner, context, item, selected, opening, board, budget):
     return (
         status,
         {
+            "provenance": "ordinary_deep",
             "game_id": context["game_id"],
             "position_id": context["position_id"],
             "ply": context["ply"],

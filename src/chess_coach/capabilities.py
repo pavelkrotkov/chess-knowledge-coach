@@ -3,9 +3,16 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.55.0"
+REGISTRY_VERSION = "1.56.0"
 
 CAPABILITIES = (
+    {
+        "id": "style_purpose_check_responses",
+        "area": "Style",
+        "name": "Qualified candidate-set check responses",
+        "status": "observation-only",
+        "details": "Current scheduled target and control candidate-set results can add legal check-response comparisons when the same-search score and history gates pass. The small deterministic sample is biased and does not establish defensive skill, a global best move or mastery.",
+    },
     {
         "id": "style_purpose_scheduling",
         "area": "Style",

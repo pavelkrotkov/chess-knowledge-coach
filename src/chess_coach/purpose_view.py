@@ -41,7 +41,7 @@ def _attempt(row, snapshot):
         }
 
 
-def show(db, request_id, learner):
+def show(db, request_id, learner, *, snapshot=None):
     with read_snapshot(db):
         row = owned(db, request_id, learner)
         base = {
@@ -55,7 +55,7 @@ def show(db, request_id, learner):
             "boundary": "Diagnostic only; no evidence, review, mastery or defense qualification is established.",
         }
         try:
-            snapshot, config = current(db, row, learner)
+            snapshot, config = current(db, row, learner, snapshot=snapshot)
         except ValueError:
             rows = db.connection.execute(
                 "SELECT attempt_number,status,detail FROM purpose_analysis_attempts "
