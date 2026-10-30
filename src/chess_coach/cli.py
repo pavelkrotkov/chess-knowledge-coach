@@ -13,6 +13,7 @@ from . import cli_public_training as public_training
 from . import cli_recovery as recovery
 from . import cli_related_capture as related_capture
 from . import cli_related_fork as related_fork
+from . import cli_related_protection as related_protection
 from . import cli_snapshot as snapshot
 from . import cli_unified_practice as unified_practice
 from .capabilities import capability_report
@@ -28,6 +29,8 @@ COMMANDS = {
     "process-objective-verifications": unified_practice.handle_verify,
     "show-objective-verification": unified_practice.handle_verify_status,
     "cancel-objective-verification": unified_practice.handle_verify_cancel,
+    "related-protections": related_protection.listing,
+    "start-related-protection": related_protection.begin,
     "related-forks": related_fork.listing,
     "start-related-fork": related_fork.begin,
     "related-captures": related_capture.listing,

@@ -5,11 +5,11 @@ from .fact_fingerprint import canonical, digest
 FILTER_VERSION = "fork-execute-lines-v1"
 
 
-def select_lines(snapshot, binding):
+def select_lines(snapshot, binding, *, expected_version=FILTER_VERSION):
     """Validate source-line identity and keep the recorded matching indices."""
     lines = snapshot["lines"]
     indices = binding["selected_line_indices"]
-    if binding["line_filter_version"] != FILTER_VERSION:
+    if binding["line_filter_version"] != expected_version:
         raise ValueError("practice line filter changed")
     if digest(canonical(lines)) != binding["source_lines_hash"]:
         raise ValueError("practice source lines changed")

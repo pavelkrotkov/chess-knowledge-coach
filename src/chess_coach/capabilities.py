@@ -3,9 +3,16 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.58.0"
+REGISTRY_VERSION = "1.59.0"
 
 CAPABILITIES = (
+    {
+        "id": "related_protection_practice",
+        "area": "Training",
+        "name": "Related threatened-piece protection",
+        "status": "observation-only",
+        "details": "Current owned protection evidence retrieves source-bound corpus or licensed public examples with a matching supported immediate defense. Bounded scanning and unsupported checks, captures and compensation remain explicit; supplied later lines do not prove forced play.",
+    },
     {
         "id": "style_protection_purpose_report",
         "area": "Style",

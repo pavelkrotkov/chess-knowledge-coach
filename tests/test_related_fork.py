@@ -369,7 +369,8 @@ def test_material_protection_lesson_does_not_offer_capture_transfer(tmp_path):
     }
     with app.test_request_context():
         page = render_template("lesson_body.html", lesson=lesson)
-    assert "Related protection practice is not yet available" in page
+    assert "Find related protection practice" in page
+    assert "related-protections" in page
     assert "related-captures" not in page
 
 

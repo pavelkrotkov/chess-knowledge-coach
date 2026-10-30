@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime
 
+from .related_protection_view import add_fields as add_protection_fields
 from .unified_owned_view import add_fields as add_owned_fields
 
 
@@ -36,6 +37,7 @@ def view(row):
         result.pop("source_key")
     if row["source_type"] == "own-game":
         add_owned_fields(result, row)
+    add_protection_fields(result, row)
     return result
 
 
