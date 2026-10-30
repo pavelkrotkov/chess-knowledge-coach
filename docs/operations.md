@@ -337,3 +337,14 @@ handling remain required in [#142](https://github.com/pavelkrotkov/chess-knowled
 [#140](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/140), and
 [#144](https://github.com/pavelkrotkov/chess-knowledge-coach/issues/144).
 Source tags describe material and do not establish mastery.
+
+### Exact-runtime validation on GitHub
+
+After the manual **Exact runtime validation** workflow exists on the default
+branch, dispatch it with a full lowercase 40-character commit SHA. The commit
+must contain `package-lock.json` and `scripts/js-quality.cjs`. The workflow
+checks out that exact commit, verifies the pinned Python 3.12.13 executable and
+Node 22.23.2, installs its locked dependencies, and runs the full suite with
+an unrounded 90% coverage threshold. It reports skipped tests. This hosted run
+uses public source and synthetic tests; it does not establish production
+Stockfish behavior or replace private deployment and performance checks.

@@ -1,0 +1,75 @@
+name: Exact runtime validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Full commit SHA to validate
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      UV_PYTHON_DOWNLOADS: never
+    steps:
+      - name: Validate commit input
+        id: target
+        env:
+          TARGET_SHA: ${{ inputs.commit }}
+        run: |
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "Expected a lowercase 40-character commit SHA"; exit 1; }
+          echo "sha=$TARGET_SHA" >> "$GITHUB_OUTPUT"
+      - name: Checkout exact commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.target.outputs.sha }}
+          persist-credentials: false
+      - name: Verify source and prerequisites
+        env:
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+          test -z "$(git status --porcelain --untracked-files=no)"
+          echo "Commit: $(git rev-parse HEAD)"
+          echo "Tree: $(git rev-parse HEAD^{tree})"
+          test -f package-lock.json && test -f scripts/js-quality.cjs || { echo "Target requires package-lock.json and scripts/js-quality.cjs"; exit 1; }
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.12.6"
+          enable-cache: false
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.23.2"
+      - name: Install and verify exact Python
+        run: |
+          test "$(uv --version | cut -d " " -f 1-2)" = "uv 0.12.6"
+          test "$(node --version)" = "v22.23.2"
+          curl --fail --location --silent --show-error 'https://github.com/astral-sh/python-build-standalone/releases/download/20260728/cpython-3.12.13%2B20260728-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz' -o "$RUNNER_TEMP/python.tar.gz"
+          echo "7ceaf4360f4b4ab44f31d8217cfdc70df8e12b61d9561b4900ee7af87176e50d  $RUNNER_TEMP/python.tar.gz" | sha256sum --check
+          mkdir "$RUNNER_TEMP/exact-python"
+          tar -xzf "$RUNNER_TEMP/python.tar.gz" -C "$RUNNER_TEMP/exact-python"
+          python="$RUNNER_TEMP/exact-python/python/bin/python3.12"
+          echo "1e4461092175d186c4bcdb19ee2849a45d6e4d8d1f6a871e45f63418d52a4e35  $python" | sha256sum --check
+          test "$("$python" --version)" = "Python 3.12.13"
+          uv sync --frozen --python "$python"
+          echo "UV_PYTHON=$python" >> "$GITHUB_ENV"
+          uv run --frozen --no-sync --python "$python" python -c 'import hashlib, pathlib, sys, chess_coach; p = pathlib.Path(sys.executable).resolve(); assert sys.version_info[:3] == (3, 12, 13); assert hashlib.sha256(p.read_bytes()).hexdigest() == "1e4461092175d186c4bcdb19ee2849a45d6e4d8d1f6a871e45f63418d52a4e35"; assert pathlib.Path(chess_coach.__file__).resolve().is_relative_to(pathlib.Path.cwd() / "src"); print("Verified Python:", p, sys.version)'
+      - name: Install locked JavaScript dependencies and check quality
+        run: |
+          npm ci --ignore-scripts
+          node scripts/js-quality.cjs
+      - name: Run full suite and verify raw coverage
+        env:
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          uv run --frozen --no-sync pytest -ra --cov --cov-report=term-missing --cov-fail-under=90 --cov-precision=2
+          uv run --frozen --no-sync coverage json -o - | uv run --frozen --no-sync python -c 'import json, sys; t = json.load(sys.stdin)["totals"]; covered = t["covered_lines"] + t["covered_branches"]; total = t["num_statements"] + t["num_branches"]; print(f"Raw coverage: {covered}/{total} ({100 * covered / total:.6f}%)" if total else "Empty coverage"); sys.exit(not total or 100 * covered < 90 * total)'
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+          test -z "$(git status --porcelain --untracked-files=no)"
