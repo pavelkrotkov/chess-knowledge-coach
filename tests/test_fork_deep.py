@@ -79,6 +79,8 @@ def test_real_deep_played_knight_fork_worker_and_browser(tmp_path, black):
 @pytest.mark.parametrize("black", [False, True])
 @pytest.mark.parametrize("played_kind", ["king", "pawn"])
 def test_real_deep_missed_knight_fork_worker(tmp_path, black, played_kind):
+    from chess_coach.fork_proof import fork_proof
+    from chess_coach.material_lines import continuation, material, unopposed_material_loss
     from chess_coach.material_source import prepare
 
     board = chess.Board("r3k3/7p/8/1N6/8/8/6P1/7K w - - 0 1")
@@ -122,17 +124,43 @@ def test_real_deep_missed_knight_fork_worker(tmp_path, black, played_kind):
         "played": prepared["played"],
     }
     evidence = inspect_evidence(db, row["id"])
-    expected = "ambiguous" if played_kind == "king" else "failure"
-    assert evidence["outcome"] == expected, {
-        "fact": evidence["context"]["fork_observation"],
-        "best": prepared["best"],
-        "played": prepared["played"],
+    fact = evidence["context"]["fork_observation"]
+    root = game.board()
+    best_move = chess.Move.from_uci(prepared["best"]["root_move"])
+    proof = fork_proof(root, best_move)
+    assert proof and proof["minimum_gain"] == 3
+    after = root.copy()
+    after.push(best_move)
+    assert {branch["reply"] for branch in proof["branches"]} == {
+        move.uci() for move in after.legal_moves
     }
+    initial = material(root, root.turn)
+    for branch in proof["branches"]:
+        reply = after.copy()
+        reply.push_uci(branch["reply"])
+        capture = chess.Move.from_uci(branch["capture"])
+        assert capture in reply.legal_moves and reply.is_capture(capture)
+        reply.push(capture)
+        counters = list(reply.legal_moves)
+        assert 0 < len(counters) <= 64
+        for counter in counters:
+            assert not (
+                reply.gives_check(counter) or counter.promotion or reply.is_en_passant(counter)
+            )
+            final = reply.copy()
+            final.push(counter)
+            assert material(final, root.turn) - initial >= 3
+    best = continuation(root, prepared["best"], best_move.uci(), allow_checks=True, minimum_plies=4)
+    actual = continuation(root, prepared["played"], played)
+    if evidence["outcome"] == "ambiguous":
+        assert fact["reason"] == "continuation_unavailable"
+        assert best is None or actual is None
+    else:
+        assert evidence["outcome"] == "failure" and fact["proof"] == proof
+        assert best is not None and actual is not None
+        assert unopposed_material_loss(prepared["best"], prepared["played"])
+        assert best["material_delta"] >= 3
+        assert actual["material_delta"] <= best["material_delta"] - 3
+        assert fact["best"] == best and fact["played"] == actual
     assert evidence["fork_source_currentness"] == "current"
     assert evidence["review_status"] == "unreviewed"
-    if played_kind == "king":
-        assert evidence["context"]["fork_observation"]["reason"] == "continuation_unavailable"
-    else:
-        proof = evidence["context"]["fork_observation"]["proof"]
-        assert proof["move"] == prepared["best"]["root_move"]
-        assert len(proof["branches"]) == proof["legal_replies"]
