@@ -1,6 +1,7 @@
 """Resolve opaque transfer references and bind immutable source lineage."""
 
 from .fact_fingerprint import canonical, digest
+from .related_backrank_binding import add_fields as add_backrank_fields
 from .related_transfer_filter import filter_version
 from .unified_source_current import snapshot_hash
 
@@ -61,10 +62,9 @@ def _binding(source, version, motif, item):
     if motif == "pin":
         binding["candidate_certificates"] = item["candidate_certificates"]
 
-    if motif in {"mate", "backrank_attack"}:
+    if motif == "mate":
         binding["mate_timing"] = source["objective"]
-    if motif == "backrank_attack":
-        binding["root_move"] = provenance["selected_root"]
+    add_backrank_fields(binding, source, motif)
 
     if motif in {
         "fork",
