@@ -16,11 +16,20 @@ def select(
     *,
     theme="hangingPiece",
     all_lines=False,
+    include_objective=False,
     **matching,
 ):
     rating = baseline(db, source)
     familiar, games, is_familiar = familiarity(db, subject)
-    pool, corpus = candidates(db, corpus_version, rating, games, theme=theme, all_lines=all_lines)
+    pool, corpus = candidates(
+        db,
+        corpus_version,
+        rating,
+        games,
+        theme=theme,
+        all_lines=all_lines,
+        include_objective=include_objective,
+    )
     if corpus is None:
         return None
     diagnostics = {}

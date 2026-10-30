@@ -3,9 +3,23 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.59.0"
+REGISTRY_VERSION = "1.61.0"
 
 CAPABILITIES = (
+    {
+        "id": "related_mate_execution",
+        "area": "Training",
+        "name": "Related immediate and short-mate execution",
+        "status": "observation-only",
+        "details": "Current owned mate evidence retrieves source-bound legal mating examples with matching timing and king and attacker structure. A supplied line witnesses a mate; it does not prove every defense.",
+    },
+    {
+        "id": "related_anchored_fork_prevention",
+        "area": "Training",
+        "name": "Anchored knight-fork defense practice",
+        "status": "observation-only",
+        "details": "Current owned pre-existing knight-fork defense evidence can retrieve bounded matching supplied defenses. Created-by-play threats, unsupported counterplay and exhausted work remain unknown; supplied continuations do not establish mastery.",
+    },
     {
         "id": "related_protection_practice",
         "area": "Training",

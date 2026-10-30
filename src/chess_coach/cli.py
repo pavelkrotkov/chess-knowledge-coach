@@ -11,13 +11,11 @@ from . import cli_deep_selection as deep_selection
 from . import cli_pipeline, cli_purpose, cli_recurrence
 from . import cli_public_training as public_training
 from . import cli_recovery as recovery
-from . import cli_related_capture as related_capture
-from . import cli_related_fork as related_fork
-from . import cli_related_protection as related_protection
 from . import cli_snapshot as snapshot
 from . import cli_unified_practice as unified_practice
 from .capabilities import capability_report
 from .cli_parser import build_parser
+from .cli_related_commands import COMMANDS as RELATED_COMMANDS
 from .competency_coverage import competency_report
 from .competency_graph import seed_competency_graph
 from .db import Database
@@ -29,12 +27,6 @@ COMMANDS = {
     "process-objective-verifications": unified_practice.handle_verify,
     "show-objective-verification": unified_practice.handle_verify_status,
     "cancel-objective-verification": unified_practice.handle_verify_cancel,
-    "related-protections": related_protection.listing,
-    "start-related-protection": related_protection.begin,
-    "related-forks": related_fork.listing,
-    "start-related-fork": related_fork.begin,
-    "related-captures": related_capture.listing,
-    "start-related-capture": related_capture.begin,
     "list-own-game-practice": unified_practice.handle_list,
     "list-pawn-practice": unified_practice.handle_list_pawn,
     "start-unified": unified_practice.handle_start,
@@ -88,6 +80,9 @@ COMMANDS = {
     "play-puzzle": learning.handle_play_puzzle,
     "hint-puzzle": learning.handle_hint_puzzle,
 }
+
+
+COMMANDS.update(RELATED_COMMANDS)
 
 
 def main() -> None:

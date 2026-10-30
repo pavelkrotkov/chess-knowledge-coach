@@ -1,8 +1,7 @@
 """Resolve opaque transfer references and bind immutable source lineage."""
 
-from . import related_fork_lines
 from .fact_fingerprint import canonical, digest
-from .related_protection_contract import FILTER_VERSION as PROTECTION_FILTER
+from .related_transfer_filter import filter_version
 from .unified_source_current import snapshot_hash
 
 
@@ -33,7 +32,7 @@ def _binding(source, version, motif, item):
         "review_event_id": provenance["review_event_id"],
         "rank_version": version,
         "motif": motif,
-        "operation": "prevent" if motif == "protection" else "execute",
+        "operation": "prevent" if motif in {"protection", "fork_prevention"} else "execute",
         "pattern_cued": True,
     }
 
@@ -42,11 +41,19 @@ def _binding(source, version, motif, item):
         binding["protection_mechanism"] = item["protection_mechanism"]
         binding["gain_threshold"] = 3
 
-    if motif in {"fork", "protection"}:
+    if motif == "fork_prevention":
         binding.update(
-            line_filter_version=PROTECTION_FILTER
-            if motif == "protection"
-            else related_fork_lines.FILTER_VERSION,
+            threat_origin="positional_before_played",
+            defense_role=item["defense_role"],
+            target_roles=item["target_roles"],
+        )
+
+    if motif == "mate":
+        binding["mate_timing"] = source["objective"]
+
+    if motif in {"fork", "protection", "fork_prevention", "mate"}:
+        binding.update(
+            line_filter_version=filter_version(motif),
             selected_line_indices=item["matching_line_indices"],
             source_lines_hash=item["source_lines_hash"],
         )

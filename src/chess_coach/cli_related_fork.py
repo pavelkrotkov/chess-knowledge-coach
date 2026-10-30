@@ -2,6 +2,7 @@
 
 import json
 
+from . import cli_related_fork_prevention
 from .related_fork import preview
 from .related_fork_start import start_related
 
@@ -35,3 +36,10 @@ def begin(db, args):
     )
     result.pop("source_key", None)
     print(json.dumps(result, indent=2))
+
+
+COMMANDS = {
+    **cli_related_fork_prevention.COMMANDS,
+    "related-forks": listing,
+    "start-related-fork": begin,
+}
