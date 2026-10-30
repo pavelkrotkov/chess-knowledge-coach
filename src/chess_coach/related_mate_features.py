@@ -19,11 +19,10 @@ def mate_features(prompt, line):
             if board.is_game_over():
                 return None
         final = legal_move(board, line[-1])
-        attacker = _piece_type(board, final)
         board.push(final)
         if not board.is_checkmate():
             return None
-        return features(root, board, final, mover, attacker, len(line))
+        return features(root, board, mover, len(line))
     except (ValueError, TypeError, AttributeError, IndexError):
         return None
 

@@ -5,20 +5,24 @@ import chess
 from .related_capture_position import _material, _phase
 
 
-def features(root, mate, final, mover, attacker, timing):
+def features(root, mate, mover, timing):
     king = mate.king(mate.turn)
     direction = 1 if root.turn else -1
-    geometry = (
-        attacker,
-        chess.square_file(final.to_square) - chess.square_file(king),
-        direction * (chess.square_rank(final.to_square) - chess.square_rank(king)),
-        _escape_structure(mate, king, root.turn),
+    checkers = tuple(
+        sorted(
+            (
+                mate.piece_type_at(square),
+                chess.square_file(square) - chess.square_file(king),
+                direction * (chess.square_rank(square) - chess.square_rank(king)),
+            )
+            for square in mate.checkers()
+        )
     )
     return {
         "mover": mover,
-        "target": attacker,
+        "target": tuple(sorted(checker[0] for checker in checkers)),
         "timing": timing,
-        "geometry": geometry,
+        "geometry": (checkers, _escape_structure(mate, king, root.turn)),
         "material": _material(root),
         "phase": _phase(root),
     }

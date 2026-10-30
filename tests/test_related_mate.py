@@ -167,6 +167,48 @@ def test_terminal_witness_timing_and_setup_are_not_tags():
     assert mate_features(board.fen(), [mirrored])["geometry"] == feature["geometry"]
 
 
+@pytest.mark.parametrize("black", [False, True])
+def test_promoted_checker_and_discovered_double_mate_roles(black):
+    from chess_coach.related_mate_score import match
+
+    def features(fen, uci):
+        board = chess.Board(fen)
+        move = chess.Move.from_uci(uci)
+        if black:
+            board = board.mirror()
+            move = chess.Move(
+                chess.square_mirror(move.from_square),
+                chess.square_mirror(move.to_square),
+                promotion=move.promotion,
+            )
+        result = mate_features(board.fen(), [move.uci()])
+        board.push(move)
+        assert board.is_checkmate()
+        return result, board
+
+    fen = "k7/6P1/1K6/8/8/8/8/8 w - - 0 1"
+    queen, queen_board = features(fen, "g7g8q")
+    rook, _ = features(fen, "g7g8r")
+    assert queen["mover"] == rook["mover"] == chess.PAWN
+    assert queen["target"] == (chess.QUEEN,)
+    assert rook["target"] == (chess.ROOK,)
+    assert queen["geometry"] != rook["geometry"]
+    candidate = {"type": "public", "version": "fixture", "key": "mate"}
+    prompt = queen_board.fen()
+    assert match(candidate, queen, set(), None, prompt, rook) is None
+    assert match(candidate, queen, set(), None, prompt, queen) is not None
+
+    fen = "7k/5K2/7B/8/8/8/8/7R w - - 0 1"
+    discovered, board = features(fen, "h6f8")
+    double, double_board = features(fen, "h6g7")
+    assert discovered["mover"] == double["mover"] == chess.BISHOP
+    assert discovered["target"] == (chess.ROOK,)
+    assert double["target"] == (chess.BISHOP, chess.ROOK)
+    assert len(board.checkers()) == 1 and len(double_board.checkers()) == 2
+    assert discovered["geometry"] != double["geometry"]
+    assert match(candidate, discovered, set(), None, prompt, double) is None
+
+
 def test_cursor_scope_changes_with_review(tmp_path, monkeypatch):
     db, evidence, subject = fixture(tmp_path / "review.sqlite", monkeypatch, False, False)
     result = preview(db, subject, evidence, "test")

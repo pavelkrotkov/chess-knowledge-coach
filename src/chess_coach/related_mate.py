@@ -6,8 +6,8 @@ from .related_mate_match import candidate
 from .related_mate_source import source_for_evidence
 from .related_transfer_select import select
 
-VERSION = "mate-execution-transfer-v1"
-FILTER_VERSION = "mate-execution-lines-v1"
+VERSION = "mate-execution-transfer-v2"
+FILTER_VERSION = "mate-execution-lines-v2"
 
 
 def selection(db, subject, evidence_id, corpus_version):
