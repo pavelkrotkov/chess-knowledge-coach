@@ -5,8 +5,10 @@ from .fact_fingerprint import canonical, digest
 FILTER_VERSION = "fork-execute-lines-v1"
 
 
-def select_lines(snapshot, binding, *, expected_version=FILTER_VERSION):
+def select_lines(snapshot, binding, *, expected_version=None):
     """Validate source-line identity and keep the recorded matching indices."""
+    if expected_version is None:
+        expected_version = FILTER_VERSION
     lines = snapshot["lines"]
     indices = binding["selected_line_indices"]
     if binding["line_filter_version"] != expected_version:

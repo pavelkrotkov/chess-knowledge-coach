@@ -8,7 +8,7 @@ from .objective_protection_before import probe
 from .objective_protection_judge import judge
 from .pawn_scope import history_known
 from .puzzle_session_validate import legal_move
-from .related_capture_position import _features
+from .related_capture_position import _features, compatible
 from .related_protection_mechanism import mechanism
 
 
@@ -34,3 +34,8 @@ def protection_features(prompt, line):
         return features
     except (ValueError, TypeError, IndexError, KeyError):
         return None
+
+
+def same_mechanism(source, candidate):
+    """Match piece roles and defensive action after the candidate proof."""
+    return compatible(source, candidate) and source["mechanism"] == candidate["mechanism"]

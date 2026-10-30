@@ -7,8 +7,8 @@ from tests.test_objective_protection import fixture, oriented
 PRE = "4k3/7p/8/2b5/3R4/8/PP6/7K b - - 0 1"
 
 
-def source_and_corpus(path, monkeypatch, *, black=False):
-    db, evidence = fixture(path, monkeypatch, black=black)
+def source_and_corpus(path, monkeypatch, *, black=False, played="a2a3"):
+    db, evidence = fixture(path, monkeypatch, black=black, played=played)
     board = chess.Board(PRE)
     if black:
         board = board.mirror()
@@ -57,3 +57,45 @@ def add_public(db):
     )
     db.connection.execute("UPDATE public_collections SET state='ready' WHERE id=?", (collection,))
     db.connection.commit()
+
+
+def learning_counts(db):
+    tables = (
+        "evidence_review_events",
+        "evidence_mappings",
+        "evidence_fact_links",
+        "training_items",
+        "training_attempts",
+        "training_completions",
+        "mastery_states",
+        "mastery_events",
+    )
+    return tuple(
+        db.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] for table in tables
+    )
+
+
+def assert_protection_page(page, csrf, reference=None):
+    from tests.fork_concealment_support import without_opaque_inputs
+
+    assert page.status_code == 200
+    assert b"Save the piece on d4" in page.data
+    assert b"d4d3" not in without_opaque_inputs(page.data, csrf, reference)
+
+
+def start_public_session(db, evidence, subject, attempt):
+    from chess_coach.related_protection import preview
+    from chess_coach.related_protection_start import start_related
+
+    item = next(
+        item for item in preview(db, subject, evidence, "test")["items"] if item["type"] == "public"
+    )
+    state = start_related(
+        db,
+        attempt_id=attempt,
+        subject=subject,
+        evidence_id=evidence,
+        corpus_version="test",
+        reference=item["reference"],
+    )
+    return item, state

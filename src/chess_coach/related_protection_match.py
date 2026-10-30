@@ -2,9 +2,9 @@
 
 from .puzzle_session_validate import validate_line
 from .related_capture_match import _scored
-from .related_capture_position import compatible, prompt_key
+from .related_capture_position import prompt_key
 from .related_fork_lines import bind_lines
-from .related_protection_features import protection_features
+from .related_protection_features import protection_features, same_mechanism
 
 
 def scorer(budget):
@@ -29,14 +29,14 @@ def _candidate(item, source, seen, baseline, budget):
             break
         budget["checked"] += 1
         features = protection_features(prompt, line.split())
-        if compatible(source, features) and source["mechanism"] == features["mechanism"]:
+        if same_mechanism(source, features):
             match = _scored(item, source, features, prompt, key, baseline)
             match["objective_target"] = features["target_square"]
             match["protection_mechanism"] = features["mechanism"]
             matches.append((match, index))
     if not matches:
         return None
-    best = min((match for match, _ in matches), key=lambda match: match["order"])
+    best = min(matches, key=lambda entry: entry[0]["order"])[0]
     bind_lines(best, lines, [index for _, index in matches])
     return best
 
