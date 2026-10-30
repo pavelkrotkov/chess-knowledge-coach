@@ -6,7 +6,16 @@ from urllib.parse import urlparse
 from .related_capture_public import public_candidates
 
 
-def candidates(db, version, rating, familiar_games, *, theme="hangingPiece", all_lines=False):
+def candidates(
+    db,
+    version,
+    rating,
+    familiar_games,
+    *,
+    theme="hangingPiece",
+    all_lines=False,
+    include_objective=False,
+):
     corpus = db.connection.execute(
         "SELECT c.id,c.checksum,i.selection_json FROM puzzle_corpora c LEFT JOIN puzzle_imports i ON i.corpus_id=c.id WHERE c.version=? AND c.state='ready'",
         (version,),
@@ -18,7 +27,9 @@ def candidates(db, version, rating, familiar_games, *, theme="hangingPiece", all
     result = [
         _corpus(row, version) for row in rows if _game_id(row["source"]) not in familiar_games
     ]
-    public, metadata = public_candidates(db, familiar_games, all_lines=all_lines)
+    public, metadata = public_candidates(
+        db, familiar_games, all_lines=all_lines, include_objective=include_objective
+    )
     result.extend(public)
     return result, {
         "checksum": corpus["checksum"],

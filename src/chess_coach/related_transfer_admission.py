@@ -1,8 +1,7 @@
 """Resolve opaque transfer references and bind immutable source lineage."""
 
-from . import related_fork_lines, related_fork_prevention_contract
 from .fact_fingerprint import canonical, digest
-from .related_protection_contract import FILTER_VERSION as PROTECTION_FILTER
+from .related_transfer_filter import filter_version
 from .unified_source_current import snapshot_hash
 
 
@@ -49,18 +48,13 @@ def _binding(source, version, motif, item):
             target_roles=item["target_roles"],
         )
 
-    if motif in {"fork", "protection", "fork_prevention"}:
+    if motif == "mate":
+        binding["mate_timing"] = source["objective"]
+
+    if motif in {"fork", "protection", "fork_prevention", "mate"}:
         binding.update(
-            line_filter_version=_filter_version(motif),
+            line_filter_version=filter_version(motif),
             selected_line_indices=item["matching_line_indices"],
             source_lines_hash=item["source_lines_hash"],
         )
     return binding
-
-
-def _filter_version(motif):
-    if motif == "protection":
-        return PROTECTION_FILTER
-    if motif == "fork_prevention":
-        return related_fork_prevention_contract.FILTER_VERSION
-    return related_fork_lines.FILTER_VERSION

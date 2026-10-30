@@ -8,7 +8,7 @@ from .unified_sources import resolve_source
 PUBLIC_SCAN = 500
 
 
-def public_candidates(db, familiar_games, *, all_lines=False):
+def public_candidates(db, familiar_games, *, all_lines=False, include_objective=False):
     result, metadata, scanned = [], [], 0
     for collection in collections(db):
         metadata.append(
@@ -37,6 +37,7 @@ def public_candidates(db, familiar_games, *, all_lines=False):
                     "version": collection["version"],
                     "key": item["task_id"],
                     "fen": resolved["prompt_fen"],
+                    **_objective(resolved, include_objective),
                     **(
                         {"lines": resolved["lines"]}
                         if all_lines
@@ -52,3 +53,7 @@ def _game_id(source):
     if parsed.hostname not in {"lichess.org", "www.lichess.org"}:
         return None
     return parsed.path.strip("/").split("/")[0]
+
+
+def _objective(resolved, include):
+    return {"objective": resolved["objective"]} if include else {}
