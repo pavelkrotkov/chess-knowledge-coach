@@ -48,3 +48,38 @@ def test_checking_counterplay_is_not_promoted_to_supported_defense(flip):
     assert board.gives_check(move)
     result = judge(board, move, target, lambda: 0.0, 0.0, 5.0, {})
     assert result["status"] == "unresolved"
+
+
+@pytest.mark.parametrize("field", ["target", "evidence_id"])
+def test_mixed_protection_sources_are_ambiguous(field):
+    from chess_coach.style_protection_choices import classify
+
+    left = {
+        "status": "supported",
+        "target": "c3",
+        "evidence_id": 1,
+        "moved_target": True,
+        "captured_attacker": False,
+    }
+    right = {**left, "moved_target": False, "captured_attacker": True}
+    right[field] = "d4" if field == "target" else 2
+    result = classify({"played": {"protection": left}, "alternative": {"protection": right}})
+    assert set(result.values()) == {"ambiguous"}
+
+
+def test_missing_or_identical_responses_never_create_contrasts():
+    from chess_coach.style_protection_choices import classify
+
+    absent = classify({"played": {}, "alternative": {}})
+    assert all(value is None for value in absent.values())
+    source = {
+        "status": "supported",
+        "target": "c3",
+        "evidence_id": 1,
+        "moved_target": True,
+        "captured_attacker": False,
+    }
+    same = classify(
+        {"played": {"protection": source}, "alternative": {"protection": source.copy()}}
+    )
+    assert all(value is None for value in same.values())

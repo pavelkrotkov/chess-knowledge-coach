@@ -284,3 +284,22 @@ def test_source_linked_contrast_is_qualified_for_both_colors(tmp_path, monkeypat
     assert item["choices"]["protect_move_target"] == "moved_target"
     assert item["choices"]["protect_capture_attacker"] == "did_not_capture_attacker"
     db.close()
+
+
+def test_changed_source_at_final_recheck_suppresses_choice(tmp_path, monkeypatch):
+    import chess_coach.style_protection_source as source
+    from chess_coach.style_report import style_report
+
+    db, learner, position_id, _evidence = fixture(tmp_path / "changed-source.sqlite", monkeypatch)
+    original = source.current
+
+    def changed(*args, **kwargs):
+        view, review = original(*args, **kwargs)
+        return {**view, "source_fingerprint": "changed-synthetic-fingerprint"}, review
+
+    monkeypatch.setattr(source, "current", changed)
+    report = style_report(db, learner)
+    item = next(item for item in report["observations"] if item["position_id"] == position_id)
+    assert item["choices"]["protect_move_target"] == "ambiguous"
+    assert report["dimensions"]["protect_move_target"]["opportunities"] == 0
+    db.close()
