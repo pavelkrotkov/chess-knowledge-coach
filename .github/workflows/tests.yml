@@ -42,9 +42,7 @@ jobs:
           count=$(printf '%s\n' "$output" | sed -nE 's/^([0-9]+) tests? collected.*/\1/p')
           echo "Collected cases: $count"
           test -n "$count" && test "$count" -le 200
-      - name: Run pytest
-        run: uv run pytest
-      - name: Run coverage
+      - name: Run pytest and report coverage
         run: |
           uv run pytest --cov --cov-report=term-missing --cov-precision=2
           uv run coverage json -o - | uv run python -c 'import json, sys; total = json.load(sys.stdin)["totals"]["percent_covered"]; print(f"Unrounded coverage: {total:.6f}%")'
