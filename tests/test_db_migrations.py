@@ -75,7 +75,7 @@ def test_populated_legacy_upgrade_is_repeatable_and_preserves_history(
     }
     db.initialize()
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 28
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 29
     for table, old_rows in preserved.items():
         new_rows = rows(db, table)
         assert [
@@ -295,7 +295,7 @@ def test_engine_output_index_upgrade_preserves_rows(tmp_path):
     db.connection.execute("PRAGMA user_version=22")
     db.connection.commit()
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 28
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 29
     assert db.connection.execute("SELECT COUNT(*) FROM engine_outputs").fetchone()[0] == 1
     plan = db.connection.execute(
         "EXPLAIN QUERY PLAN SELECT * FROM engine_outputs WHERE run_id=? AND position_id=? AND multipv=?",

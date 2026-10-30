@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Candidate diagnostic — Chess coach{% endblock %}
+{% block content %}
+<h2>Candidate diagnostic {{ result.request_id }}</h2>
+<p>{{ result.scope }}. {{ result.boundary }}</p>
+<p>Source {{ result.source_state }}; last worker status {{ result.status }}. <a href="{{ url_for('views.decision_detail', position_id=result.position_id) }}">Open source decision</a>.</p>
+{% if result.source_state == "current" %}
+<p>Scout {{ result.limits.scout_nodes }} nodes / {{ result.limits.scout_seconds }} seconds; final candidate search {{ result.limits.nodes }} nodes / {{ result.limits.time_limit }} seconds; MultiPV {{ result.limits.multipv }}, threads {{ result.limits.threads }}, hash {{ result.limits.hash_mb }} MB. Node limits may be exceeded by the engine; observed work is shown below.</p>
+{% for attempt in result.attempts %}
+<section><h3>Attempt {{ attempt.number }} — {{ attempt.status }}</h3><p>{{ attempt.detail }}. Engine {{ attempt.engine }}. Search deadline {{ attempt.worker_seconds_limit }} seconds; elapsed through engine cleanup {{ attempt.worker_seconds_elapsed }} seconds. Source revalidation can take additional time.</p>
+{% if attempt.scout %}<p>Scout for nomination only: {{ attempt.scout.work }}.</p>{% endif %}
+{% if attempt.final %}<p>Restricted candidate search work: {{ attempt.final.work }}. Comparison: {{ attempt.final.comparison_issue or "comparable within stated bounds" }}.</p><ol>{% for line in attempt.final.lines %}<li>Candidate rank {{ line.rank }}: {{ line.san | join(' ') }}, score {{ line.score_kind }} {{ line.score_value }} ({{ line.score_bound }}), depth {{ line.depth }}.</li>{% endfor %}</ol>{% else %}<p>Candidate lines are unavailable or unsupported.</p>{% endif %}</section>
+{% else %}<p>No terminal attempt yet.</p>{% endfor %}
+{% else %}<p>The source has changed or is unavailable; stored lines are withheld.</p>{% endif %}
+{% endblock %}

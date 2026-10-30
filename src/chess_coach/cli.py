@@ -8,7 +8,7 @@ from . import cli_commands_learning as learning
 from . import cli_curriculum as curriculum
 from . import cli_deep_execution as deep_execution
 from . import cli_deep_selection as deep_selection
-from . import cli_pipeline, cli_recurrence
+from . import cli_pipeline, cli_purpose, cli_recurrence
 from . import cli_public_training as public_training
 from . import cli_recovery as recovery
 from . import cli_related_capture as related_capture
@@ -22,6 +22,9 @@ from .competency_graph import seed_competency_graph
 from .db import Database
 
 COMMANDS = {
+    "request-purpose": cli_purpose.handle_create,
+    "run-purpose": cli_purpose.handle_run,
+    "show-purpose": cli_purpose.handle_show,
     "process-objective-verifications": unified_practice.handle_verify,
     "show-objective-verification": unified_practice.handle_verify_status,
     "cancel-objective-verification": unified_practice.handle_verify_cancel,

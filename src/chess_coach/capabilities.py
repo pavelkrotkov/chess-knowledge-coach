@@ -3,9 +3,16 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.53.0"
+REGISTRY_VERSION = "1.54.0"
 
 CAPABILITIES = (
+    {
+        "id": "purpose_candidate_comparison",
+        "area": "Analysis",
+        "name": "Owned candidate-set diagnostic",
+        "status": "observation-only",
+        "details": "An explicit owned decision can be analyzed in a separately recorded played-versus-nominated candidate set. Its ranking is restricted to those candidates, not a global best move, and establishes neither mastery nor defense quality.",
+    },
     {
         "id": "owned_fork_objectives",
         "area": "Training",

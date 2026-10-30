@@ -13,6 +13,7 @@ from .web_pawn import pawn_views
 from .web_practice import practice
 from .web_practice_tools import practice_tools
 from .web_probes import probe_views
+from .web_purpose import purpose_views
 from .web_recurrence import recurrence_views
 from .web_related_capture import related_capture
 from .web_related_fork import related_fork
@@ -60,6 +61,7 @@ def create_app(
     app.register_blueprint(pawn_views)
     app.register_blueprint(practice)
     app.register_blueprint(probe_views)
+    app.register_blueprint(purpose_views)
     app.register_blueprint(practice_tools)
     app.register_blueprint(unified_practice)
     app.register_blueprint(repertoire_views)

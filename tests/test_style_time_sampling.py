@@ -212,7 +212,7 @@ def test_migration_preserves_all_legacy_tables_and_source_rows(monkeypatch):
     after = {table: list(db.connection.execute(f"SELECT * FROM {table}")) for table in tables}
     assert before == after
     assert db.connection.execute("PRAGMA foreign_key_check").fetchall() == []
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 28
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 29
 
 
 def test_foreign_projection_schema_fails_closed():

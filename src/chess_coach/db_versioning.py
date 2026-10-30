@@ -6,7 +6,7 @@ from .analysis_schema import add_decision_columns
 from .db_recent import upgrade_recent
 from .lichess_schema import add_sync_progress
 
-CURRENT_VERSION = 28
+CURRENT_VERSION = 29
 
 
 def upgrade(connection: sqlite3.Connection, schema: str) -> None:

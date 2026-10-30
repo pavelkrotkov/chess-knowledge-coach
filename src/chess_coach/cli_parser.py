@@ -9,6 +9,7 @@ from .cli_args_pipeline import configure as pipeline
 from .cli_deep_execution import configure as deep_execution
 from .cli_deep_selection import configure as deep_selection
 from .cli_public_training import configure as public_training
+from .cli_purpose import configure as purpose
 from .cli_recovery import configure as recovery
 from .cli_recurrence import configure as recurrence
 from .cli_related_capture import configure as related_capture
@@ -31,6 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
     snapshot(sub)
     deep_execution(sub)
     public_training(sub)
+    purpose(sub)
     unified_practice(sub)
     related_capture(sub)
     related_fork(sub)
