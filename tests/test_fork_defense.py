@@ -10,14 +10,3 @@ def mirror(uci):
         chess.square_mirror(move.to_square),
         promotion=move.promotion,
     ).uci()
-
-
-def line(moves, score):
-    return {
-        "status": "limited",
-        "score_kind": "cp",
-        "score_bound": "exact",
-        "score_value": score,
-        "pv": " ".join(moves),
-        "root_move": moves[0],
-    }
