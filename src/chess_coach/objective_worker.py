@@ -3,6 +3,8 @@
 import time
 
 from .learner_identity import normalize_identity
+from .objective_fork_defense_budget import scope as fork_budget_scope
+from .objective_fork_defense_reporting import work_limit
 from .objective_publication import publish
 from .objective_verify import SECONDS, compute
 
@@ -21,14 +23,21 @@ def process(db, subject, *, limit=4, clock=time.monotonic, seconds=SECONDS, veri
     ).fetchall()
     outcomes = {}
     for row in rows[:limit]:
-        result = verifier(db, row, clock, seconds=seconds)
-        result = publish(db, row, result)
+        result = _process_one(db, row, clock, seconds, verifier)
         outcomes[result["status"]] = outcomes.get(result["status"], 0) + 1
     capped = len(rows) > limit
-    return {
+    result = {
         "status": "partial" if capped else "complete",
         "processed": min(len(rows), limit),
         "outcomes": outcomes,
         "limit": limit,
         "capped": capped,
     }
+    result.update(work_limit(rows[:limit]))
+    return result
+
+
+def _process_one(db, row, clock, seconds, verifier):
+    with fork_budget_scope():
+        result = verifier(db, row, clock, seconds=seconds)
+        return publish(db, row, result)

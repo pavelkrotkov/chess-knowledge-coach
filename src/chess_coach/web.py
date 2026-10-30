@@ -5,6 +5,7 @@ from pathlib import Path
 
 from flask import Flask, g
 
+from .objective_fork_defense_contract import VERSION as FORK_DEFENSE_VERSION
 from .web_config import validate_config
 from .web_lesson_history import lesson_history_views
 from .web_lessons import lesson_views
@@ -54,6 +55,7 @@ def create_app(
         SUBJECT=subject,
         ACTOR=actor,
         CORPUS=corpus,
+        FORK_DEFENSE_VERSION=FORK_DEFENSE_VERSION,
     )
     install_security(app, login, origin, host if backend_host is None else backend_host)
     app.register_blueprint(related_capture)

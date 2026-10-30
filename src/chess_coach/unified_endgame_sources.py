@@ -9,48 +9,22 @@ from .mate_practice_source import resolve as resolve_mate
 from .objective_capture_contract import VERSIONS as CAPTURE_VERSIONS
 from .objective_capture_source import resolve as resolve_capture
 from .objective_contract import VERSION as MATE_ONE_VERSION
-from .objective_defense_source import VERSION as DEFENSE_VERSION
-from .objective_defense_source import resolve as resolve_defense
-from .objective_fork_contract import VERSION as FORK_VERSION
-from .objective_fork_source import resolve as resolve_fork
 from .objective_mate_source import resolve as resolve_mate_one
-from .objective_pawn_contract import VERSION as PAWN_OBJECTIVE_VERSION
-from .objective_pawn_source import resolve as resolve_pawn_objective
-from .objective_pin_contract import VERSION as PIN_VERSION
-from .objective_pin_source import resolve as resolve_pin
-from .objective_protection_contract import VERSION as PROTECTION_VERSION
-from .objective_protection_source import resolve as resolve_protection
-from .objective_short_source import VERSION as SHORT_VERSION
-from .objective_short_source import resolve as resolve_short
 from .pawn_practice import VERSION as PAWN_VERSION
 from .pawn_practice import resolve as resolve_pawn
+from .unified_objective_sources import OBJECTIVE_RESOLVERS
 
 VERSIONS = frozenset(
     (
         *CAPTURE_VERSIONS,
-        PROTECTION_VERSION,
-        PAWN_OBJECTIVE_VERSION,
+        *OBJECTIVE_RESOLVERS,
         MATE_VERSION,
         PAWN_VERSION,
         BACK_RANK_VERSION,
         DISCOVERY_VERSION,
         MATE_ONE_VERSION,
-        SHORT_VERSION,
-        DEFENSE_VERSION,
-        FORK_VERSION,
-        PIN_VERSION,
     )
 )
-
-
-OBJECTIVE_RESOLVERS = {
-    FORK_VERSION: resolve_fork,
-    PIN_VERSION: resolve_pin,
-    DEFENSE_VERSION: resolve_defense,
-    SHORT_VERSION: resolve_short,
-    PROTECTION_VERSION: resolve_protection,
-    PAWN_OBJECTIVE_VERSION: resolve_pawn_objective,
-}
 
 
 def resolve(db, version, key, subject):

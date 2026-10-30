@@ -3,6 +3,7 @@
 import hashlib
 import json
 
+from .objective_fork_defense_budget import BudgetExceeded
 from .objective_promotion_contract import OBJECTIVES as PROMOTION_OBJECTIVES
 from .unified_sources import resolve_source
 
@@ -26,6 +27,8 @@ def require_current(db, row):
         )
         if snapshot_hash(snapshot) != row["snapshot_hash"]:
             raise ValueError
+    except BudgetExceeded:
+        raise
     except ValueError:
         raise ValueError("practice source unavailable or stale") from None
 

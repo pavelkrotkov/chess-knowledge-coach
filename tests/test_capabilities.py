@@ -12,7 +12,7 @@ from chess_coach.web import create_app
 def test_registry_is_scoped_unique_and_defensive():
     report = capability_report()
     entries = report["capabilities"]
-    assert report["version"] == "1.63.0"
+    assert report["version"] == "1.64.0"
     assert len({item["id"] for item in entries}) == len(entries)
     assert {item["status"] for item in entries} == {"supported", "observation-only", "planned"}
     states = {item["id"]: item["status"] for item in entries}
@@ -21,6 +21,7 @@ def test_registry_is_scoped_unique_and_defensive():
         next(item for item in entries if item["id"] == "owned_pin_objectives")["area"] == "Training"
     )
     assert states["related_mate_execution"] == "observation-only"
+    assert states["owned_anchored_fork_defense"] == "observation-only"
     assert states["related_created_fork_avoidance"] == "observation-only"
     assert states["related_anchored_fork_prevention"] == "observation-only"
     assert states["related_protection_practice"] == "observation-only"
