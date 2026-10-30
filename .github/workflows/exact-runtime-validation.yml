@@ -64,6 +64,15 @@ jobs:
           uv sync --frozen --python "$python"
           echo "UV_PYTHON=$python" >> "$GITHUB_ENV"
           uv run --frozen --no-sync --python "$python" python -c 'import hashlib, pathlib, sys, chess_coach; p = pathlib.Path(sys.executable).resolve(); assert sys.version_info[:3] == (3, 12, 13); assert hashlib.sha256(p.read_bytes()).hexdigest() == "1e4461092175d186c4bcdb19ee2849a45d6e4d8d1f6a871e45f63418d52a4e35"; assert pathlib.Path(chess_coach.__file__).resolve().is_relative_to(pathlib.Path.cwd() / "src"); print("Verified Python:", p, sys.version)'
+      - name: Install and identify Stockfish
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y stockfish
+          dpkg-query -W stockfish
+          test -x /usr/games/stockfish
+          sha256sum /usr/games/stockfish
+          printf 'quit\n' | /usr/games/stockfish
+          echo /usr/games >> "$GITHUB_PATH"
       - name: Install locked JavaScript dependencies and check quality
         run: |
           npm ci --ignore-scripts
@@ -72,7 +81,35 @@ jobs:
         env:
           TARGET_SHA: ${{ steps.target.outputs.sha }}
         run: |
-          uv run --frozen --no-sync pytest -ra --cov --cov-report=term-missing --cov-fail-under=90 --cov-precision=2
+          uv run --frozen --no-sync pytest -ra --junitxml="$RUNNER_TEMP/pytest-results.xml" --cov --cov-report=term-missing --cov-fail-under=90 --cov-precision=2
+          uv run --frozen --no-sync python - "$RUNNER_TEMP/pytest-results.xml" <<'PYTEST_CHECK'
+          import collections, sys, xml.etree.ElementTree as ET
+          expected = {
+              "test_owned_deep_missed_capture_with_checking_played_reply": 2,
+              "test_real_stockfish_comparison": 1,
+              "test_real_stockfish_deep_smoke": 1,
+              "test_actual_stockfish_bounded_smoke": 1,
+              "test_real_deep_played_knight_fork_worker_and_browser": 2,
+              "test_real_deep_missed_knight_fork_worker": 4,
+              "test_real_engine_pipeline_mate_inspection": 1,
+              "test_real_stockfish_pipeline_uses_production_limits": 1,
+              "test_real_stockfish_bounded_worker_records_nonmate_observation": 1,
+              "test_stockfish_smoke_with_explicit_resource_limits": 1,
+          }
+          counts = collections.Counter()
+          for case in ET.parse(sys.argv[1]).iter("testcase"):
+              name = case.get("name", "").split("[", 1)[0]
+              skipped = case.find("skipped")
+              if name in expected:
+                  if skipped is not None:
+                      sys.exit(f"Native engine case skipped: {name}")
+                  counts[name] += 1
+              if skipped is not None and "stockfish" in ET.tostring(skipped, encoding="unicode").lower():
+                  sys.exit(f"Stockfish case skipped: {name}")
+          if counts != expected:
+              sys.exit(f"Native engine case counts differ: {dict(counts)}")
+          print(f"Native engine cases passed: {sum(counts.values())}")
+          PYTEST_CHECK
           uv run --frozen --no-sync coverage json -o - | uv run --frozen --no-sync python -c 'import json, sys; t = json.load(sys.stdin)["totals"]; covered = t["covered_lines"] + t["covered_branches"]; total = t["num_statements"] + t["num_branches"]; print(f"Raw coverage: {covered}/{total} ({100 * covered / total:.6f}%)" if total else "Empty coverage"); sys.exit(not total or 100 * covered < 90 * total)'
           test "$(git rev-parse HEAD)" = "$TARGET_SHA"
           test -z "$(git status --porcelain --untracked-files=no)"
