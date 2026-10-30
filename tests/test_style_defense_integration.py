@@ -91,7 +91,7 @@ def test_source_linked_defense_choices_in_cli_and_private_browser(tmp_path, monk
     )
     main()
     cli = json.loads(capsys.readouterr().out)
-    assert cli["version"] == "style-choices-v8"
+    assert cli["version"] == "style-choices-v9"
     assert cli["dimensions"]["defense_king"]["choices"]["non_king_move"] >= 1
     assert "not independent" in cli["defense_method"]
     app = create_app(

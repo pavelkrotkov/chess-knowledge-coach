@@ -10,12 +10,14 @@ import chess
 import chess.pgn
 
 from .ingest_reader import SilentGameBuilder
+from .style_schedule_budget import CURRENT, LimitedBuilder, consume
 
 
 def decisions(
     connection: sqlite3.Connection, game: sqlite3.Row
 ) -> Iterator[tuple[sqlite3.Row, chess.Board]]:
-    parsed = chess.pgn.read_game(io.StringIO(game["pgn"]), Visitor=SilentGameBuilder)
+    visitor = LimitedBuilder if CURRENT.get() is not None else SilentGameBuilder
+    parsed = chess.pgn.read_game(io.StringIO(game["pgn"]), Visitor=visitor)
     if parsed is None or parsed.errors:
         raise ValueError("invalid or incomplete game PGN")
     if game["variant"] != "Standard":
@@ -28,6 +30,7 @@ def decisions(
     if len(rows) != len(nodes):
         raise ValueError("stored positions do not match game PGN")
     for ply, (row, node) in enumerate(zip(rows, nodes, strict=True), start=1):
+        consume()
         before = board.copy()
         verify_ply(board, row, node.move, ply)
         yield row, before

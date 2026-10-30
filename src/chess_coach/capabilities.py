@@ -3,9 +3,16 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.54.0"
+REGISTRY_VERSION = "1.55.0"
 
 CAPABILITIES = (
+    {
+        "id": "style_purpose_scheduling",
+        "area": "Style",
+        "name": "Bounded recent-game diagnostic scheduling",
+        "status": "observation-only",
+        "details": "The worker schedules at most one in-check target and one independent deterministic control from recent dated owned games per cycle. Source, time and history limits leave some choices unknown; these small targeted samples are not representative and do not establish skill or mastery.",
+    },
     {
         "id": "purpose_candidate_comparison",
         "area": "Analysis",

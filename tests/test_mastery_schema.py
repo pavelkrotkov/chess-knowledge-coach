@@ -43,7 +43,7 @@ def test_v9_upgrade_preserves_mastery_identity_history_and_nullable_trend() -> N
     before_event = tuple(db.connection.execute("SELECT * FROM mastery_events").fetchone())
     db.initialize()
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 29
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 30
     assert tuple(db.connection.execute("SELECT * FROM mastery_states").fetchone()) == before_state
     assert tuple(db.connection.execute("SELECT * FROM mastery_events").fetchone()) == before_event
     assert (
@@ -117,7 +117,7 @@ def test_v10_to_v11_preserves_scheduler_configuration_and_history() -> None:
     db.connection.execute("PRAGMA user_version = 10")
     db.connection.commit()
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 29
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 30
     assert (
         db.connection.execute("SELECT scheduler_config_json FROM training_items").fetchone()[0]
         == "config"

@@ -288,7 +288,7 @@ def test_owned_checking_choice_reaches_cli_and_private_browser(tmp_path, monkeyp
     )
     main()
     cli = json.loads(capsys.readouterr().out)
-    assert cli["version"] == "style-choices-v8"
+    assert cli["version"] == "style-choices-v9"
     assert cli["dimensions"]["root_check"]["choices"]["check"] >= 1
     assert "not forced threats" in cli["checking_method"]
     assert cli["checking_coverage"]["examined"] == 1

@@ -1,11 +1,14 @@
 """Run independently bounded selection and deep work after the cheap pipeline."""
 
+import time
+
 from .pipeline_deep_config import public_limits
 from .pipeline_deep_cursor import advance, scan
 from .pipeline_deep_game import process_game
+from .pipeline_deep_limits import at_capacity, finish
 
 
-def process_deep(db, config):
+def process_deep(db, config, *, deadline=None):
     report = {
         "status": "disabled",
         "examined": 0,
@@ -24,30 +27,13 @@ def process_deep(db, config):
         return report
     report["status"] = "complete"
     for row in games[: config.deep_max_scan]:
-        if _at_capacity(report, config):
+        if at_capacity(report, config) or (deadline is not None and time.monotonic() >= deadline):
             report["capped"] = True
             break
         game_id = row["id"]
         report["examined"] += 1
-        if not process_game(db, game_id, config, report):
+        if not process_game(db, game_id, config, report, deadline=deadline):
             report["status"] = "partial"
             break
         advance(db, key, version, game_id)
-    return _finish(report, config, games)
-
-
-def _finish(report, config, games):
-    if len(games) > config.deep_max_scan and report["examined"] == config.deep_max_scan:
-        report["capped"] = True
-    if report["pending"] and report["processed"] >= config.deep_max_jobs:
-        report["capped"] = True
-    if report["capped"] or report["pending"]:
-        report["status"] = "partial"
-    return report
-
-
-def _at_capacity(report, config):
-    return (
-        report["selected_games"] >= config.deep_max_games
-        or report["processed"] >= config.deep_max_jobs
-    )
+    return finish(report, config, games)

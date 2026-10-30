@@ -7,11 +7,12 @@ from .repertoire_sources import MAX_GAMES
 from .style_observations import game_observations
 from .style_protection_budget import MAX_WORK as PROTECTION_WORK_LIMIT
 from .style_protection_budget import create as protection_budget
+from .style_schedule_status import status as schedule_status
 from .style_selection import selection
 from .style_sources import source_games
 from .style_summary import summarize
 
-VERSION = "style-choices-v8"
+VERSION = "style-choices-v9"
 MATE_SEARCH_LIMIT = 100
 
 
@@ -66,6 +67,7 @@ def _style_report(db, learner, *, max_games):
     )
     return {
         "version": VERSION,
+        "purpose_schedule": schedule_status(db, learner),
         "transition_method": (
             "Four-ply conditional projections, not observed outcomes or intent: queenless "
             "contrasts zero queens with one per side from such a root; imbalanced "

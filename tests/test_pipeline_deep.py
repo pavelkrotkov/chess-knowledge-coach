@@ -52,7 +52,7 @@ def engines(monkeypatch, db):
 
 def test_round_robin_retains_pending_and_reuses_current_results(tmp_path, monkeypatch):
     db = setup_game(tmp_path / "fair.sqlite", monkeypatch, count=2)
-    calls = engines(monkeypatch, db)
+    engines(monkeypatch, db)
     settings = config()
     cheap = db.connection.execute("SELECT COUNT(*) FROM engine_outputs").fetchone()[0]
     for _ in range(4):
@@ -69,9 +69,12 @@ def test_round_robin_retains_pending_and_reuses_current_results(tmp_path, monkey
     assert db.connection.execute("SELECT COUNT(*) FROM engine_outputs").fetchone()[0] == cheap
     for _ in range(2):
         process_pipeline(db, settings, transport=network())
-    before = len(calls)
+    before = db.connection.execute("SELECT COUNT(*) FROM deep_analysis_attempts").fetchone()[0]
     replay = process_pipeline(db, settings, transport=network())
-    assert replay["deep"]["processed"] == 0 and len(calls) == before
+    assert replay["deep"]["processed"] == 0
+    assert (
+        db.connection.execute("SELECT COUNT(*) FROM deep_analysis_attempts").fetchone()[0] == before
+    )
     assert show_selection(db, 1, LEARNER)["selection_id"] == first["selection_id"]
     assert show_selection(db, 2, LEARNER)["selection_id"] == second["selection_id"]
     current = inspect_decision(db, first["items"][0]["position_id"], learner=LEARNER)

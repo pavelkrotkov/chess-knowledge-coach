@@ -6,7 +6,7 @@ from .pipeline_deep_counts import selection_counts
 from .pipeline_deep_work import execute
 
 
-def process_game(db, game_id, config, report):
+def process_game(db, game_id, config, report, *, deadline=None):
     try:
         selected = select_deep(
             db,
@@ -26,7 +26,9 @@ def process_game(db, game_id, config, report):
     report["selected_games"] += 1
     remaining = config.deep_max_jobs - report["processed"]
     try:
-        result = execute(db, game_id, selected["selection_id"], config, remaining)
+        result = execute(
+            db, game_id, selected["selection_id"], config, remaining, deadline=deadline
+        )
     except Exception:
         report["detail"] = "deep_unavailable"
         return False

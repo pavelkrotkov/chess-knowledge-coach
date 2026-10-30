@@ -37,7 +37,7 @@ def test_uninitialized_legacy_ingest_does_not_create_or_migrate_projection(versi
     db.close()
 
 
-@pytest.mark.parametrize("version", [1, 27, 28, 29])
+@pytest.mark.parametrize("version", [1, 27, 28, 29, 30])
 def test_foreign_or_incomplete_projection_fails_before_inserting(version):
     db = Database(":memory:")
     db.initialize()
@@ -54,10 +54,10 @@ def test_foreign_or_incomplete_projection_fails_before_inserting(version):
 
 
 def test_current_schema_requires_projection_and_future_schema_is_rejected():
-    for version in (28, 29, 30):
+    for version in (28, 29, 30, 31):
         db = Database(":memory:")
         db.initialize()
-        if version in (28, 29):
+        if version in (28, 29, 30):
             for name in ("style_time_insert", "style_time_invalidate"):
                 db.connection.execute(f"DROP TRIGGER {name}")
             db.connection.execute("DROP TABLE style_game_times")
@@ -71,7 +71,7 @@ def test_current_schema_requires_projection_and_future_schema_is_rejected():
         db.close()
 
 
-@pytest.mark.parametrize("version", [28, 29])
+@pytest.mark.parametrize("version", [28, 29, 30])
 def test_current_projection_is_populated_for_new_ingest(version):
     db = Database(":memory:")
     db.initialize()
