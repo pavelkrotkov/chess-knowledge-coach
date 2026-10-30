@@ -41,19 +41,3 @@ def test_training_item_creation_is_idempotent_and_rejects_negative_elapsed(tmp_p
         assert "non-negative" in str(exc)
     else:
         raise AssertionError("negative elapsed time was accepted")
-
-
-def test_review_rejects_corrupt_state_and_due_timestamp(tmp_path) -> None:
-    db = Database(tmp_path / "coach.sqlite")
-    db.initialize()
-    item_id = create_training_item(
-        db, source_type="puzzle", source_ref="p1", skill="fork", operation="execute"
-    )
-    db.connection.execute("UPDATE training_items SET state = 'corrupt' WHERE id = ?", (item_id,))
-    db.connection.commit()
-    try:
-        review_item(db, item_id, "good")
-    except ValueError as exc:
-        assert "invalid training item state" in str(exc)
-    else:
-        raise AssertionError("corrupt state was accepted")

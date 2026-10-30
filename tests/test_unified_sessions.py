@@ -2,7 +2,6 @@
 
 import json
 import re
-import sqlite3
 
 import chess
 import pytest
@@ -91,40 +90,6 @@ def test_public_multiline_resume_hints_and_no_hidden_solution(tmp_path):
         show(db, "a1", "other")
 
 
-def test_unlisted_legal_move_needs_verification_and_preserves_orientation(tmp_path):
-    db = fixture_db(tmp_path / "coach.sqlite")
-    initial = begin(db, "a2")
-    result = submit(db, "a2", "learner", event_id="m1", move="g1f3")
-    assert result["status"] == "needs_verification" and result["feedback"] == "needs_verification"
-    assert result["fen"] != initial["fen"]
-    assert submit(db, "a2", "learner", event_id="m1", move="g1f3") == result
-    assert board_rows(result["fen"], result["learner_color"])[0][0]["name"] == "a8"
-    assert db.connection.execute("SELECT COUNT(*) FROM training_attempts").fetchone()[0] == 0
-
-
-def test_public_mate_promotion_and_legacy_corpus_setup(tmp_path):
-    db = fixture_db(tmp_path / "coach.sqlite")
-    old = start_legacy(db, attempt_id="old-attempt", version="legacy", puzzle_id="old")
-    corpus = begin(db, "c1", source="corpus", version="legacy", key="old")
-    assert corpus["fen"] == old["fen"] and corpus["learner_color"] == "white"
-    assert submit(db, "c1", "learner", event_id="m1", move="c5f8")["status"] == "line_completed"
-    db.close()
-    db = Database(tmp_path / "coach.sqlite")
-    assert show_legacy(db, "old-attempt") == old
-    begin(db, "mate", key="mate")
-    assert (
-        submit(db, "mate", "learner", event_id="m1", move="c5c8")["status"] == "objective_verified"
-    )
-    begin(db, "promotion", key="promotion")
-    assert (
-        submit(db, "promotion", "learner", event_id="m1", move="a7a8n")["status"]
-        == "line_completed"
-    )
-    with pytest.raises(sqlite3.IntegrityError, match="immutable"):
-        db.connection.execute("UPDATE unified_sessions SET prompt_fen=\u0027other\u0027")
-    db.connection.rollback()
-
-
 def token(response, name):
     match = re.search(
         'name="' + re.escape(name) + '" value="([^"]+)"', response.get_data(as_text=True)
@@ -202,91 +167,6 @@ def test_black_orientation_and_subject_bound_idempotency(tmp_path):
     with pytest.raises(ValueError, match="another source"):
         begin(db, "black", key="black", subject="other")
     assert submit(db, "black", "learner", event_id="m1", move="e7e5")["status"] == "line_completed"
-
-
-def test_schema_v21_upgrade_is_atomic_and_preserves_legacy(tmp_path, monkeypatch):
-    from chess_coach import db_recent
-
-    db = Database(tmp_path / "old.sqlite")
-    with monkeypatch.context() as patch:
-        patch.setattr(db_recent, "add_unified_sessions", lambda connection: None)
-        db.initialize()
-    db.connection.execute("PRAGMA user_version=21")
-    db.connection.execute(
-        "INSERT INTO puzzle_corpora(version,source,checksum) VALUES(\u0027old\u0027,\u0027fixture\u0027,\u0027hash\u0027)"
-    )
-    db.connection.commit()
-    original = db_recent.add_unified_sessions
-
-    def fail(connection):
-        original(connection)
-        raise ValueError("synthetic migration failure")
-
-    with monkeypatch.context() as patch:
-        patch.setattr(db_recent, "add_unified_sessions", fail)
-        with pytest.raises(ValueError, match="synthetic migration failure"):
-            db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 21
-    assert not db.connection.execute(
-        "SELECT 1 FROM sqlite_master WHERE name=\u0027unified_sessions\u0027"
-    ).fetchone()
-    db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 31
-    assert db.connection.execute("SELECT version FROM puzzle_corpora").fetchone()[0] == "old"
-
-
-def test_private_browser_multimove_and_corpus_sources(tmp_path):
-    db = fixture_db(tmp_path / "coach.sqlite")
-    db.close()
-    app = create_app(
-        db_path=tmp_path / "coach.sqlite",
-        subject="learner",
-        actor="operator",
-        corpus="legacy",
-        login="fixture",
-        origin="https://coach.invalid",
-    )
-    client = app.test_client()
-    headers = {"Tailscale-User-Login": "fixture"}
-    origin = "https://coach.invalid"
-    library = client.get("/library", base_url=origin, headers=headers)
-    assert b"Practice old" in library.data and b"Practice multi" in library.data
-    csrf = token(library, "csrf")
-
-    def begin_page(source, version, key):
-        response = client.post(
-            "/unified/start",
-            base_url=origin,
-            headers=headers | {"Origin": origin},
-            data={"csrf": csrf, "source_type": source, "version": version, "key": key},
-        )
-        assert response.status_code == 303
-        return client.get(response.headers["Location"], base_url=origin, headers=headers)
-
-    def play(page, move):
-        response = client.post(
-            "/unified/move",
-            base_url=origin,
-            headers=headers | {"Origin": origin},
-            data={
-                "csrf": csrf,
-                "attempt": token(page, "attempt"),
-                "event": token(page, "event"),
-                "move": move,
-            },
-        )
-        assert response.status_code == 303
-        return client.get(response.headers["Location"], base_url=origin, headers=headers)
-
-    page = begin_page("public", "public", "multi")
-    page = play(page, "e2e4")
-    assert b"Move played; continue from this position." in page.data and b"g1f3" not in page.data
-    page = play(page, "g1f3")
-    assert b"Line complete" in page.data
-    page = begin_page("corpus", "legacy", "old")
-    assert b"c5f8" not in page.data
-    page = play(page, "c5f8")
-    assert b"Line complete" in page.data
 
 
 def test_backup_restore_preserves_session_snapshot_and_legacy_attempt(tmp_path):

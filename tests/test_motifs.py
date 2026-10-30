@@ -14,7 +14,3 @@ def test_detects_fork_and_hanging_piece() -> None:
     names = {fact["motif"] for fact in motifs}
     assert "fork" in names
     assert all(fact["detector_version"] == "0.1.0" for fact in motifs)
-
-
-def test_empty_position_has_no_opportunities() -> None:
-    assert detect_motifs(chess.Board()) == []

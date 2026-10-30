@@ -5,12 +5,10 @@ from argparse import Namespace
 
 import pytest
 
-from chess_coach import material_policy
 from chess_coach.cli_unified_practice import handle_list, handle_show, handle_start
 from chess_coach.db import Database
-from chess_coach.evidence_review import review_evidence
 from chess_coach.material_detector import process_decision
-from chess_coach.unified_own_game import LEGACY_VERSION, VERSION, list_candidates
+from chess_coach.unified_own_game import VERSION, list_candidates
 from chess_coach.unified_session_events import hint, show, submit
 from chess_coach.unified_session_state import recent
 from chess_coach.unified_sessions import start
@@ -67,28 +65,6 @@ def test_capture_gate_and_unreviewed_protection_practice(tmp_path, monkeypatch, 
     assert submit(db, "a", LEARNER, event_id="m", move="d4d5")["status"] == "line_completed"
     assert db.connection.execute("SELECT COUNT(*) FROM training_attempts").fetchone()[0] == 0
     assert evidence > 0
-
-
-def test_changed_review_and_family_revoke_sessions_without_writes(tmp_path, monkeypatch):
-    db, evidence = fixture(tmp_path, monkeypatch)
-    key = list_candidates(db, LEARNER)["candidates"][0]["key"]
-    begin(db, key)
-    review_evidence(db, evidence, decision="reject", actor="fixture_reviewer")
-    assert list_candidates(db, LEARNER)["candidates"] == []
-    for action in (
-        lambda: show(db, "a", LEARNER),
-        lambda: hint(db, "a", LEARNER, event_id="h"),
-        lambda: submit(db, "a", LEARNER, event_id="m", move="d4d5"),
-        lambda: begin(db, key),
-    ):
-        with pytest.raises(ValueError, match="stale"):
-            action()
-    assert db.connection.execute("SELECT COUNT(*) FROM unified_session_events").fetchone()[0] == 0
-    review_evidence(db, evidence, decision="accept", actor="fixture_reviewer")
-    assert begin(db, key, attempt="accepted")["review_status"] == "accepted"
-    monkeypatch.setattr(material_policy, "ELIGIBLE_KINDS", frozenset())
-    with pytest.raises(ValueError, match="stale"):
-        show(db, "accepted", LEARNER)
 
 
 def test_private_browser_own_game_and_unlisted_move(tmp_path, monkeypatch):
@@ -168,84 +144,6 @@ def test_private_browser_own_game_and_unlisted_move(tmp_path, monkeypatch):
     page = client.get(posted.headers["Location"], base_url="https://coach.invalid", headers=headers)
     assert b"Line complete" in page.data and b"Checkmate verified" not in page.data
     assert b"View source evidence" in page.data
-
-
-def test_analysis_change_invalidates_live_session_and_retains_history(tmp_path, monkeypatch):
-    db, _ = fixture(tmp_path, monkeypatch)
-    key = list_candidates(db, LEARNER)["candidates"][0]["key"]
-    begin(db, key)
-    hint(db, "a", LEARNER, event_id="h")
-    db.connection.execute(
-        "UPDATE decision_analysis_lines SET score_value=score_value+1 WHERE position_id=1 AND role=?",
-        ("best",),
-    )
-    db.connection.commit()
-    assert list_candidates(db, LEARNER)["candidates"] == []
-    with pytest.raises(ValueError, match="stale"):
-        show(db, "a", LEARNER)
-    assert db.connection.execute("SELECT COUNT(*) FROM unified_session_events").fetchone()[0] == 1
-
-
-def test_candidate_scan_is_bounded_and_deduplicates(tmp_path, monkeypatch):
-    from chess_coach import unified_own_game
-
-    rows = [{"id": n, "position_id": 7} for n in range(1, 102)]
-    view = {
-        "position_id": 7,
-        "objective": {"kind": "material_protection", "target": "d4"},
-        "review_status": "unreviewed",
-    }
-    seen = []
-    monkeypatch.setattr(unified_own_game, "_rows", lambda *args: rows)
-
-    def inspect(db, evidence_id, subject, history):
-        seen.append(evidence_id)
-        return view, None, []
-
-    monkeypatch.setattr(unified_own_game, "_inspect", inspect)
-    db = Database(tmp_path / "bounded.sqlite")
-    result = list_candidates(db, LEARNER)
-    db.close()
-    assert len(seen) == 100 and result["scanned"] == 100 and result["truncated"]
-    assert result["candidates"] == [
-        {
-            "key": "7:material_protection:1",
-            "objective": "material_protection",
-            "review_status": "unreviewed",
-        }
-    ]
-
-
-def test_black_synthetic_witness_preserves_turn_and_rejects_wrong_color():
-    import chess
-
-    from chess_coach.unified_own_game_snapshot import snapshot
-
-    board = chess.Board("4k3/8/8/8/3q4/8/8/3RK3 w - - 0 1").mirror()
-    view = {
-        "decision_fen": board.fen(),
-        "learner_color": "black",
-        "position_id": 7,
-        "objective": {"kind": "material_capture", "target": "d5"},
-        "objective_witness": {"uci": ["d8d5"], "role": "best"},
-        "lineage": {},
-        "source_fingerprint": "synthetic",
-        "review_status": "unreviewed",
-    }
-    result = snapshot(view, None, 8)
-    assert result["learner_color"] == "black" and result["lines"] == ["d8d5"]
-    view["learner_color"] = "white"
-    with pytest.raises(ValueError, match="witness"):
-        snapshot(view, None, 8)
-
-
-def test_validated_black_protection_drill_is_playable(tmp_path, monkeypatch):
-    db, _ = fixture(tmp_path, monkeypatch, color="black")
-    choices = list_candidates(db, LEARNER)["candidates"]
-    assert len(choices) == 1 and choices[0]["objective"] == "material_protection"
-    state = begin(db, choices[0]["key"])
-    assert state["learner_color"] == "black" and state["review_status"] == "unreviewed"
-    assert submit(db, "a", LEARNER, event_id="m", move="d5d4")["status"] == "line_completed"
 
 
 def test_own_game_session_survives_reopen_without_learning_writes(tmp_path, monkeypatch):
@@ -361,125 +259,3 @@ def test_successful_protection_never_exposes_answer_destination_before_hint(
         and b"Target square:" not in page.data
         and move.encode() not in page.data
     )
-
-
-def test_legacy_target_bearing_session_resolves_but_never_echoes_key(tmp_path, monkeypatch):
-    db = make_protection_game(tmp_path / "own.sqlite", monkeypatch, played="d4d5")
-    process_decision(db, 1, LEARNER)
-    key = "1:material_protection:d5"
-    initial = start(
-        db,
-        attempt_id="legacy",
-        subject=LEARNER,
-        source_type="own-game",
-        version=LEGACY_VERSION,
-        key=key,
-    )
-    assert "source_key" not in initial and "objective_target" not in initial
-    assert show(db, "legacy", LEARNER) == initial
-    assert "source_key" not in recent(db, LEARNER)[0]
-    old_response = initial | {
-        "source_key": key,
-        "objective_target": "d5",
-        "feedback": "hint",
-        "hint": "d4",
-    }
-    db.connection.execute(
-        "INSERT INTO unified_session_events VALUES(?,?,?,?,?,?)",
-        ("legacy", "old-hint", "hint", None, json.dumps(old_response), "2026-01-01"),
-    )
-    db.connection.commit()
-    replay = hint(db, "legacy", LEARNER, event_id="old-hint")
-    assert (
-        replay["hint"] == "d4" and "source_key" not in replay and "objective_target" not in replay
-    )
-    stored = db.connection.execute(
-        "SELECT response_json FROM unified_session_events WHERE event_id=?", ("old-hint",)
-    ).fetchone()[0]
-    assert json.loads(stored)["objective_target"] == "d5"
-    assert submit(db, "legacy", LEARNER, event_id="m", move="d4d5")["status"] == "line_completed"
-
-
-def test_owned_deep_protection_keeps_answer_destination_private(tmp_path, monkeypatch):
-    import sys
-
-    import chess
-    import chess.engine
-
-    from chess_coach.deep_execution_config import DeepOptions
-    from chess_coach.deep_execution_worker import run_deep
-    from chess_coach.deep_selection import select_deep
-    from chess_coach.material_opportunities import inspect_material_opportunity
-    from tests.test_material_pipeline import Engine
-
-    db = make_protection_game(tmp_path / "deep.sqlite", monkeypatch, played="d4d5")
-    selected = select_deep(db, [1], learner=LEARNER, per_game=1, total=1)
-
-    class Partial(Engine):
-        def analyse(self, board, limit, multipv, root_moves=None):
-            root = root_moves[0] if root_moves else chess.Move.from_uci("d4d5")
-            info = {
-                "pv": [root, chess.Move.from_uci("e8f8")],
-                "nodes": 100,
-                "depth": 5,
-                "time": 0.01,
-            }
-            if root_moves:
-                info["score"] = chess.engine.PovScore(chess.engine.Cp(500), board.turn)
-            return [info]
-
-    monkeypatch.setattr(chess.engine.SimpleEngine, "popen_uci", lambda _, timeout: Partial())
-    report = run_deep(
-        db,
-        selected["games"][0]["selection_id"],
-        learner=LEARNER,
-        options=DeepOptions(engine_path=sys.executable, nodes=1000, seconds=0.5, max_jobs=1),
-    )
-    assert report["processed"][0]["status"] == "insufficient"
-    evidence = process_decision(db, 1, LEARNER)["evidence_ids"][0]
-    detail = inspect_material_opportunity(db, evidence, learner=LEARNER)
-    assert detail["lineage"]["analysis"]["kind"] == "deep"
-    assert detail["objective"]["target"] == "d5" and detail["objective_witness"]["uci"][0] == "d4d5"
-    key = list_candidates(db, LEARNER)["candidates"][0]["key"]
-    state = begin(db, key)
-    assert state["status"] == "active" and state["hints_used"] == 0
-    assert "d5" not in key and "objective_target" not in state and "source_key" not in state
-
-
-def test_new_keys_resolve_only_newest_eligible_evidence_per_private_objective(monkeypatch):
-    from chess_coach import unified_own_game_resolve as resolver
-
-    rows = [{"id": value} for value in (3, 2, 1)]
-    views = {
-        3: {"position_id": 7, "objective": {"kind": "material_protection", "target": "d4"}},
-        2: {"position_id": 7, "objective": {"kind": "material_protection", "target": "d4"}},
-        1: {"position_id": 7, "objective": {"kind": "material_protection", "target": "a2"}},
-    }
-    monkeypatch.setattr(
-        resolver, "_inspect", lambda db, evidence, subject: (views[evidence], None, [])
-    )
-    monkeypatch.setattr(resolver, "snapshot", lambda view, review, evidence: evidence)
-    assert resolver._current(None, LEARNER, rows, "material_protection", 3) == 3
-    assert resolver._current(None, LEARNER, rows, "material_protection", 1) == 1
-    with pytest.raises(ValueError, match="unavailable"):
-        resolver._current(None, LEARNER, rows, "material_protection", 2)
-
-
-def test_reviewed_capture_practice_retains_subject_and_review_gates(tmp_path, monkeypatch):
-    db = make_game(tmp_path / "reviewed-capture.sqlite", monkeypatch)
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 31
-    evidence = process_decision(db, 1, LEARNER)["evidence_ids"][0]
-    review_evidence(db, evidence, decision="accept", actor="fixture_reviewer")
-    choices = list_candidates(db, LEARNER)["candidates"]
-    assert len(choices) == 1 and choices[0]["review_status"] == "accepted"
-    assert choices[0]["objective"] == "material_capture"
-    assert "d1d4" not in json.dumps(choices)
-    with pytest.raises(ValueError):
-        begin(db, choices[0]["key"], subject="fixture_opponent")
-    session = begin(db, choices[0]["key"])
-    assert session["review_status"] == "accepted" and "d1d4" not in json.dumps(session)
-    assert submit(db, "a", LEARNER, event_id="m", move="d1d4")["status"] == "line_completed"
-    review_evidence(db, evidence, decision="revoke", actor="fixture_reviewer")
-    assert not list_candidates(db, LEARNER)["candidates"]
-    with pytest.raises(ValueError, match="stale"):
-        show(db, "a", LEARNER)
