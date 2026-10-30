@@ -143,6 +143,12 @@ def _observation(game, color, clock, choice):
             "root_check": None,
             "conditional_check": None,
             "conditional_mate": None,
+            "defense_king": None,
+            "defense_capture": None,
+            "defense_interpose": None,
+            "defense_countercheck": None,
+            "protect_move_target": None,
+            "protect_capture_attacker": None,
         },
         "context": {
             "color": color,
@@ -223,7 +229,7 @@ def test_profile_uses_owned_current_deep_results_and_private_browser(tmp_path, m
     main()
     output = capsys.readouterr().out
     cli_report = json.loads(output)
-    assert cli_report["version"] == "style-choices-v5"
+    assert cli_report["version"] == "style-choices-v11"
     assert "not prior exposure" in cli_report["familiarity_note"]
     assert "overlapping games" in cli_report["trend_note"]
     assert LEARNER not in output and OPPONENT not in output
@@ -333,7 +339,13 @@ def test_game_start_does_not_prove_prior_position_in_real_ingestion():
     # The first game may still be in progress when the second reaches this position.
     for day in ("01", "02"):
         tags = f'[UTCDate "2026.01.{day}"]\n[UTCTime "00:00:00"]\n'
-        ingest_pgn(db, PGN.replace('[Event "Synthetic"]\n', f'[Event "Synthetic {day}"]\n{tags}'))
+        ingest_pgn(
+            db,
+            PGN.replace(
+                '[Event "Synthetic"]\n[UTCDate "2026.01.01"]\n[UTCTime "00:00:00"]\n',
+                f'[Event "Synthetic {day}"]\n{tags}',
+            ),
+        )
     source = source_games(db, LEARNER)
     assert source["independent_games"] == 2
     first_moves = [game["contexts"][0] for game in source["games"]]

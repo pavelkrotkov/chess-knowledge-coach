@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}Candidate diagnostics — Chess coach{% endblock %}
+{% block content %}
+<h2>Candidate diagnostics</h2>
+<p>Explicitly requested diagnostics compare a played move with one nominated alternative. Worker status below is historical; opening a result rechecks its source.</p>
+<ul>{% for item in requests %}<li><a href="{{ url_for('purpose_views.detail', request_id=item.id) }}">Diagnostic {{ item.id }}</a> — last worker status {{ item.status }}.</li>{% else %}<li>No diagnostics requested.</li>{% endfor %}</ul>
+{% endblock %}

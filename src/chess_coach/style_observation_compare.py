@@ -3,13 +3,17 @@
 from .deep_execution_views import deep_for_position
 from .style_check_annotate import annotate
 from .style_compare import candidates
+from .style_defense_choices import annotate as annotate_defense
 from .style_history_lines import history_safe, lines_safe
+from .style_protection_annotate import annotate as annotate_protection
 
 
-def compare(db, learner, context, item, board, budget):
+def compare(db, learner, context, item, board, budget, *, history=None):
     if board is None or board.fen() != context["pre_move_fen"]:
         return "history_unavailable", None, None, False, False
-    deep = deep_for_position(db, context["position_id"], learner, board, context["played_move"])
+    deep = deep_for_position(
+        db, context["position_id"], learner, board, context["played_move"], _history=history
+    )
     compared = candidates(board, context["played_move"], deep)
     status = compared["status"] if deep else item["status"]
     covered, completed = _coverage(deep, context["played_move"])
@@ -21,6 +25,10 @@ def compare(db, learner, context, item, board, budget):
     if not lines_safe(board, lines):
         return "history_or_promotion_unsupported", compared, deep, covered, completed
     annotate(board, compared, budget)
+    annotate_defense(board, compared)
+    annotate_protection(
+        db, learner, context, board, deep, compared, budget["protection"], history=history
+    )
     return status, compared, deep, covered, completed
 
 

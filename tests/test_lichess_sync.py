@@ -251,7 +251,7 @@ def test_v2_upgrade_preserves_games_and_adds_sync_progress():
     db.connection.commit()
     db.initialize()
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 27
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 31
     assert db.connection.execute("SELECT pgn FROM games").fetchone()[0] == "existing"
     assert db.connection.execute("SELECT COUNT(*) FROM sync_progress").fetchone()[0] == 0
     assert db.connection.execute("PRAGMA foreign_key_check").fetchall() == []
@@ -420,7 +420,7 @@ def test_populated_v3_upgrade_preserves_cursors_and_defaults_fair_turn():
     assert (row["revision"], row["history_windows"], row["history_cycles"]) == (7, "[[20,30]]", 2)
     assert (row["recent_windows"], row["recent_end"], row["recent_target"]) == ("[[25,30]]", 25, 30)
     assert row["next_kind"] == "recent"
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 27
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 31
     assert db.connection.execute("SELECT COUNT(*) FROM puzzle_sessions").fetchone()[0] == 0
     assert db.connection.execute("SELECT COUNT(*) FROM puzzle_session_events").fetchone()[0] == 0
     assert db.connection.execute("PRAGMA foreign_key_check").fetchall() == []

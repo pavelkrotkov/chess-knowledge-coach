@@ -18,9 +18,13 @@ from .pipeline_cooldown_schema import add_pipeline_cooldown
 from .pipeline_schema import add_pipeline_stages
 from .probe_schema import add_probes
 from .public_training_schema import add_public_training
+from .purpose_schema import add_purpose_analysis
 from .puzzle_import_schema import add_corpus_staging
 from .puzzle_selection_schema import add_puzzle_selection
 from .puzzle_session_schema import add_puzzle_sessions
+from .style_protection_schedule_schema import add as add_protection_schedule
+from .style_schedule_schema import add_style_schedule
+from .style_time_schema import add_style_game_times
 from .training_completion_schema import add_training_completions
 from .training_schema import add_training_scheduler_config
 from .unified_session_schema import add_unified_sessions
@@ -52,6 +56,10 @@ def upgrade_recent(connection: sqlite3.Connection, version: int) -> None:
         (25, add_lessons),
         (26, add_probes),
         (27, add_objective_verification),
+        (28, add_style_game_times),
+        (29, add_purpose_analysis),
+        (30, add_style_schedule),
+        (31, add_protection_schedule),
     )
     for target, apply_upgrade in upgrades:
         if version < target:

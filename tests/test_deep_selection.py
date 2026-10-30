@@ -22,6 +22,8 @@ from chess_coach.web import create_app
 LEARNER = "fixture_learner"
 OPPONENT = "fixture_opponent"
 PGN = """[Event "Synthetic"]
+[UTCDate "2026.01.01"]
+[UTCTime "00:00:00"]
 [White "fixture_learner"]
 [Black "fixture_opponent"]
 [Result "*"]

@@ -29,9 +29,9 @@ def _pending(row, config):
     return any(recorded.get(key) != value for key, value in config.items())
 
 
-def execute(db, game_id, selection_id, config, remaining):
+def execute(db, game_id, selection_id, config, remaining, *, deadline=None):
     options = deep_options(config, max_jobs=remaining)
     _, _, recorded = prepare_config(db, game_id, options)
     if not needs_execution(db, selection_id, recorded):
         return {"status": "current", "processed": []}
-    return run_deep(db, selection_id, learner=config.learner, options=options)
+    return run_deep(db, selection_id, learner=config.learner, options=options, deadline=deadline)

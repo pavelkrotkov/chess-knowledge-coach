@@ -185,6 +185,8 @@ def test_owned_checking_choice_reaches_cli_and_private_browser(tmp_path, monkeyp
     from tests.test_deep_execution import DeepEngine, options, use_engine
 
     pgn = """[Event "Synthetic"]
+[UTCDate "2026.01.01"]
+[UTCTime "00:00:00"]
 [White "fixture_learner"]
 [Black "fixture_opponent"]
 [Result "*"]
@@ -286,7 +288,7 @@ def test_owned_checking_choice_reaches_cli_and_private_browser(tmp_path, monkeyp
     )
     main()
     cli = json.loads(capsys.readouterr().out)
-    assert cli["version"] == "style-choices-v5"
+    assert cli["version"] == "style-choices-v11"
     assert cli["dimensions"]["root_check"]["choices"]["check"] >= 1
     assert "not forced threats" in cli["checking_method"]
     assert cli["checking_coverage"]["examined"] == 1

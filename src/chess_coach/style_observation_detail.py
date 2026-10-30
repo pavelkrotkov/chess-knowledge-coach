@@ -5,14 +5,17 @@ from .style_dimensions import dimensions
 from .style_observation_compare import compare
 
 
-def observation(db, learner, context, item, selected, opening, board, budget):
-    status, compared, deep, covered, completed = compare(db, learner, context, item, board, budget)
+def observation(db, learner, context, item, selected, opening, board, budget, *, history=None):
+    status, compared, deep, covered, completed = compare(
+        db, learner, context, item, board, budget, history=history
+    )
     if status != "comparable":
         return status, None, covered, completed
     result = compared["run"]
     return (
         status,
         {
+            "provenance": "ordinary_deep",
             "game_id": context["game_id"],
             "position_id": context["position_id"],
             "ply": context["ply"],

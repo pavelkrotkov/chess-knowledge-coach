@@ -67,7 +67,7 @@ def test_browser_caps_before_replay_and_cli_retains_default(tmp_path, monkeypatc
     assert b"Requested sample 10 attributable records; effective maximum 10" in page.data
     assert b"Sample truncated True" in page.data
     assert b"Decisions in unprocessed or suppressed records unknown True" in page.data
-    assert b"not game chronology" in page.data
+    assert b"local ID breaks exact ties nonchronologically" in page.data
     assert b"games_without_selection" in page.data
 
     replayed.clear()
@@ -109,7 +109,7 @@ def test_sample_limit_is_validated(invalid):
     db.close()
 
 
-def test_scan_exhaustion_is_unknown_not_zero(tmp_path, monkeypatch):
+def test_foreign_records_do_not_hide_learner_games(tmp_path, monkeypatch):
     from chess_coach import repertoire_sources
 
     db = populated(tmp_path / "scan.sqlite", 1)
@@ -121,11 +121,10 @@ def test_scan_exhaustion_is_unknown_not_zero(tmp_path, monkeypatch):
     monkeypatch.setattr(repertoire_sources, "MAX_SCAN", 2)
     report = style_report(db, LEARNER, max_games=10)
     coverage = report["coverage"]
-    assert coverage["examined_games"] == 0
-    assert coverage["scan_limit_reached"] and coverage["sample_truncated"]
-    assert coverage["omitted_attributable_games_lower_bound"] == 0
-    assert coverage["omitted_attributable_games_unknown"]
-    assert coverage["unprocessed_decisions_unknown"]
+    assert coverage["examined_games"] == 1
+    assert not coverage["scan_limit_reached"]
+    assert not coverage["sample_truncated"]
+    assert not coverage["omitted_attributable_games_unknown"]
     db.close()
 
 

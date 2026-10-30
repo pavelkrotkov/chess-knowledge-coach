@@ -7,7 +7,7 @@ from .material_worker import process_material
 from .pipeline_config import PipelineConfig
 from .pipeline_cooldown import utc_now
 from .pipeline_cursor import save_cursor
-from .pipeline_deep import process_deep
+from .pipeline_deep_arbitration import attach_status, process_deep_cycle
 from .pipeline_game import process_game
 from .pipeline_health import finish_run, start_run
 from .pipeline_inputs import engine_identity, scan_input
@@ -49,8 +49,9 @@ def _run_pipeline(db, config, token, transport, clock):
         save_cursor(db, account, game_id, scan_hash)
     save_cursor(db, account, last_scanned, scan_hash)
     scan["has_more"] |= scan_input(db, config, engine_hash) != scan_hash
-    deep = process_deep(db, config)
+    deep, purpose = process_deep_cycle(db, config)
     material = process_material(db, config)
     forks = process_forks(db, config)
     defenses = process_defenses(db, config)
-    return worker_report(db, config, sync, scan, games, deep, material, forks, defenses)
+    report = worker_report(db, config, sync, scan, games, deep, material, forks, defenses)
+    return attach_status(report, purpose)

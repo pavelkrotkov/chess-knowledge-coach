@@ -17,9 +17,11 @@ def prepare(
     multipv: int,
     threads: int,
     hash_mb: int,
+    *,
+    allow_transaction: bool = False,
 ) -> tuple[Path, sqlite3.Row]:
     validate_config(nodes, depth, multipv, threads, hash_mb)
-    if connection.in_transaction:
+    if connection.in_transaction and not allow_transaction:
         raise RuntimeError("cannot analyze during an existing transaction")
     binary = Path(engine_path).expanduser()
     if not binary.is_file() or not os.access(binary, os.X_OK):

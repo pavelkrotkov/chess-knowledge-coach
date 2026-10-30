@@ -7,7 +7,7 @@ from .deep_execution_finish import finish_attempt, finish_error
 from .deep_execution_search import search
 
 
-def execute_job(db, job, attempt_id, learner, binary, engine, metadata, config):
+def execute_job(db, job, attempt_id, learner, binary, engine, metadata, config, *, deadline=None):
     try:
         position = db.connection.execute(
             "SELECT * FROM positions WHERE id=?", (job["position_id"],)
@@ -18,7 +18,7 @@ def execute_job(db, job, attempt_id, learner, binary, engine, metadata, config):
         if db.connection.in_transaction:
             raise RuntimeError("engine work cannot run inside a transaction")
         with TemporaryFile(mode="w+t", encoding="utf-8", dir=db.path.parent) as spool:
-            result = search(engine, board, position, config, spool)
+            result = search(engine, board, position, config, spool, deadline=deadline)
         output = finish_attempt(
             db, job, attempt_id, learner, binary, metadata, config, position, board, result
         )

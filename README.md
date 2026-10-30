@@ -935,8 +935,8 @@ recaptures, unresolved checks, sacrifices and counterplay are outside scope or
 ambiguous. Evidence starts unreviewed. Independently qualified version 1.0.1
 pawn and knight noncapturing execute successes and failures may contribute to
 mastery only after explicit review and current source checks. Other game-derived
-fork evidence remains readable as history but is not mastery-eligible. Fork
-exercise access remains closed. The browser shows source
+fork evidence remains readable as history but is not mastery-eligible. Qualified
+owned execute sources can offer the bounded fork task described below. The browser shows source
 currentness and a representative legal line; stale evidence is historical.
 
 The initial development smoke checks used synthetic mirrored positions with
@@ -947,6 +947,12 @@ only the root move. These examples are not independent validation or an accuracy
 estimate; other checks, defended targets, counterplay and insufficient lines can
 remain ambiguous. The worker reports its scan, decision caps and unavailable inputs.
 
+
+## Owned fork execution practice
+
+A current qualified pawn or knight fork observation can offer a source-bound task that names the original attacker and one original anchor target. The learner must attack that anchor and another valuable enemy piece with the same attacker; the bounded verifier independently checks every supported immediate defense and proves at least three material points through a legal target capture and its immediate replies. The named anchor need not be the captured piece. A different move can satisfy the task when the same proof succeeds. Unsupported moves, checks or counterplay beyond the qualified kernel, missing history, stale sources and timeouts remain ungraded; this does not prove a win or overall compensation.
+
+The task preserves the original fork certificate, source and review lineage, full game history and immutable event/result records. Both executed and missed sources retain their framing. Starting from the library rechecks ownership and currentness; hints and reveals remain assistance. These provisional results do not write evidence, mastery or scheduling updates.
 
 ## Provisional fork-defense observations
 

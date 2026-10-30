@@ -7,6 +7,7 @@ from .objective_capture_contract import VERSIONS as CAPTURE_VERSIONS
 from .objective_contract import VERSION
 from .objective_defense_source import VERSION as DEFENSE_VERSION
 from .objective_events import prefix, prefix_hash
+from .objective_fork_contract import is_source as fork_source
 from .objective_pawn_contract import is_source as pawn_source
 from .objective_promotion_contract import OBJECTIVES as PROMOTION_OBJECTIVES
 from .objective_protection_contract import VERSION as PROTECTION_VERSION
@@ -47,14 +48,18 @@ def enqueue(db, session, event_id, result):
 def _supported(session):
     if session["source_type"] == "public":
         return session["objective"] in PROMOTION_OBJECTIVES
-    return pawn_source(session) or (
-        session["source_type"] == "own-game"
-        and session["source_version"]
-        in {
-            *CAPTURE_VERSIONS,
-            PROTECTION_VERSION,
-            VERSION,
-            SHORT_VERSION,
-            DEFENSE_VERSION,
-        }
+    return (
+        fork_source(session)
+        or pawn_source(session)
+        or (
+            session["source_type"] == "own-game"
+            and session["source_version"]
+            in {
+                *CAPTURE_VERSIONS,
+                PROTECTION_VERSION,
+                VERSION,
+                SHORT_VERSION,
+                DEFENSE_VERSION,
+            }
+        )
     )

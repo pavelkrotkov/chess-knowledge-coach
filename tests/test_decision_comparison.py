@@ -168,7 +168,7 @@ def test_legacy_unavailable_and_transactional_v15_upgrade(tmp_path):
     db.connection.execute("PRAGMA user_version=15")
     db.connection.commit()
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 27
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 31
     result = inspect_decision(db, 1)
     assert result["status"] == "analysis_unavailable" and result["best"] is None
     assert result["run"]["engine"] == "old"

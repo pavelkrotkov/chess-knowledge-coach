@@ -3,9 +3,65 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.49.0"
+REGISTRY_VERSION = "1.59.0"
 
 CAPABILITIES = (
+    {
+        "id": "related_protection_practice",
+        "area": "Training",
+        "name": "Related threatened-piece protection",
+        "status": "observation-only",
+        "details": "Current owned protection evidence retrieves source-bound corpus or licensed public examples with a matching supported immediate defense. Bounded scanning and unsupported checks, captures and compensation remain explicit; supplied later lines do not prove forced play.",
+    },
+    {
+        "id": "style_protection_purpose_report",
+        "area": "Style",
+        "name": "Source-bound protection comparisons",
+        "status": "observation-only",
+        "details": "A current diagnostic comparison can describe only supported responses to a separately current original protection proof. Unknown, stale or unsupported evidence remains unknown; the comparison does not requalify a fact or establish skill.",
+    },
+    {
+        "id": "style_protection_scheduling",
+        "area": "Style",
+        "name": "Bounded protection diagnostic scheduling",
+        "status": "observation-only",
+        "details": "The worker can allocate one separately source-bound threatened-piece diagnostic per cycle. A shared control uses one request; unresolved proof, review, history or budget remains unknown. This does not requalify evidence or establish defensive skill.",
+    },
+    {
+        "id": "style_purpose_check_responses",
+        "area": "Style",
+        "name": "Qualified candidate-set check responses",
+        "status": "observation-only",
+        "details": "Current scheduled target and control candidate-set results can add legal check-response comparisons when the same-search score and history gates pass. The small deterministic sample is biased and does not establish defensive skill, a global best move or mastery.",
+    },
+    {
+        "id": "style_purpose_scheduling",
+        "area": "Style",
+        "name": "Bounded recent-game diagnostic scheduling",
+        "status": "observation-only",
+        "details": "The worker schedules at most one in-check target and one independent deterministic control from recent dated owned games per cycle. Source, time and history limits leave some choices unknown; these small targeted samples are not representative and do not establish skill or mastery.",
+    },
+    {
+        "id": "purpose_candidate_comparison",
+        "area": "Analysis",
+        "name": "Owned candidate-set diagnostic",
+        "status": "observation-only",
+        "details": "An explicit owned decision can be analyzed in a separately recorded played-versus-nominated candidate set. Its ranking is restricted to those candidates, not a global best move, and establishes neither mastery nor defense quality.",
+    },
+    {
+        "id": "owned_fork_objectives",
+        "area": "Training",
+        "name": "Owned fork execution objectives",
+        "status": "observation-only",
+        "details": "Current qualified owned pawn and knight forks support named-attacker, anchor-target practice with bounded legal defense and material-gain proof. Unsupported replies and compensation remain unresolved; results do not establish mastery.",
+    },
+    {
+        "id": "style_game_start_sampling",
+        "area": "Style",
+        "name": "Bounded recent game-start sample",
+        "status": "observation-only",
+        "details": "A versioned projection selects attributable games with validated UTC game-start timestamps. Unknown or stale records remain unranked; exact ties use local IDs without implying chronological order. Game starts do not establish decision chronology.",
+    },
     {
         "id": "explicit_promotion_objectives",
         "area": "Training",
@@ -221,14 +277,14 @@ CAPABILITIES = (
         "area": "Skill coverage",
         "name": "Bounded material forks",
         "status": "observation-only",
-        "details": "Noncapturing fork moves use bounded legal defenses and target captures with current engine continuations, accounting for defensive captures and subsequent replies against the original material position. Legal capturing, promotion and en passant fork shapes are reported as unsupported ambiguity; mate-only consequences, recaptures, unresolved checks, sacrifices and counterplay remain outside scope or ambiguous. Version 1.0.1 pawn and knight execute successes and failures may qualify for mastery after review and current source checks; other fork observations remain ineligible. Fork practice is not supported.",
+        "details": "Noncapturing fork moves use bounded legal defenses and target captures with current engine continuations, accounting for defensive captures and subsequent replies against the original material position. Legal capturing, promotion and en passant fork shapes are reported as unsupported ambiguity; mate-only consequences, recaptures, unresolved checks, sacrifices and counterplay remain outside scope or ambiguous. Version 1.0.1 pawn and knight execute successes and failures may qualify for mastery after review and current source checks; other fork observations remain ineligible. Qualified owned execution sources can offer bounded fork practice.",
     },
     {
         "id": "fork_defense",
         "area": "Skill coverage",
         "name": "Bounded fork defense observations",
         "status": "observation-only",
-        "details": "A positional standstill prefilter is paired with a legal history-preserving alternative or recorded fork line and bounded material proof. Equivalent quiet defenses may be observed; checks, capturing defenses, promotions, unresolved counterplay and unproven forks remain ambiguous. Version 1.0.0 success and failure observations for noncapturing knight fork threats may qualify for mastery after review and current source checks; other defense observations remain ineligible and fork practice is unsupported.",
+        "details": "A positional standstill prefilter is paired with a legal history-preserving alternative or recorded fork line and bounded material proof. Equivalent quiet defenses may be observed; checks, capturing defenses, promotions, unresolved counterplay and unproven forks remain ambiguous. Version 1.0.0 success and failure observations for noncapturing knight fork threats may qualify for mastery after review and current source checks; other defense observations remain ineligible and fork-defense practice is unsupported.",
     },
     {
         "id": "manual_deep_selection",
@@ -333,7 +389,7 @@ CAPABILITIES = (
         "area": "Style",
         "name": "Material, simplification and transition choice observations",
         "status": "observation-only",
-        "details": "Current bounded MultiPV choices expose provisional four-ply material, piece-count, attack-map, queenless and low-material transition proxies with coverage and contextual strata. Projections are conditional, not observed outcomes; narrow central pawn contacts, captures, exchanges, d/e file openings and one locked skeleton are also compared. Legal root and conditional continuation checks, evasions and conditional one-move mate witnesses are recorded where supported. Broader initiative, defense and center choices remain planned. They do not establish personality, skill or playing strength.",
+        "details": "Current bounded MultiPV choices expose provisional four-ply material, piece-count, attack-map, queenless and low-material transition proxies with coverage and contextual strata. Projections are conditional, not observed outcomes; narrow central pawn contacts, captures, exchanges, d/e file openings and one locked skeleton are also compared. Legal root and conditional continuation checks, evasions and conditional one-move mate witnesses are recorded where supported. Check evasions and narrowly verified responses to a named threatened piece are compared when supported; guard, broader initiative, defense and center choices remain planned. They do not establish personality, skill or playing strength.",
     },
     {
         "id": "repertoire_recommendations",

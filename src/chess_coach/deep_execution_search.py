@@ -9,14 +9,17 @@ from .deep_execution_lines import alternatives as extract_alternatives
 from .deep_execution_lines import first, line, problem
 from .deep_execution_uci import analyse, forced
 from .deep_execution_work import shared_work
+from .purpose_deadline import search_timeout
 
 
-def search(engine, board, position, config, spool):
+def search(engine, board, position, config, spool, *, deadline=None):
     limit = chess.engine.Limit(nodes=config["nodes"], time=config["time_limit"])
     required = min(config["multipv"], board.legal_moves.count())
-    best_raw, best_error = analyse(engine, board, limit, required)
+    best_raw, best_error = _bounded(engine, deadline, limit, analyse, board, limit, required)
     played_raw, played_error = (
-        ([], best_error) if best_error else forced(engine, board, position, limit)
+        ([], best_error)
+        if best_error
+        else _bounded(engine, deadline, limit, forced, board, position, limit)
     )
     alternatives, bad = extract_alternatives(position, board, best_raw)
     best = first(alternatives, position, board)
@@ -37,3 +40,12 @@ def search(engine, board, position, config, spool):
     spool.write("\n")
     spool.seek(0)
     return json.load(spool)
+
+
+def _bounded(engine, deadline, limit, operation, *args):
+    if deadline is not None:
+        timeout = search_timeout(deadline, limit.time)
+        if timeout is None:
+            return [], "worker_deadline"
+        engine.timeout = timeout
+    return operation(engine, *args)

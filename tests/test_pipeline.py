@@ -446,7 +446,7 @@ def test_v12_migration_adds_pipeline_without_losing_existing_history(monkeypatch
     db.connection.execute('INSERT INTO games(pgn,white,black,result) VALUES ("raw","A","B","*")')
     db.connection.commit()
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 27
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 31
     assert db.connection.execute("SELECT pgn FROM games").fetchone()[0] == "raw"
     for table in ("opening_runs", "structure_runs"):
         assert "pipeline_generation" in {
@@ -854,7 +854,7 @@ def test_v13_upgrade_preserves_curriculum_cursor_revision_and_indexes(monkeypatc
     state = new_state(db, "learner", "fixture", 10, 10, datetime.now(UTC))
     token = encode_cursor(db, state)
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 27
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 31
     assert db.connection.execute("SELECT content_revision FROM opening_datasets").fetchone()[0] == 0
     assert (
         tuple(
