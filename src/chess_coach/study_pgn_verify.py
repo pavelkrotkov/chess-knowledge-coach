@@ -5,6 +5,7 @@ import io
 import chess.pgn
 
 from .ingest_reader import SilentGameBuilder
+from .study_checkmate_comment import comment
 from .study_remote import StudyError
 
 
@@ -28,16 +29,20 @@ def matches(expected, exported):
     original = chess.pgn.read_game(io.StringIO(expected["pgn"]), Visitor=SilentGameBuilder)
     if original is None or original.errors:
         return False
-    return _same_position(expected, original, actual) and _moves(actual) == _moves(original)
+    moves = _moves(original)
+    return _same_position(expected, original, actual) and (
+        _moves(actual) == moves or _moves(actual, provider=True) == moves
+    )
 
 
 def _text(value):
     return " ".join(value.split())
 
 
-def _moves(node):
+def _moves(node, *, provider=False):
     return sorted(
-        (child.move.uci(), _text(child.comment), _moves(child)) for child in node.variations
+        (child.move.uci(), comment(child, provider), _moves(child, provider=provider))
+        for child in node.variations
     )
 
 
