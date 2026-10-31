@@ -2,5 +2,8 @@
   "devDependencies": {
     "eslint": "10.13.0",
     "typhonjs-escomplex": "0.1.0"
+  },
+  "overrides": {
+    "minimatch": "11.0.1"
   }
 }
