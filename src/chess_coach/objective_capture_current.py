@@ -28,3 +28,8 @@ def current(
     if row is None or tuple(row) != expected:
         raise ValueError("capture source unavailable")
     return view, dict(review) if review else None
+
+
+def require_protection_scope(db, evidence_id, subject, kind):
+    if kind == "material_protection":
+        current(db, evidence_id, subject, kind=kind, operation="prevent")

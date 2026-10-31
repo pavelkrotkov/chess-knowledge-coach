@@ -1,7 +1,12 @@
 """Describe practice feedback without revealing hidden lines."""
 
 
-def move_notice(feedback):
+def move_notice(feedback, objective=None):
+    if feedback == "objective_verified" and objective in {
+        "capture_named_target",
+        "bounded_material_gain",
+    }:
+        return "The bounded capture objective was verified."
     messages = {
         "incorrect": "This move does not give checkmate within the announced horizon.",
         "illegal": "That move is not legal. Try again.",

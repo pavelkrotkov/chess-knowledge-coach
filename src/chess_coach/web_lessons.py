@@ -48,4 +48,4 @@ def show(lesson_id):
         record = get(database(), current_app.config["SUBJECT"], lesson_id)
     except ValueError:
         abort(404)
-    return display(record)
+    return display(record, database(), current_app.config["SUBJECT"])
