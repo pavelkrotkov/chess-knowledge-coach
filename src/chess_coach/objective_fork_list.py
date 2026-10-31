@@ -11,6 +11,7 @@ def candidates(db, subject):
         """SELECT e.id FROM evidence_mappings e JOIN mapping_runs r ON r.id=e.mapping_run_id
         WHERE e.subject=? AND r.producer=? AND r.status='active'
         AND e.skill='fork' AND e.operation='execute'
+        AND e.outcome IN ('success','failure')
         AND COALESCE((SELECT decision FROM evidence_review_events v WHERE v.evidence_id=e.id ORDER BY v.id DESC LIMIT 1),'') NOT IN ('reject','revoke')
         ORDER BY e.id DESC LIMIT 10""",
         (identity, MAPPER),
