@@ -262,53 +262,54 @@ def test_cli_and_private_browser_follow_explicit_root(tmp_path, monkeypatch, cap
 
 
 @pytest.mark.parametrize("black", [False, True])
-def test_direct_and_discovered_mates_have_distinct_opening_attacker_roles(black, monkeypatch):
-    from chess_coach import related_backrank_score
+def test_opening_rook_identity_through_short_line(black):
     from chess_coach.related_backrank_contract import LINE_LIMIT
     from chess_coach.related_backrank_public import candidate_public
+    from chess_coach.related_mate_score import match as previous_match
 
-    direct = chess.Board("6k1/2B2ppp/8/8/8/8/8/R4K2 w - - 0 1")
-    discovered = chess.Board("RB4k1/5ppp/8/8/8/8/8/5K2 w - - 0 1")
-    direct_move, discovered_move = "a1a8", "b8c7"
+    direct = chess.Board("6k1/1R3ppp/8/8/8/2BB4/8/R4K2 w - - 0 1")
+    other = chess.Board("6k1/5ppp/8/8/8/2BB4/1R6/R4K2 w - - 0 1")
+    direct_line = ["a1a2", "g7g6", "a2a8"]
+    other_line = ["b2b7", "g7g6", "a1a8"]
     if black:
-        direct, discovered = direct.mirror(), discovered.mirror()
-        direct_move, discovered_move = "a8a1", "b1c2"
-    assert direct.is_valid() and direct.is_legal(chess.Move.from_uci(direct_move))
-    assert discovered.is_valid() and discovered.is_legal(chess.Move.from_uci(discovered_move))
-    direct_end, discovered_end = direct.copy(), discovered.copy()
-    direct_end.push_uci(direct_move)
-    discovered_end.push_uci(discovered_move)
-    assert direct_end.board_fen() == discovered_end.board_fen()
-    source = features(direct.fen(), [direct_move])
-    other = features(discovered.fen(), [discovered_move])
-    assert source and other
+        direct, other = direct.mirror(), other.mirror()
+        direct_line = ["a8a7", "g2g3", "a7a1"]
+        other_line = ["b7b2", "g2g3", "a8a1"]
+    assert direct.is_valid() and other.is_valid()
+    direct_end, other_end = direct.copy(), other.copy()
+    for move in direct_line:
+        assert direct_end.is_legal(chess.Move.from_uci(move))
+        direct_end.push_uci(move)
+    for move in other_line:
+        assert other_end.is_legal(chess.Move.from_uci(move))
+        other_end.push_uci(move)
+    assert direct_end.is_checkmate() and other_end.is_checkmate()
+    assert direct_end.board_fen() == other_end.board_fen()
+    source = features(direct.fen(), direct_line)
+    alternate = features(other.fen(), other_line)
+    assert source and alternate
+    assert all(source[key] == alternate[key] for key in ("mover", "target", "timing", "geometry"))
     assert source["backrank"]["opening_piece_backrank_checks"]
-    assert not other["backrank"]["opening_piece_backrank_checks"]
-    assert source["backrank"]["escapes"] == other["backrank"]["escapes"]
-    assert ((-1, -1), True, False) in source["backrank"]["escapes"]
-    assert ((-1, 0), False, True) in source["backrank"]["escapes"]
+    assert not alternate["backrank"]["opening_piece_backrank_checks"]
     source["opening"] = None
-    other["opening"] = None
+    alternate["opening"] = None
     budget = {"lines": 0, "line_limit": LINE_LIMIT, "truncated": False}
 
-    def item(board, move):
+    def item(board, line):
         return {
             "type": "public",
             "version": "fixture",
             "key": "candidate",
             "objective": "legal_line",
             "fen": board.fen(),
-            "lines": [move],
+            "lines": [" ".join(line)],
         }
 
-    assert candidate_public(item(direct, direct_move), source, set(), None, budget) is not None
-    assert candidate_public(item(discovered, discovered_move), source, set(), None, budget) is None
     assert (
-        candidate_public(item(discovered, discovered_move), other, set(), None, budget) is not None
+        previous_match(item(other, other_line), source, set(), None, other.fen(), alternate)
+        is not None
     )
+    assert candidate_public(item(direct, direct_line), source, set(), None, budget) is not None
+    assert candidate_public(item(other, other_line), source, set(), None, budget) is None
+    assert candidate_public(item(other, other_line), alternate, set(), None, budget) is not None
     assert budget["lines"] == 3
-    # Isolate the new structural guard even if generic mover-type data were equal.
-    monkeypatch.setattr(
-        related_backrank_score, "mate_match", lambda *_: pytest.fail("role mismatch")
-    )
-    assert related_backrank_score.match({}, source, set(), None, direct.fen(), other) is None
