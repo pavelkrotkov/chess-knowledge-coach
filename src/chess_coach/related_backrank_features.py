@@ -3,6 +3,8 @@
 import chess
 
 from .back_rank_terminal import terminal
+from .related_backrank_identity import replay
+from .related_backrank_structure import describe
 from .related_mate_features import mate_features
 
 
@@ -11,11 +13,12 @@ def features(prompt, line):
     if result is None:
         return None
     try:
-        board = chess.Board(prompt)
-        for text in line:
-            board.push_uci(text)
-        if terminal(board) is None:
+        attacker = chess.Board(prompt).turn
+        board, tracked, promoted = replay(prompt, line)
+        motif = terminal(board)
+        if motif is None:
             return None
+        result["backrank"] = describe(board, motif, attacker, tracked, promoted)
     except (ValueError, TypeError, AttributeError):
         return None
     return result

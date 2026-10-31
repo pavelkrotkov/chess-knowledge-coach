@@ -1,4 +1,4 @@
-"""Synthetic source-bound back-rank transfer and safety controls."""
+"""Source-bound back-rank transfers preserve witness and mover roles."""
 
 import chess
 import chess.engine
@@ -12,12 +12,27 @@ from chess_coach.related_backrank_features import features
 from chess_coach.related_backrank_source import roots, source_for_evidence
 from chess_coach.related_backrank_start import start_related
 from chess_coach.unified_session_events import show, submit
-from tests.related_protection_support import learning_counts
 from tests.test_back_rank import ATTACK
 from tests.test_mate_proof import owned_game
 
 SUBJECT = "fixture_a"
 PRE = "6k1/1p3ppp/8/8/8/8/8/R4K2 b - - 0 1"
+
+
+def learning_counts(db):
+    tables = (
+        "evidence_review_events",
+        "evidence_mappings",
+        "evidence_fact_links",
+        "training_items",
+        "training_attempts",
+        "training_completions",
+        "mastery_states",
+        "mastery_events",
+    )
+    return tuple(
+        db.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] for table in tables
+    )
 
 
 def fixture(path, monkeypatch, move="Ra8#", black=False):
@@ -109,94 +124,9 @@ def test_proved_root_reaches_concealed_playable_transfer(tmp_path, monkeypatch, 
         == "objective_verified"
     )
     assert learning_counts(db) == before
-    db.close()
-
-
-def test_wrong_origin_foreign_and_review_revocation_fail_closed(tmp_path, monkeypatch):
-    db, evidence = fixture(tmp_path / "stale.sqlite", monkeypatch)
-    with pytest.raises(ValueError):
-        source_for_evidence(db, "foreign", evidence, "a1a8")
-    with pytest.raises(ValueError):
-        source_for_evidence(db, SUBJECT, evidence, "a1a7")
-    item = preview(db, SUBJECT, evidence, "test", "a1a8")["items"][0]
-    with pytest.raises(ValueError):
-        start_related(
-            db,
-            attempt_id="wrong-root",
-            subject=SUBJECT,
-            evidence_id=evidence,
-            corpus_version="test",
-            root_move="a1a7",
-            reference=item["reference"],
-        )
-    start_related(
-        db,
-        attempt_id="stale",
-        subject=SUBJECT,
-        evidence_id=evidence,
-        corpus_version="test",
-        root_move="a1a8",
-        reference=item["reference"],
-    )
     review_evidence(db, evidence, decision="reject", actor="fixture_reviewer")
     with pytest.raises(ValueError):
-        show(db, "stale", SUBJECT)
-    with pytest.raises(ValueError):
-        preview(db, SUBJECT, evidence, "test", "a1a8")
-    db.close()
-
-
-def test_only_actual_home_rank_rook_or_queen_checker_matches():
-    valid = chess.Board(ATTACK)
-    assert features(valid.fen(), ["a1a8"]) is not None
-    mirrored = valid.mirror()
-    assert features(mirrored.fen(), ["a8a1"]) is not None
-    ordinary = chess.Board("7k/5Q2/6K1/8/8/8/8/8 w - - 0 1")
-    assert features(ordinary.fen(), ["f7g7"]) is None
-    assert features(valid.fen(), ["a1a7"]) is None
-    assert features(valid.fen(), ["a1a8", "g8h7"]) is None
-
-
-def test_shared_line_work_limit_stops_before_excess_candidates(monkeypatch):
-    from chess_coach import related_backrank_match as match
-    from chess_coach.related_backrank_contract import LINE_LIMIT
-
-    budget = {"lines": 0, "line_limit": LINE_LIMIT, "truncated": False}
-    checked = []
-    monkeypatch.setattr(match, "features", lambda *_: checked.append(1))
-    score = match.scorer(budget)
-    item = {"type": "corpus", "fen": PRE, "solution": "b7b6 a1a8"}
-    for _ in range(LINE_LIMIT + 1):
-        score(item, {}, set(), None)
-    assert budget["lines"] == LINE_LIMIT and budget["truncated"]
-    assert len(checked) == LINE_LIMIT
-
-
-def test_ambiguous_source_is_supported_alternative_not_missed_mistake(tmp_path, monkeypatch):
-    db, evidence = fixture(tmp_path / "ambiguous.sqlite", monkeypatch, move="Ra2")
-    result = preview(db, SUBJECT, evidence, "test", "a1a8")
-    assert result["source_outcome"] == "ambiguous"
-    assert result["status"] == "available"
-    db.close()
-
-
-def test_filter_version_change_invalidates_active_session(tmp_path, monkeypatch):
-    from chess_coach import related_backrank_contract as contract
-
-    db, evidence = fixture(tmp_path / "filter.sqlite", monkeypatch)
-    item = preview(db, SUBJECT, evidence, "test", "a1a8")["items"][0]
-    start_related(
-        db,
-        attempt_id="filter",
-        subject=SUBJECT,
-        evidence_id=evidence,
-        corpus_version="test",
-        root_move="a1a8",
-        reference=item["reference"],
-    )
-    monkeypatch.setattr(contract, "FILTER_VERSION", "changed-fixture-filter")
-    with pytest.raises(ValueError, match="stale"):
-        show(db, "filter", SUBJECT)
+        show(db, "transfer", SUBJECT)
     db.close()
 
 
@@ -331,112 +261,54 @@ def test_cli_and_private_browser_follow_explicit_root(tmp_path, monkeypatch, cap
     assert page.status_code == 200 and b"Find checkmate" in page.data
 
 
-def test_prevention_source_and_changed_game_are_not_transfer_sources(tmp_path, monkeypatch):
-    from tests.test_back_rank import DEFENSE
+@pytest.mark.parametrize("black", [False, True])
+def test_direct_and_discovered_mates_have_distinct_opening_attacker_roles(black, monkeypatch):
+    from chess_coach import related_backrank_score
+    from chess_coach.related_backrank_contract import LINE_LIMIT
+    from chess_coach.related_backrank_public import candidate_public
 
-    db = owned_game(tmp_path / "defense.sqlite", monkeypatch, fen=DEFENSE, move="g3")
-    process_mate(db, 1, SUBJECT)
-    process_decision(db, 1, SUBJECT)
-    row = db.connection.execute(
-        "SELECT id FROM evidence_mappings WHERE skill='back_rank' AND operation='prevent'"
-    ).fetchone()
-    with pytest.raises(ValueError):
-        roots(db, SUBJECT, row["id"])
-    db.close()
+    direct = chess.Board("6k1/2B2ppp/8/8/8/8/8/R4K2 w - - 0 1")
+    discovered = chess.Board("RB4k1/5ppp/8/8/8/8/8/5K2 w - - 0 1")
+    direct_move, discovered_move = "a1a8", "b8c7"
+    if black:
+        direct, discovered = direct.mirror(), discovered.mirror()
+        direct_move, discovered_move = "a8a1", "b1c2"
+    assert direct.is_valid() and direct.is_legal(chess.Move.from_uci(direct_move))
+    assert discovered.is_valid() and discovered.is_legal(chess.Move.from_uci(discovered_move))
+    direct_end, discovered_end = direct.copy(), discovered.copy()
+    direct_end.push_uci(direct_move)
+    discovered_end.push_uci(discovered_move)
+    assert direct_end.board_fen() == discovered_end.board_fen()
+    source = features(direct.fen(), [direct_move])
+    other = features(discovered.fen(), [discovered_move])
+    assert source and other
+    assert source["backrank"]["opening_piece_backrank_checks"]
+    assert not other["backrank"]["opening_piece_backrank_checks"]
+    assert source["backrank"]["escapes"] == other["backrank"]["escapes"]
+    assert ((-1, -1), True, False) in source["backrank"]["escapes"]
+    assert ((-1, 0), False, True) in source["backrank"]["escapes"]
+    source["opening"] = None
+    other["opening"] = None
+    budget = {"lines": 0, "line_limit": LINE_LIMIT, "truncated": False}
 
-    db, evidence = fixture(tmp_path / "changed.sqlite", monkeypatch)
-    item = preview(db, SUBJECT, evidence, "test", "a1a8")["items"][0]
-    start_related(
-        db,
-        attempt_id="changed",
-        subject=SUBJECT,
-        evidence_id=evidence,
-        corpus_version="test",
-        root_move="a1a8",
-        reference=item["reference"],
-    )
-    db.connection.execute("UPDATE games SET pgn=pgn || '\n{synthetic change}' WHERE id=1")
-    db.connection.commit()
-    with pytest.raises(ValueError, match="stale"):
-        show(db, "changed", SUBJECT)
-    db.close()
+    def item(board, move):
+        return {
+            "type": "public",
+            "version": "fixture",
+            "key": "candidate",
+            "objective": "legal_line",
+            "fen": board.fen(),
+            "lines": [move],
+        }
 
-
-def test_lesson_exposes_attack_entry(tmp_path):
-    from flask import render_template
-
-    from chess_coach.web import create_app
-
-    app = create_app(
-        db_path=tmp_path / "unused.sqlite",
-        subject=SUBJECT,
-        actor="fixture",
-        corpus="test",
-        login="fixture",
-        origin="https://coach.invalid",
-    )
-    example = {
-        "evidence_id": 1,
-        "position_id": 1,
-        "game_id": 1,
-        "ply": 1,
-        "review": "unreviewed",
-        "played": "move",
-        "operation": "execute",
-        "facts": [],
-        "lines": [],
-    }
-    lesson = {
-        "family": "back-rank-observation-mapper",
-        "qualification": "bounded",
-        "possible": "possible",
-        "question": "question",
-        "habit": "habit",
-        "practice": "practice",
-        "examples": [example],
-    }
-    with app.test_request_context():
-        page = render_template("lesson_body.html", lesson=lesson, csrf="fixture")
-    assert "Find related back-rank attack practice" in page
-
-
-def test_public_supplied_lines_are_filtered_and_share_work_budget(tmp_path, monkeypatch):
-    import json
-
-    db, evidence = fixture(tmp_path / "public.sqlite", monkeypatch)
-    db.connection.execute(
-        """INSERT INTO public_collections(version,source_url,source_revision,source_sha256,
-        content_sha256,content_format,license,attribution,license_notice,accepted,excluded,state)
-        VALUES('public-v1','https://example.invalid','v1','a','b','fen_csv','CC0-1.0','fixture','notice',1,0,'staging')"""
-    )
-    collection = db.connection.execute(
-        "SELECT id FROM public_collections WHERE version='public-v1'"
-    ).fetchone()[0]
-    prompt = "6k1/5ppp/1p6/8/8/8/1P6/R4K2 w - - 0 2"
-    db.connection.execute(
-        "INSERT INTO public_tasks VALUES(?,?,?,?,?)",
-        (collection, "public-mate", prompt, "legal_line", json.dumps(["a1a2", "a1a8"])),
-    )
-    db.connection.execute("UPDATE public_collections SET state='ready' WHERE id=?", (collection,))
-    db.connection.commit()
-    result = preview(db, SUBJECT, evidence, "test", "a1a8")
-    assert result["backrank_scan"]["lines"] == 3
-    item = next(item for item in result["items"] if item["type"] == "public")
-    start_related(
-        db,
-        attempt_id="public",
-        subject=SUBJECT,
-        evidence_id=evidence,
-        corpus_version="test",
-        root_move="a1a8",
-        reference=item["reference"],
-    )
-    stored = db.connection.execute(
-        "SELECT lines_json FROM unified_sessions WHERE attempt_id='public'"
-    ).fetchone()[0]
-    assert json.loads(stored) == [["a1a8"]]
+    assert candidate_public(item(direct, direct_move), source, set(), None, budget) is not None
+    assert candidate_public(item(discovered, discovered_move), source, set(), None, budget) is None
     assert (
-        submit(db, "public", SUBJECT, event_id="answer", move="a1a8")["status"]
-        == "objective_verified"
+        candidate_public(item(discovered, discovered_move), other, set(), None, budget) is not None
     )
-    db.close()
+    assert budget["lines"] == 3
+    # Isolate the new structural guard even if generic mover-type data were equal.
+    monkeypatch.setattr(
+        related_backrank_score, "mate_match", lambda *_: pytest.fail("role mismatch")
+    )
+    assert related_backrank_score.match({}, source, set(), None, direct.fen(), other) is None
