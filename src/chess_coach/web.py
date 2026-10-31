@@ -7,6 +7,7 @@ from flask import Flask, g
 
 from .objective_fork_avoidance_contract import VERSION as FORK_AVOIDANCE_VERSION
 from .objective_fork_defense_contract import VERSION as FORK_DEFENSE_VERSION
+from .web_coaching import coaching_views
 from .web_config import validate_config
 from .web_lesson_history import lesson_history_views
 from .web_lessons import lesson_views
@@ -71,6 +72,7 @@ def create_app(
     app.register_blueprint(related_pin)
     app.register_blueprint(related_protection)
     app.register_blueprint(views)
+    app.register_blueprint(coaching_views)
     app.register_blueprint(lesson_views)
     app.register_blueprint(lesson_history_views)
     app.register_blueprint(mate_views)
