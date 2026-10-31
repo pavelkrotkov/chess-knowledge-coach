@@ -126,6 +126,10 @@ def test_private_publication_reconciles_timeouts_and_rejects_public_destination(
     assert json.loads(intent.read_text())["verified_at"]
     assert publish(remote, intent, course) == link
     assert provider.created == 1 and len(provider.uploaded) == 5
+    provider.name = "Unrelated study"
+    with pytest.raises(StudyError, match="marker"):
+        publish(remote, intent, course)
+    assert len(provider.uploaded) == 5
 
     wrong = Remote("fixture-token", "someone-else", Provider())
     with pytest.raises(StudyError, match="account"):
