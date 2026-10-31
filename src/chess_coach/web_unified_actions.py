@@ -51,7 +51,7 @@ def move():
         )
     except ValueError:
         return render_template("error.html", message="The practice attempt has changed."), 400
-    session["unified_notice"] = move_notice(result["feedback"])
+    session["unified_notice"] = move_notice(result["feedback"], result.get("objective"))
     return redirect(url_for("unified_practice.show_page", attempt=attempt), code=303)
 
 

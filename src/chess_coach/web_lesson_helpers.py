@@ -2,14 +2,19 @@
 
 from flask import render_template
 
+from .coaching_practice import choices
 from .coaching_report import VERSION
 from .web_board import board_rows
 
 
-def display(record):
+def display(record, db, subject):
     if record["lesson"].get("kind") == VERSION:
         return render_template(
-            "coaching.html", preview=record["lesson"], record=record, board_rows=board_rows
+            "coaching.html",
+            preview=record["lesson"],
+            record=record,
+            board_rows=board_rows,
+            practice=choices(db, subject, record["lesson"]),
         )
     return render_template("lesson_history.html", record=record)
 

@@ -2,6 +2,7 @@
 
 import chess
 
+from .objective_capture_current import require_protection_scope
 from .unified_endgame_sources import VERSIONS as ENDGAME_VERSIONS
 from .unified_endgame_sources import resolve as resolve_endgame
 from .unified_own_game import LEGACY_VERSION, VERSION
@@ -22,6 +23,7 @@ def _current(db, subject, rows, kind, evidence_id):
             continue
         seen.add(group)
         if row["id"] == evidence_id:
+            require_protection_scope(db, evidence_id, subject, kind)
             return snapshot(view, review, row["id"])
     raise ValueError("practice source unavailable")
 
