@@ -1102,6 +1102,13 @@ mastery even if a human accepts the descriptive mapping. See
 practice and related training remain part of issues #141, #142 and #144.
 ## Source-linked coaching lessons
 
+The private **Coaching** page ranks source-checked failures by independent games,
+showing up to three distinct patterns with at least two supported games each.
+It reports a shortage when fewer qualify and labels the bounded scan and separate
+recent-game coverage sample. Each card shows a reconstructed pre-move board,
+legal source lines and a practice habit. An explicit save creates a historical
+preview in existing lesson history; later source changes do not rewrite it.
+
 The private recurring-pattern report builds provisional coaching from rechecked,
 learner-owned sources in its bounded sample. It selects up to three independent
 games from at most ten candidate game identities per group; sources that no

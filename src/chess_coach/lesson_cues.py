@@ -62,3 +62,15 @@ CUES = {
         "Replay the linked positions and test the displayed choices against the mate threats.",
     ),
 }
+
+
+def cues(family, operation):
+    question, habit, practice = CUES[family]
+    if family == "material-opportunity-mapper":
+        if operation == "execute":
+            question = "Can an exposed enemy piece be captured, and what replies follow?"
+            habit = "Before moving, look for exposed enemy pieces and calculate captures and recaptures."
+        elif operation == "prevent":
+            question = "Which of your pieces is threatened, and how can you defend it?"
+            habit = "Before moving, check which of your pieces can be captured and calculate a safe defense."
+    return question, habit, practice

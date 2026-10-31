@@ -45,7 +45,7 @@ def load_game(db, learner, game_id):
     return {"row": game, "color": color, "decisions": decisions, "key": identity}
 
 
-def evidence(db, learner, skill, operation, before):
+def evidence(db, learner, skill, operation, before, *, failure_only=False):
     subject = normalize_identity(learner)
     rows = db.connection.execute(
         """SELECT e.*, p.game_id, p.ply, r.status AS mapping_status,
@@ -58,8 +58,9 @@ def evidence(db, learner, skill, operation, before):
         LEFT JOIN mapping_runs r ON r.id=e.mapping_run_id
         LEFT JOIN evidence_review_events v ON v.id=(SELECT id FROM evidence_review_events
             WHERE evidence_id=e.id ORDER BY id DESC LIMIT 1)
-        WHERE e.subject=? AND e.skill=? AND e.operation=? AND e.id < ? ORDER BY e.id DESC LIMIT ?""",
-        (subject, skill, operation, before, MAX_EVIDENCE + 1),
+        WHERE e.subject=? AND e.skill=? AND e.operation=? AND e.id < ?
+        AND (?=0 OR e.outcome='failure') ORDER BY e.id DESC LIMIT ?""",
+        (subject, skill, operation, before, int(failure_only), MAX_EVIDENCE + 1),
     ).fetchall()
     return rows[:MAX_EVIDENCE], len(rows) > MAX_EVIDENCE
 

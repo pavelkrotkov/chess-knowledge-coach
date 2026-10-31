@@ -1,6 +1,6 @@
 """Compose bounded, source-linked coaching without diagnosing the learner."""
 
-from .lesson_cues import CUES
+from .lesson_cues import cues
 from .lesson_mechanisms import describe
 from .lesson_possible import MECHANISMS
 from .lesson_source import source
@@ -37,7 +37,7 @@ def build(db, learner, group, *, _history=None):
                 examples.append(item)
         if len(examples) == 3:
             break
-    question, habit, practice = CUES[group["family"]]
+    question, habit, practice = cues(group["family"], group["operation"])
     return {
         "version": VERSION,
         "skill": group["skill"],

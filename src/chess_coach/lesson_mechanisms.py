@@ -58,6 +58,7 @@ def describe(source):
         "ply": evidence["ply"],
         "review": evidence["lesson_review"],
         "played": played[0],
+        "fen": fen,
         "facts": facts,
         "lines": [line for line in lines if line],
     }

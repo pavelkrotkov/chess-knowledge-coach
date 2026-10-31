@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Coaching — Chess coach{% endblock %}
+{% block content %}
+<h2>{% if record %}Saved coaching preview{% else %}Your recurring patterns{% endif %}</h2>
+{% if record %}<p>Saved {{ record.generated_at }}. This is a historical snapshot; sources may have changed since it was saved.</p>{% endif %}
+<p>These are provisional, source-checked examples from processed games, not a diagnosis or mastery score. The counts describe the inspected failures, not all opportunities.</p>
+{% if preview.groups|length < 3 %}<p>Only {{ preview.groups|length }} of three patterns have at least two checked games with usable lines. More processed and supported observations are needed.</p>{% endif %}
+{% for group in preview.groups %}{% set lesson = group.lesson %}
+<section><h3>{% if lesson.skill == "hanging_piece" and lesson.operation == "execute" %}Finding captures{% elif lesson.skill == "hanging_piece" and lesson.operation == "prevent" %}Protecting pieces{% elif lesson.skill == "mate_in_one" %}Finding mate in one{% else %}{{ lesson.skill | replace("_", " ") | capitalize }} · {{ lesson.operation | replace("_", " ") }}{% endif %}</h3>
+<p>{{ group.misses }} checked missed decisions across {{ group.miss_games }} independent games in this bounded sample, from {{ group.from_date }} to {{ group.to_date }}.</p>
+<details><summary>What this lesson shows</summary><p>{{ lesson.qualification }}</p></details><p><strong>Consider:</strong> {{ lesson.possible }}</p><p><strong>Habit:</strong> {{ lesson.habit }}</p><p><strong>Question:</strong> {{ lesson.question }}</p>
+{% set board = board_rows(lesson.examples[0].fen) %}{% set board_label = "Source position before the move; side to move at the bottom" %}{% include "board.html" %}
+{% for example in lesson.examples %}<section><h4><a href="{{ url_for("views.evidence_detail", evidence_id=example.evidence_id) }}">Source decision</a> · {{ example.review }}</h4><p>Played {{ example.played }}.</p>{% for fact in example.facts %}<p>{{ fact }}</p>{% endfor %}{% for line in example.lines %}<p>{{ line.label }}: {{ line.moves | join(" ") }}.</p>{% endfor %}<p><a href="{{ url_for("views.decision_detail", position_id=example.position_id) }}">Inspect this decision</a></p></section>{% endfor %}
+<p><strong>Practice:</strong> {{ lesson.practice }}</p></section>
+{% else %}<p>No repeated failure patterns could be rechecked in this sample.</p>{% endfor %}
+<details><summary>Coverage and limits</summary><p>The failure scan reads up to 300 recorded failures and reconstructs at most 20 games per skill and operation. Rejected, stale, unsupported, undated and source-unavailable observations are excluded. Results are partial and are not failure rates. {% if preview.failure_limits or preview.excluded.get("game replay limit") %}A scan limit was reached; additional patterns may be missing.{% endif %}</p><p>Database-wide: {{ preview.coverage.database_games }} stored games; {{ preview.coverage.database_analysis.get("complete", 0) }} have an analysis stage marked complete.</p><p>Separately, the recent-game sample examined {{ preview.coverage.examined_games }} attributable games: {% for status, count in preview.coverage.analysis_stages.items() %}{{ status }} {{ count }}{% if not loop.last %}, {% endif %}{% else %}no analysis stages recorded{% endfor %}. {% if preview.coverage.game_limit_reached or preview.coverage.scan_limit_reached %}The recent-game sample reached its limit.{% endif %}</p></details>
+{% if not record %}<form method="post" action="{{ url_for("coaching_views.save_preview") }}"><input type="hidden" name="csrf" value="{{ csrf }}"><button>Save this coaching preview</button></form>{% endif %}
+<p><a href="{{ url_for("lesson_history_views.history") }}">Saved lesson history</a> · <a href="{{ url_for("recurrence_views.recurrence") }}">Explore recurring patterns</a></p>
+{% endblock %}
