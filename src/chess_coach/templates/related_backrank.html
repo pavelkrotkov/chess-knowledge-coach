@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Related back-rank attacking practice — Chess coach{% endblock %}
+{% block content %}
+<h2>Practice a back-rank attacking pattern</h2>
+<p>Choose one proved source alternative and its timing. {% if outcome == "ambiguous" %}The source is ambiguous; this is a supported alternative, not a diagnosis of a missed move.{% else %}The source move was supported.{% endif %}</p>
+{% for root in choices %}<p><a href="{{ url_for('related_backrank.show', evidence_id=evidence_id, root=root.move.uci) }}">{{ root.move.san }} · {{ root.distance_plies }} ply</a></p>{% else %}<p>No proved source root is available.</p>{% endfor %}
+{% if result %}
+{% if result.backrank_scan is defined %}<p>{{ result.status }}. Candidate lines checked: {{ result.backrank_scan.lines }} of {{ result.backrank_scan.line_limit }}{% if result.backrank_scan.truncated %}; work limit reached and remaining candidates are unknown{% endif %}. The source proof is rechecked separately against original history. Each match uses one deterministic witnessed reply from the selected source root. A supplied line witnesses the mechanism; it does not prove all defenses. Later play and mastery remain unknown.</p>
+<p>Corpus records searched: {{ result.scanned }}; public tasks searched: {{ result.public_scanned }}. {% if result.selection %}The corpus is a declared nonrepresentative source-order prefix.{% else %}Corpus selection metadata is unavailable.{% endif %} {% if result.baseline %}The source-game rating is a rough content filter.{% else %}Cold start: the rating range is a content filter, not a skill estimate.{% endif %}</p>{% else %}<p>{{ result.status }}</p>{% endif %}
+{% for item in result["items"] %}
+<section><h3>Transfer example {{ loop.index }}</h3>
+<p>Matching legal mate timing, checker and constrained king structure; {{ item.type }} source{% if item.rating is not none %}, content rating {{ item.rating }}{% endif %}.</p>
+{% set board = item.board %}{% set board_label = "Transfer position; side to move at the bottom" %}{% include "board.html" %}
+<form method="post" action="{{ url_for('related_backrank.begin', evidence_id=evidence_id) }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="root" value="{{ root_move }}"><input type="hidden" name="reference" value="{{ item.reference }}"><button>Start this example</button></form></section>
+{% endfor %}
+{% if result.next_cursor %}<a href="{{ url_for('related_backrank.show', evidence_id=evidence_id, root=root_move, cursor=result.next_cursor) }}">More examples</a>{% endif %}
+{% endif %}
+{% endblock %}

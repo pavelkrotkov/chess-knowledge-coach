@@ -1,6 +1,7 @@
 """Resolve current line-filter versions for source-bound transfers."""
 
 from . import (
+    related_backrank_contract,
     related_fork_avoidance_contract,
     related_fork_lines,
     related_fork_prevention_contract,
@@ -11,6 +12,8 @@ from .related_protection_contract import FILTER_VERSION as PROTECTION_FILTER
 
 
 def filter_version(motif):
+    if motif == "backrank_attack":
+        return related_backrank_contract.FILTER_VERSION
     if motif == "protection":
         return PROTECTION_FILTER
     if motif == "fork_avoidance":

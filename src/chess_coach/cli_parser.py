@@ -12,6 +12,7 @@ from .cli_public_training import configure as public_training
 from .cli_purpose import configure as purpose
 from .cli_recovery import configure as recovery
 from .cli_recurrence import configure as recurrence
+from .cli_related_backrank import configure as related_backrank
 from .cli_related_capture import configure as related_capture
 from .cli_related_fork import configure as related_fork
 from .cli_related_fork_avoidance import configure as related_fork_avoidance
@@ -39,6 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
     public_training(sub)
     purpose(sub)
     unified_practice(sub)
+    related_backrank(sub)
     related_capture(sub)
     related_fork(sub)
     related_fork_prevention(sub)

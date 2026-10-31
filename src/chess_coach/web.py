@@ -17,6 +17,7 @@ from .web_practice_tools import practice_tools
 from .web_probes import probe_views
 from .web_purpose import purpose_views
 from .web_recurrence import recurrence_views
+from .web_related_backrank import related_backrank
 from .web_related_capture import related_capture
 from .web_related_fork import related_fork
 from .web_related_fork_avoidance import related_fork_avoidance
@@ -61,6 +62,7 @@ def create_app(
         FORK_AVOIDANCE_VERSION=FORK_AVOIDANCE_VERSION,
     )
     install_security(app, login, origin, host if backend_host is None else backend_host)
+    app.register_blueprint(related_backrank)
     app.register_blueprint(related_capture)
     app.register_blueprint(related_fork)
     app.register_blueprint(related_fork_prevention)

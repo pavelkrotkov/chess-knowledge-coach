@@ -16,6 +16,12 @@ def test_cli_and_private_browser_report_the_same_registry(tmp_path, monkeypatch,
     report = json.loads(capsys.readouterr().out)
     assert report == capability_report()
     assert (
+        next(item for item in report["capabilities"] if item["id"] == "related_backrank_attack")[
+            "status"
+        ]
+        == "observation-only"
+    )
+    assert (
         next(item for item in report["capabilities"] if item["id"] == "related_pin_execution")[
             "status"
         ]
