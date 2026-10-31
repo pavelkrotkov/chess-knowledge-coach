@@ -7,6 +7,7 @@ from .coaching_report import VERSION, report
 from .lesson_history import save
 from .web_board import board_rows
 from .web_db import database
+from .web_study_status import status as study_status
 
 coaching_views = Blueprint("coaching_views", __name__)
 
@@ -20,7 +21,12 @@ def index():
     except ValueError:
         abort(400, "Coaching preview unavailable.")
     return render_template(
-        "coaching.html", preview=preview, record=None, board_rows=board_rows, practice=practice
+        "coaching.html",
+        preview=preview,
+        record=None,
+        board_rows=board_rows,
+        practice=practice,
+        study_status=study_status(current_app.config["PROJECT_ROOT"]),
     )
 
 
