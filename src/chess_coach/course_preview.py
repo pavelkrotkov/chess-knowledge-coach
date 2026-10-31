@@ -4,6 +4,7 @@ import hashlib
 import json
 
 from .coaching_practice import choices
+from .course_evidence import revalidate_group
 from .course_pgn import chapter
 from .course_related import related
 from .recurrence_snapshot import read_snapshot
@@ -29,7 +30,7 @@ def build(db, subject, corpus, envelope):
         if set(by_kind) != {"capture", "protection", "mate"}:
             raise ValueError("required coaching patterns are unavailable")
         chapters = [
-            _personal(db, subject, group, item)
+            _personal(db, subject, group, item, revalidate_group(db, subject, group))
             for group, item in zip(preview["groups"], selected, strict=True)
         ]
         chapters.append(related(db, subject, corpus, by_kind["capture"], "capture"))
@@ -38,7 +39,7 @@ def build(db, subject, corpus, envelope):
     return {"course": course, "course_sha256": preview_hash(course)}
 
 
-def _personal(db, subject, group, choice):
+def _personal(db, subject, group, choice, games):
     lesson = group["lesson"]
     snapshot = resolve_source(db, "own-game", choice["version"], choice["key"], subject=subject)
     titles = {
@@ -47,7 +48,7 @@ def _personal(db, subject, group, choice):
         "mate": "Finding checkmate",
     }
     note = (
-        f"From one of your games. This pattern appeared in {group['miss_games']} independent games. "
+        f"From one of your games. This pattern appeared in {games} independent games. "
         f"{lesson['question']} {lesson['habit']}"
     )
     if choice["kind"] == "protection":
