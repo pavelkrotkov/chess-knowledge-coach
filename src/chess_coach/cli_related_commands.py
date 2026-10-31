@@ -3,6 +3,7 @@
 from . import cli_related_capture as capture
 from . import cli_related_fork as fork
 from . import cli_related_mate as mate
+from . import cli_related_pin as pin
 from . import cli_related_protection as protection
 
 COMMANDS = {
@@ -12,4 +13,5 @@ COMMANDS = {
     "related-protections": protection.listing,
     "start-related-protection": protection.begin,
     **mate.commands(),
+    **pin.commands(),
 }

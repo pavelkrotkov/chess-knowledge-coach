@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Related pin practice — Chess coach{% endblock %}
+{% block content %}
+<h2>Practice this pin pattern</h2>
+{% if result.scanned is defined %}
+<p>Source: {{ "reviewed" if result.review_status == "accepted" else "provisional" }} own-game pin execution. Every selected supplied line creates the matching pin, shows a legal defense, and makes the certified target capture. For each immediate defense the bounded proof establishes a material gain of at least three points or immediate checkmate; it does not establish a win or later safety. Unlisted moves need verification.</p>
+<p>{{ result.status }}. Searched {{ result.scanned }} corpus records and {{ result.public_scanned }} public tasks in a bounded pool{% if result.bounds %} (content rating {{ result.bounds[0] }}–{{ result.bounds[1] }}){% endif %}. {% if result.selection %}The corpus is a nonrepresentative source-order prefix of {{ result.selection.fullsource_count }} records.{% else %}Corpus selection metadata is unavailable.{% endif %} Tags nominate examples only.</p>
+{% if result.baseline %}<p>Source-game rating {{ result.baseline }} is a rough content filter, not calibrated puzzle skill.</p>{% else %}<p>Cold start: no source-game rating is available. The bounds are a content filter and 1400 is a sorting anchor, not an estimate of skill.</p>{% endif %}
+<p>Candidate work: {{ result.pin_scan.lines }} of {{ result.pin_scan.line_limit }} lines and {{ result.pin_scan.root_proofs }} of {{ result.pin_scan.root_proof_limit }} pin-root proofs; unknown {{ result.pin_scan.unknown }}. {{ result.source_verification }}</p>
+<p>Excluded {{ result.excluded.exact_source }} exact source positions, {{ result.excluded.familiar }} familiar positions, and {{ result.excluded.duplicate }} duplicate prompts or source games.</p>
+{% else %}<p>{{ result.status }}</p>{% endif %}
+{% for item in result['items'] %}
+<section><h3>Transfer example {{ loop.index }}</h3>
+<p>Matching pinner, pinned and rear roles and pin geometry. {% if item.same_material %}Same material counts{% else %}Different material counts{% endif %}{% if item.shared_phase %}; both {{ item.shared_phase }} positions{% endif %}.</p>
+<p>Source: {{ item.type }} · version {{ item.version }}{% if item.rating is not none %} · content rating {{ item.rating }}{% else %} · content rating unavailable{% endif %}</p>
+{% set board = item.board %}{% set board_label = "Transfer position; side to move at the bottom" %}{% include "board.html" %}
+<form method="post" action="{{ url_for('related_pin.begin', evidence_id=evidence_id) }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="reference" value="{{ item.reference }}"><button>Start this example</button></form></section>
+{% endfor %}
+{% if result.next_cursor %}<p><a href="{{ url_for('related_pin.show', evidence_id=evidence_id, cursor=result.next_cursor) }}">More examples</a></p>{% endif %}
+{% endblock %}

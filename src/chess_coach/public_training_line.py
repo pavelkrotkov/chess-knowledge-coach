@@ -4,9 +4,11 @@ import chess
 
 from .objective_promotion_line import validate as validate_promotion
 
+PUBLIC_LINE_PLIES_LIMIT = 64
+
 
 def validate_line(initial, line, objective):
-    if not isinstance(line, str) or not 1 <= len(line.split()) <= 64:
+    if not isinstance(line, str) or not 1 <= len(line.split()) <= PUBLIC_LINE_PLIES_LIMIT:
         raise ValueError("invalid solution line")
     board = initial.copy()
     promoted = False

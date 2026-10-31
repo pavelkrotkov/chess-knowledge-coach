@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.66.0"
+REGISTRY_VERSION = "1.67.0"
 
 CAPABILITIES = (
     {
@@ -12,6 +12,13 @@ CAPABILITIES = (
         "name": "Owned created knight-fork avoidance",
         "status": "observation-only",
         "details": "Current owned created-fork observations support queued, bounded alternative verification; uncertain threats and later counterplay remain unresolved and no mastery is inferred.",
+    },
+    {
+        "id": "related_pin_execution",
+        "area": "Training",
+        "name": "Related pin execution",
+        "status": "observation-only",
+        "details": "Current owned pin certificates retrieve bounded legal examples with matching pin roles and a certified supplied consequence.",
     },
     {
         "id": "owned_pin_prevention",

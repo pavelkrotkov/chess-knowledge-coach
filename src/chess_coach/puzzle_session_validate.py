@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import chess
 
+CORPUS_PLIES_LIMIT = 65
+
 
 def validate_line(fen: str, solution: str) -> str:
     """Validate the complete line and return the position after the setup move."""
