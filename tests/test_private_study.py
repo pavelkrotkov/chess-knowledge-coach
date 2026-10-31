@@ -10,6 +10,7 @@ import pytest
 
 from chess_coach.course_pgn import chapter
 from chess_coach.course_preview import preview_hash
+from chess_coach.study_pgn_verify import matches
 from chess_coach.study_publisher import publish
 from chess_coach.study_remote import SETTINGS, Remote, StudyError
 
@@ -81,6 +82,9 @@ class Provider:
         for item in self.uploaded:
             game = chess.pgn.read_game(io.StringIO(item["pgn"]))
             assert game is not None
+            if game.end().board().is_checkmate():
+                winner = "0-1 Black" if game.end().board().turn else "1-0 White"
+                game.end().comment = winner + " wins by checkmate."
             game.headers["ChapterName"] = item["name"]
             game.headers["Orientation"] = item["orientation"]
             games.append(str(game))
@@ -97,6 +101,16 @@ def test_private_publication_reconciles_timeouts_and_rejects_public_destination(
     chapters = [
         chapter(f"Lesson {i}", "A source and a useful question.", snapshot, {}) for i in range(5)
     ]
+    board = chess.Board()
+    for move in ("f3", "e5", "g4"):
+        board.push_san(move)
+    mate = {
+        "prompt_fen": board.fen(),
+        "learner_color": "black",
+        "lines": ["d8h4"],
+        "provenance": {},
+    }
+    chapters[2] = chapter("Mate", "Find checkmate.", mate, {})
     body = {"preview_sha256": "fixture", "chapters": chapters}
     course = {"course": body, "course_sha256": preview_hash(body)}
     provider = Provider()
@@ -122,6 +136,19 @@ def test_private_publication_reconciles_timeouts_and_rejects_public_destination(
     link = publish(remote, intent, course)
     assert link.endswith("/abcd1234")
     assert provider.created == 1 and len(provider.uploaded) == 5
+    expected = {**chapters[2], "name": provider.uploaded[2]["name"]}
+    assert matches(expected, provider.export())
+    assert not matches(
+        expected, provider.export().replace("0-1 Black wins by checkmate.", "Unrelated annotation.")
+    )
+    assert not matches(
+        expected,
+        provider.export().replace("0-1 Black wins by checkmate.", "1-0 White wins by checkmate."),
+    )
+    with_teaching = chess.pgn.read_game(io.StringIO(expected["pgn"]))
+    assert with_teaching is not None
+    with_teaching.end().comment = "Keep this teaching comment."
+    assert not matches({**expected, "pgn": str(with_teaching)}, provider.export())
     assert json.loads(intent.read_text())["complete"] is True
     assert json.loads(intent.read_text())["verified_at"]
     assert publish(remote, intent, course) == link
