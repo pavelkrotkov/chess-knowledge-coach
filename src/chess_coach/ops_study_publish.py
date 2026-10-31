@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from .course_paths import paths
+from .study_remote import StudyError
 from .study_session import publish_locked
 
 
@@ -25,6 +26,8 @@ def main():
     args = parser.parse_args()
     try:
         print(run(args.project_root, args.preview, args.course))
+    except StudyError as exc:
+        raise SystemExit(str(exc)) from None
     except Exception:
         raise SystemExit(
             "Publication incomplete; retain the private intent for reconciliation."

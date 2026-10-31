@@ -22,6 +22,7 @@ class Provider:
         self.private = True
         self.timeout_create = True
         self.timeout_upload = True
+        self.scopes = "study:read,study:write"
 
     def request(self, method, url, **kwargs):
         assert kwargs["headers"]["User-Agent"] == "Mozilla/5.0 (compatible; ChessCoach/1.0)"
@@ -30,6 +31,10 @@ class Provider:
         if path == "/api/account":
             return httpx.Response(
                 200, json={"id": "learner", "username": "learner"}, request=request
+            )
+        if path == "/api/token/test":
+            return httpx.Response(
+                200, json={"fixture-token": {"scopes": self.scopes}}, request=request
             )
         if path == "/api/study/by/learner":
             rows = [{"id": "abcd1234", "name": self.name}] if self.name else []
@@ -98,6 +103,11 @@ def test_private_publication_reconciles_timeouts_and_rejects_public_destination(
     remote = Remote("fixture-token", "learner", provider)
     intent = tmp_path / "intent.json"
 
+    provider.scopes = "study:read"
+    with pytest.raises(StudyError, match="scopes"):
+        publish(remote, intent, course)
+    assert not provider.created and not provider.uploaded
+    provider.scopes = "study:read,study:write"
     with pytest.raises(StudyError, match="unknown"):
         publish(remote, intent, course)
     assert provider.created == 1 and not provider.uploaded

@@ -3,6 +3,7 @@
 import httpx
 
 from .learner_identity import normalize_identity
+from .study_authorization import StudyError, fail
 
 BASE = "https://lichess.org"
 SETTINGS = {
@@ -14,10 +15,6 @@ SETTINGS = {
 }
 
 
-class StudyError(ValueError):
-    """Study publication cannot safely proceed."""
-
-
 class Remote:
     def __init__(self, token, learner, client, guard=lambda: None, observe=lambda response: None):
         self.token = token
@@ -27,6 +24,7 @@ class Remote:
         self.observe = observe
 
     def request(self, method, path, **kwargs):
+        plain = kwargs.pop("headers_override", False)
         self.guard()
         try:
             response = self.client.request(
@@ -35,6 +33,7 @@ class Remote:
                 headers={
                     "Authorization": "Bearer " + self.token,
                     "Accept": "application/json",
+                    "Content-Type": "text/plain" if plain else "application/x-www-form-urlencoded",
                     "User-Agent": "Mozilla/5.0 (compatible; ChessCoach/1.0)",
                 },
                 **kwargs,
@@ -43,7 +42,7 @@ class Remote:
             raise StudyError("network outcome is unknown") from None
         self.observe(response)
         if response.status_code != 200:
-            raise StudyError("provider rejected or did not complete request")
+            fail(response.status_code)
         return response
 
     def account(self):

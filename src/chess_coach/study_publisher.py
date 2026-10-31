@@ -1,5 +1,6 @@
 """Publish one marked private course without repeating uncertain creates."""
 
+from .study_authorization import require_scopes
 from .study_import import upload_all
 from .study_intent import open_intent, save
 from .study_inventory import inventory
@@ -10,6 +11,7 @@ from .study_remote import StudyError
 def publish(remote, path, course):
     state = open_intent(path, course)
     account = remote.account()
+    require_scopes(remote)
     if state["study"] is None:
         _destination(remote, path, state, account)
     metadata(remote, state["study"])
