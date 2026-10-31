@@ -1,5 +1,6 @@
 """Select and admit unfamiliar related course practice."""
 
+from .course_guidance import attribution, objective
 from .course_pgn import chapter
 from .fact_fingerprint import canonical, digest
 from .related_capture import VERSION as CAPTURE_VERSION
@@ -29,21 +30,7 @@ def related(db, subject, corpus, choice, kind):
         snapshot = {**snapshot, "lines": matching}
     provenance = {"type": source_type, "version": source_version, "key": key, "binding": binding}
     title = "A new material-gain exercise" if kind == "capture" else "A new checkmate exercise"
-    attribution = _attribution(db, source_type, source_version, snapshot)
-    note = (
-        f"Unfamiliar library exercise selected for the same pattern. {attribution} "
-        "Find a useful move, then reveal the recorded continuation."
-    )
-    return chapter(title, note, snapshot, provenance)
-
-
-def _attribution(db, source_type, version, snapshot):
-    if source_type == "public":
-        provenance = snapshot["provenance"]
-        return "Source: {}. License: {}.".format(provenance["attribution"], provenance["license"])
-    row = db.connection.execute(
-        "SELECT source FROM puzzle_corpora WHERE version=?", (version,)
-    ).fetchone()
-    if row and row[0].startswith("https://database.lichess.org/"):
-        return "Source: Lichess open puzzle database, CC0."
-    return "Source: practice puzzle library."
+    source_credit = attribution(db, source_type, source_version, snapshot)
+    note = f"Unfamiliar library exercise selected for the same pattern. {source_credit}"
+    note, interactive = objective(note, snapshot, kind)
+    return chapter(title, note, snapshot, provenance, gamebook=interactive)

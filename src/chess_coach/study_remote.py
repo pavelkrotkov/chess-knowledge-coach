@@ -65,7 +65,7 @@ class Remote:
                 "pgn": chapter["pgn"],
                 "name": chapter["name"],
                 "orientation": chapter["orientation"],
-                "mode": "conceal",
+                "mode": chapter.get("mode", "conceal"),
             },
         ).json()
 

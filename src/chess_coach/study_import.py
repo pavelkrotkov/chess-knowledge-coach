@@ -2,8 +2,9 @@
 
 from datetime import UTC, datetime
 
+from .study_chapter_modes import verify_modes
 from .study_intent import save
-from .study_inventory import named, verify_chapters, verify_modes
+from .study_inventory import named, verify_chapters
 from .study_pgn_verify import matches
 from .study_privacy import metadata
 from .study_remote import StudyError
@@ -17,7 +18,7 @@ def upload_all(remote, path, state, chapters):
     exported = remote.export(state["study"])
     if not all(matches(named(chapter, state, i), exported) for i, chapter in enumerate(chapters)):
         raise StudyError("Study read-back is incomplete")
-    verify_modes(remote, study, state, chapters)
+    state["entry_chapter"] = verify_modes(remote, study, state, chapters)
     state["complete"] = True
     state["verified_at"] = datetime.now(UTC).isoformat()
     save(path, state)
