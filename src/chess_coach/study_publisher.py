@@ -17,4 +17,4 @@ def publish(remote, path, course):
     if metadata(remote, state["study"]).get("name") != state["marker"]:
         raise StudyError("Study marker no longer matches the publication intent")
     upload_all(remote, path, state, course["course"]["chapters"])
-    return "https://lichess.org/study/" + state["study"]
+    return "https://lichess.org/study/" + state["study"] + "/" + state["entry_chapter"] + "#0"

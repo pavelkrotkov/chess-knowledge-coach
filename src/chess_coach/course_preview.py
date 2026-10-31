@@ -5,6 +5,7 @@ import json
 
 from .coaching_practice import choices
 from .course_evidence import revalidate_group
+from .course_guidance import objective
 from .course_pgn import chapter
 from .course_related import related
 from .recurrence_snapshot import read_snapshot
@@ -51,6 +52,7 @@ def _personal(db, subject, group, choice, games):
         f"From one of your games. This pattern appeared in {games} independent games. "
         f"{lesson['question']} {lesson['habit']}"
     )
-    if choice["kind"] == "protection":
-        note += " Replay this recorded line; it is not a proof that every alternative fails."
-    return chapter(titles[choice["kind"]], note, snapshot, {"type": "own-game", **choice})
+    note, interactive = objective(note, snapshot, choice["kind"])
+    return chapter(
+        titles[choice["kind"]], note, snapshot, {"type": "own-game", **choice}, gamebook=interactive
+    )

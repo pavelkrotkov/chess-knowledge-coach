@@ -3,7 +3,6 @@
 import json
 from urllib.parse import quote
 
-from .study_privacy import chapter_mode
 from .study_remote import StudyError
 
 
@@ -28,13 +27,7 @@ def verify_chapters(study, state, chapters):
 
 
 def named(chapter, state, index):
-    return {**chapter, "name": f"{chapter['title']} [{state['marker'][-16:]}-{index + 1}]"}
-
-
-def verify_modes(remote, study, state, chapters):
-    for i, chapter in enumerate(chapters):
-        name = named(chapter, state, i)["name"]
-        found = [item["id"] for item in study["chapters"] if item.get("name") == name]
-        if len(found) != 1:
-            raise StudyError("chapter identity could not be verified")
-        chapter_mode(remote, state["study"], found[0])
+    name = f"{chapter['title']} [{state['marker'][-16:]}-{index + 1}]"
+    if len(name) > 100:
+        raise StudyError("chapter name exceeds provider limit")
+    return {**chapter, "name": name}

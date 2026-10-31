@@ -12,16 +12,6 @@ def metadata(remote, study_id):
     return _verify(remote, study_id, result)
 
 
-def chapter_mode(remote, study_id, chapter_id):
-    _identifier(study_id)
-    _identifier(chapter_id)
-    result = remote.request("GET", f"/study/{study_id}/{chapter_id}").json()
-    study = _verify(remote, study_id, result)
-    chapter = study.get("chapter", {})
-    if chapter.get("id") != chapter_id or chapter.get("conceal") is None or chapter.get("gamebook"):
-        raise StudyError("chapter conceal mode could not be verified")
-
-
 def _identifier(value):
     if not isinstance(value, str) or re.fullmatch(r"[A-Za-z0-9]{8}", value) is None:
         raise StudyError("invalid Study identifier")
