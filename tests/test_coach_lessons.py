@@ -139,6 +139,9 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
     import json
     import sys
 
+    import pytest
+
+    from chess_coach.course_evidence import revalidate_group
     from chess_coach.db import Database
     from chess_coach.decision_inspection import inspect_decision
     from chess_coach.evidence_review import review_evidence
@@ -254,7 +257,10 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
             "SELECT fen FROM positions WHERE id=?", (example["position_id"],)
         ).fetchone()[0]
     )
+    assert revalidate_group(db, LEARNER, saved_lesson["groups"][0]) == 2
     review_evidence(db, int(key), decision="reject", actor="fixture")
+    with pytest.raises(ValueError, match="evidence changed"):
+        revalidate_group(db, LEARNER, saved_lesson["groups"][0])
     db.close()
     stale = client.post(
         "/unified/start",

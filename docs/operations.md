@@ -351,3 +351,34 @@ version and binary hash, and requires five native engine cases to run without
 skips. This hosted run uses
 public source and synthetic tests; its engine may differ from Hermes and it
 does not replace private deployment or performance checks.
+
+## Private coaching Study
+
+Prepare and inspect the owner-only course artifact before publication. Use the reviewed
+release Python and the existing private environment. Both commands take absolute paths
+under the project's `.runtime/planning` directory:
+
+```sh
+release="$PWD/.runtime/releases/<reviewed-sha>/venv/bin/python"
+"$release" -I -B -m chess_coach.ops_course_preview --project-root "$PWD" \
+  --preview "$PWD/.runtime/planning/<saved-preview>.json" \
+  --output "$PWD/.runtime/planning/<new-course>.json"
+"$release" -I -B -m chess_coach.ops_study_publish --project-root "$PWD" \
+  --preview "$PWD/.runtime/planning/<saved-preview>.json" \
+  --course "$PWD/.runtime/planning/<new-course>.json"
+```
+
+The preview opens the source database read-only and does not initialize it. Publication
+requires reviewed course and release gates; it uses the existing synchronization lock,
+checks the learner's authenticated account and the destination's ownership, privacy and
+restrictions, and records one durable intent before any write. It verifies the exported
+moves, comments, orientation and concealed chapter modes. The provider's first empty
+chapter remains in place. A pending ambiguous result is reconciled against the unique
+marker and exported content; never remove the intent or retry elsewhere to bypass an
+unresolved outcome. The verified link appears in the private coaching view.
+
+The authenticated Study view can return 404 for non-notable Studies if it treats a
+client as a crawler. The publisher identifies itself with a Mozilla-compatible
+ChessCoach user agent, as checked against the provider's Study controller. Any missing
+privacy or chapter metadata still stops publication. Study activity is not imported as
+a local practice attempt or mastery event.
