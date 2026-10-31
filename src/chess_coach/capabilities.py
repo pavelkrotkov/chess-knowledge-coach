@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.68.0"
+REGISTRY_VERSION = "1.69.0"
 
 CAPABILITIES = (
     {
@@ -395,8 +395,8 @@ CAPABILITIES = (
         "id": "broader_practice",
         "area": "Training",
         "name": "Related public and canonical exercises",
-        "status": "planned",
-        "details": "Multi-skill related retrieval, canonical lessons and alternative-aware grading are not yet supported.",
+        "status": "observation-only",
+        "details": "Source-bound public and corpus practice is available for selected tactical families, with alternative grading where supported by proof. Supplied lines and unresolved alternatives may remain ungraded; broader canonical lessons and general grading remain planned.",
     },
     {
         "id": "adaptive_curriculum",
@@ -464,9 +464,9 @@ CAPABILITIES = (
     {
         "id": "private_course_publication",
         "area": "Publication",
-        "name": "Personalized private Lichess courses",
-        "status": "planned",
-        "details": "Course generation and verified private Study upload are not yet implemented.",
+        "name": "One private coaching Study",
+        "status": "supported",
+        "details": "An operator can prepare source-rechecked capture, protection and mate coaching as five annotated chapters and publish one private Study with verified ownership, privacy and content. Protection is a recorded-line replay. Multi-course versioning, opening tracks and general course management remain planned.",
     },
 )
 
