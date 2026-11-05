@@ -144,10 +144,12 @@ def test_proved_alternative_is_playable_and_only_actual_mate_completes(
     from chess_coach.coaching_short_rehearsal import rehearsed_sources
 
     assert rehearsed_sources(db, subject, {str(evidence)}) == {}
-    begin(db, evidence, subject, attempt="unassisted-alternative")
+    beginning = begin(db, evidence, subject, attempt="unassisted-alternative")
+    beginning_fen = beginning["fen"]
     other = alternative(db, "unassisted-alternative")
     submit(db, "unassisted-alternative", subject, event_id="answer", move=other)
     assert process(db, subject)["outcomes"] == {"correct": 1}
+    assert rehearsed_sources(db, subject, {str(evidence)}) == {}
     state = show(db, "unassisted-alternative", subject)
     board = chess.Board(state["fen"])
     mating_move = next(move for move in board.legal_moves if _is_mate(board, move))
@@ -157,7 +159,18 @@ def test_proved_alternative_is_playable_and_only_actual_mate_completes(
         ]
         == "objective_verified"
     )
-    assert rehearsed_sources(db, subject, {str(evidence)}) == {}
+    assert rehearsed_sources(db, subject, {str(evidence)}) == {
+        str(evidence): " ".join(beginning_fen.split()[:4])
+    }
+    from chess_coach.objective_current import current, short_terminal
+
+    request = db.connection.execute(
+        "SELECT * FROM objective_requests WHERE attempt_id=? AND event_id=?",
+        ("unassisted-alternative", "answer"),
+    ).fetchone()
+    with pytest.raises(ValueError):
+        current(db, request)
+    assert short_terminal(db, request)[0]["status"] == "objective_verified"
     assert db.connection.execute("SELECT COUNT(*) FROM training_attempts").fetchone()[0] == 0
     app = create_app(
         db_path=tmp_path / "fixture.sqlite",
@@ -180,3 +193,90 @@ def _is_mate(board, move):
     result = board.is_checkmate()
     board.pop()
     return result
+
+
+@pytest.mark.parametrize(
+    ("black", "form", "assisted"),
+    [
+        (False, "immediate_root", False),
+        (True, "alternative_final", False),
+        (False, "alternative_final", True),
+        (True, "immediate_root", True),
+    ],
+)
+def test_async_terminal_recognition_requires_correct_unassisted_proof(
+    tmp_path, monkeypatch, black, form, assisted
+):
+    from chess_coach.coaching_short_rehearsal import rehearsed_sources
+    from chess_coach.evidence_review import review_evidence
+
+    db, evidence, subject = fixture(tmp_path / "terminal.sqlite", monkeypatch, black)
+    state = begin(db, evidence, subject, attempt="terminal")
+    source_fen = state["fen"]
+    lines = json.loads(
+        db.connection.execute(
+            "SELECT lines_json FROM unified_sessions WHERE attempt_id='terminal'"
+        ).fetchone()[0]
+    )
+    if form == "alternative_final":
+        root = lines[0][0]
+        state = submit(db, "terminal", subject, event_id="root", move=root)
+        assert state["status"] == "active"
+        board = chess.Board(state["fen"])
+        selected = {line[2] for line in lines if line[:2] == [root, state["opponent_move"]]}
+        move = next(
+            move
+            for move in board.legal_moves
+            if _is_mate(board, move) and move.uci() not in selected
+        )
+    else:
+        board = chess.Board(source_fen)
+        move = next(move for move in board.legal_moves if _is_mate(board, move))
+    if assisted:
+        hint(db, "terminal", subject, event_id="hint")
+    pending = submit(db, "terminal", subject, event_id="answer", move=move.uci())
+    assert pending["status"] == "needs_verification"
+    assert rehearsed_sources(db, subject, {str(evidence)}) == {}
+    assert process(db, subject)["outcomes"] == {"correct": 1}
+    assert show(db, "terminal", subject)["status"] == "objective_verified"
+    assert (
+        db.connection.execute(
+            "SELECT status FROM unified_sessions WHERE attempt_id='terminal'"
+        ).fetchone()[0]
+        == "needs_verification"
+    )
+    expected = {} if assisted else {str(evidence): " ".join(source_fen.split()[:4])}
+    assert rehearsed_sources(db, subject, {str(evidence)}) == expected
+    review_evidence(db, evidence, decision="reject", actor="fixture_reviewer")
+    assert rehearsed_sources(db, subject, {str(evidence)}) == {}
+    db.close()
+
+
+@pytest.mark.parametrize("outcome", ["incorrect", "cancelled"])
+def test_async_noncorrect_root_never_advances(tmp_path, monkeypatch, outcome):
+    from chess_coach.coaching_short_rehearsal import rehearsed_sources
+    from chess_coach.objective_publication import cancel
+
+    db, evidence, subject = fixture(tmp_path / "unverified.sqlite", monkeypatch)
+    begin(db, evidence, subject, attempt="unverified")
+    row = db.connection.execute(
+        "SELECT lines_json,provenance_json FROM unified_sessions WHERE attempt_id='unverified'"
+    ).fetchone()
+    root = json.loads(row["lines_json"])[0][0]
+    fact = db.connection.execute(
+        "SELECT payload_json FROM detector_facts WHERE id=(SELECT fact_id FROM evidence_fact_links WHERE evidence_id=?)",
+        (json.loads(row["provenance_json"])["evidence_id"],),
+    ).fetchone()
+    proofs = json.loads(fact[0])["proof"]["alternatives"]
+    move = next(
+        item["move"]["uci"]
+        for item in proofs
+        if item["status"] == "disproved" and item["move"]["uci"] != root
+    )
+    submit(db, "unverified", subject, event_id="answer", move=move)
+    if outcome == "cancelled":
+        assert cancel(db, subject, "unverified", "answer")["status"] == "unresolved"
+    else:
+        assert process(db, subject)["outcomes"] == {"incorrect": 1}
+    assert rehearsed_sources(db, subject, {str(evidence)}) == {}
+    db.close()

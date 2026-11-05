@@ -14,6 +14,10 @@ from .objective_short_source import VERSION as SHORT_VERSION
 
 
 def owned_scope(session, request):
+    return session["status"] == "needs_verification" and owned_snapshot_scope(session, request)
+
+
+def owned_snapshot_scope(session, request):
     return (
         session["source_type"] == "own-game"
         and (session["source_version"], session["objective"])
@@ -30,7 +34,6 @@ def owned_scope(session, request):
             (SHORT_VERSION, "mate_within_two"),
             (DEFENSE_VERSION, "avoid_immediate_mate"),
         }
-        and session["status"] == "needs_verification"
         and session["snapshot_hash"] == request["snapshot_hash"]
         and session["learner_color"] == request["learner_color"]
     )

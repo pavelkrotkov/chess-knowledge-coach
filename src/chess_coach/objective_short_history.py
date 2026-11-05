@@ -16,11 +16,15 @@ def validate_later_events(db, session, event_id, board):
     ).fetchall()
     if len(events) + len(rows) > 256:
         raise ValueError("continuation history exceeds limit")
+    validate_unchanged_events(rows, board.fen())
+
+
+def validate_unchanged_events(rows, fen):
     for row in rows:
         detail = response(row)
         if (row["kind"] != "hint" and detail.get("feedback") != "illegal") or detail.get(
             "fen"
-        ) != board.fen():
+        ) != fen:
             raise ValueError("continuation history changed")
 
 

@@ -4,6 +4,13 @@ from .objective_events import response
 
 
 def answer(board, session, target):
+    move = recorded_answer(board, target)
+    if response(target).get("fen") != session["current_fen"]:
+        raise ValueError("verification position changed")
+    return move
+
+
+def recorded_answer(board, target):
     detail = response(target)
     if target["kind"] != "move" or detail.get("feedback") != "needs_verification":
         raise ValueError("verification event unavailable")
@@ -12,7 +19,7 @@ def answer(board, session, target):
     move = _legal_move(board, target["submitted_move"])
     after = board.copy()
     after.push(move)
-    if after.fen() != detail.get("fen") or after.fen() != session["current_fen"]:
+    if after.fen() != detail.get("fen"):
         raise ValueError("verification position changed")
     return move
 

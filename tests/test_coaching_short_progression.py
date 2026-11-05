@@ -6,6 +6,7 @@ import sys
 import chess
 import chess.engine
 import chess.pgn
+import pytest
 
 from chess_coach.coaching_practice import choices
 from chess_coach.db import Database
@@ -24,7 +25,8 @@ from tests.test_unified_sessions import token
 SUBJECT = "fixture_a"
 
 
-def test_private_card_rotates_only_after_complete_unassisted_rehearsal(tmp_path, monkeypatch):
+@pytest.mark.parametrize("form", ["prepared", "async_final"])
+def test_private_card_rotates_only_after_complete_unassisted_rehearsal(tmp_path, monkeypatch, form):
     import chess_coach.web_coaching as web_coaching
 
     path = tmp_path / "coaching.sqlite"
@@ -183,7 +185,25 @@ def test_private_card_rotates_only_after_complete_unassisted_rehearsal(tmp_path,
 
     page, mate = root_and_mate(begin())
     assert token(client.get("/coaching", base_url=base, headers=headers), "key") == first_key
+    attempt = token(page, "attempt")
+    if form == "async_final":
+        board = chess.Board(
+            db.connection.execute(
+                "SELECT current_fen FROM unified_sessions WHERE attempt_id=?", (attempt,)
+            ).fetchone()[0]
+        )
+        mate = next(
+            candidate.uci()
+            for candidate in board.legal_moves
+            if candidate.uci() != mate and _is_mate(board, candidate)
+        )
     completed = move(page, mate)
+    if form == "async_final":
+        from chess_coach.objective_worker import process
+
+        assert token(client.get("/coaching", base_url=base, headers=headers), "key") == first_key
+        assert process(db, SUBJECT)["outcomes"] == {"correct": 1}
+        completed = client.get("/unified/" + attempt, base_url=base, headers=headers)
     assert b"checkmate objective was verified" in completed.data
     page = client.get("/coaching", base_url=base, headers=headers)
     assert token(page, "key") == str(examples[2]["evidence_id"])
@@ -202,3 +222,10 @@ def test_private_card_rotates_only_after_complete_unassisted_rehearsal(tmp_path,
     page = client.get("/coaching", base_url=base, headers=headers)
     assert b"You completed a recent short-mate example" not in page.data
     db.close()
+
+
+def _is_mate(board, move):
+    board.push(move)
+    result = board.is_checkmate()
+    board.pop()
+    return result
