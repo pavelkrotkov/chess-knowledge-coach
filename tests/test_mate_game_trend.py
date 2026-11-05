@@ -147,6 +147,7 @@ def test_result_contradicting_checkmate_is_unavailable(tmp_path):
 
 
 def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monkeypatch):
+    from copy import deepcopy
     from types import SimpleNamespace
 
     from chess_coach import short_mate_trend_paths as mate_paths
@@ -155,6 +156,7 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
     from chess_coach.short_mate_trend_cohort import signature as source_signature
     from chess_coach.short_mate_trend_paths import binding, location
     from chess_coach.short_mate_trend_report import report as cached_report
+    from chess_coach.short_mate_trend_select import _item
     from chess_coach.short_mate_trend_store import read, write
 
     # A complete rotation visits every game and returns to the newest one.
@@ -216,8 +218,8 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
     from chess_coach import capture_game_trend_scan as capture_scan
     from chess_coach.capture_game_trend_paths import binding as capture_binding
     from chess_coach.capture_game_trend_paths import location as capture_location
-    from chess_coach.capture_game_trend_paths import validate as capture_validate
     from chess_coach.capture_game_trend_report import report as capture_report
+    from chess_coach.capture_game_trend_validate import validate as capture_validate
 
     mate_before = read(location(db, root), binding(db, "fixture_a"))
     monkeypatch.setattr(
@@ -247,6 +249,54 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
     assert capture_state and capture_cache.stat().st_mode & 0o777 == 0o600
     assert read(capture_cache, capture_binding(db, "fixture_a")) is None
     assert read(capture_cache, capture_binding(db, "fixture_b"), validator=capture_validate) is None
+    retained = capture_state["games"][0]
+    source = turns.prepare(db, "fixture_a", retained["id"])
+    kept = _item(source, retained["signature"], {str(retained["id"]): retained})
+    assert kept["results"] == retained["results"]
+    wrong = deepcopy(retained)
+    wrong["results"][0][0] = 999999
+    rejected = _item(source, retained["signature"], {str(retained["id"]): wrong})
+    assert not rejected["results"]
+
+    # A checksum is not enough: cache records must remain tied to their sources.
+    for mutate in (
+        lambda state: state["games"][0].update(id=999999),
+        lambda state: state["games"][0].update(signature="wrong"),
+        lambda state: state["games"][1].update(identity=state["games"][0]["identity"]),
+        lambda state: state["games"][1]["results"][0].__setitem__(
+            0, state["games"][0]["results"][0][0]
+        ),
+        lambda state: state.update(duplicates=state["duplicates"] + 1),
+    ):
+        corrupted = deepcopy(capture_state)
+        mutate(corrupted)
+        write(capture_cache, corrupted)
+        assert capture_report(db, "fixture_a", root) is None
+    corrupted = deepcopy(capture_state)
+    corrupted["games"][0]["date"] = "1900-01-01T00:00:00+00:00"
+    write(capture_cache, corrupted)
+    assert capture_report(db, "fixture_a", root) is None
+    corrupted = deepcopy(capture_state)
+    corrupted["games"][0]["results"][0][0] = 999999
+    write(capture_cache, corrupted)
+    assert capture_report(db, "fixture_a", root) is None
+    corrupted = deepcopy(capture_state)
+    corrupted["checked"].reverse()
+    corrupted["games"].reverse()
+    write(capture_cache, corrupted)
+    assert capture_report(db, "fixture_a", root) is None
+    capture_scan.run(db, "fixture_a", root)
+    rebuilt = capture_report(db, "fixture_a", root)
+    assert rebuilt and rebuilt["comparable"] and not rebuilt["qualified"]
+    corrupted = deepcopy(capture_state)
+    corrupted["games"][0]["eligible"] += 1
+    corrupted["games"][0]["results"][0][0] = 999999
+    corrupted["rotation"] = 0
+    write(capture_cache, corrupted)
+    capture_scan.run(db, "fixture_a", root)
+    reset = read(capture_cache, capture_binding(db, "fixture_a"), validator=capture_validate)
+    assert reset and not reset["checked"] and not reset["selection_complete"]
+    write(capture_cache, capture_state)
     with monkeypatch.context() as patch:
         original_capture_binding = capture_binding(db, "fixture_a")
         patch.setattr(mate_paths, "PROOF_VERSION", "future-mate-policy")

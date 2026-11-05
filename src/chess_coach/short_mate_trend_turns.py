@@ -19,11 +19,19 @@ def _evaluate(board, played, deadline, classifier):
     return (classifier or classify)(board, played, deadline, time.monotonic)
 
 
+# Replayed turns fix the result order; a stale prefix must not count another move twice.
+def _check_prefix(item, turns):
+    expected = [context["position_id"] for context, _ in turns[: len(item["results"])]]
+    if [row[0] for row in item["results"]] != expected:
+        raise ValueError("cached decisions changed")
+
+
 def inspect(db, learner, item, deadline, quota, *, classifier=None, seconds=TURN_SECONDS):
     source = prepare(db, learner, item["id"])
     if fingerprint(source["signature"]) != item["signature"]:
         raise ValueError("game changed")
     turns = [(context, board) for context, board in source["pairs"] if context["subject"]]
+    _check_prefix(item, turns)
     used = 0
     while len(item["results"]) < len(turns) and used < quota:
         if time.monotonic() + seconds >= deadline:

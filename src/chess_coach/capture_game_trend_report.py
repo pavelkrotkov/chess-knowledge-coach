@@ -3,7 +3,9 @@
 import sqlite3
 
 from .capture_game_counts import add, empty, finish
-from .capture_game_trend_paths import binding, location, validate
+from .capture_game_trend_current import current, frontier_matches
+from .capture_game_trend_paths import binding, location
+from .capture_game_trend_validate import validate
 from .mate_game_trend import _comparable
 from .short_mate_trend_cohort import snapshot
 from .short_mate_trend_report import _qualified
@@ -31,11 +33,14 @@ def report(db, learner, root):
         if not state:
             return None
         # Recheck every examined source, including duplicate and unavailable rows.
-        _, coverage, frontier, signatures = snapshot(db, learner, state["checked"])
-        if frontier != state["frontier"] or signatures != state["checked"]:
+        before = db.connection.execute("PRAGMA data_version").fetchone()[0]
+        candidates, coverage, frontier, signatures = snapshot(db, learner, state["checked"])
+        if not frontier_matches(state, candidates, frontier, signatures):
             return None
         games = state["games"]
         newer, earlier = _sample(games[:20]), _sample(games[20:40])
+        if not current(db, state, candidates, (newer, earlier), before):
+            return None
         dates = [item["date"] for item in games]
         comparable = state["selection_complete"] and _comparable(
             [newer, earlier], dates, coverage, state["unavailable"]

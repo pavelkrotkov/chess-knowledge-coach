@@ -1,6 +1,5 @@
 """Separate private cache and version binding for the capture proof."""
 
-from .capture_game_counts import OUTCOMES
 from .capture_game_proof import MAX_CANDIDATES
 from .capture_game_proof import VERSION as PROOF_VERSION
 from .fact_fingerprint import canonical, digest
@@ -10,7 +9,6 @@ from .material_reply_guard import MAX_REPLIES
 from .material_reply_guard import MIN_GAIN as MIN_REPLY_GAIN
 from .short_mate_trend_paths import location as game_location
 from .short_mate_trend_paths import source_identity
-from .short_mate_trend_validate import valid
 
 VERSION = "capture-game-trend-v1"
 TURN_SECONDS = 0.25
@@ -42,7 +40,3 @@ def binding(db, learner):
             ]
         )
     )
-
-
-def validate(data, expected):
-    return valid(data, expected, outcomes=OUTCOMES)
