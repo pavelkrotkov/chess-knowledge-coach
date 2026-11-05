@@ -2,6 +2,7 @@
 
 import json
 import os
+import stat
 
 from .fact_fingerprint import canonical, digest
 from .short_mate_trend_validate import valid
@@ -9,12 +10,20 @@ from .short_mate_trend_validate import valid
 MAX_BYTES = 4 * 1024 * 1024
 
 
+def _bytes(path):
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    fd = os.open(path, flags)
+    with os.fdopen(fd, "rb") as file:
+        if not stat.S_ISREG(os.fstat(file.fileno()).st_mode):
+            raise ValueError("cache must be a regular file")
+        return file.read(MAX_BYTES + 1)
+
+
 def read(path, expected):
     if path is None:
         return None
     try:
-        with path.open("rb") as file:
-            raw = file.read(MAX_BYTES + 1)
+        raw = _bytes(path)
         if len(raw) > MAX_BYTES:
             return None
         data = json.loads(raw)
@@ -24,7 +33,7 @@ def read(path, expected):
         if checksum != digest(canonical(data)):
             return None
         return data if valid(data, expected) else None
-    except (OSError, ValueError, TypeError):
+    except (OSError, ValueError, TypeError, RecursionError):
         return None
 
 
@@ -35,9 +44,17 @@ def write(path, data):
         raise ValueError("trend cache exceeds limit")
     # One writer holds the pipeline lock, so a fixed temporary name cannot accumulate.
     temporary = path.with_name(path.name + ".tmp")
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+    flags = (
+        os.O_WRONLY
+        | os.O_CREAT
+        | os.O_TRUNC
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+    )
     fd = os.open(temporary, flags, 0o600)
     with os.fdopen(fd, "wb") as file:
+        if not stat.S_ISREG(os.fstat(file.fileno()).st_mode):
+            raise ValueError("temporary cache must be a regular file")
         os.fchmod(file.fileno(), 0o600)
         file.write(raw)
         file.flush()

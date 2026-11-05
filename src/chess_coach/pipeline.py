@@ -27,7 +27,7 @@ def process_pipeline(
         except Exception:
             finish_run(db, "failed")
             return {"status": "failed", "detail": "processing_failed"}
+        finish_run(db, result["status"])
         if result["status"] != "failed":
             after_pipeline(db, config.learner, started)
-        finish_run(db, result["status"])
         return result

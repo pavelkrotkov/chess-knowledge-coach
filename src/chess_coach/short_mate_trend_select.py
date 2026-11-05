@@ -2,8 +2,9 @@
 
 import time
 
-from .short_mate_game_source import _signature, prepare, recheck
+from .short_mate_game_source import prepare, recheck
 from .short_mate_trend_cohort import fingerprint
+from .short_mate_trend_cohort import signature as source_signature
 
 
 def initial(key, frontier, previous):
@@ -46,7 +47,7 @@ def _item(source, signature, retained):
 def _add(db, learner, game, state, seen):
     game_id = game["id"]
     # Record unavailable and duplicate rows too: either can later change the boundary.
-    signature = fingerprint(_signature(db, game))
+    signature = source_signature(db, game)
     state["checked"].append([game_id, signature])
     try:
         source = prepare(db, learner, game_id)

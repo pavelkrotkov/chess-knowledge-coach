@@ -149,9 +149,18 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
 
     from chess_coach import short_mate_trend_scan as scan
     from chess_coach import short_mate_trend_turns as turns
+    from chess_coach.short_mate_trend_cohort import signature as source_signature
     from chess_coach.short_mate_trend_paths import binding, location
     from chess_coach.short_mate_trend_report import report as cached_report
     from chess_coach.short_mate_trend_store import read, write
+
+    # A complete rotation visits every game and returns to the newest one.
+    cursor = 0
+    visited = []
+    for _ in range(40):
+        visited.append(cursor)
+        cursor = scan._next(cursor, 40)
+    assert len(set(visited)) == 40 and cursor == 0
 
     # An overall interruption leaves the turn for the next activation; a local
     # proof timeout becomes a terminal unknown so it cannot stall the scan.
@@ -237,6 +246,25 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
     duplicate = db.connection.execute(
         "SELECT id FROM games WHERE event='Duplicate import'"
     ).fetchone()["id"]
+    position = db.connection.execute(
+        "SELECT fen,san,uci FROM positions WHERE game_id=? LIMIT 1", (duplicate,)
+    ).fetchone()
+    db.connection.executemany(
+        "INSERT INTO positions(game_id,ply,fen,san,uci) VALUES (?,?,?,?,?)",
+        [(duplicate, ply, *position) for ply in range(10000, 11000)],
+    )
+    db.connection.commit()
+    assert source_signature(db, {"id": duplicate}) == "oversized"
+    assert cached_report(db, "fixture_a", root) is None
+    scan.run(db, "fixture_a", root)
+    oversized = cached_report(db, "fixture_a", root)
+    assert oversized and not oversized["comparable"] and oversized["unavailable"] == 1
+    db.connection.execute("DELETE FROM positions WHERE game_id=? AND ply>=10000", (duplicate,))
+    db.connection.commit()
+    assert cached_report(db, "fixture_a", root) is None
+    scan.run(db, "fixture_a", root)
+    assert cached_report(db, "fixture_a", root)["comparable"]
+
     db.connection.execute("UPDATE games SET result='0-1' WHERE id=?", (duplicate,))
     db.connection.commit()
     assert cached_report(db, "fixture_a", root) is None
@@ -252,6 +280,8 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
     assert cached_report(db, "fixture_a", root) is None
     scan.run(db, "fixture_a", root)
     assert cached_report(db, "fixture_a", root) is not None
+    cache.write_bytes(b"[" * 1500 + b"]" * 1500)
+    assert cached_report(db, "fixture_a", root) is None
     cache.write_text("{invalid")
     assert cached_report(db, "fixture_a", root) is None
     db.close()

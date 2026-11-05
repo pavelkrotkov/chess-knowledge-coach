@@ -19,7 +19,7 @@ def _next(cursor, size):
     if size != 40:
         return (cursor + 1) % size
     # Alternate older and newer cohorts so arrivals cannot starve either sample.
-    return (cursor + (20 if cursor < 20 else 21)) % size
+    return cursor + 20 if cursor < 20 else (cursor - 19) % 20
 
 
 def _inspect(db, learner, state, deadline):
