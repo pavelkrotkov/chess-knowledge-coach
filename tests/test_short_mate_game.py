@@ -17,6 +17,7 @@ SHORT = "6k1/5ppp/8/7Q/8/5R2/7r/K4R2 w - - 0 1"
 def test_played_short_mate_outcomes_and_limits(monkeypatch, move, outcome):
     board = chess.Board(SHORT)
     assert classify(board, move, 1, lambda: 0) == (outcome, None)
+    assert classify(chess.Board(), "e2e4", 1, lambda: 0) == ("no_opportunity", None)
     assert board.fen() == SHORT
     immediate = chess.Board(FEN)
     assert classify(immediate, "g6g1", 1, lambda: 0) == ("immediate", None)

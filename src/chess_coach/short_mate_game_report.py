@@ -10,7 +10,7 @@ SECONDS = 5.0
 
 
 def report(db, learner, game_id, *, seconds=SECONDS, clock=time.monotonic):
-    if type(game_id) is not int or game_id < 1 or not 0 < seconds <= SECONDS:
+    if type(game_id) is not int or not 0 < game_id < 2**63 or not 0 < seconds <= SECONDS:
         raise ValueError("invalid inspection")
     if db.connection.in_transaction:
         raise ValueError("inspection requires an idle database")

@@ -65,6 +65,14 @@ def test_complete_private_samples_and_unavailable_coverage(tmp_path):
     assert inspection.status_code == 200
     assert b"1 eligible turns; 1 fully checked" in inspection.data
     assert b"immediate mate" in inspection.data and b"miss rate is unavailable" in inspection.data
+    assert (
+        client.get(
+            "/games/9223372036854775808/short-mate",
+            base_url="https://coach.invalid",
+            headers={"Tailscale-User-Login": "fixture"},
+        ).status_code
+        == 400
+    )
     app.config["SUBJECT"] = "fixture_c"
     assert (
         client.get(
