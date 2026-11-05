@@ -17,7 +17,7 @@ def run_pipeline(db, config, token, transport, clock):
     engine_hash = engine_identity(config.engine_path)
     games, scan, recent = process_ordinary(db, config, engine_hash)
     deep, purpose = process_deep_cycle(db, config)
-    material = process_material(db, config)
+    material = process_material(db, config, engine_hash)
     forks = process_forks(db, config)
     defenses = process_defenses(db, config)
     report = worker_report(db, config, sync, scan, games, deep, material, forks, defenses)

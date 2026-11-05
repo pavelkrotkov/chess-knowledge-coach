@@ -196,6 +196,144 @@ def test_automatic_worker_records_provisional_material_and_browser_explains(tmp_
     replay = process_pipeline(db, config, transport=network)
     assert replay["material"]["replayed"] == 1 and len(calls) == 1
 
+    import io
+
+    from chess_coach.material_worker import process_material
+
+    def add_fixture_game(target, label, second):
+        pgn = target.connection.execute("SELECT pgn FROM games WHERE id=1").fetchone()[0]
+        parsed = chess.pgn.read_game(io.StringIO(pgn))
+        assert parsed is not None
+        parsed.headers["Event"] = label
+        parsed.headers["UTCTime"] = f"12:00:{second:02}"
+        ingest_pgn(target, str(parsed))
+
+    recent_db = make_game(tmp_path / "recent-material.sqlite", monkeypatch)
+    add_fixture_game(recent_db, "Unanalyzed", 2)
+    add_fixture_game(recent_db, "Recent analyzed", 3)
+    recent_config = PipelineConfig(
+        learner=LEARNER,
+        engine_path=sys.executable,
+        nodes=100,
+        material_max_scan=4,
+        material_max_decisions=2,
+    )
+    assert (
+        run_analysis(
+            recent_db, 3, game_input(recent_db, 3), recent_config, engine_identity(sys.executable)
+        )["status"]
+        == "complete"
+    )
+    from dataclasses import replace
+
+    old_config = replace(recent_config, nodes=50)
+    assert (
+        run_analysis(
+            recent_db, 2, game_input(recent_db, 2), old_config, engine_identity(sys.executable)
+        )["status"]
+        == "complete"
+    )
+    before_outputs = recent_db.connection.execute("SELECT COUNT(*) FROM engine_outputs").fetchone()[
+        0
+    ]
+    observations = []
+
+    def first_has_no_fact(*args):
+        observations.append(True)
+        return None if len(observations) == 1 else original(*args)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(material_detector, "material_observation", first_has_no_fact)
+        first = process_material(recent_db, recent_config)
+        assert first["recent"]["game_window"] == 40
+        assert first["recent"]["scan_limit"] == 3 and first["recent"]["decision_limit"] == 1
+        assert first["recent"]["games_examined"] == 1
+        assert first["recent"]["no_opportunity"] == 1
+        assert first["recent"]["processed"] == 1 and first["outcomes"]["failure"] == 1
+        assert first["examined"] <= 4 and first["processed"] == 2
+        assert first["recent"]["pending"] and first["recent"]["status"] == "pending"
+        assert (
+            recent_db.connection.execute(
+                "SELECT COUNT(*) FROM detector_runs WHERE position_id=? AND status='active'", (5,)
+            ).fetchone()[0]
+            == 1
+        )
+        process_material(recent_db, recent_config)
+        third = process_material(recent_db, recent_config)
+        assert third["recent"]["source_unavailable"] >= 1
+        assert third["recent"]["status"] == "unavailable"
+        assert third["status"] == "complete"
+        assert third["recent"]["replayed"] == 1 and third["recent"]["observed"] == 1
+    assert (
+        recent_db.connection.execute("SELECT COUNT(*) FROM engine_outputs").fetchone()[0]
+        == before_outputs
+    )
+
+    duplicate_db = make_game(tmp_path / "duplicate-material.sqlite", monkeypatch)
+    duplicate = process_material(duplicate_db, recent_config)
+    assert duplicate["recent"]["processed"] == 1
+    assert duplicate["processed"] == 1 and duplicate["replayed"] == 0
+    assert duplicate["examined"] == 3
+    assert (
+        duplicate_db.connection.execute(
+            "SELECT COUNT(*) FROM detector_runs WHERE status='active' AND producer=?",
+            ("material-opportunity",),
+        ).fetchone()[0]
+        == 1
+    )
+
+    import chess_coach.material_recent_observe as recent_observe
+    from chess_coach.material_worker_cursor import scan as archive_scan
+
+    def interrupt(*_args, **_kwargs):
+        raise KeyboardInterrupt()
+
+    for scan_limit, decision_limit in ((1, 1), (1, 2), (4, 1)):
+        single_db = make_game(
+            tmp_path / f"single-material-{scan_limit}-{decision_limit}.sqlite", monkeypatch
+        )
+        add_fixture_game(single_db, "Second", 2)
+        add_fixture_game(single_db, "Third", 3)
+        one = PipelineConfig(
+            learner=LEARNER,
+            engine_path=sys.executable,
+            nodes=100,
+            material_max_scan=scan_limit,
+            material_max_decisions=decision_limit,
+        )
+        for game_id in (2, 3):
+            assert (
+                run_analysis(
+                    single_db,
+                    game_id,
+                    game_input(single_db, game_id),
+                    one,
+                    engine_identity(sys.executable),
+                )["status"]
+                == "complete"
+            )
+        first = process_material(single_db, one)
+        assert first["processed"] == 1 and first["recent"]["pending"] is None
+        assert first["recent"]["status"] == "not_scanned"
+        with monkeypatch.context() as patch:
+            patch.setattr(recent_observe, "process_item", interrupt)
+            with pytest.raises(KeyboardInterrupt):
+                process_material(single_db, one)
+        _key, positions = archive_scan(single_db, LEARNER, 1)
+        assert positions[0]["id"] == 2
+        after_interrupt = process_material(single_db, one)
+        assert after_interrupt["recent"]["pending"] is None
+        assert after_interrupt["examined"] <= scan_limit
+        _key, positions = archive_scan(single_db, LEARNER, 1)
+        expected_next = 3 if scan_limit == 1 else 4
+        assert positions[0]["id"] == expected_next
+        next_recent = process_material(single_db, one)
+        assert next_recent["recent"]["processed"] == 1
+        assert next_recent["recent"]["observed"] == 1
+        assert next_recent["examined"] <= scan_limit and next_recent["processed"] <= decision_limit
+        _key, positions = archive_scan(single_db, LEARNER, 1)
+        assert positions[0]["id"] == expected_next
+
 
 @pytest.mark.skipif(
     not __import__("pathlib").Path("/usr/games/stockfish").is_file(),
