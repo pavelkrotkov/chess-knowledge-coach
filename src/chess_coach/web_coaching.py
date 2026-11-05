@@ -17,7 +17,7 @@ def index():
     try:
         db = database()
         preview = report(db, current_app.config["SUBJECT"])
-        practice = choices(db, current_app.config["SUBJECT"], preview)
+        practice = choices(db, current_app.config["SUBJECT"], preview, adaptive=True)
     except ValueError:
         abort(400, "Coaching preview unavailable.")
     return render_template(
