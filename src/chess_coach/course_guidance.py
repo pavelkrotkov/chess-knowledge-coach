@@ -24,8 +24,9 @@ def prompt(note, color, gamebook):
         prefix = f"Interactive exercise. You play {color.capitalize()}."
         instruction = (
             "Select Preview below the board. Your move is checked automatically. "
-            "A correct move shows Correct. Exercise complete. with Play again and Next chapter; "
-            "a nonmatching move asks you to retry."
+            "A correct move finishes the exercise with Play again and, when available, "
+            "Next chapter. The message is Correct. Exercise complete. or Lichess's "
+            "checkmate result; a nonmatching move asks you to retry."
         )
     else:
         prefix = f"Worked example, ungraded. You follow {color.capitalize()}'s recorded line."

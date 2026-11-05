@@ -145,6 +145,10 @@ def test_private_publication_reconciles_timeouts_and_rejects_public_destination(
     assert "Interactive exercise. You play Black." in chapters[2]["pgn"]
     assert "Select Preview below the board." in chapters[2]["pgn"]
     assert "Your move is checked automatically." in chapters[2]["pgn"]
+    guide = chess.pgn.read_game(io.StringIO(chapters[2]["pgn"]))
+    assert guide is not None
+    assert "when available, Next chapter" in guide.comment
+    assert "or Lichess's checkmate result" in guide.comment
     assert "Good move" not in chapters[2]["pgn"]
     assert "Correct. Exercise complete." in chapters[2]["pgn"]
     body = {"preview_sha256": "fixture", "chapters": chapters}
