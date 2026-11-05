@@ -252,3 +252,158 @@ def test_network_logging_never_exposes_account_or_token(tmp_path, monkeypatch, c
     assert result["sync"]["games"] == 1
     assert "synthetic-secret" not in caplog.text
     assert "/games/user/learner" not in caplog.text.lower()
+
+
+def test_recent_ordinary_budget_archive_and_single_lane_fairness(tmp_path, monkeypatch):
+    from chess_coach.ingest import ingest_pgn
+    from chess_coach.lichess_state import account_key
+    from chess_coach.mapping_transaction import mapping_transaction
+    from chess_coach.pipeline_checkpoint import checkpoint
+    from chess_coach.pipeline_inputs import analysis_input, engine_identity, game_input
+    from chess_coach.pipeline_ordinary import process_ordinary
+    from chess_coach.pipeline_pending import pending_games
+    from chess_coach.pipeline_work import run_analysis
+
+    monkeypatch.setattr(chess.engine.SimpleEngine, "popen_uci", lambda _: FakeEngine())
+    db = Database(tmp_path / "recent.sqlite")
+    db.initialize()
+    now = int(time.time())
+    for index in range(1, 6):
+        ingest_pgn(db, game(f"recent{index:02}", now - 50 + index))
+    db.connection.execute("UPDATE games SET variant='Chess960' WHERE id=5")
+    db.connection.commit()
+    config = PipelineConfig(
+        learner="learner",
+        max_games=2,
+        max_scan=10,
+        nodes=100,
+        seconds_per_position=0.1,
+        engine_path=sys.executable,
+    )
+    engine_hash = engine_identity(config.engine_path)
+    key = analysis_input(game_input(db, 4), config, engine_hash)
+    with mapping_transaction(db):
+        checkpoint(db.connection, 4, "analysis", key, "failed", "analysis_failed")
+    assert run_analysis(db, 3, game_input(db, 3), config, engine_hash)["status"] == "complete"
+    games, scan, recent = process_ordinary(db, config, engine_hash)
+    assert [item["game_id"] for item in games] == [2, 1]
+    assert recent["selected"] == recent["analysis_complete"] == 1
+    assert recent["failed"] == recent["current"] == recent["invalid"] == 1
+    assert recent["examined"] + scan["examined"] <= config.max_scan
+    cursor = db.connection.execute(
+        "SELECT last_game_id FROM pipeline_cursors WHERE account_key=?",
+        (account_key(config.learner),),
+    ).fetchone()[0]
+    assert cursor == 1
+    pending, scanned, _cursor = pending_games(db, config, engine_hash, exclude={2})
+    assert [item[0] for item in pending] == [3, 4]
+    assert scanned["examined"] == 3
+    retry, _scan, recent = process_ordinary(db, config, engine_hash)
+    assert [item["game_id"] for item in retry] == [3, 4]
+    assert recent["selected"] == 0
+    assert retry[1]["stages"][0]["status"] == "complete"
+    db.close()
+
+    db = Database(tmp_path / "single.sqlite")
+    db.initialize()
+    for index in range(1, 5):
+        ingest_pgn(db, game(f"single{index:02}", now - 50 + index))
+    config = replace(config, max_games=2, max_scan=1)
+    archive, scan, recent = process_ordinary(db, config, engine_hash)
+    assert [item["game_id"] for item in archive] == [1]
+    assert scan["examined"] == 1 and scan["archive_checked"] and recent["examined"] == 0
+
+    import chess_coach.pipeline_ordinary_recent as recent_worker
+
+    def interrupt(*_args, **_kwargs):
+        raise KeyboardInterrupt()
+
+    with monkeypatch.context() as patch:
+        patch.setattr(recent_worker, "process_game", interrupt)
+        with pytest.raises(KeyboardInterrupt):
+            process_ordinary(db, config, engine_hash)
+    archive, scan, recent = process_ordinary(db, config, engine_hash)
+    assert [item["game_id"] for item in archive] == [2]
+    assert recent["examined"] == 0
+    config = replace(config, max_games=1, max_scan=10)
+    newest, scan, recent = process_ordinary(db, config, engine_hash)
+    assert [item["game_id"] for item in newest] == [4]
+    assert recent["analysis_complete"] == 1 and scan["examined"] == 0
+    assert not scan["archive_checked"] and scan["has_more"]
+    cursor = db.connection.execute(
+        "SELECT last_game_id FROM pipeline_cursors WHERE account_key=?",
+        (account_key(config.learner),),
+    ).fetchone()[0]
+    assert cursor == 2
+    ingest_pgn(db, game("single05", now - 47))
+    archive, scan, recent = process_ordinary(db, config, engine_hash)
+    assert [item["game_id"] for item in archive] == [3]
+    newest, scan, recent = process_ordinary(db, config, engine_hash)
+    assert [item["game_id"] for item in newest] == [5]
+    assert recent["analysis_complete"] == 1
+
+    import chess_coach.pipeline_ordinary_archive as archive_worker
+
+    ingest_pgn(db, game("single06", now - 48))
+    with monkeypatch.context() as patch:
+        patch.setattr(archive_worker, "process_game", interrupt)
+        with pytest.raises(KeyboardInterrupt):
+            process_ordinary(db, config, engine_hash)
+    newest, scan, recent = process_ordinary(db, config, engine_hash)
+    assert [item["game_id"] for item in newest] == [6]
+    assert recent["analysis_complete"] == 1 and not scan["archive_checked"]
+    cursor = db.connection.execute(
+        "SELECT last_game_id FROM pipeline_cursors WHERE account_key=?",
+        (account_key(config.learner),),
+    ).fetchone()[0]
+    assert cursor == 3
+    db.close()
+
+    db = Database(tmp_path / "full-window.sqlite")
+    db.initialize()
+    for index in range(1, 4):
+        ingest_pgn(db, game(f"window{index:02}", now - 50 + index))
+    config = replace(config, max_games=2, max_scan=100)
+    initial, _, recent = process_ordinary(db, config, engine_hash)
+    assert [item["game_id"] for item in initial] == [3, 1]
+    assert recent["analysis_complete"] == 1
+    ingest_pgn(db, game("window04", now))
+    updated, _, recent = process_ordinary(db, config, engine_hash)
+    assert [item["game_id"] for item in updated] == [4, 2]
+    assert recent["analysis_complete"] == 1
+    db.close()
+
+    from chess_coach.fact_fingerprint import canonical
+    from chess_coach.pipeline_recent_state import POLICY, valid
+    from chess_coach.pipeline_recent_turn import _key
+
+    for scan_limit in (1, 2):
+        db = Database(tmp_path / f"rotation-{scan_limit}.sqlite")
+        db.initialize()
+        for index in range(1, 9):
+            ingest_pgn(db, game(f"rotation{index:02}", now - 50 + index))
+        config = replace(config, max_games=2, max_scan=scan_limit)
+        assert run_analysis(db, 8, game_input(db, 8), config, engine_hash)["status"] == "complete"
+        key = analysis_input(game_input(db, 7), config, engine_hash)
+        with mapping_transaction(db):
+            checkpoint(db.connection, 7, "analysis", key, "failed", "analysis_failed")
+        outcomes = []
+        for _ in range(6 if scan_limit == 1 else 3):
+            games, scan, recent = process_ordinary(db, config, engine_hash)
+            assert recent["examined"] + scan["examined"] <= scan_limit
+            outcomes.extend(
+                item["game_id"] for item in games if recent["selected"] and item is games[0]
+            )
+        assert outcomes == [6]
+
+        invalid = {"version": POLICY, "after": ["2026-01-01T00:00:00+00:00", 2**63], "seen": 1}
+        assert not valid(invalid)
+        assert not valid({"version": POLICY, "after": None, "seen": 1})
+        assert not valid({"version": POLICY, "after": [[], 1], "seen": 1})
+        db.connection.execute(
+            "UPDATE pipeline_cursors SET scan_hash=? WHERE account_key=?",
+            (canonical(invalid), _key(config.learner)),
+        )
+        db.connection.commit()
+        process_ordinary(db, config, engine_hash)
+        db.close()
