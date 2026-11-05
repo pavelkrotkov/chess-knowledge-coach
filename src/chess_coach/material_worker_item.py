@@ -17,3 +17,4 @@ def process_item(db, position_id, learner, report, outcomes):
     else:
         report["processed"] += 1
         outcomes[result["outcome"]] += 1
+    return result
