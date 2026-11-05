@@ -1030,6 +1030,24 @@ legal session and reveal paths. Other operation-specific transfer adapters
 remain required release work.
 
 
+### More related short-mate examples
+
+A short-mate lesson's private related-mate page can search beyond the initial
+bounded pool. Each continuation seeks up to 100 tagged puzzles in each of five
+rating bands. Results are ranked within that batch; an empty batch can still
+have a next batch. Source games and normalized prompts shown earlier in the
+search are excluded, subject to a 64-prompt and 64-game continuation limit.
+The signed continuation contains bounded keys and hashes, not raw game data.
+Changing the source, review, collection or current batch requires restarting.
+
+The preview is advisory and does not hold a long read transaction. Starting an
+example rechecks its source, selected batch and familiarity in the same admission
+transaction. A short-mate assessment still requires the
+zeroing setup and a bounded proof at admission; nomination by a puzzle tag is
+not a proof. The collection itself may be a nonrepresentative prefix, and
+unsearched batches are not evidence of corpus-wide coverage. Coaching and the
+Daily plan do not perform these scans.
+
 ### Short-mate assessment history
 
 The private Daily plan and Coaching pages link to a separate history of

@@ -6,7 +6,16 @@ from .related_transfer_admission import admit
 
 
 def start_related(
-    db, *, attempt_id, subject, evidence_id, corpus_version, reference, assessment=False
+    db,
+    *,
+    attempt_id,
+    subject,
+    evidence_id,
+    corpus_version,
+    reference,
+    assessment=False,
+    search_state=None,
+    search_secret=None,
 ):
     return start_selected(
         db,
@@ -15,13 +24,42 @@ def start_related(
         corpus_version=corpus_version,
         reference=reference,
         binding_key="related_mate",
-        resolver=lambda: _admit(db, subject, evidence_id, corpus_version, reference, assessment),
+        resolver=lambda: _admit(
+            db,
+            subject,
+            evidence_id,
+            corpus_version,
+            reference,
+            assessment,
+            search_state,
+            search_secret,
+        ),
     )
 
 
-def _admit(db, subject, evidence_id, corpus_version, reference, assessment):
-    selection_result = selection(db, subject, evidence_id, corpus_version)
-    chosen = admit(selection_result, reference, VERSION, "mate")
+def _admit(
+    db, subject, evidence_id, corpus_version, reference, assessment, search_state, search_secret
+):
+    if search_state is None:
+        selection_result = selection(db, subject, evidence_id, corpus_version)
+        rank_version = VERSION
+    else:
+        from .related_capture_cursor import PAGE
+        from .related_mate_search_select import select
+        from .related_mate_search_token import VERSION as rank_version
+
+        if search_secret is None or search_state["scope"] is None:
+            raise ValueError("search selection unavailable")
+        selection_result, _ = select(
+            db, subject, evidence_id, corpus_version, search_secret, search_state
+        )
+        offset = search_state["offset"]
+        selection_result = (
+            *selection_result[:3],
+            selection_result[3][offset : offset + PAGE],
+            *selection_result[4:],
+        )
+    chosen = admit(selection_result, reference, rank_version, "mate")
     source_type, version, key, binding, lines = chosen
     if assessment:
         if source_type != "corpus" or binding["mate_timing"] != "mate_within_two":
