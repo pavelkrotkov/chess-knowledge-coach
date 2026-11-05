@@ -15,18 +15,22 @@ def _reason(reason, local, deadline):
     return "cycle_deadline" if local == deadline else "turn_deadline"
 
 
-def inspect(db, learner, item, deadline, quota):
+def _evaluate(board, played, deadline, classifier):
+    return (classifier or classify)(board, played, deadline, time.monotonic)
+
+
+def inspect(db, learner, item, deadline, quota, *, classifier=None, seconds=TURN_SECONDS):
     source = prepare(db, learner, item["id"])
     if fingerprint(source["signature"]) != item["signature"]:
         raise ValueError("game changed")
     turns = [(context, board) for context, board in source["pairs"] if context["subject"]]
     used = 0
     while len(item["results"]) < len(turns) and used < quota:
-        if time.monotonic() + TURN_SECONDS >= deadline:
+        if time.monotonic() + seconds >= deadline:
             break
         context, board = turns[len(item["results"])]
-        local = min(time.monotonic() + TURN_SECONDS, deadline)
-        outcome, reason = classify(board, context["played_move"], local, time.monotonic)
+        local = min(time.monotonic() + seconds, deadline)
+        outcome, reason = _evaluate(board, context["played_move"], local, classifier)
         reason = _reason(reason, local, deadline)
         if reason == "cycle_deadline":
             break

@@ -19,7 +19,7 @@ def _bytes(path):
         return file.read(MAX_BYTES + 1)
 
 
-def read(path, expected):
+def read(path, expected, *, validator=valid):
     if path is None:
         return None
     try:
@@ -32,7 +32,7 @@ def read(path, expected):
         checksum = data.pop("checksum", None)
         if checksum != digest(canonical(data)):
             return None
-        return data if valid(data, expected) else None
+        return data if validator(data, expected) else None
     except (OSError, ValueError, TypeError, RecursionError):
         return None
 

@@ -1,5 +1,7 @@
 """Complete mate-in-one cohorts, provenance, and coverage gates."""
 
+import pytest
+
 from chess_coach.db import Database
 from chess_coach.ingest import ingest_pgn
 from chess_coach.mate_game_trend import report
@@ -147,6 +149,7 @@ def test_result_contradicting_checkmate_is_unavailable(tmp_path):
 def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monkeypatch):
     from types import SimpleNamespace
 
+    from chess_coach import short_mate_trend_paths as mate_paths
     from chess_coach import short_mate_trend_scan as scan
     from chess_coach import short_mate_trend_turns as turns
     from chess_coach.short_mate_trend_cohort import signature as source_signature
@@ -208,6 +211,52 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
     assert db.connection.total_changes == before
     assert location(db, root).stat().st_mode & 0o777 == 0o600
 
+    # A separate capture scan resumes fairly without changing the mate cache.
+    from chess_coach import capture_game_trend_paths as capture_paths
+    from chess_coach import capture_game_trend_scan as capture_scan
+    from chess_coach.capture_game_trend_paths import binding as capture_binding
+    from chess_coach.capture_game_trend_paths import location as capture_location
+    from chess_coach.capture_game_trend_paths import validate as capture_validate
+    from chess_coach.capture_game_trend_report import report as capture_report
+
+    mate_before = read(location(db, root), binding(db, "fixture_a"))
+    monkeypatch.setattr(
+        capture_scan,
+        "classify",
+        lambda board, move, deadline, clock: ("played" if move.endswith("g7") else "other", None),
+    )
+    capture_scan.run(db, "fixture_a", root)
+    capture_partial = capture_report(db, "fixture_a", root)
+    assert capture_partial["comparable"] and not capture_partial["qualified"]
+    assert capture_partial["newer"]["checked"] == capture_partial["earlier"]["checked"] == 2
+    for _ in range(9):
+        capture_scan.run(db, "fixture_a", root)
+    capture_complete = capture_report(db, "fixture_a", root)
+    assert capture_complete["qualified"] and capture_complete["duplicates"] == 1
+    assert (
+        capture_complete["newer"]["opportunities"]
+        == capture_complete["earlier"]["opportunities"]
+        == 20
+    )
+    assert capture_complete["newer"]["played"] == capture_complete["newer"]["other"] == 10
+    assert read(location(db, root), binding(db, "fixture_a")) == mate_before
+    capture_cache = capture_location(db, root)
+    capture_state = read(
+        capture_cache, capture_binding(db, "fixture_a"), validator=capture_validate
+    )
+    assert capture_state and capture_cache.stat().st_mode & 0o777 == 0o600
+    assert read(capture_cache, capture_binding(db, "fixture_a")) is None
+    assert read(capture_cache, capture_binding(db, "fixture_b"), validator=capture_validate) is None
+    with monkeypatch.context() as patch:
+        original_capture_binding = capture_binding(db, "fixture_a")
+        patch.setattr(mate_paths, "PROOF_VERSION", "future-mate-policy")
+        assert capture_binding(db, "fixture_a") == original_capture_binding
+        assert binding(db, "fixture_a") != mate_before["binding"]
+    with monkeypatch.context() as patch:
+        patch.setattr(capture_paths, "PROOF_VERSION", "future-capture-policy")
+        assert capture_report(db, "fixture_a", root) is None
+    assert db.connection.total_changes == before
+
     app = create_app(
         db_path=path,
         subject="fixture_a",
@@ -218,6 +267,18 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
         project_root=root,
     )
     client = app.test_client()
+    with monkeypatch.context() as patch:
+        patch.setattr("chess_coach.web_views.daily_plan", lambda *_args, **_kwargs: {})
+        patch.setattr(
+            "chess_coach.web_short_mate_game.capture_trend_report",
+            lambda *_args: pytest.fail("Plan must not compute capture trend"),
+        )
+        plan = client.get(
+            "/plan",
+            base_url="https://coach.invalid",
+            headers={"Tailscale-User-Login": "fixture"},
+        )
+        assert plan.status_code == 200 and b"/game-samples/captures" in plan.data
     page = client.get(
         "/game-samples/short-mate",
         base_url="https://coach.invalid",
@@ -226,6 +287,47 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
     assert page.status_code == 200 and b"20 missed" in page.data
     assert b"100.0% earlier and 100.0% more recent" in page.data
     assert b"fixture_a" not in page.data and b"/decisions/" in page.data
+    assert client.get("/game-samples/captures", base_url="https://coach.invalid").status_code == 403
+    capture_page = client.get(
+        "/game-samples/captures",
+        base_url="https://coach.invalid",
+        headers={"Tailscale-User-Login": "fixture"},
+    )
+    assert (
+        capture_page.status_code == 200
+        and b"50.0% earlier and 50.0% more recent" in capture_page.data
+    )
+    assert b"/decisions/" in capture_page.data and b"/plan/captures" in capture_page.data
+    assert (
+        b"fixture_a" not in capture_page.data and b"not necessarily a mistake" in capture_page.data
+    )
+    original = capture_state["games"][0]["results"][0]
+    capture_state["games"][0]["results"][0] = [
+        original[0],
+        "opportunity_unresolved",
+        "played_capture_unresolved",
+    ]
+    write(capture_cache, capture_state)
+    unresolved_capture = capture_report(db, "fixture_a", root)
+    assert not unresolved_capture["qualified"]
+    assert unresolved_capture["newer"]["opportunity_games"] == 20
+    capture_page = client.get(
+        "/game-samples/captures",
+        base_url="https://coach.invalid",
+        headers={"Tailscale-User-Login": "fixture"},
+    )
+    assert b"A rate comparison is unavailable" in capture_page.data
+    capture_state["games"][0]["results"][0] = original
+    original_newer = [item["results"][0][:] for item in capture_state["games"][:20]]
+    for item in capture_state["games"][:16]:
+        item["results"][0] = [item["results"][0][0], "no_opportunity", None]
+    write(capture_cache, capture_state)
+    sparse_capture = capture_report(db, "fixture_a", root)
+    assert sparse_capture["newer"]["complete"] and sparse_capture["newer"]["opportunities"] == 4
+    assert not sparse_capture["qualified"]
+    for item, old in zip(capture_state["games"][:20], original_newer, strict=True):
+        item["results"][0] = old
+    write(capture_cache, capture_state)
     cache = location(db, root)
     cached = read(cache, binding(db, "fixture_a"))
     old_result = cached["games"][0]["results"][0]
@@ -256,6 +358,7 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
     db.connection.commit()
     assert source_signature(db, {"id": duplicate}) == "oversized"
     assert cached_report(db, "fixture_a", root) is None
+    assert capture_report(db, "fixture_a", root) is None
     scan.run(db, "fixture_a", root)
     oversized = cached_report(db, "fixture_a", root)
     assert oversized and not oversized["comparable"] and oversized["unavailable"] == 1

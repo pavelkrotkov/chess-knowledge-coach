@@ -1,5 +1,6 @@
 """Validate the sidecar envelope and examined source sequence."""
 
+from .short_mate_game_counts import OUTCOMES
 from .short_mate_trend_records import games, retained
 
 
@@ -32,12 +33,12 @@ def _metadata(data):
     )
 
 
-def valid(data, expected):
+def valid(data, expected, *, outcomes=OUTCOMES):
     if not isinstance(data, dict) or data.get("binding") != expected:
         return False
     return (
         _checked(data)
         and _metadata(data)
-        and games(data.get("games"))
-        and retained(data.get("retained"))
+        and games(data.get("games"), outcomes)
+        and retained(data.get("retained"), outcomes)
     )
