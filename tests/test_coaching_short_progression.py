@@ -95,6 +95,47 @@ def test_private_card_rotates_only_after_complete_unassisted_rehearsal(tmp_path,
         assert calculation["examined"] == 2 and calculation["limited"]
         assert tactical["preview"]["selection"]["per_pair_limit"] == 2
 
+        import chess_coach.tactical_course_selection as course_selection
+        from chess_coach.tactical_course_deadline import PreviewDeadline
+
+        original_evidence = course_selection.evidence
+
+        def deferred_capture(db, subject, skill, operation, *args, **kwargs):
+            if (skill, operation) == ("hanging_piece", "execute"):
+                raise PreviewDeadline()
+            return original_evidence(db, subject, skill, operation, *args, **kwargs)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(course_selection, "evidence", deferred_capture)
+            partial = build(db, SUBJECT, "test")
+        coverage = partial["preview"]["selection"]["coverage"]
+        assert coverage[0]["status"] == "deferred: time budget"
+        assert coverage[0]["examined"] is None
+        assert all(item["status"] == "complete" for item in coverage[1:])
+        assert [item["kind"] for item in partial["preview"]["patterns"]] == ["short_mate"]
+        assert "Only completed supported pairs" in partial["preview"]["selection"]["scope"]
+        assert not db.connection.in_transaction
+
+        from chess_coach.tactical_course_budget import Budget
+
+        original_collect = course_selection.collect_page
+        calls = 0
+
+        def interrupted_collect(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise PreviewDeadline()
+            return original_collect(*args, **kwargs)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(course_selection, "collect_page", interrupted_collect)
+            groups, coverage = course_selection.candidates(db, SUBJECT, Budget(db))
+        assert calls == 2
+        assert not groups
+        assert coverage[-1]["status"] == "deferred: time budget"
+        assert not db.connection.in_transaction
+
     lesson = {
         "skill": "calculation",
         "operation": "execute",
