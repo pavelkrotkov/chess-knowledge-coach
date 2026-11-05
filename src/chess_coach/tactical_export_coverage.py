@@ -28,3 +28,10 @@ def coverage(rows):
     for row, (skill, operation) in zip(rows, PAIRS, strict=True):
         if (row["skill"], row["operation"]) != (skill, operation) or not _valid(row):
             raise ValueError("preview coverage differs")
+
+
+def selected(pattern, rows):
+    pair = (pattern["skill"], pattern["operation"])
+    row = next(item for item in rows if (item["skill"], item["operation"]) == pair)
+    if row["status"] != "complete" or pattern["inspected_misses"] > row["examined"]:
+        raise ValueError("selected pattern has incomplete coverage")

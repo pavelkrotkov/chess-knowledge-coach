@@ -252,6 +252,40 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
     with pytest.raises(ValueError):
         export_candidate(project, invalid_preview, invalid["preview_sha256"], invalid_output)
     assert not invalid_output.exists() and export_path.read_bytes() == exported_bytes
+    # Even a rehashed envelope cannot claim incomplete coverage or contradictory gaps.
+    broken = []
+    deferred = json.loads(first_content)
+    pattern = deferred["preview"]["patterns"][0]
+    row = next(
+        item
+        for item in deferred["preview"]["selection"]["coverage"]
+        if (item["skill"], item["operation"]) == (pattern["skill"], pattern["operation"])
+    )
+    row.update(status="deferred: time budget", examined=None, limited=True, excluded={})
+    broken.append(deferred)
+    too_few = json.loads(first_content)
+    pattern = too_few["preview"]["patterns"][0]
+    row = next(
+        item
+        for item in too_few["preview"]["selection"]["coverage"]
+        if (item["skill"], item["operation"]) == (pattern["skill"], pattern["operation"])
+    )
+    row["examined"] = 1
+    broken.append(too_few)
+    duplicated = json.loads(first_content)
+    duplicated["preview"]["selection"]["unavailable"].append(
+        duplicated["preview"]["selection"]["unavailable"][0]
+    )
+    broken.append(duplicated)
+    missing = json.loads(first_content)
+    missing["preview"]["selection"]["unavailable"] = []
+    broken.append(missing)
+    for case in broken:
+        case["preview_sha256"] = preview_hash(case["preview"])
+        invalid_preview.write_text(json.dumps(case))
+        with pytest.raises(ValueError):
+            export_candidate(project, invalid_preview, case["preview_sha256"], invalid_output)
+        assert not invalid_output.exists()
     with pytest.raises(ValueError):
         export_candidate(project, first_preview, "0" * 64, invalid_output)
     assert not invalid_output.exists()
@@ -289,6 +323,20 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
     )
     related_export = json.loads(related_output.read_bytes())
     assert related_export["export"]["chapters"] == related_preview["preview"]["chapters"]
+    conflicting = json.loads(related_preview_path.read_bytes())
+    pattern = conflicting["preview"]["patterns"][0]
+    conflicting["preview"]["selection"]["unavailable"].append(
+        {
+            "skill": pattern["skill"],
+            "operation": pattern["operation"],
+            "reason": "related corpus or compatible unfamiliar example unavailable",
+        }
+    )
+    conflicting["preview_sha256"] = preview_hash(conflicting["preview"])
+    invalid_preview.write_text(json.dumps(conflicting))
+    with pytest.raises(ValueError):
+        export_candidate(project, invalid_preview, conflicting["preview_sha256"], invalid_output)
+    assert not invalid_output.exists()
     altered = json.loads(related_preview_path.read_bytes())
     altered["preview"]["chapters"][1]["source"]["binding"]["rank_version"] = "changed"
     altered["preview_sha256"] = preview_hash(altered["preview"])
