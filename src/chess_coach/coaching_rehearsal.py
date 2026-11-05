@@ -5,6 +5,17 @@ from .objective_contract import VERSION
 from .unified_source_current import require_current
 
 
+def keys(preview, adaptive):
+    if not adaptive:
+        return set()
+    return {
+        str(example["evidence_id"])
+        for group in preview["groups"]
+        if group["lesson"]["skill"] == "mate_in_one"
+        for example in group["lesson"]["examples"]
+    }
+
+
 def rehearsed_sources(db, subject, keys):
     if not keys:
         return {}
