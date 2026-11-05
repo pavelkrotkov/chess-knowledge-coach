@@ -66,6 +66,46 @@ def test_proved_alternative_is_playable_and_only_actual_mate_completes(
     tmp_path, monkeypatch, black
 ):
     db, evidence, subject = fixture(tmp_path / "fixture.sqlite", monkeypatch, black)
+    from chess_coach.coaching_practice import choices
+    from chess_coach.lesson_mechanisms import describe
+    from chess_coach.lesson_source import source
+
+    coaching_board = chess.Board("6k1/5ppp/8/7Q/8/5R2/7r/K4R2 w - - 0 1")
+    failure_db = owned_game(
+        tmp_path / "coaching-short.sqlite",
+        monkeypatch,
+        fen=(coaching_board.mirror() if black else coaching_board).fen(),
+        move="Kb8" if black else "Kb1",
+    )
+    monkeypatch.setattr("chess_coach.mate_auto.short_candidate", lambda *_: True)
+    process_decision(failure_db, 1, subject)
+    failed_evidence = failure_db.connection.execute(
+        "SELECT id FROM evidence_mappings WHERE skill='calculation' AND operation='execute'"
+    ).fetchone()[0]
+    inspected = source(failure_db, subject, {"id": failed_evidence, "position_id": 1})
+    assert inspected is not None and inspected["evidence"]["outcome"] == "failure"
+    fact = inspected["evidence"]["facts"][0]
+    example = describe(inspected)
+    lesson = {
+        "skill": "calculation",
+        "operation": "execute",
+        "family": MAPPER,
+        "source_version": fact["detector_version"],
+        "examples": [dict(example, evidence_id=0), example],
+    }
+    selected = choices(failure_db, subject, {"groups": [{"lesson": lesson}]})[0]
+    assert selected["version"] == VERSION and selected["key"] == str(failed_evidence)
+    assert selected["kind"] == "short_mate"
+    state = start(
+        failure_db,
+        attempt_id="coaching",
+        subject=subject,
+        source_type="own-game",
+        version=selected["version"],
+        key=selected["key"],
+    )
+    assert state["objective"] == "mate_within_two"
+    failure_db.close()
     begin(db, evidence, subject)
     answer = alternative(db, "attempt")
     pending = submit(db, "attempt", subject, event_id="answer", move=answer)

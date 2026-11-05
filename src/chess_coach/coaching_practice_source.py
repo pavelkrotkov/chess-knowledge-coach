@@ -4,6 +4,8 @@ from .lesson_source import source
 from .objective_capture_contract import TARGET_VERSION
 from .objective_capture_current import current
 from .objective_contract import VERSION as MATE_VERSION
+from .objective_defense_source import VERSION as DEFENSE_VERSION
+from .objective_short_source import VERSION as SHORT_VERSION
 from .unified_own_game import VERSION as MATERIAL_VERSION
 from .unified_own_game_snapshot import key_for
 from .unified_sources import resolve_source
@@ -53,6 +55,14 @@ def _identity(db, subject, evidence):
     supported = {
         ("bounded-mate-observation-mapper", "mate_in_one", "execute"): (MATE_VERSION, "mate"),
         ("material-opportunity-mapper", "hanging_piece", "execute"): (TARGET_VERSION, "capture"),
+        ("bounded-mate-observation-mapper", "calculation", "execute"): (
+            SHORT_VERSION,
+            "short_mate",
+        ),
+        ("back-rank-observation-mapper", "back_rank", "prevent"): (
+            DEFENSE_VERSION,
+            "back_rank_defense",
+        ),
     }
     version, kind = supported.get((family, skill, operation), (None, None))
     if version is None:

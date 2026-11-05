@@ -36,8 +36,50 @@ def test_automatic_defense_is_provisional_replayable_and_closed(tmp_path, monkey
 
 def test_back_rank_practice_ownership_reveal_and_safe_line(tmp_path, monkeypatch):
     from chess_coach.back_rank_practice import VERSION, list_candidates
+    from chess_coach.coaching_practice import choices
+    from chess_coach.lesson_mechanisms import describe
+    from chess_coach.lesson_source import source
+    from chess_coach.objective_defense_source import VERSION as DEFENSE_VERSION
     from chess_coach.unified_session_events import reveal, show, submit
     from chess_coach.unified_sessions import start
+
+    failure_db = owned_game(
+        tmp_path / "coaching-defense.sqlite", monkeypatch, fen=DEFENSE, move="Nb6"
+    )
+    process_mate(failure_db, 1, "fixture_a")
+    process_decision(failure_db, 1, "fixture_a")
+    evidence = failure_db.connection.execute(
+        "SELECT id FROM evidence_mappings WHERE skill='back_rank' AND operation='prevent'"
+    ).fetchone()[0]
+    inspected = source(failure_db, "fixture_a", {"id": evidence, "position_id": 1})
+    assert inspected is not None and inspected["evidence"]["outcome"] == "failure"
+    fact = inspected["evidence"]["facts"][0]
+    example = describe(inspected)
+    lesson = {
+        "skill": "back_rank",
+        "operation": "prevent",
+        "family": inspected["evidence"]["mapping_producer"],
+        "source_version": fact["detector_version"],
+        "examples": [dict(example, evidence_id=0), example],
+    }
+    selected = choices(failure_db, "fixture_a", {"groups": [{"lesson": lesson}]})[0]
+    assert selected["version"] == DEFENSE_VERSION and selected["key"] == str(evidence)
+    assert selected["kind"] == "back_rank_defense"
+    state = start(
+        failure_db,
+        attempt_id="defense",
+        subject="fixture_a",
+        source_type="own-game",
+        version=selected["version"],
+        key=selected["key"],
+    )
+    assert state["objective"] == "avoid_immediate_mate"
+    failure_db.connection.execute(
+        "UPDATE pipeline_stages SET status='pending' WHERE stage='analysis'"
+    )
+    failure_db.connection.commit()
+    assert choices(failure_db, "fixture_a", {"groups": [{"lesson": lesson}]}) == [None]
+    failure_db.close()
 
     db = owned_game(tmp_path / "practice.sqlite", monkeypatch, fen=DEFENSE, move="g3")
     process_mate(db, 1, "fixture_a")

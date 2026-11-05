@@ -15,7 +15,7 @@
 {% if action and action.evidence_id == example.evidence_id %}
 <p>Practice this source position. It was shown in the lesson, so practice is cued and does not measure mastery.{% if action.kind == "protection" %} Replay one recorded defensive line; it does not prove every defense or overall safety. Other legal moves remain ungraded.{% endif %}</p>
 <form method="post" action="{{ url_for("unified_practice.begin") }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="source_type" value="own-game"><input type="hidden" name="version" value="{{ action.version }}"><input type="hidden" name="key" value="{{ action.key }}"><button>{% if action.kind == "protection" %}Replay a defensive line{% else %}Practice this position{% endif %}</button></form>
-{% if action.kind == "capture" %}<p><a href="{{ url_for("related_capture.show", position=action.position_id) }}">Find related capture practice</a></p>{% elif action.kind == "mate" %}<p><a href="{{ url_for("related_mate.show", evidence_id=action.evidence_id) }}">Find related mate practice</a></p>{% endif %}
+{% if action.kind == "capture" %}<p><a href="{{ url_for("related_capture.show", position=action.position_id) }}">Find related capture practice</a></p>{% elif action.kind in ["mate", "short_mate"] %}<p><a href="{{ url_for("related_mate.show", evidence_id=action.evidence_id) }}">Find related mate practice</a></p>{% endif %}
 {% endif %}</section>{% endfor %}
 <p><strong>Practice:</strong> {{ lesson.practice }}</p>
 {% if not action %}<p>Practice is unavailable for these sources now. Review the linked decisions or return after more supported examples are processed.</p>{% endif %}
