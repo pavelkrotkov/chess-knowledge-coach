@@ -35,8 +35,14 @@ def view(row):
         "started_at": row["started_at"],
         "finished_at": row["finished_at"],
     }
-    if row["status"] == "active":
+    if row["status"] in {"active", "needs_verification"}:
         result.pop("source_key")
+    if row["source_type"] == "corpus":
+        import json
+
+        result["short_mate_assessment"] = bool(
+            json.loads(row["provenance_json"]).get("related_mate", {}).get("assessment")
+        )
     if row["source_type"] == "own-game":
         add_owned_fields(result, row)
     add_protection_fields(result, row)
@@ -53,6 +59,6 @@ def recent(db, subject):
     ).fetchall()
     result = [dict(row) for row in rows]
     for item in result:
-        if item["source_type"] == "own-game" or item["status"] == "active":
+        if item["source_type"] == "own-game" or item["status"] in {"active", "needs_verification"}:
             item.pop("source_key")
     return result

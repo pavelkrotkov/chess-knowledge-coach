@@ -43,11 +43,14 @@ def begin(evidence_id):
             evidence_id=evidence_id,
             corpus_version=current_app.config["CORPUS"],
             reference=request.form.get("reference", ""),
+            assessment=request.form.get("assessment") == "1",
         )
     except ValueError:
         return render_template(
             "error.html",
-            message="This mate preview is unavailable or changed. Return to the evidence.",
+            message="This assessment is unavailable or changed; the bounded proof may not have completed.",
+            back_url=url_for("related_mate.show", evidence_id=evidence_id),
+            back_label="Return to examples and try the supplied line",
         ), 400
     session["unified_attempt"] = attempt
     return redirect(url_for("unified_practice.show_page", attempt=attempt), code=303)
