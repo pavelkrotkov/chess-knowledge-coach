@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Short mates in one game — Chess coach{% endblock %}
+{% block content %}
+<h2>Short mates in this game</h2>
+<p>Game {{ report.game_id }}, started {{ report.started_at }} UTC. This inspection checks your recorded turns for a forced checkmate within two moves. Positions with an immediate mate are counted separately. It does not measure mastery or whether practice caused a change.</p>
+<p>{{ report.eligible }} eligible turns; {{ report.checked }} fully checked, {{ report.unknown + report.opportunity_unresolved }} unresolved and {{ report.unchecked }} not checked. {{ report.immediate }} checked positions had an immediate mate and are excluded from the short-mate opportunity count.</p>
+<p>{{ report.opportunities }} proved short-mate opportunities: {{ report.preserved }} preserved, {{ report.missed }} missed, {{ report.opportunity_unresolved }} with the played move unresolved. {{ report.no_opportunity }} other turns had no forced short mate within the checked horizon.</p>
+{% if not report.eligible %}
+<p>No learner turns were recorded in this game; a miss rate is unavailable.</p>
+{% elif report.complete and report.opportunities %}
+<p>Miss rate: {{ "%.1f"|format(100 * report.missed / report.opportunities) }}% ({{ report.missed }} of {{ report.opportunities }}). This is one game and may have few opportunities.</p>
+{% elif report.complete %}
+<p>No short-mate opportunities were found in this complete inspection; a miss rate is unavailable.</p>
+{% else %}
+<p>Coverage is incomplete, so a miss rate is unavailable. Unresolved turns or unsearched turns are not counted as having no opportunity.</p>
+{% endif %}
+{% if report.unchecked %}<p>The remaining {{ report.unchecked }} turns were not checked because the time limit was reached.</p>{% endif %}
+{% if report.reasons %}<p>Unresolved reasons: {% for reason, count in report.reasons.items() %}{{ reason | replace("_", " ") }} {{ count }}{% if not loop.last %}; {% endif %}{% endfor %}.</p>{% endif %}
+<p>The proof uses a shared {{ report.time_limit_seconds }}-second search deadline, up to 6,000 nodes per decision and at most 100 defensive replies per root. Parsing and individual chess operations are bounded but cannot be interrupted mid-operation. A stopped or limited search remains unresolved.</p>
+<p>Source decisions: {% for item in report.examples %}<a href="{{ url_for('views.decision_detail', position_id=item.position_id) }}">{{ item.outcome | replace("_", " ") | capitalize }}</a>{% if not loop.last %}; {% endif %}{% else %}none{% endfor %}. Up to 20 decisions are linked.</p>
+{% endblock %}

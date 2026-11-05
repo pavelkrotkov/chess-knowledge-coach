@@ -57,6 +57,31 @@ def test_complete_private_samples_and_unavailable_coverage(tmp_path):
     assert page.status_code == 200 and b"10 missed of 20" in page.data
     assert b"/decisions/" in page.data and b"practice attempts are not included" in page.data
     assert b"fixture_a" not in page.data and b"fixture_b" not in page.data
+    inspection = client.get(
+        "/games/1/short-mate",
+        base_url="https://coach.invalid",
+        headers={"Tailscale-User-Login": "fixture"},
+    )
+    assert inspection.status_code == 200
+    assert b"1 eligible turns; 1 fully checked" in inspection.data
+    assert b"immediate mate" in inspection.data and b"miss rate is unavailable" in inspection.data
+    assert (
+        client.get(
+            "/games/9223372036854775808/short-mate",
+            base_url="https://coach.invalid",
+            headers={"Tailscale-User-Login": "fixture"},
+        ).status_code
+        == 400
+    )
+    app.config["SUBJECT"] = "fixture_c"
+    assert (
+        client.get(
+            "/games/1/short-mate",
+            base_url="https://coach.invalid",
+            headers={"Tailscale-User-Login": "fixture"},
+        ).status_code
+        == 400
+    )
     app.config["SUBJECT"] = "default"
     unavailable = client.get(
         url, base_url="https://coach.invalid", headers={"Tailscale-User-Login": "fixture"}

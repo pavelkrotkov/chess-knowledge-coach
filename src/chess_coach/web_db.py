@@ -21,3 +21,9 @@ def current_training():
 
 def form_matches(attempt: str, item_id: int) -> bool:
     return request.form.get("attempt") == attempt and request.form.get("item_id") == str(item_id)
+
+
+def close_database(error):
+    db = g.pop("db", None)
+    if db is not None:
+        db.close()
