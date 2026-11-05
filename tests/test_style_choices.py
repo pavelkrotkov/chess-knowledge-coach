@@ -110,7 +110,7 @@ def test_profile_uses_owned_current_deep_results_and_private_browser(tmp_path, m
     assert f"/decisions/{item['position_id']}".encode() in page.data
 
 
-def test_duplicate_imports_do_not_count_as_independent_games():
+def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch):
     db = Database(":memory:")
     db.initialize()
     ingest_pgn(db, PGN)
@@ -122,3 +122,82 @@ def test_duplicate_imports_do_not_count_as_independent_games():
     assert report["coverage"]["familiarity_history_incomplete"]
     assert report["coverage"]["decisions"] == 6
     assert report["coverage"]["outcomes"] == {"unknown": 1}
+
+    # A bounded schedule can prioritize a checked turn only after full replay.
+    from chess_coach import style_schedule_nomination, style_schedule_nomination_game
+    from chess_coach.deep_selection_source import learner_key
+    from chess_coach.style_schedule_budget import history_budget
+    from chess_coach.style_schedule_candidates import allocate
+    from chess_coach.style_schedule_nomination import prioritize
+    from chess_coach.style_schedule_scan import read_games
+
+    db = Database(":memory:")
+    db.initialize()
+    ingest_pgn(db, PGN)
+    checked = PGN.replace('White "fixture_learner"', 'White "fixture_opponent"')
+    checked = checked.replace('Black "fixture_opponent"', 'Black "fixture_learner"')
+    checked = checked[: checked.index("1. e4")] + "1. e4 d5 2. Bb5+ c6 *\n"
+    ingest_pgn(db, checked)
+    games = [
+        (db.connection.execute("SELECT * FROM games WHERE id=?", (i,)).fetchone(), color)
+        for i, color in ((1, "white"), (2, "black"))
+    ]
+    with history_budget() as budget:
+        budget["limit"] = 12
+        ordered, coverage = prioritize(db, games, 0)
+        assert ordered[0][0]["id"] == 2
+        assert coverage["nomination_games"] == 1
+        assert coverage["nomination_turns"] == 1
+        candidates, _, _, exhausted, reconstructed = read_games(db, ordered, 0)
+        assert reconstructed == 1 and exhausted
+        assert any(item["in_check"] and item["status"] == "ready" for item in candidates)
+        assert budget["used"] == 12
+    with history_budget() as budget:
+        budget["limit"] = 12
+        coverage, slots, _ = allocate(db, LEARNER, learner_key(LEARNER), 0)
+        assert coverage["nomination_games"] == 1
+        assert coverage["reconstructed_games"] == 1 and coverage["history_budget_exhausted"]
+        assert dict(slots)["target"]["game_id"] == 2
+    # A plausible FEN is not proof that the recorded move or game is valid.
+    db.connection.execute("UPDATE positions SET uci='a1a1' WHERE game_id=2 AND ply=4")
+    ordered, coverage = prioritize(db, games, 0)
+    assert coverage["nomination_unknown_games"] == 1 and ordered[0][0]["id"] == 1
+    with history_budget() as budget:
+        budget["limit"] = 32
+        candidates, skipped, _, _, reconstructed = read_games(db, ordered, 0)
+        assert skipped == 1 and reconstructed == 1
+        assert not any(item["in_check"] for item in candidates)
+    db.connection.execute("UPDATE positions SET uci='c7c6' WHERE game_id=2 AND ply=4")
+    after_fen = db.connection.execute(
+        "SELECT fen FROM positions WHERE game_id=2 AND ply=4"
+    ).fetchone()[0]
+    db.connection.execute(
+        "UPDATE positions SET fen=(SELECT fen FROM positions WHERE game_id=2 AND ply=3) "
+        "WHERE game_id=2 AND ply=4"
+    )
+    ordered, coverage = prioritize(db, games, 0)
+    assert coverage["nomination_unknown_games"] == 1 and ordered[0][0]["id"] == 1
+    db.connection.execute("UPDATE positions SET fen=? WHERE game_id=2 AND ply=4", (after_fen,))
+    db.connection.commit()
+    forced = checked.replace("1. e4 d5 2. Bb5+ c6", "1. e4 f6 2. Qh5+ g6")
+    ingest_pgn(db, forced)
+    forced_game = db.connection.execute("SELECT * FROM games WHERE id=3").fetchone()
+    ordered, coverage = prioritize(db, [(forced_game, "black"), games[1]], 0)
+    assert ordered[0][0]["id"] == 2 and coverage["nomination_games"] == 1
+    fallback, coverage = prioritize(db, games, 1)
+    assert fallback[0][0]["id"] == 1 and not coverage["nomination_prioritized"]
+    fallback, _ = prioritize(db, games, 3)
+    assert fallback[0][0]["id"] == 2
+    db.connection.execute("DELETE FROM positions WHERE game_id=2 AND ply=3")
+    ordered, coverage = prioritize(db, games, 0)
+    assert ordered[0][0]["id"] == 1 and coverage["nomination_unknown_games"] == 1
+    assert coverage["nomination_games"] == 0
+    # A deadline during a game leaves that game and the rest unchecked.
+    calls = iter((False, True, True))
+    with monkeypatch.context() as patch:
+        patch.setattr(style_schedule_nomination, "reached", lambda: next(calls))
+        patch.setattr(style_schedule_nomination_game, "reached", lambda: next(calls))
+        _, coverage = prioritize(db, games, 0)
+    assert coverage["nomination_unknown_games"] == 0
+    assert coverage["nomination_unchecked_games"] == 2
+    db.close()
