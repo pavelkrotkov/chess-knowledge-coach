@@ -133,6 +133,7 @@ def test_worker_review_recurrence_browser_and_currentness(tmp_path, monkeypatch)
         and b"After Ra5" in page.data
         and b"Rxa5" in page.data
         and b"Next inspection" in page.data
+        and b"/games/1/capture-opportunities" in page.data
     )
     db.connection.execute(
         "UPDATE decision_analysis_lines SET score_value=score_value+1 WHERE position_id=3 AND role='best'"

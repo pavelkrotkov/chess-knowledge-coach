@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Capture opportunities in one game — Chess coach{% endblock %}
+{% block content %}
+<h2>Capture opportunities in this game</h2>
+<p>Game {{ report.game_id }}, started {{ report.started_at }} UTC. This checks your recorded turns in one finished game. Practice attempts and recurrence detector selections are not included.</p>
+<p>{{ report.eligible }} learner turns: {{ report.checked }} with the opportunity and played choice resolved, {{ report.unknown + report.opportunity_unresolved }} unresolved, and {{ report.unchecked }} not checked.</p>
+<p>{{ report.opportunities }} positions had a proved capture in this narrow scope: you played one in {{ report.played }}, chose another move in {{ report.other }}, and the played capture was unresolved in {{ report.opportunity_unresolved }}.</p>
+{% if report.complete and report.opportunities %}
+<p>Played a proved capture: {{ "%.1f"|format(100 * report.played / report.opportunities) }}% ({{ report.played }} of {{ report.opportunities }}). This is one game and can be sparse.</p>
+{% elif report.complete %}
+<p>No opportunities in this scope were found in the completed inspection; a rate is unavailable.</p>
+{% else %}
+<p>Coverage is incomplete, so a rate is unavailable. Unresolved and unsearched turns are not counted as having no opportunity.</p>
+{% endif %}
+<p>A qualifying move is a non-checking direct capture of a non-pawn piece worth at least three material units, with no immediate recapture and at least three units still ahead after every supported immediate reply. A choice can be resolved even when another capture remains unproved. The proof does not assess later tactics or compensation; a different move can have other merits. Checking captures, promotions, special positions and replies the proof cannot resolve remain unknown.</p>
+<p>The audit checks at most 1,000 recorded positions, a 1 MB game record, 32 capture candidates per turn, at most 64 immediate replies per candidate and a shared {{ report.time_limit_seconds }}-second proof deadline. Source replay and rechecking are separately bounded by the game limits. Individual chess operations cannot be interrupted mid-operation. Only recorded moves can be checked; omitted moves cannot be detected.</p>
+{% if report.reasons %}<p>Unresolved reasons: {% for reason, count in report.reasons.items() %}{{ reason | replace("_", " ") }} {{ count }}{% if not loop.last %}; {% endif %}{% endfor %}.</p>{% endif %}
+<p>Source decisions: {% for item in report.examples %}<a href="{{ url_for('views.decision_detail', position_id=item.position_id) }}">{{ item.outcome | replace('_', ' ') | capitalize }}: {{ item.played_san }}</a>{% if not loop.last %}; {% endif %}{% else %}none{% endfor %}. Up to 20 decisions are linked.</p>
+{% endblock %}

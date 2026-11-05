@@ -2,6 +2,7 @@
 
 from flask import Blueprint, current_app, render_template
 
+from .capture_game_report import report as capture_report
 from .learner_identity import normalize_identity
 from .short_mate_game_report import report
 from .short_mate_trend_report import report as trend_report
@@ -28,3 +29,14 @@ def samples():
         return render_template("error.html", message="Learner identity is unavailable."), 400
     result = trend_report(database(), subject, current_app.config["PROJECT_ROOT"])
     return render_template("short_mate_trend.html", report=result)
+
+
+@short_mate_game_views.get("/games/<int:game_id>/capture-opportunities")
+def captures(game_id):
+    try:
+        result = capture_report(database(), current_app.config["SUBJECT"], game_id)
+    except (ValueError, TypeError, IndexError):
+        return render_template(
+            "error.html", message="This game is unavailable or changed during inspection."
+        ), 400
+    return render_template("capture_game.html", report=result)
