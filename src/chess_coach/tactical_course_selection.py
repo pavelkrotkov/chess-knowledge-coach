@@ -7,6 +7,7 @@ from .coaching_rank import rank
 from .preview_snapshot import preview_history
 from .recurrence_cursor import MAX_ID
 from .recurrence_sources import evidence
+from .tactical_course_deadline import PreviewDeadline
 
 PAIRS = (
     ("hanging_piece", "execute"),
@@ -15,33 +16,56 @@ PAIRS = (
     ("calculation", "execute"),
 )
 PER_PAIR = 12
+BATCH_SIZE = 2
 
 
-def _pair(db, subject, skill, operation):
-    rows, truncated = evidence(
-        db, subject, skill, operation, MAX_ID, failure_only=True, limit=PER_PAIR
-    )
-    limited = truncated or len(rows) > PER_PAIR
-    rows = rows[:PER_PAIR]
-    groups, excluded = defaultdict(list), Counter()
-    with preview_history(db, subject) as history:
+def _collect(db, subject, rows, budget):
+    groups, excluded, seen = defaultdict(list), Counter(), set()
+    for start in range(0, len(rows), BATCH_SIZE):
+        batch = rows[start : start + BATCH_SIZE]
+        with budget.scope(snapshot=True), preview_history(db, subject) as history:
+            history.targets(row["position_id"] for row in batch)
+            collect_page(db, subject, history, batch, groups, excluded, seen)
+    return groups, excluded
+
+
+def _pair(db, subject, skill, operation, budget):
+    with budget.scope(snapshot=True):
+        rows, truncated = evidence(
+            db, subject, skill, operation, MAX_ID, failure_only=True, limit=PER_PAIR
+        )
+        limited = truncated or len(rows) > PER_PAIR
+        rows = rows[:PER_PAIR]
+    groups, excluded = _collect(db, subject, rows, budget)
+    with budget.scope(snapshot=True), preview_history(db, subject) as history:
         history.targets(row["position_id"] for row in rows)
-        collect_page(db, subject, history, rows, groups, excluded, set())
-        candidates = rank(db, subject, groups, history)
-    return candidates, {
+        items = rank(db, subject, groups, history)
+    return items, {
         "skill": skill,
         "operation": operation,
         "examined": len(rows),
         "limited": limited,
         "excluded": dict(excluded),
+        "status": "complete",
     }
 
 
 def candidates(db, subject, budget):
     groups, coverage = [], []
     for skill, operation in PAIRS:
-        with budget.scope(snapshot=True):
-            items, stats = _pair(db, subject, skill, operation)
+        try:
+            items, stats = _pair(db, subject, skill, operation, budget)
+        except PreviewDeadline:
+            budget.check()
+            items = []
+            stats = {
+                "skill": skill,
+                "operation": operation,
+                "examined": None,
+                "limited": True,
+                "excluded": {},
+                "status": "deferred: time budget",
+            }
         groups.extend(items)
         coverage.append(stats)
     groups.sort(
