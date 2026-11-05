@@ -400,6 +400,27 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
     )
     related_export = json.loads(related_output.read_bytes())
     assert related_export["export"]["chapters"] == related_preview["preview"]["chapters"]
+    # Revalidate the explicit export before opening any versioned intent or transport.
+    import chess_coach.tactical_study_session as tactical_session
+
+    calls = []
+
+    def synthetic_publish(database, intent_path, course, *, action):
+        calls.append((database, intent_path, course, action))
+        return "synthetic destination"
+
+    with monkeypatch.context() as patch:
+        patch.setattr(tactical_session, "_publish", synthetic_publish)
+        selected_hash = related_export["export_sha256"]
+        assert (
+            tactical_session.prepare_locked(project, related_output, selected_hash)
+            == "synthetic destination"
+        )
+        assert calls[0][1].name == f"tactical-study-{selected_hash}-intent.json"
+        assert calls[0][2]["course_sha256"] == selected_hash
+        with pytest.raises(ValueError):
+            tactical_session.prepare_locked(project, related_output, "0" * 64)
+        assert len(calls) == 1 and not calls[0][1].exists()
     conflicting = json.loads(related_preview_path.read_bytes())
     pattern = conflicting["preview"]["patterns"][0]
     conflicting["preview"]["selection"]["unavailable"].append(
@@ -427,6 +448,11 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
 
     other_id = next(item["evidence_id"] for item in supports if item["evidence_id"] != selected_id)
     review_evidence(db, other_id, decision="accept", actor="fixture")
+    with monkeypatch.context() as patch:
+        patch.setattr(tactical_session, "_publish", synthetic_publish)
+        with pytest.raises(ValueError):
+            tactical_session.prepare_locked(project, related_output, selected_hash)
+        assert len(calls) == 1 and not calls[0][1].exists()
     stale_output = planning / "stale-export.json"
     with pytest.raises(ValueError):
         export_candidate(project, first_preview, preview["preview_sha256"], stale_output)

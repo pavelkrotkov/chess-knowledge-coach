@@ -2,6 +2,7 @@
 
 import fcntl
 import os
+from contextlib import contextmanager
 
 import httpx
 
@@ -15,19 +16,25 @@ from .study_publisher import publish
 from .study_remote import Remote, StudyError
 
 
-def publish_locked(path, planning, preview, course):
-    intent = planning / "poc-study-336-intent.json"
+@contextmanager
+def locked(path, planning):
     lock = os.open(planning / "poc-study-336.lock", os.O_CREAT | os.O_RDWR, 0o600)
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         with pipeline_lock(path, sync=True):
-            revalidate(path, preview, course)
-            return _publish(path, intent, course)
+            yield
     finally:
         os.close(lock)
 
 
-def _publish(path, intent, course):
+def publish_locked(path, planning, preview, course):
+    intent = planning / "poc-study-336-intent.json"
+    with locked(path, planning):
+        revalidate(path, preview, course)
+        return _publish(path, intent, course)
+
+
+def _publish(path, intent, course, *, action=publish):
     db = Database(path)
     try:
         with private_network_logs(), httpx.Client(timeout=30.0, follow_redirects=False) as client:
@@ -38,7 +45,7 @@ def _publish(path, intent, course):
                 guard=lambda: _guard(db),
                 observe=lambda response: observe_response(db, response, None),
             )
-            return publish(remote, intent, course)
+            return action(remote, intent, course)
     finally:
         db.close()
 
