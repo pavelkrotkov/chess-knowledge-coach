@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Short mates in your games — Chess coach{% endblock %}
+{% block content %}
+<h2>Short mates in your games</h2>
+<p>These two samples use consecutive, independent finished games ordered by recorded UTC start time. Each recorded learner turn is checked for a forced mate within two moves. Immediate mates are counted separately. Practice attempts are not included.</p>
+{% if not report %}
+<p>The background game scan is pending or its sources have changed. This page will update after the worker checks the games.</p>
+{% else %}
+{% if report.comparable %}
+<p>The game samples and their boundaries are verified. Results are descriptive and can change as the scan progresses.</p>
+{% else %}
+<p>The game samples or their boundaries are not yet fully verified. Do not compare these partial samples.</p>
+{% endif %}
+{% for label, sample in (("More recent", report.newer), ("Earlier", report.earlier)) %}
+<section><h3>{{ label }} games</h3>
+<p>{{ sample.games }} games{% if sample.newest %}, from {{ sample.oldest }} to {{ sample.newest }} UTC{% endif %}.</p>
+<p>{{ sample.checked }} of {{ sample.eligible }} learner turns fully checked; {{ sample.unchecked }} pending, {{ sample.unknown }} unresolved and {{ sample.opportunity_unresolved }} opportunities with unresolved played moves.</p>
+<p>{{ sample.missed }} missed and {{ sample.preserved }} preserved of {{ sample.opportunities }} proved short-mate opportunities. {{ sample.immediate }} immediate-mate turns are excluded from this opportunity count.</p>
+<p>Source decisions: {% for item in sample.examples %}<a href="{{ url_for('views.decision_detail', position_id=item.position_id) }}">{{ item.outcome | replace('_', ' ') }}</a>{% if not loop.last %}; {% endif %}{% else %}none{% endfor %}.</p>
+</section>
+{% endfor %}
+{% if report.qualified %}
+<p>Missed opportunity rates: {{ "%.1f" | format(100 * report.earlier.missed / report.earlier.opportunities) }}% earlier and {{ "%.1f" | format(100 * report.newer.missed / report.newer.opportunities) }}% more recent. This is a descriptive comparison of these games.</p>
+{% else %}
+<p>A rate comparison is unavailable until both verified samples have complete proofs and at least five opportunities across three games each.</p>
+{% endif %}
+<p>Counts can be sparse, and multiple opportunities can occur in one game. Different game contexts and overlapping game times limit comparisons. These observations do not establish improvement or cause.</p>
+<details><summary>Coverage details</summary>
+<p>Up to 100 dated records are examined for 40 independent games and a boundary game. Duplicates: {{ report.duplicates }}; unavailable games: {{ report.unavailable }}; unknown dates: at least {{ report.coverage.unknown_time_lower_bound }}; uncertain ownership or projections: at least {{ report.coverage.unknown_ownership_global_lower_bound }}; candidate rechecks failed: {{ report.coverage.candidate_recheck_failed }}.</p>
+<p>A completed scan can still have unresolved proofs. Only recorded moves are checked; a stored game cannot prove that moves were not omitted. Each turn has a bounded proof budget.</p>
+</details>
+{% endif %}
+<p><a href="{{ url_for('recurrence_views.mate_game_samples') }}">Mate-in-one game samples</a></p>
+{% endblock %}
