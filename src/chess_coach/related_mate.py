@@ -11,7 +11,7 @@ VERSION = "mate-execution-transfer-v2"
 FILTER_VERSION = "mate-execution-lines-v2"
 
 
-def selection(db, subject, evidence_id, corpus_version):
+def selection(db, subject, evidence_id, corpus_version, *, familiar_data=None):
     source = source_for_evidence(db, subject, evidence_id)
     theme = "mateIn1" if source["objective"] == "mate_in_one" else "mateIn2"
     return select(
@@ -23,6 +23,7 @@ def selection(db, subject, evidence_id, corpus_version):
         theme=theme,
         all_lines=True,
         include_objective=True,
+        familiar_data=familiar_data,
         feature=mate_features,
         score=candidate,
     )

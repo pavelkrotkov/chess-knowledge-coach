@@ -6,7 +6,7 @@ from contextlib import ExitStack, contextmanager
 from .recurrence_snapshot import read_snapshot
 from .tactical_course_deadline import deadline
 
-TOTAL_SECONDS = 20.0
+TOTAL_SECONDS = 60.0
 SLICE_SECONDS = 2.0
 
 
@@ -21,6 +21,7 @@ class Budget:
         self.db = db
         self.expires = time.monotonic() + TOTAL_SECONDS
         self.version = self._version()
+        self._familiar = None
 
     def _version(self):
         return self.db.connection.execute("PRAGMA data_version").fetchone()[0]

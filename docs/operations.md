@@ -369,7 +369,10 @@ The supplied hash must match the preview envelope and its contents. The command
 rechecks owned sources and included related chapters under a shared deadline, opens
 the database read-only, and refuses an existing output. It retains provisional preview
 ranking and coverage without reranking them. This export is a local candidate; the
-existing fixed proof-of-concept Study publisher does not accept it.
+existing fixed proof-of-concept Study publisher does not accept it. The opt-in
+course preview and export each have a 60-second total budget and two-second
+individual work limits; an interrupted familiarity scan is deferred, not a
+completed search with no match. Each run checks for source changes before reuse.
 
 ## Private coaching Study
 

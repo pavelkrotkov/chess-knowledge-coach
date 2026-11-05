@@ -10,11 +10,11 @@ VERSION = "capture-transfer-v1"
 PAGE = 4
 
 
-def _selection(db, subject, position, corpus_version):
+def _selection(db, subject, position, corpus_version, *, familiar_data=None):
     source = source_for_position(db, subject, position)
     if capture_features(source["prompt_fen"], source["lines"][0].split()) is None:
         raise ValueError("unsupported capture source")
-    return select(db, subject, source, corpus_version, VERSION)
+    return select(db, subject, source, corpus_version, VERSION, familiar_data=familiar_data)
 
 
 def preview(db, subject, position, corpus_version, cursor=None, *, secret=None):

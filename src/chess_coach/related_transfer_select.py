@@ -17,10 +17,14 @@ def select(
     theme="hangingPiece",
     all_lines=False,
     include_objective=False,
+    familiar_data=None,
     **matching,
 ):
     rating = baseline(db, source)
-    familiar, games, is_familiar = familiarity(db, subject)
+    familiar, games, is_familiar = (
+        familiarity(db, subject) if familiar_data is None else familiar_data
+    )
+    familiar = set(familiar)
     pool, corpus = candidates(
         db,
         corpus_version,
