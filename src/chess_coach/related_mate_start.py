@@ -20,12 +20,20 @@ def start_related(
 
 
 def _admit(db, subject, evidence_id, corpus_version, reference, assessment):
-    chosen = admit(selection(db, subject, evidence_id, corpus_version), reference, VERSION, "mate")
+    selection_result = selection(db, subject, evidence_id, corpus_version)
+    chosen = admit(selection_result, reference, VERSION, "mate")
     source_type, version, key, binding, lines = chosen
     if assessment:
         if source_type != "corpus" or binding["mate_timing"] != "mate_within_two":
             raise ValueError("short-mate assessment unavailable")
+        from .related_mate_assessment_context import capture
         from .related_mate_assessment_proof import certificate
 
         binding["assessment"] = certificate(db, version, key)
+        source, baseline, corpus = selection_result[:3]
+        try:
+            context = capture(db, version, key, source, baseline, corpus)
+        except (ValueError, TypeError, KeyError):
+            context = None
+        binding["assessment"]["context"] = context
     return source_type, version, key, binding, lines

@@ -1030,6 +1030,31 @@ legal session and reveal paths. Other operation-specific transfer adapters
 remain required release work.
 
 
+### Short-mate assessment history
+
+The private Daily plan and Coaching pages link to a separate history of
+pattern-cued short-mate assessments. It reads first distinct prompts from
+recorded practice, rechecks the current assessment source and replays bounded
+immutable events. Completed, incorrect, ungraded and in-progress results are
+shown separately from hints and reveals. Old or stale sources remain visible;
+unknown or incomplete event history is not treated as a result.
+
+New assessments store the puzzle rating and deviation and matching context in
+their immutable binding. Older assessments can lack this context and cannot be
+included in matched comparisons. Matching requires the same current corpus,
+objective, assessment and ranking versions, mating mechanism and recorded
+matching context, with coarse bands for puzzle rating, rating deviation and
+the source rating used for selection. Two non-overlapping samples each need
+10 current completed assessments, including at least five unassisted attempts.
+Assisted and unassisted outcomes are reported separately; counts do not prove
+improvement or causation.
+
+The history checks up to the earliest and latest 100 subject-owned practice
+sessions, and up to 256 events per assessment. If history is truncated or its
+dates are uncertain, it is descriptive only and the earlier history of recent
+records is unverified. Familiarity is limited to the recorded sources checked
+at admission. Practice results do not change game evidence or mastery.
+
 ### Mate-in-one game samples
 
 The private Daily plan and Recurring patterns pages link to a separate game
