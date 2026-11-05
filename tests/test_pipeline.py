@@ -107,7 +107,15 @@ def test_end_to_end_replay_review_and_version_changes(tmp_path, monkeypatch):
         for limit, expected in (("max_scan", 200), ("max_decisions", 50)):
             name = f"{worker}_{limit}"
             assert getattr(args, name) == getattr(config, name) == expected
+    optional_scans = []
+    monkeypatch.setattr(
+        "chess_coach.pipeline.after_pipeline", lambda *_: optional_scans.append("mate")
+    )
+    monkeypatch.setattr(
+        "chess_coach.pipeline.capture_after_pipeline", lambda *_: optional_scans.append("capture")
+    )
     result = process_pipeline(db, config, transport=network)
+    assert optional_scans == ["mate", "capture"]
     assert result["sync"]["games"] == 3 and len(result["games"]) == 3
     assert all(item["status"] == "partial" for item in result["games"])
     assert all(item["stages"][2]["detail"] == "opening_not_configured" for item in result["games"])

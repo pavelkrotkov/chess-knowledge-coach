@@ -2,6 +2,7 @@
 
 import time
 
+from .capture_game_trend_scan import after_pipeline as capture_after_pipeline
 from .db import Database
 from .pipeline_config import PipelineConfig
 from .pipeline_cooldown import utc_now
@@ -30,4 +31,5 @@ def process_pipeline(
         finish_run(db, result["status"])
         if result["status"] != "failed":
             after_pipeline(db, config.learner, started)
+            capture_after_pipeline(db, config.learner, started)
         return result

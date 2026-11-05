@@ -15,7 +15,7 @@ def empty(eligible):
     }
 
 
-def add(counts, context, outcome, reason, board):
+def add(counts, context, outcome, reason, board=None):
     counts[outcome] += 1
     if outcome not in {"unknown", "opportunity_unresolved"}:
         counts["checked"] += 1
@@ -24,13 +24,10 @@ def add(counts, context, outcome, reason, board):
     if outcome in {"played", "other", "opportunity_unresolved"}:
         key = "_unresolved_examples" if outcome == "opportunity_unresolved" else "examples"
         if len(counts[key]) < EXAMPLE_LIMIT:
-            counts[key].append(
-                {
-                    "position_id": context["position_id"],
-                    "outcome": outcome,
-                    "played_san": board.san(board.parse_uci(context["played_move"])),
-                }
-            )
+            item = {"position_id": context["position_id"], "outcome": outcome}
+            if board is not None:
+                item["played_san"] = board.san(board.parse_uci(context["played_move"]))
+            counts[key].append(item)
 
 
 def finish(counts):

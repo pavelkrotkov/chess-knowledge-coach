@@ -27,6 +27,13 @@ def initial(key, frontier, previous):
     }
 
 
+def _retained_results(old, signature, identity, turns):
+    if not old or old.get("signature") != signature or old.get("identity") != identity:
+        return []
+    expected = [turn["position_id"] for turn in turns[: len(old["results"])]]
+    return old["results"] if [row[0] for row in old["results"]] == expected else []
+
+
 def _item(source, signature, retained):
     turns = [context for context, _ in source["pairs"] if context["subject"]]
     item = {
@@ -39,8 +46,7 @@ def _item(source, signature, retained):
     }
     old = retained.get(str(source["game_id"]))
     # A changed input or a different independent game invalidates every old outcome.
-    if old and old.get("signature") == signature and old.get("identity") == item["identity"]:
-        item["results"] = old["results"]
+    item["results"] = _retained_results(old, signature, item["identity"], turns)
     return item
 
 

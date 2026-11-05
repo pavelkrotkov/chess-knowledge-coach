@@ -25,24 +25,18 @@ def location(db, root):
         return None
 
 
-def binding(db, learner):
+def source_identity(db, learner):
     path = Path(db.path).resolve(strict=True)
     stat = path.stat()
     subject = normalize_identity(learner)
     if not subject:
         raise ValueError("learner identity is unavailable")
+    return [str(path), stat.st_dev, stat.st_ino, subject]
+
+
+def binding(db, learner):
     return digest(
         canonical(
-            [
-                VERSION,
-                PROOF_VERSION,
-                MAX_NODES,
-                MAX_REPLIES,
-                0.5,
-                str(path),
-                stat.st_dev,
-                stat.st_ino,
-                subject,
-            ]
+            [VERSION, PROOF_VERSION, MAX_NODES, MAX_REPLIES, 0.5, *source_identity(db, learner)]
         )
     )

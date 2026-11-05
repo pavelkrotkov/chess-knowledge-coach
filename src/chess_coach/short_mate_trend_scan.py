@@ -22,7 +22,11 @@ def _next(cursor, size):
     return cursor + 20 if cursor < 20 else (cursor - 19) % 20
 
 
-def _inspect(db, learner, state, deadline):
+def _inspect(db, learner, state, deadline, *, inspector=None, turn_seconds=None):
+    if inspector is None:
+        inspector = inspect
+    if turn_seconds is None:
+        turn_seconds = TURN_SECONDS
     games = state["games"][:40]
     if not games:
         return
@@ -30,11 +34,11 @@ def _inspect(db, learner, state, deadline):
     cursor = state.get("rotation", 0) % len(games)
     while used < TURN_LIMIT and visited < len(games):
         # Never start a local proof when the cycle cannot supply its full budget.
-        if time.monotonic() + TURN_SECONDS >= deadline:
+        if time.monotonic() + turn_seconds >= deadline:
             break
         item = games[cursor]
         if len(item["results"]) < item["eligible"]:
-            used += inspect(db, learner, item, deadline, min(4, TURN_LIMIT - used))
+            used += inspector(db, learner, item, deadline, min(4, TURN_LIMIT - used))
         cursor = _next(cursor, len(games))
         visited += 1
     state["rotation"] = cursor
