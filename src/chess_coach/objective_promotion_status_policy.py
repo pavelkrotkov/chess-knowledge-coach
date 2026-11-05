@@ -10,11 +10,14 @@ from .objective_promotion_contract import OBJECTIVES as PROMOTION_OBJECTIVES
 from .objective_promotion_routing import owned_pawn, owned_pin_family
 from .objective_protection_contract import VERSION as PROTECTION_VERSION
 from .objective_short_source import VERSION as SHORT_VERSION
+from .related_capture_objective import is_source as capture_assessment
 
 
 def enabled(row):
     public = row["source_type"] == "public" and row["objective"] in PROMOTION_OBJECTIVES
-    return (public or _owned(row)) and row["status"] == "needs_verification"
+    return (public or capture_assessment(row) or _owned(row)) and row[
+        "status"
+    ] == "needs_verification"
 
 
 def _owned(row):

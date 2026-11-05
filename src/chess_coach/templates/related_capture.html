@@ -14,7 +14,8 @@
 <p>Source: {{ item.type }} · version {{ item.version }}{% if item.rating is not none %} · content rating {{ item.rating }} (deviation {{ item.rating_deviation }}){% else %} · content rating unavailable{% endif %}</p>
 {% set board = item.board %}{% set board_label = "Transfer position; side to move at the bottom" %}{% include "board.html" %}
 <form method="post" action="{{ url_for('related_capture.begin', position=position) }}">
-<input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="reference" value="{{ item.reference }}"><button>Start this example</button></form></section>
+<input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="reference" value="{{ item.reference }}"><button>Practice the supplied line</button></form>
+{% if item.assessment_available %}<form method="post" action="{{ url_for('related_capture.begin', position=position) }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="reference" value="{{ item.reference }}"><input type="hidden" name="assessment" value="1"><button>Check my capture choice</button></form><p>This unfamiliar position is eligible for a bounded capture check. If the proof cannot be completed, try the supplied line.</p>{% endif %}</section>
 {% endfor %}
 {% if result.next_cursor %}<p><a href="{{ url_for('related_capture.show', position=position, cursor=result.next_cursor) }}">More examples</a></p>{% endif %}
 {% endblock %}

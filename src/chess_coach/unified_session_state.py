@@ -40,6 +40,14 @@ def view(row):
     if row["source_type"] == "corpus":
         import json
 
+        from .related_capture_objective import is_source as capture_assessment
+
+        if capture_assessment(row):
+            provenance = json.loads(row["provenance_json"])
+            result["capture_assessment"] = True
+            result["objective_target"] = provenance["objective_target"]
+            result["gain_threshold"] = provenance["gain_threshold"]
+
         result["short_mate_assessment"] = bool(
             json.loads(row["provenance_json"]).get("related_mate", {}).get("assessment")
         )
