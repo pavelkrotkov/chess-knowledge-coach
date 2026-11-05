@@ -99,6 +99,63 @@ def test_game_report_is_read_only_bounded_and_rechecks_source(tmp_path, monkeypa
         recheck(db, "fixture_a", source)
     db.close()
 
+    # The capture audit is also private, read-only, and source-rechecked.
+    from chess_coach.capture_game_report import report as capture_report
+
+    capture_fen = "4k3/8/8/8/3q4/8/8/3RK3 w - - 0 1"
+    capture_pgn = pgn("Kb1").replace(SHORT, capture_fen).replace("Kb1", "Rxd4")
+    db = Database(tmp_path / "capture-games.sqlite")
+    db.initialize()
+    ingest_pgn(db, capture_pgn)
+    ingest_pgn(db, capture_pgn.replace("Rxd4", "Kf1"))
+    before = db.connection.total_changes
+    played = capture_report(db, "fixture_a", 1, seconds=1, clock=lambda: 0)
+    other = capture_report(db, "fixture_a", 2, seconds=1, clock=lambda: 0)
+    assert db.connection.total_changes == before
+    assert played["complete"] and played["opportunities"] == played["played"] == 1
+    assert other["complete"] and other["opportunities"] == other["other"] == 1
+    ticks = iter([0, 0, 2, 2])
+    partial = capture_report(db, "fixture_a", 1, seconds=1, clock=lambda: next(ticks, 2))
+    assert not partial["complete"] and partial["unknown"] == 1
+    app = create_app(
+        db_path=tmp_path / "capture-games.sqlite",
+        subject="fixture_a",
+        actor="fixture",
+        corpus="test",
+        login="fixture",
+        origin="https://coach.invalid",
+    )
+    client = app.test_client()
+    path = "/games/1/capture-opportunities"
+    assert client.get(path, base_url="https://coach.invalid").status_code == 403
+    page = client.get(path, base_url="https://coach.invalid", headers=headers)
+    assert page.status_code == 200 and b"Played a proved capture: 100.0%" in page.data
+    assert b"/decisions/" in page.data and b"other merits" in page.data
+    other_page = client.get(
+        "/games/2/capture-opportunities", base_url="https://coach.invalid", headers=headers
+    )
+    assert b"Played a proved capture: 0.0%" in other_page.data
+    assert b"chose another move in 1" in other_page.data
+    db.connection.execute("UPDATE games SET result='*' WHERE id=1")
+    db.connection.commit()
+    assert client.get(path, base_url="https://coach.invalid", headers=headers).status_code == 400
+    db.connection.execute("UPDATE games SET result='1-0' WHERE id=1")
+    db.connection.commit()
+    monkeypatch.setattr(web_short_mate_game, "capture_report", lambda *_: partial)
+    page = client.get(path, base_url="https://coach.invalid", headers=headers)
+    assert b"Coverage is incomplete" in page.data and b"Played a proved capture:" not in page.data
+    with pytest.raises(ValueError):
+        capture_report(db, "fixture_c", 1, seconds=1, clock=lambda: 0)
+    with monkeypatch.context() as patch:
+
+        def changed(*_):
+            raise ValueError("source changed")
+
+        patch.setattr("chess_coach.capture_game_report.recheck", changed)
+        with pytest.raises(ValueError, match="source changed"):
+            capture_report(db, "fixture_a", 1, seconds=1, clock=lambda: 0)
+    db.close()
+
 
 def test_proved_opportunity_with_unresolved_play_does_not_get_rate(monkeypatch):
     from chess_coach.short_mate_game_counts import add, empty, finish

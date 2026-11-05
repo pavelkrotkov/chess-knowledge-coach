@@ -25,7 +25,7 @@ def line(moves):
     }
 
 
-def test_recorded_capture_and_missed_capture_are_bounded_observations():
+def test_recorded_capture_and_missed_capture_are_bounded_observations(monkeypatch):
     from chess_coach.material_observation import material_observation
 
     board = chess.Board("4k3/8/8/8/3q4/8/8/3RK3 w - - 0 1")
@@ -37,6 +37,38 @@ def test_recorded_capture_and_missed_capture_are_bounded_observations():
     assert missed["exchange_gain"] == 9 and "only" in missed["boundary"]
     taken = material_observation(board, "d1d4", best, best)
     assert taken["outcome"] == "success"
+
+    # The game audit proves the same opportunity before inspecting either choice.
+    from chess_coach.capture_game_proof import classify, opportunities
+
+    roots, unresolved, reason = opportunities(board, 1, lambda: 0)
+    assert roots == {"d1d4"} and not unresolved and reason is None
+    assert classify(board, "d1d4", 1, lambda: 0) == ("played", None)
+    assert classify(board, "e1f1", 1, lambda: 0) == ("other", None)
+    assert classify(chess.Board(), "e2e4", 1, lambda: 0) == ("no_opportunity", None)
+    defended = chess.Board("4k3/8/8/2p5/3q4/8/8/3RK3 w - - 0 1")
+    assert classify(defended, "e1f1", 1, lambda: 0) == ("no_opportunity", None)
+    checking = chess.Board("3k4/8/8/8/3q4/8/8/3RK3 w - - 0 1")
+    assert classify(checking, "e1f1", 1, lambda: 0) == ("unknown", "unresolved_capture")
+    unknown_history = chess.Board("4k3/8/8/8/3q4/8/8/3RK3 w - - 8 1")
+    assert classify(unknown_history, "e1f1", 1, lambda: 0) == ("unknown", "unsupported_history")
+    ticks = iter([0, 2])
+    assert classify(chess.Board(), "e2e4", 1, lambda: next(ticks, 2)) == ("unknown", "deadline")
+    with monkeypatch.context() as patch:
+        patch.setattr("chess_coach.capture_game_proof.MAX_CANDIDATES", 0)
+        assert classify(board, "e1f1", 1, lambda: 0) == ("unknown", "candidate_limit")
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            "chess_coach.capture_game_proof.opportunities",
+            lambda *_: ({"d1d4"}, {"e1f1"}, None),
+        )
+        assert classify(board, "e1f1", 1, lambda: 0) == (
+            "opportunity_unresolved",
+            "played_capture_unresolved",
+        )
+    monkeypatch.setattr("chess_coach.capture_game_roots.unresolved_reply", lambda *_: True)
+    assert classify(board, "e1f1", 1, lambda: 0) == ("unknown", "unresolved_capture")
+    assert board.fen() == "4k3/8/8/8/3q4/8/8/3RK3 w - - 0 1"
 
 
 def test_material_protection_and_exposed_loss_are_observed():
