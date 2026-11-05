@@ -28,6 +28,12 @@ def require_current(db, row, snapshot_hash):
         )
         select_lines(candidate, binding, expected_version=related_mate.FILTER_VERSION)
         candidate["objective"] = "checkmate"
+        if binding.get("assessment"):
+            from .related_mate_assessment_current import validate
+
+            validate(db, row, binding, candidate)
+            candidate["objective"] = "mate_within_two"
+            candidate["lines"] = binding["assessment"]["lines"]
         candidate["provenance"]["related_mate"] = binding
         if snapshot_hash(candidate) != row["snapshot_hash"]:
             raise ValueError

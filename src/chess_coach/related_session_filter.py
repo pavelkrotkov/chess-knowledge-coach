@@ -36,5 +36,8 @@ def apply_filter(snapshot, provenance, provenance_key, line_filter):
             snapshot["objective"] = "legal_line"
         if provenance_key in {"related_mate", "related_backrank_attack"}:
             snapshot["objective"] = "checkmate"
+        if provenance_key == "related_mate" and provenance.get("assessment"):
+            snapshot["objective"] = "mate_within_two"
+            snapshot["lines"] = provenance["assessment"]["lines"]
     elif line_filter is not None:
         raise ValueError("unsupported practice line selection")

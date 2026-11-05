@@ -1,5 +1,6 @@
 """Select bounded source-bound immediate or short-mate execution examples."""
 
+from .fact_fingerprint import canonical, digest
 from .related_capture import present
 from .related_mate_features import mate_features
 from .related_mate_match import candidate
@@ -33,4 +34,21 @@ def preview(db, subject, evidence_id, corpus_version, cursor=None):
     if chosen is not None:
         result["source_outcome"] = chosen[0]["outcome"]
         result["mate_timing"] = chosen[0]["objective"]
+        if result["mate_timing"] == "mate_within_two":
+            _assessment_options(db, result["items"], chosen[3], chosen[4])
     return result
+
+
+def _assessment_options(db, items, ordered, scope):
+    from .related_mate_assessment import setup
+
+    visible = {item["reference"]: item for item in items}
+    for choice in ordered:
+        ref = digest(canonical([scope, choice["type"], choice["version"], choice["key"]]))
+        if ref not in visible or choice["type"] != "corpus":
+            continue
+        try:
+            setup(db, choice["version"], choice["key"])
+            visible[ref]["assessment_available"] = True
+        except (ValueError, TypeError, KeyError):
+            continue
