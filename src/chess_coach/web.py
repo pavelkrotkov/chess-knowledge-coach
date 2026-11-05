@@ -3,13 +3,14 @@
 import secrets
 from pathlib import Path
 
-from flask import Flask, g
+from flask import Flask
 
 from .objective_fork_avoidance_contract import VERSION as FORK_AVOIDANCE_VERSION
 from .objective_fork_defense_contract import VERSION as FORK_DEFENSE_VERSION
 from .web_assessment_history import assessment_history_views
 from .web_coaching import coaching_views
 from .web_config import validate_config
+from .web_db import close_database
 from .web_lesson_history import lesson_history_views
 from .web_lessons import lesson_views
 from .web_mate import mate_views
@@ -29,6 +30,7 @@ from .web_related_pin import related_pin
 from .web_related_protection import related_protection
 from .web_repertoire import repertoire_views
 from .web_security import install_security
+from .web_short_mate_game import short_mate_game_views
 from .web_style import style_views
 from .web_unified_practice import unified_practice
 from .web_views import views
@@ -86,12 +88,9 @@ def create_app(
     app.register_blueprint(unified_practice)
     app.register_blueprint(repertoire_views)
     app.register_blueprint(recurrence_views)
+    app.register_blueprint(short_mate_game_views)
     app.register_blueprint(style_views)
 
-    @app.teardown_appcontext
-    def close_database(error):
-        db = g.pop("db", None)
-        if db is not None:
-            db.close()
+    app.teardown_appcontext(close_database)
 
     return app

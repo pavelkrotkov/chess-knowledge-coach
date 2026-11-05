@@ -1094,6 +1094,22 @@ this describes the selected games, not a causal training effect or confirmed
 improvement. Other patterns and broader periods remain
 separate work.
 
+### Short mates in one game
+
+A decision page links to an on-demand inspection of that owned, dated and finished
+game. It legally replays the recorded history and checks learner turns for forced
+mate within two moves, excluding positions where immediate mate is available.
+The result separates preserved and missed proved opportunities from unresolved
+and unchecked turns. A miss rate is shown only when the complete game is
+resolved; a game with no opportunities has no rate.
+
+The search shares a five-second cooperative deadline across the game, with up to
+6,000 proof nodes per decision and 100 defensive replies per root. A deadline,
+search limit or unavailable history remains unknown. Game validation and
+individual chess operations cannot be interrupted mid-operation. The source is
+rechecked after the search, and the report neither writes learning state nor
+claims a trend, mastery or a training effect.
+
 ### Recurring-pattern candidates
 
 `chess-coach --db PATH recurrence --learner NAME` and the private **Recurring
