@@ -7,7 +7,7 @@ from .pipeline_inputs import scan_input
 from .pipeline_scan_item import pending_game
 
 
-def pending_games(db: Database, config: PipelineConfig, engine_hash: str | None):
+def pending_games(db: Database, config: PipelineConfig, engine_hash: str | None, *, exclude=()):
     scan_hash = scan_input(db, config, engine_hash)
     account, games = scan_from(db, config.learner, config.max_scan, scan_hash)
     pending = []
@@ -16,6 +16,8 @@ def pending_games(db: Database, config: PipelineConfig, engine_hash: str | None)
     for game in games[: config.max_scan]:
         scanned += 1
         last_game = game["id"]
+        if game["id"] in exclude:
+            continue
         try:
             item = pending_game(db, game, config, engine_hash)
         except Exception:
