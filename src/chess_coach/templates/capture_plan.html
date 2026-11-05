@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Practice finding captures — Chess coach{% endblock %}
+{% block content %}
+<h2>Practice finding captures</h2>
+<p>These are provisional, detector-selected game observations. They do not count every opportunity or establish a weakness or mastery.</p>
+{% if error %}<p role="alert">The source changed or is temporarily unavailable. Please try again.</p>
+{% elif not report.source %}
+<p>No usable capture source was found among up to three checked examples from {{ report.scanned }} recorded failures{% if report.limited %}; additional records were not inspected{% endif %}. This does not establish that no other source exists.</p>
+{% else %}
+{% if report.source.games >= 2 %}
+<p>{{ report.source.observations }} recorded capture misses across {{ report.source.games }} independent games in this bounded sample. Source markers match; the detector was not rerun for every observation.</p>
+{% else %}
+<p>One usable capture example was found. A single game does not establish recurrence.</p>
+{% endif %}
+{% if report.limited %}<p>Only the newest 20 recorded failures were inspected; other sources may exist.</p>{% endif %}
+<p>The selected source is {{ "reviewed" if report.source.reviewed else "provisional and unreviewed" }}.</p>
+{% set history = report.history %}
+<h3>Latest certified capture assessment for this source in the active corpus</h3>
+{% if history.status == "none" %}
+<p>No certified assessment in the active corpus for this source was found in the inspected recent sessions{% if history.limited %}; older sessions were not inspected{% endif %}.</p>
+{% elif history.status == "stale" or history.status == "unavailable" %}
+<p>The latest assessment could not be checked against its current source and event history; its result is unavailable.</p>
+{% elif history.status == "incomplete" %}
+<p>This assessment has not received a first legal move{% if history.hints %}; assistance was used{% endif %}. <a href="{{ url_for('unified_practice.show_page', attempt=history.attempt_id) }}">Continue the assessment</a>.</p>
+{% elif history.status == "pending" %}
+<p>The first move is awaiting verification{% if history.hints %}; assistance was used{% endif %}. <a href="{{ url_for('unified_practice.show_page', attempt=history.attempt_id) }}">Check its status</a>.</p>
+{% elif history.status == "unresolved" %}
+<p>The first move remains ungraded{% if history.hints %}; assistance was used{% endif %}.</p>
+{% elif history.status == "correct" %}
+<p>The first move was verified{% if history.assistance != "unassisted" %} with assistance{% else %} without a hint or reveal{% endif %}.</p>
+{% elif history.status == "incorrect" %}
+<p>The checked first move did not capture the named target{% if history.assistance != "unassisted" %}; assistance was used{% endif %}.</p>
+{% endif %}
+{% if history.limited and history.status != "none" %}<p>Only the 100 most recent subject sessions were inspected.</p>{% endif %}
+<p>This is feedback on one prompt. Comparisons need more comparable first attempts. Supplied-line rehearsal and assisted attempts are separate from an unassisted assessment.</p>
+<p><a href="{{ url_for('related_capture.show', position=report.source.position_id) }}">{% if history.status in ["correct", "incorrect"] and history.assistance == "unassisted" %}Explore another unfamiliar capture example{% else %}Find related capture practice{% endif %}</a></p>
+{% endif %}
+<p><a href="{{ url_for('views.plan') }}">Daily plan</a> · <a href="{{ url_for('recurrence_views.recurrence') }}">Recurring patterns</a></p>
+{% endblock %}
