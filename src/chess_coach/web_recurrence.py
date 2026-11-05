@@ -4,6 +4,7 @@ from flask import Blueprint, current_app, render_template, request
 
 from .learner_identity import normalize_identity
 from .lesson_narrative import build
+from .mate_game_trend import report as mate_game_report
 from .preview_snapshot import preview_history
 from .recurrence_report import default_windows, report
 from .recurrence_snapshot import read_snapshot
@@ -56,3 +57,12 @@ def recurrence():
         skill=skill,
         operation=operation,
     )
+
+
+@recurrence_views.get("/game-samples/mate-in-one")
+def mate_game_samples():
+    subject = normalize_identity(current_app.config["SUBJECT"])
+    if subject is None:
+        return render_template("error.html", message="Learner identity is unavailable."), 400
+    result = mate_game_report(database(), subject)
+    return render_template("mate_game_trend.html", report=result)
