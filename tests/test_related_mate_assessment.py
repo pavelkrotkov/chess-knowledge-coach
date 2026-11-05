@@ -219,3 +219,145 @@ def _mate(board, move):
     result = board.is_checkmate()
     board.pop()
     return result
+
+
+def test_empty_batches_continue_and_later_assessment_is_admitted(tmp_path, monkeypatch):
+    import copy
+    import html
+    import re
+    from urllib.parse import parse_qs, urlsplit
+
+    import chess_coach.related_mate_search_page as search_page
+    from chess_coach.recurrence_snapshot import read_snapshot
+    from chess_coach.related_mate_search_select import select as search_select
+    from chess_coach.related_mate_search_token import decode, encode
+
+    original_select = search_page.select
+
+    def checked_snapshot(database, *args):
+        assert not database.connection.in_transaction
+        return original_select(database, *args)
+
+    monkeypatch.setattr(search_page, "select", checked_snapshot)
+    subject = "fixture_a"
+    fen = "6k1/5ppp/8/1p5Q/8/5R2/7r/KQ3R2 w - - 0 1"
+    path = tmp_path / "search.sqlite"
+    db = owned_game(path, monkeypatch, fen=fen, move="Qa2")
+    monkeypatch.setattr("chess_coach.mate_auto.short_candidate", lambda *_: True)
+    process_decision(db, 1, subject)
+    evidence = db.connection.execute(
+        "SELECT id FROM evidence_mappings WHERE skill='calculation' AND operation='execute'"
+    ).fetchone()[0]
+    source = source_for_evidence(db, subject, evidence)
+    initial = chess.Board("6k1/1p3ppp/8/7Q/8/5R2/7r/KQ3R2 b - - 0 1")
+    moves = "b7b6 " + source["lines"][0]
+    other = chess.Board("6k1/1p3ppp/8/7Q/8/P4R2/7r/KQ3R2 b - - 0 1")
+    other_moves = "b7b6 " + source["lines"][0]
+    same_game = chess.Board("6k1/1p3ppp/8/7Q/P7/5R2/7r/KQ3R2 b - - 0 1")
+    from chess_coach.related_mate_features import corpus_features, mate_features
+
+    _, same_game_features = corpus_features(same_game.fen(), moves)
+    source_features = mate_features(source["prompt_fen"], source["lines"][0].split())
+    for key in ("mover", "target", "timing", "geometry"):
+        assert same_game_features[key] == source_features[key]
+    db.connection.execute(
+        "INSERT INTO puzzle_corpora(version,source,checksum,state) VALUES('short','fixture','checksum','staging')"
+    )
+    corpus = db.connection.execute("SELECT id FROM puzzle_corpora").fetchone()[0]
+    sql = """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,rating_deviation,themes_json,objective)
+    VALUES(?,?,?,?,?,1200,80,'["mateIn2"]','unknown')"""
+    for index in range(200):
+        key = f"d{index:03}"
+        db.connection.execute(sql, (key, corpus, initial.fen(), "https://example.invalid", "b7b6"))
+        db.connection.execute("INSERT INTO puzzle_themes VALUES(?,?,'mateIn2',1200)", (corpus, key))
+    variants = []
+    for index, square in enumerate((chess.B3, chess.C3, chess.B4, chess.E3), start=1):
+        board = initial.copy()
+        board.set_piece_at(square, chess.Piece(chess.PAWN, chess.WHITE))
+        variants.append((f"short{index}", board, "https://example.invalid", moves))
+    for key, board, source_url, line in (
+        ("a-seen", initial, "https://lichess.org/abcd1234/white", moves),
+        ("short", other, "https://example.invalid", other_moves),
+        ("z-duplicate", initial, "https://lichess.org/abcd1234/black", moves),
+        ("z-same-game", same_game, "https://lichess.org/abcd1234/black", moves),
+        *variants,
+    ):
+        db.connection.execute(sql, (key, corpus, board.fen(), source_url, line))
+        db.connection.execute("INSERT INTO puzzle_themes VALUES(?,?,'mateIn2',1200)", (corpus, key))
+    db.connection.execute("UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus,))
+    db.connection.commit()
+    app = create_app(
+        db_path=path,
+        subject=subject,
+        actor="fixture",
+        corpus="short",
+        login="fixture",
+        origin="https://coach.invalid",
+    )
+    client = app.test_client()
+    base = "https://coach.invalid"
+    headers = {"Tailscale-User-Login": "fixture"}
+    route = f"/evidence/{evidence}/related-mates"
+    normal = client.get(route, base_url=base, headers=headers)
+    assert normal.status_code == 200 and b"Search more short-mate examples" in normal.data
+    assert normal.data.count(b"Try verified short-mate assessment") == 1
+    empty = client.get(route + "?search=begin", base_url=base, headers=headers)
+    assert empty.status_code == 200 and b"No matching examples in this batch" in empty.data
+    match = re.search(r'href="([^"]+)">Search the next batch</a>', empty.text)
+    assert match
+    link = html.unescape(match.group(1))
+    next_token = parse_qs(urlsplit(link).query)["search"][0]
+    next_state = decode(app.secret_key, next_token)
+    assert all(
+        key is None or (type(key[0]) is int and len(key[1]) == 64) for key in next_state["keys"]
+    )
+    bad_state = copy.deepcopy(next_state)
+    anchor = next(key for key in bad_state["keys"] if key is not None)
+    anchor[0] += 1
+    bad_token = encode(app.secret_key, bad_state)
+    assert (
+        client.get(
+            route, query_string={"search": bad_token}, base_url=base, headers=headers
+        ).status_code
+        == 400
+    )
+    assert client.get(link + "x", base_url=base, headers=headers).status_code == 400
+    app.config["SUBJECT"] = "fixture_other"
+    assert client.get(link, base_url=base, headers=headers).status_code == 400
+    app.config["SUBJECT"] = subject
+    app.config["CORPUS"] = "missing"
+    assert client.get(link, base_url=base, headers=headers).status_code == 400
+    app.config["CORPUS"] = "short"
+    later = client.get(link, base_url=base, headers=headers)
+    assert later.status_code == 200 and later.data.count(b"Try verified short-mate assessment") == 4
+    more = re.search(r'href="([^"]+)">More matches in this batch</a>', later.text)
+    assert more
+    later = client.get(html.unescape(more.group(1)), base_url=base, headers=headers)
+    assert later.status_code == 200 and later.data.count(b"Try verified short-mate assessment") == 1
+    reference_match = re.search(r'name="reference" value="([^"]+)"', later.text)
+    search_match = re.search(r'name="search" value="([^"]+)"', later.text)
+    assert reference_match and search_match
+    reference = reference_match.group(1)
+    search = search_match.group(1)
+    form_state = decode(app.secret_key, search)
+    with read_snapshot(db):
+        chosen, _ = search_select(db, subject, evidence, "short", app.secret_key, form_state)
+    assert form_state["scope"] != chosen[4]
+    assert "short" not in json.dumps(form_state)
+    with client.session_transaction(base_url=base) as session:
+        csrf = session["csrf"]
+    form = {"csrf": csrf, "reference": reference, "search": search, "assessment": "1"}
+    headers["Origin"] = base
+    started = client.post(route + "/start", data=form, base_url=base, headers=headers)
+    assert started.status_code == 303
+    with client.session_transaction(base_url=base) as session:
+        attempt = session["unified_attempt"]
+    row = db.connection.execute(
+        "SELECT provenance_json FROM unified_sessions WHERE attempt_id=?", (attempt,)
+    ).fetchone()
+    binding = json.loads(row[0])["related_mate"]
+    assert binding["rank_version"] == "mate-search-v1" and binding["assessment"]["roots"]
+    assert client.get(started.location, base_url=base, headers=headers).status_code == 200
+    stale = client.post(route + "/start", data=form, base_url=base, headers=headers)
+    assert stale.status_code == 400
+    db.close()
