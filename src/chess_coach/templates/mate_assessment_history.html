@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Short-mate assessment history — Chess coach{% endblock %}
+{% block content %}
+<h2>Short-mate assessment history</h2>
+<p>These are pattern-cued short-mate assessments from your recorded practice, not game results or mastery. We check each stored assessment and its recorded moves. A new position means no matching prompt was found in the recorded sources checked at admission; it does not establish that you have never seen it elsewhere.</p>
+{% if report.limited %}<p>The oldest and newest 100 recorded practice sessions do not cover all history, or a date could not be verified. Comparisons are unavailable.</p>{% endif %}
+{% if not report["items"] %}<p>{% if report.limited %}No short-mate assessments were found in the inspected sessions.{% else %}No short-mate assessments have been recorded yet.{% endif %} You can start one from a matching game lesson.</p>{% endif %}
+<h3>Comparable practice samples</h3>
+<p>We group assessments with the same pattern and similar puzzle difficulty. A comparison needs two samples of 10 completed assessments, with at least five unassisted attempts in each. Small samples cannot establish improvement or a cause.</p>
+{% for group in report.groups %}
+<section><h4>Puzzle difficulty {{ group.rating_start }}–{{ group.rating_start + 199 }}</h4>
+<p>{{ group.count }} {% if report.limited %}assessments in the inspected sessions{% else %}first encounters{% endif %} in this group.</p>
+{% if group.comparable %}
+{% for title, sample in (("First 10", group.earlier), ("Most recent 10", group.later)) %}
+<p>{{ title }}: {{ sample.start }} to {{ sample.end }}; {{ sample.outcomes.get("verified", 0) }} verified, {{ sample.outcomes.get("incorrect", 0) }} incorrect. {{ sample.hinted }} included hints and {{ sample.revealed }} included reveals; these can overlap. Unassisted: {{ sample.unassisted.get("verified", 0) }} verified and {{ sample.unassisted.get("incorrect", 0) }} incorrect. Assisted: {{ sample.assisted.get("verified", 0) }} verified and {{ sample.assisted.get("incorrect", 0) }} incorrect.</p>
+{% endfor %}
+<p>These small samples may differ in ways the recorded context does not capture.</p>
+{% else %}
+<p>Provisional baseline{% if report.limited %} within inspected sessions{% endif %}, first {{ group.baseline.size }}: {{ group.baseline.outcomes.get("verified", 0) }} verified, {{ group.baseline.outcomes.get("incorrect", 0) }} incorrect, {{ group.baseline.outcomes.get("unresolved", 0) }} ungraded, {{ group.baseline.outcomes.get("incomplete", 0) }} in progress, {{ group.baseline.outcomes.get("unavailable", 0) }} unavailable. Source status and assistance are shown below.</p>
+<p>A comparison needs two complete samples of 10, with at least five unassisted attempts in each. It also needs complete history and current sources.</p>{% endif %}
+</section>
+{% else %}<p>No assessments with a comparable recorded difficulty and matching context yet.</p>{% endfor %}
+<details><summary>How the groups are matched</summary><p>Groups use the current puzzle collection, assessment and ranking versions, the recorded mate pattern and matching context, and bands of puzzle rating and rating deviation. The source rating used to rank puzzles is also grouped in bands. These bands are coarse; other differences may remain. Puzzle ratings do not estimate your playing rating.</p></details>
+<h3>{% if report.limited %}Recorded assessments in inspected sessions{% else %}Recorded first encounters{% endif %}</h3>
+<ul>{% for item in report["items"] %}
+<li>{% if report.limited %}Earlier history unverified · {% endif %}{{ item.started_at }} · {{ {"verified": "Verified complete", "incorrect": "Incorrect final move", "unresolved": "Ungraded first move", "incomplete": "In progress", "unavailable": "Event history unavailable"}.get(item.outcome, "Unavailable") }}.
+{% if item.hints is none %}Assistance unavailable.{% else %}{{ item.hints - item.reveals }} hints; {{ item.reveals }} reveals. {{ item.illegal }} recorded illegal moves.{% endif %}
+{% if item.scope is none %}Difficulty at admission is unknown.{% endif %}
+{% if item.current %}<a href="{{ url_for('unified_practice.show_page', attempt=item.attempt_id) }}">Open assessment</a>{% else %}Original source unavailable or from a different collection.{% endif %}</li>
+{% else %}<li>No assessments in the inspected sessions.</li>{% endfor %}</ul>
+<p><a href="{{ url_for('coaching_views.index') }}">Back to coaching</a> · <a href="{{ url_for('views.plan') }}">Daily plan</a></p>
+{% endblock %}

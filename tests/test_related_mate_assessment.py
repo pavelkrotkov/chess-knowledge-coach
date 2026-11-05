@@ -6,6 +6,7 @@ import chess
 import pytest
 
 from chess_coach.evidence_review import review_evidence
+from chess_coach.mate_assessment_history import report as assessment_history
 from chess_coach.mate_auto import process_decision
 from chess_coach.related_mate import preview
 from chess_coach.related_mate_source import source_for_evidence
@@ -46,6 +47,8 @@ def test_related_short_mate_assessment_workflow(tmp_path, monkeypatch, mode):
     assert len(selected["items"]) == 1 and selected["items"][0]["assessment_available"]
     ref = selected["items"][0]["reference"]
     before = db.connection.execute("SELECT COUNT(*) FROM training_attempts").fetchone()[0]
+    if mode == "ungraded":
+        monkeypatch.setattr("chess_coach.related_mate_assessment_context.capture", lambda *_: None)
     state = start_related(
         db,
         attempt_id="assessment",
@@ -61,7 +64,14 @@ def test_related_short_mate_assessment_workflow(tmp_path, monkeypatch, mode):
     ).fetchone()
     data = json.loads(row["provenance_json"])["related_mate"]["assessment"]
     assert data["history_mode"] == "zeroing_setup" and data["roots"]
+    if mode == "ungraded":
+        assert data["context"] is None
+    else:
+        assert data["context"]["content_rating"] == 1200
+        assert data["context"]["content_deviation"] == 80
     assert len(data["roots"]) >= 2
+    initial_history = assessment_history(db, SUBJECT, "short")
+    assert initial_history["items"][0]["outcome"] == "incomplete"
     first_move = data["roots"][1 if mode == "unassisted" else 0]["move"]["uci"]
     if mode == "unassisted":
         assert first_move != moves.split()[1]
@@ -87,6 +97,55 @@ def test_related_short_mate_assessment_workflow(tmp_path, monkeypatch, mode):
             "line_completed" if mode == "incorrect" else "objective_verified"
         )
         assert result["hints_used"] == (2 if mode == "assisted" else 0)
+    history = assessment_history(db, SUBJECT, "short")
+    assert len(history["items"]) == 1
+    entry = history["items"][0]
+    assert (
+        entry["outcome"]
+        == {
+            "unassisted": "verified",
+            "assisted": "verified",
+            "ungraded": "unresolved",
+            "incorrect": "incorrect",
+        }[mode]
+    )
+    assert entry["current"]
+    assert entry["hints"] == (2 if mode == "assisted" else 0)
+    assert entry["reveals"] == (1 if mode == "assisted" else 0)
+    assert (entry["scope"] is None) == (mode == "ungraded")
+    if mode == "unassisted":
+        import copy
+
+        from chess_coach.mate_assessment_groups import groups
+        from chess_coach.mate_assessment_scope import scope
+
+        binding = json.loads(row["provenance_json"])["related_mate"]
+        first = copy.deepcopy(data)
+        first["context"]["ranking_baseline"] = 1601
+        second = copy.deepcopy(first)
+        second["context"]["ranking_baseline"] = 1602
+        assert scope(row, binding, first)["key"] == scope(row, binding, second)["key"]
+        second["context"]["material_distance"] += 1
+        assert scope(row, binding, first)["key"] != scope(row, binding, second)["key"]
+        examples = [
+            {**entry, "started_at": f"2026-01-01T00:00:{i:02}+00:00", "hints": i % 2, "reveals": 0}
+            for i in range(20)
+        ]
+        compared = groups(examples, False)[0]
+        assert compared["comparable"] and compared["earlier"]["unassisted"]["verified"] == 5
+        assert compared["later"]["assisted"]["verified"] == 5
+        examples[0]["hints"] = 1
+        assert not groups(examples, False)[0]["comparable"]
+        examples[0]["hints"] = 0
+        examples[-1]["outcome"] = "unresolved"
+        assert not groups(examples, False)[0]["comparable"]
+        assert not groups(examples, True)[0]["comparable"]
+        import sqlite3
+
+        with pytest.raises(sqlite3.IntegrityError, match="ready corpus is immutable"):
+            db.connection.execute("UPDATE puzzles SET rating=2399 WHERE puzzle_id='short'")
+        db.connection.rollback()
+        assert assessment_history(db, SUBJECT, "short")["items"][0]["scope"]["rating_start"] == 1200
     assert db.connection.execute("SELECT COUNT(*) FROM training_attempts").fetchone()[0] == before
     app = create_app(
         db_path=tmp_path / "short.sqlite",
@@ -109,7 +168,47 @@ def test_related_short_mate_assessment_workflow(tmp_path, monkeypatch, mode):
         "incorrect": b"Incorrect: this final move did not give checkmate",
     }
     assert expected[mode] in page.data
+    client = app.test_client()
+    assert client.get("/assessment-history", base_url="https://coach.invalid").status_code == 403
+    history_page = client.get(
+        "/assessment-history",
+        base_url="https://coach.invalid",
+        headers={"Tailscale-User-Login": "fixture"},
+    )
+    assert history_page.status_code == 200
+    assert b"Recorded first encounters" in history_page.data
+    assert b"fixture_a" not in history_page.data
+    if mode == "unassisted":
+        from datetime import UTC, datetime, timedelta
+
+        for index in range(201):
+            copy_row = dict(row)
+            copy_row.update(
+                attempt_id=f"prior-{index}",
+                subject="fixture_other",
+                objective="legal_line",
+                started_at=(datetime(2025, 1, 1, tzinfo=UTC) + timedelta(days=index)).isoformat(),
+            )
+            columns = ",".join(copy_row)
+            marks = ",".join("?" for _ in copy_row)
+            db.connection.execute(
+                f"INSERT INTO unified_sessions({columns}) VALUES({marks})", tuple(copy_row.values())
+            )
+        db.connection.commit()
+        app.config["SUBJECT"] = "fixture_other"
+        limited_page = client.get(
+            "/assessment-history",
+            base_url="https://coach.invalid",
+            headers={"Tailscale-User-Login": "fixture"},
+        )
+        assert (
+            b"No short-mate assessments were found in the inspected sessions" in limited_page.data
+        )
+        assert b"No short-mate assessments have been recorded yet" not in limited_page.data
+        app.config["SUBJECT"] = SUBJECT
     review_evidence(db, evidence, decision="reject", actor="fixture_reviewer")
+    historical = assessment_history(db, SUBJECT, "short")["items"][0]
+    assert not historical["current"] and historical["outcome"] == entry["outcome"]
     with pytest.raises(ValueError):
         show(db, "assessment", SUBJECT)
     db.close()
