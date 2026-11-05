@@ -374,6 +374,29 @@ course preview and export each have a 60-second total budget and two-second
 individual work limits; an interrupted familiarity scan is deferred, not a
 completed search with no match. Each run checks for source changes before reuse.
 
+To publish an explicitly reviewed tactical export as a separate private Study, use
+its exact export hash and an owner-only file under the same planning directory:
+
+```sh
+timeout --signal=TERM 100s "$release" -I -B -m chess_coach.ops_tactical_study_publish --project-root "$PWD" \
+  --export "$PWD/.runtime/planning/<reviewed-export>.json" \
+  --export-sha256 "<export-sha256>"
+```
+
+The command revalidates the selected export and source lineage, uses the shared
+Study and synchronization locks and provider cooldown, and retains a separate
+version-specific intent. It checks owner, privacy and restrictions, then verifies
+the ordered chapters, mainlines, comments, orientations and modes. A separate
+anonymous request with no bearer token or cookies must be denied before the
+private receipt is complete. The initial empty chapter and previous Study remain
+untouched. Ambiguous writes remain pending and require a unique content match to
+resume; do not remove or bypass the intent. Definite authentication, permission or
+rate-limit denials can be retried after the underlying issue or cooldown is resolved.
+The command prints only a generic status; a verified course link appears separately
+in private coaching. The 60-second source freshness budget is checked before each
+provider request. The outer deadline bounds the operator action; if it interrupts
+a request, treat the outcome as ambiguous and retain the intent for reconciliation.
+
 ## Private coaching Study
 
 Prepare and inspect the owner-only course artifact before publication. Use the reviewed

@@ -29,6 +29,11 @@ class Provider:
         self.settings = dict(SETTINGS)
         self.timeout_create = True
         self.timeout_upload = True
+        self.upload_status = None
+        self.upload_error = False
+        self.force_mode = None
+        self.change_name_on_export = False
+        self.anonymous_status = 401
         self.inventory_count = 1
         self.create_status = None
         self.empty_id = "empty000"
@@ -88,15 +93,31 @@ class Provider:
                 }
             return httpx.Response(200, json=value, request=request)
         if path == "/api/study/abcd1234.pgn":
+            if self.change_name_on_export:
+                self.change_name_on_export = False
+                self.name = "changed marker"
             return httpx.Response(200, text=self.export(), request=request)
         if path == "/api/study/abcd1234/import-pgn":
-            item = kwargs["data"]
+            if self.upload_status is not None:
+                return httpx.Response(self.upload_status, request=request)
+            item = dict(kwargs["data"])
+            if self.force_mode is not None:
+                item["mode"] = self.force_mode
             self.uploaded.append(item)
+            if self.upload_error:
+                self.upload_error = False
+                return httpx.Response(
+                    200, json={"chapters": [{"id": "new"}], "error": "partial"}, request=request
+                )
             if self.timeout_upload:
                 self.timeout_upload = False
                 raise httpx.ReadTimeout("uncertain", request=request)
             return httpx.Response(200, json={"chapters": [{"id": "new"}]}, request=request)
         raise AssertionError(path)
+
+    def anonymous(self, url):
+        request = httpx.Request("GET", url)
+        return httpx.Response(self.anonymous_status, request=request)
 
     def export(self):
         games = []
@@ -114,7 +135,9 @@ class Provider:
         return "\n\n\n".join(games)
 
 
-def test_private_publication_reconciles_timeouts_and_rejects_public_destination(tmp_path):
+def test_private_publication_reconciles_timeouts_and_rejects_public_destination(
+    tmp_path, monkeypatch
+):
     snapshot = {
         "prompt_fen": chess.STARTING_FEN,
         "learner_color": "white",
@@ -231,6 +254,211 @@ def test_private_publication_reconciles_timeouts_and_rejects_public_destination(
     with pytest.raises(StudyError, match="marker"):
         publish(remote, intent, course)
     assert len(provider.uploaded) == 5
+
+    # Tactical imports retain ordered, source-checked chapters in a distinct private intent.
+    from chess_coach.study_import_post import upload as upload_one
+    from chess_coach.tactical_study_pgn import matches_mainline
+    from chess_coach.tactical_study_status import status as tactical_status
+
+    upload_planning = tmp_path / "upload-planning"
+    upload_planning.mkdir(mode=0o700)
+    tactical_body = {"chapters": chapters[:4], "version": "fixture"}
+    tactical_course = {"course": tactical_body, "course_sha256": preview_hash(tactical_body)}
+    tactical_path = (
+        upload_planning / f"tactical-study-{tactical_course['course_sha256']}-intent.json"
+    )
+    tactical_provider = Provider()
+    tactical_provider.timeout_create = False
+    tactical_provider.timeout_upload = False
+    tactical_remote = Remote("fixture-token", "learner", tactical_provider)
+    import chess_coach.study_anonymous as anonymous
+
+    real_client = httpx.Client
+    anonymous_calls = []
+
+    def anonymous_handler(request):
+        assert "authorization" not in request.headers and "cookie" not in request.headers
+        anonymous_calls.append(True)
+        return httpx.Response(401, request=request)
+
+    def anonymous_client(**kwargs):
+        assert kwargs["follow_redirects"] is False and kwargs["trust_env"] is False
+        return real_client(transport=httpx.MockTransport(anonymous_handler), **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(anonymous.httpx, "Client", anonymous_client)
+        assert anonymous.request("https://lichess.org/api/study/abcd1234.pgn").status_code == 401
+    assert anonymous_calls
+    monkeypatch.setattr(anonymous, "request", tactical_provider.anonymous)
+    for status_code in (401, 403, 429):
+        tactical_provider.upload_status = status_code
+        with pytest.raises(StudyError):
+            publish(tactical_remote, tactical_path, tactical_course, strict=True)
+        assert json.loads(tactical_path.read_text())["chapters"][0] == "new"
+        assert not tactical_provider.uploaded
+    tactical_provider.upload_status = None
+    tactical_provider.timeout_upload = True
+    with pytest.raises(StudyError, match="unknown"):
+        publish(tactical_remote, tactical_path, tactical_course, strict=True)
+    assert json.loads(tactical_path.read_text())["chapters"][0] == "pending"
+    assert len(tactical_provider.uploaded) == 1
+    tactical_provider.uploaded[0]["mode"] = "gamebook"
+    with pytest.raises(StudyError, match="mode"):
+        publish(tactical_remote, tactical_path, tactical_course, strict=True)
+    assert len(tactical_provider.uploaded) == 1
+    tactical_provider.uploaded[0]["mode"] = "conceal"
+    tactical_provider.change_name_on_export = True
+    with pytest.raises(StudyError, match="marker"):
+        publish(tactical_remote, tactical_path, tactical_course, strict=True)
+    assert len(tactical_provider.uploaded) == 1
+    tactical_provider.name = json.loads(tactical_path.read_text())["marker"]
+    tactical_provider.private = False
+    with pytest.raises(StudyError, match="privacy"):
+        publish(tactical_remote, tactical_path, tactical_course, strict=True)
+    assert len(tactical_provider.uploaded) == 1
+    tactical_provider.private = True
+    tactical_provider.force_mode = "gamebook"
+    with pytest.raises(StudyError, match="mode"):
+        publish(tactical_remote, tactical_path, tactical_course, strict=True)
+    assert json.loads(tactical_path.read_text())["chapters"][1] == "pending"
+    assert len(tactical_provider.uploaded) == 2
+    tactical_provider.uploaded[1]["mode"] = "conceal"
+    tactical_provider.force_mode = None
+    tactical_provider.upload_error = True
+    with pytest.raises(StudyError, match="unresolved"):
+        publish(tactical_remote, tactical_path, tactical_course, strict=True)
+    assert json.loads(tactical_path.read_text())["chapters"][2] == "pending"
+    assert len(tactical_provider.uploaded) == 3
+    for status_code in (200, 302, 404, 429, 500):
+        tactical_provider.anonymous_status = status_code
+        with pytest.raises(StudyError, match="anonymous privacy"):
+            publish(tactical_remote, tactical_path, tactical_course, strict=True)
+        assert not json.loads(tactical_path.read_text())["complete"]
+        assert len(tactical_provider.uploaded) == 4
+    tactical_provider.anonymous_status = 401
+    tactical_link = publish(tactical_remote, tactical_path, tactical_course, strict=True)
+    assert tactical_link.endswith("/abcd1234/ch000000#0")
+    verified = json.loads(tactical_path.read_text())
+    assert verified["complete"] and verified["privacy_verified"] and verified["ordered_verified"]
+    assert verified["anonymous_verified"]
+    from chess_coach.deep_selection_source import learner_key
+
+    assert verified["learner_key"] == learner_key("learner")
+    assert verified["chapter_ids"] == ["ch000000", "ch000001", "ch000002", "ch000003"]
+    assert verified["chapter_modes"] == ["conceal", "conceal", "gamebook", "conceal"]
+    from chess_coach.tactical_study_order import verify as verify_tactical_order
+
+    with pytest.raises(StudyError, match="invalid Study identifier"):
+        verify_tactical_order(
+            {"name": verified["marker"], "chapters": [{"id": None}]},
+            {**verified, "empty_chapter": None},
+            chapters[:4],
+        )
+    assert tactical_provider.created == 1 and len(tactical_provider.uploaded) == 4
+    saved_intent = tactical_path.read_bytes()
+    malformed = json.loads(saved_intent)
+    malformed["chapters"] = ["done"]
+    tactical_path.write_text(json.dumps(malformed))
+    with pytest.raises(StudyError, match="ledger"):
+        publish(tactical_remote, tactical_path, tactical_course, strict=True)
+    assert len(tactical_provider.uploaded) == 4
+    tactical_path.write_bytes(saved_intent)
+    tactical_provider.anonymous_status = 403
+    assert publish(tactical_remote, tactical_path, tactical_course, strict=True) == tactical_link
+    assert len(tactical_provider.uploaded) == 4
+
+    from chess_coach.tactical_study_final import check as final_check
+
+    tactical_provider.change_name_on_export = True
+    with pytest.raises(StudyError, match="marker"):
+        final_check(
+            tactical_remote, verified, chapters[:4], verified["chapter_ids"], matches_mainline
+        )
+    tactical_provider.name = verified["marker"]
+
+    tactical_provider.uploaded[0], tactical_provider.uploaded[1] = (
+        tactical_provider.uploaded[1],
+        tactical_provider.uploaded[0],
+    )
+    with pytest.raises(StudyError, match="order"):
+        publish(tactical_remote, tactical_path, tactical_course, strict=True)
+    tactical_provider.uploaded[0], tactical_provider.uploaded[1] = (
+        tactical_provider.uploaded[1],
+        tactical_provider.uploaded[0],
+    )
+    expected = {**chapters[0], "name": tactical_provider.uploaded[0]["name"]}
+    original_pgn = tactical_provider.uploaded[0]["pgn"]
+    reordered = chess.pgn.read_game(io.StringIO(original_pgn))
+    assert reordered is not None
+    reordered.variations[0].variations.reverse()
+    tactical_provider.uploaded[0]["pgn"] = str(reordered)
+    assert matches(expected, tactical_provider.export())
+    assert not matches_mainline(expected, tactical_provider.export())
+    tactical_provider.uploaded[0]["pgn"] = original_pgn
+
+    before_post = {"study": "abcd1234", "chapters": ["new"]}
+    before_path = upload_planning / "before-post.json"
+    checks = []
+
+    def stale_before_post():
+        checks.append(True)
+        if len(checks) == 2:
+            raise StudyError("source changed")
+
+    with pytest.raises(StudyError, match="source changed"):
+        upload_one(tactical_remote, before_path, before_post, 0, {}, stale_before_post, strict=True)
+    assert json.loads(before_path.read_text())["chapters"] == ["new"]
+    assert len(tactical_provider.uploaded) == 4
+
+    cooldown_state = {"study": "abcd1234", "chapters": ["new"]}
+    cooldown_path = upload_planning / "before-cooldown.json"
+    guard_calls = []
+
+    def cooldown_after_save():
+        guard_calls.append(True)
+        if len(guard_calls) == 2:
+            raise StudyError("retry delay")
+
+    tactical_remote.guard = cooldown_after_save
+    with pytest.raises(StudyError, match="retry delay"):
+        upload_one(tactical_remote, cooldown_path, cooldown_state, 0, {}, lambda: None, strict=True)
+    assert json.loads(cooldown_path.read_text())["chapters"] == ["new"]
+    tactical_remote.guard = lambda: None
+
+    from chess_coach.study_import_verify import finish
+
+    stale_receipt = {**verified, "complete": False}
+    stale_path = upload_planning / "stale-final.json"
+
+    def stale_final():
+        raise StudyError("source changed")
+
+    with pytest.raises(StudyError, match="source changed"):
+        finish(
+            tactical_remote,
+            stale_path,
+            stale_receipt,
+            chapters[:4],
+            stale_final,
+            matches_mainline,
+            True,
+        )
+    assert not stale_path.exists() and not stale_receipt["complete"]
+
+    displayed = planning / tactical_path.name
+    displayed.write_bytes(tactical_path.read_bytes())
+    displayed.chmod(0o600)
+    planning.chmod(0o700)
+    assert tactical_status(tmp_path, "learner")["url"] == tactical_link
+    assert tactical_status(tmp_path, "different") is None
+    planning.chmod(0o755)
+    assert tactical_status(tmp_path, "learner") is None
+    planning.chmod(0o700)
+    outside_root = tmp_path / "outside-root"
+    (outside_root / ".runtime").mkdir(parents=True)
+    (outside_root / ".runtime" / "planning").symlink_to(planning)
+    assert tactical_status(outside_root, "learner") is None
+    assert status(tmp_path)["url"].endswith("/abcd1234/ch000002#0")
 
     # Tactical exports have separate version intents; ambiguous creates block another version.
     from chess_coach.study_session import locked
