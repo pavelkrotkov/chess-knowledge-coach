@@ -2,7 +2,9 @@
 
 from flask import Blueprint, current_app, render_template
 
+from .learner_identity import normalize_identity
 from .short_mate_game_report import report
+from .short_mate_trend_report import report as trend_report
 from .web_db import database
 
 short_mate_game_views = Blueprint("short_mate_game_views", __name__)
@@ -17,3 +19,12 @@ def inspect(game_id):
             "error.html", message="This game is unavailable or changed during inspection."
         ), 400
     return render_template("short_mate_game.html", report=result)
+
+
+@short_mate_game_views.get("/game-samples/short-mate")
+def samples():
+    subject = normalize_identity(current_app.config["SUBJECT"])
+    if subject is None:
+        return render_template("error.html", message="Learner identity is unavailable."), 400
+    result = trend_report(database(), subject, current_app.config["PROJECT_ROOT"])
+    return render_template("short_mate_trend.html", report=result)

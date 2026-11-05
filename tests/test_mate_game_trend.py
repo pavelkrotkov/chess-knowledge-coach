@@ -142,3 +142,116 @@ def test_result_contradicting_checkmate_is_unavailable(tmp_path):
     with pytest.raises(ValueError, match="contradicts"):
         prepared_game(db, game, "fixture_a")
     db.close()
+
+
+def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from chess_coach import short_mate_trend_scan as scan
+    from chess_coach import short_mate_trend_turns as turns
+    from chess_coach.short_mate_trend_paths import binding, location
+    from chess_coach.short_mate_trend_report import report as cached_report
+    from chess_coach.short_mate_trend_store import read, write
+
+    # An overall interruption leaves the turn for the next activation; a local
+    # proof timeout becomes a terminal unknown so it cannot stall the scan.
+    with monkeypatch.context() as patch:
+        source = {
+            "signature": "source",
+            "pairs": [({"subject": True, "played_move": "a1a2", "position_id": 1}, None)],
+        }
+        patch.setattr(turns, "prepare", lambda *args: source)
+        patch.setattr(turns, "recheck", lambda *args: None)
+        patch.setattr(turns, "fingerprint", lambda value: value)
+        patch.setattr(turns, "classify", lambda *args: ("unknown", "deadline"))
+        item = {"id": 1, "signature": "source", "results": []}
+        times = iter([0.0, 1.6])
+        patch.setattr(turns, "time", SimpleNamespace(monotonic=lambda: next(times)))
+        assert turns.inspect(None, "fixture_a", item, 2.0, 1) == 0
+        assert not item["results"]
+        times = iter([0.0, 0.0])
+        assert turns.inspect(None, "fixture_a", item, 2.0, 1) == 1
+        assert item["results"] == [[1, "unknown", "turn_deadline"]]
+
+    root = tmp_path
+    data = root / ".runtime" / "data"
+    data.mkdir(parents=True)
+    path = data / "games.sqlite"
+    db = Database(path)
+    db.initialize()
+    for index in range(41):
+        ingest_pgn(db, pgn(index, "Qg1" if index % 2 else "Qg7#"))
+    ingest_pgn(db, pgn(40, "Qg7#", event="Duplicate import"))
+    before = db.connection.total_changes
+    monkeypatch.setattr(scan, "TURN_LIMIT", 4)
+    monkeypatch.setattr(turns, "classify", lambda *args: ("missed", None))
+    scan.run(db, "fixture_a", root)
+    partial = cached_report(db, "fixture_a", root)
+    assert partial["comparable"] and partial["newer"]["checked"] == 2
+    assert partial["newer"]["unchecked"] == 18
+    assert partial["earlier"]["checked"] == 2 and not partial["qualified"]
+    for _ in range(9):
+        scan.run(db, "fixture_a", root)
+    completed = cached_report(db, "fixture_a", root)
+    assert completed["newer"]["missed"] == completed["earlier"]["missed"] == 20
+    assert completed["newer"]["complete"] and completed["earlier"]["complete"]
+    assert completed["duplicates"] == 1 and completed["qualified"]
+    assert db.connection.total_changes == before
+    assert location(db, root).stat().st_mode & 0o777 == 0o600
+
+    app = create_app(
+        db_path=path,
+        subject="fixture_a",
+        actor="operator",
+        corpus="test",
+        login="fixture",
+        origin="https://coach.invalid",
+        project_root=root,
+    )
+    client = app.test_client()
+    page = client.get(
+        "/game-samples/short-mate",
+        base_url="https://coach.invalid",
+        headers={"Tailscale-User-Login": "fixture"},
+    )
+    assert page.status_code == 200 and b"20 missed" in page.data
+    assert b"100.0% earlier and 100.0% more recent" in page.data
+    assert b"fixture_a" not in page.data and b"/decisions/" in page.data
+    cache = location(db, root)
+    cached = read(cache, binding(db, "fixture_a"))
+    old_result = cached["games"][0]["results"][0]
+    cached["games"][0]["results"][0] = [old_result[0], "unknown", "node_limit"]
+    write(cache, cached)
+    unresolved = cached_report(db, "fixture_a", root)
+    assert unresolved["newer"]["unknown"] == 1 and not unresolved["qualified"]
+    page = client.get(
+        "/game-samples/short-mate",
+        base_url="https://coach.invalid",
+        headers={"Tailscale-User-Login": "fixture"},
+    )
+    assert b"A rate comparison is unavailable" in page.data
+    cached["games"][0]["results"][0] = old_result
+    write(cache, cached)
+    assert cached_report(db, "fixture_b", root) is None
+
+    duplicate = db.connection.execute(
+        "SELECT id FROM games WHERE event='Duplicate import'"
+    ).fetchone()["id"]
+    db.connection.execute("UPDATE games SET result='0-1' WHERE id=?", (duplicate,))
+    db.connection.commit()
+    assert cached_report(db, "fixture_a", root) is None
+    scan.run(db, "fixture_a", root)
+    changed = cached_report(db, "fixture_a", root)
+    assert changed and not changed["comparable"] and changed["unavailable"] == 1
+    import json
+
+    cache = location(db, root)
+    corrupt = json.loads(cache.read_text())
+    corrupt["games"] = [{}]
+    cache.write_text(json.dumps(corrupt))
+    assert cached_report(db, "fixture_a", root) is None
+    scan.run(db, "fixture_a", root)
+    assert cached_report(db, "fixture_a", root) is not None
+    cache.write_text("{invalid")
+    assert cached_report(db, "fixture_a", root) is None
+    db.close()
