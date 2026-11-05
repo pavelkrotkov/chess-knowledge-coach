@@ -141,6 +141,23 @@ def test_proved_alternative_is_playable_and_only_actual_mate_completes(
         completed["status"] == "objective_verified" and chess.Board(completed["fen"]).is_checkmate()
     )
     assert submit(db, "attempt", subject, event_id="finish", move=mate) == completed
+    from chess_coach.coaching_short_rehearsal import rehearsed_sources
+
+    assert rehearsed_sources(db, subject, {str(evidence)}) == {}
+    begin(db, evidence, subject, attempt="unassisted-alternative")
+    other = alternative(db, "unassisted-alternative")
+    submit(db, "unassisted-alternative", subject, event_id="answer", move=other)
+    assert process(db, subject)["outcomes"] == {"correct": 1}
+    state = show(db, "unassisted-alternative", subject)
+    board = chess.Board(state["fen"])
+    mating_move = next(move for move in board.legal_moves if _is_mate(board, move))
+    assert (
+        submit(db, "unassisted-alternative", subject, event_id="finish", move=mating_move.uci())[
+            "status"
+        ]
+        == "objective_verified"
+    )
+    assert rehearsed_sources(db, subject, {str(evidence)}) == {}
     assert db.connection.execute("SELECT COUNT(*) FROM training_attempts").fetchone()[0] == 0
     app = create_app(
         db_path=tmp_path / "fixture.sqlite",
@@ -156,3 +173,10 @@ def test_proved_alternative_is_playable_and_only_actual_mate_completes(
         headers={"Tailscale-User-Login": "fixture"},
     )
     assert response.status_code == 200 and b"checkmate objective was verified" in response.data
+
+
+def _is_mate(board, move):
+    board.push(move)
+    result = board.is_checkmate()
+    board.pop()
+    return result
