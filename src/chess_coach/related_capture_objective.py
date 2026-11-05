@@ -2,6 +2,8 @@
 
 import json
 
+import chess
+
 from .objective_answer import answer
 from .objective_capture_contract import TARGET_OBJECTIVE
 from .objective_events import response
@@ -35,8 +37,6 @@ def current(db, row, binding, snapshot_hash):
     board, moves, fingerprint = setup(db, row["source_version"], row["source_key"])
     assessment = binding["assessment"]
     target = board.parse_uci(moves[1]).to_square
-    import chess
-
     if (
         assessment["version"],
         assessment["proof_version"],

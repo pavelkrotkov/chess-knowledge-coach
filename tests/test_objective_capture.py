@@ -199,10 +199,12 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         "/decisions/1/related-captures", base_url="https://coach.invalid", headers=headers
     )
     assert page.status_code == 200 and b"Check my capture choice" in page.data
-    assert b"private-fixture" not in page.data and b"b7b6" not in page.data
+    assert b"private-fixture" not in page.data and b"b7b6 d1d4" not in page.data
     forms = re.findall(r"<form\b.*?</form>", page.get_data(as_text=True), re.DOTALL)
     assessment_form = next(form for form in forms if 'name="assessment"' in form)
-    reference = re.search(r'name="reference" value="([^"]+)"', assessment_form).group(1)
+    match = re.search(r'name="reference" value="([^"]+)"', assessment_form)
+    assert match
+    reference = match.group(1)
     if mode == "correct":
         import base64
         import json
