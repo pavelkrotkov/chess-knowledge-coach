@@ -433,7 +433,7 @@ def test_mate_lesson_starts_owned_practice_and_rechecks_review(tmp_path, monkeyp
     monkeypatch.setattr(chess.engine.SimpleEngine, "popen_uci", lambda _: Engine())
     config = PipelineConfig(learner="fixture_a", engine_path=sys.executable, nodes=100)
     for day in (1, 2):
-        board = chess.Board(FEN)
+        board = chess.Board(FEN if day == 1 else FEN.replace("8/8 w", "P7/8 w"))
         game = chess.pgn.Game()
         game.setup(board)
         game.headers.update(
@@ -469,9 +469,48 @@ def test_mate_lesson_starts_owned_practice_and_rechecks_review(tmp_path, monkeyp
     client = app.test_client()
     headers = {"Tailscale-User-Login": "login"}
     origin = headers | {"Origin": "https://coach.invalid"}
+    plan = client.get("/plan", base_url="https://coach.invalid", headers=headers)
+    assert b"Practice your recurring patterns" in plan.data
     page = client.get("/coaching", base_url="https://coach.invalid", headers=headers)
     assert b"Finding mate in one" in page.data and b"Find related mate practice" in page.data
     csrf, version, key = token(page, "csrf"), token(page, "version"), token(page, "key")
+    assert (
+        b"Try this example next. No unassisted first-move checkmate was found for it in recent practice"
+        in page.data
+    )
+    data = {"csrf": csrf, "source_type": "own-game", "version": version, "key": key}
+    assisted = client.post(
+        "/unified/start", data=data, base_url="https://coach.invalid", headers=origin
+    )
+    practice = client.get(assisted.location, base_url="https://coach.invalid", headers=headers)
+    hinted = client.post(
+        "/unified/hint",
+        data={
+            "csrf": csrf,
+            "attempt": token(practice, "attempt"),
+            "event": token(practice, "event"),
+        },
+        base_url="https://coach.invalid",
+        headers=origin,
+    )
+    practice = client.get(hinted.location, base_url="https://coach.invalid", headers=headers)
+    assisted_move = client.post(
+        "/unified/move",
+        data={
+            "csrf": csrf,
+            "attempt": token(practice, "attempt"),
+            "event": token(practice, "event"),
+            "move": "g6g7",
+        },
+        base_url="https://coach.invalid",
+        headers=origin,
+    )
+    assisted_result = client.get(
+        assisted_move.location, base_url="https://coach.invalid", headers=headers
+    )
+    assert b"checkmate objective was verified" in assisted_result.data
+    page = client.get("/coaching", base_url="https://coach.invalid", headers=headers)
+    assert token(page, "key") == key
     started = client.post(
         "/unified/start",
         data={"csrf": csrf, "source_type": "own-game", "version": version, "key": key},
@@ -492,8 +531,24 @@ def test_mate_lesson_starts_owned_practice_and_rechecks_review(tmp_path, monkeyp
     )
     completed = client.get(moved.location, base_url="https://coach.invalid", headers=headers)
     assert b"checkmate objective was verified" in completed.data
+    page = client.get("/coaching", base_url="https://coach.invalid", headers=headers)
+    assert token(page, "key") != key
+    assert (
+        b"Try this example next. No unassisted first-move checkmate was found for it in recent practice"
+        in page.data
+    )
     db = Database(path)
+    from chess_coach.coaching_practice import choices
+    from chess_coach.coaching_report import report
+
+    assert choices(db, "fixture_a", report(db, "fixture_a"))[0]["key"] == key
     assert db.connection.execute("SELECT COUNT(*) FROM mastery_events").fetchone()[0] == 0
+    assert db.connection.execute("SELECT COUNT(*) FROM training_items").fetchone()[0] == 0
+    review_evidence(db, int(key), decision="accept", actor="fixture")
+    db.close()
+    page = client.get("/coaching", base_url="https://coach.invalid", headers=headers)
+    assert token(page, "key") == key
+    db = Database(path)
     review_evidence(db, int(key), decision="reject", actor="fixture")
     db.close()
     assert (
