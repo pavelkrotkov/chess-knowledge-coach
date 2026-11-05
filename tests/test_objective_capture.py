@@ -144,10 +144,11 @@ def test_browser_and_cli_resume_show_the_bound_objective(tmp_path, monkeypatch, 
     assert b"This move did not capture the named target" in resumed.data
 
 
-@pytest.mark.parametrize("mode", ["correct", "assisted", "incorrect", "unresolved"])
+@pytest.mark.parametrize("mode", ["correct", "assisted", "incorrect", "unresolved", "tampered"])
 def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeypatch, mode):
     import re
 
+    from chess_coach.capture_plan_history import latest
     from chess_coach.db import Database
     from chess_coach.unified_session_events import show
     from chess_coach.web import create_app
@@ -280,6 +281,9 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
     assert post.status_code == 303
     shown = client.get(post.headers["Location"], base_url="https://coach.invalid", headers=headers)
     assert b"Capture the piece on d4" in shown.data and b"It is your turn as white" in shown.data
+    check_db = Database(path)
+    assert latest(check_db, LEARNER, 1)["status"] == "incomplete"
+    check_db.close()
     attempt = token(shown, "attempt")
     if mode == "assisted":
         for endpoint in ("/unified/hint", "/unified/reveal"):
@@ -313,17 +317,35 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         move.headers["Location"], base_url="https://coach.invalid", headers=headers
     )
     assert b"Verification is queued" in pending.data
+    pending_page = client.get("/plan/captures", base_url="https://coach.invalid", headers=headers)
+    assert b"awaiting verification" in pending_page.data
     db = Database(path)
+    pending_history = latest(db, LEARNER, 1)
+    assert pending_history["status"] == "pending"
+    assert pending_history["hints"] == (2 if mode == "assisted" else 0)
     if mode == "unresolved":
         monkeypatch.setattr(
             "chess_coach.objective_verify_dispatch.verify_capture",
             lambda *args: {**args[7], "status": "unresolved", "reason": "proof_limit"},
         )
-    expected = "correct" if mode in {"correct", "assisted"} else mode
+    if mode == "tampered":
+        from chess_coach import objective_verify_dispatch
+
+        original_verify = objective_verify_dispatch.verify_capture
+
+        def mismatched_move(*args):
+            result = original_verify(*args)
+            return {**result, "move": "a1a2"}
+
+        monkeypatch.setattr(objective_verify_dispatch, "verify_capture", mismatched_move)
+    expected = "correct" if mode in {"correct", "assisted", "tampered"} else mode
     assert process(db, LEARNER)["outcomes"] == {expected: 1}
     result = show(db, attempt, LEARNER)["verification"]
     assert result["status"] == expected
     assert result["assistance"] == ("revealed" if mode == "assisted" else "unassisted")
+    history = latest(db, LEARNER, 1)
+    assert history["status"] == ("unavailable" if mode == "tampered" else expected)
+    assert history["hints"] == (2 if mode == "assisted" else 0)
     finished = client.get(
         move.headers["Location"], base_url="https://coach.invalid", headers=headers
     )
@@ -332,8 +354,19 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         "assisted": b"A continuation was revealed",
         "incorrect": b"This move did not capture the named target",
         "unresolved": b"The move remains ungraded",
+        "tampered": b"bounded capture objective is verified",
     }
     assert text[mode] in finished.data
+    adaptive = client.get("/plan/captures", base_url="https://coach.invalid", headers=headers)
+    adaptive_text = {
+        "correct": b"first move was verified without a hint or reveal",
+        "assisted": b"first move was verified with assistance",
+        "incorrect": b"checked first move did not capture the named target",
+        "unresolved": b"first move remains ungraded",
+        "tampered": b"latest assessment could not be checked",
+    }
+    assert adaptive_text[mode] in adaptive.data
+    assert b"Comparisons need more comparable first attempts" in adaptive.data
     assert db.connection.execute("SELECT COUNT(*) FROM training_attempts").fetchone()[0] == 0
     if mode == "correct":
         again = client.get(
@@ -350,7 +383,124 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
             rehearsal.headers["Location"], base_url="https://coach.invalid", headers=headers
         )
         assert b"Find a continuation" in rehearsal_page.data
+        assert latest(db, LEARNER, 1)["status"] == "correct"
     review_evidence(db, evidence, decision="reject", actor="reviewer")
     with pytest.raises(ValueError):
         show(db, attempt, LEARNER)
+    assert latest(db, LEARNER, 1)["status"] == "stale"
+    if mode == "correct":
+        for index in range(101):
+            db.connection.execute(
+                """INSERT INTO unified_sessions
+                (attempt_id,subject,source_type,source_version,source_key,snapshot_hash,prompt_fen,
+                 learner_color,objective,lines_json,provenance_json,current_fen,candidates_json,
+                 next_index,status,started_at)
+                VALUES(?,?,'public','fixture','fixture','fixture',?,'white','legal_line',
+                       '[]','{}',?,'[]',0,'active','9999-01-01T00:00:00+00:00')""",
+                (f"unrelated-{index:03}", LEARNER, chess.STARTING_FEN, chess.STARTING_FEN),
+            )
+        db.connection.commit()
+        limited = latest(db, LEARNER, 1)
+        assert limited["status"] == "none" and limited["limited"]
+    db.close()
+
+
+def test_capture_plan_uses_independent_current_sources_and_is_lazy(tmp_path, monkeypatch):
+    import sys
+
+    import chess.pgn
+
+    from chess_coach.capture_plan import report
+    from chess_coach.ingest import ingest_pgn
+    from chess_coach.pipeline_config import PipelineConfig
+    from chess_coach.pipeline_inputs import engine_identity, game_input
+    from chess_coach.pipeline_work import run_analysis
+    from chess_coach.web import create_app
+
+    path = tmp_path / "capture-plan.sqlite"
+    db = make_game(path, monkeypatch)
+    first = process_decision(db, 1, LEARNER)["evidence_ids"][0]
+    initial = report(db, LEARNER)
+    assert initial["source"]["games"] == 1 and initial["history"]["status"] == "none"
+    before = db.connection.total_changes
+    operations = []
+    db.connection.set_trace_callback(lambda sql: operations.append(sql.split(None, 1)[0].upper()))
+    assert report(db, LEARNER)["source"]["games"] == 1
+    db.connection.set_trace_callback(None)
+    assert not {"BEGIN", "SAVEPOINT"} & set(operations)
+    assert db.connection.total_changes == before
+
+    app = create_app(
+        db_path=path,
+        subject=LEARNER,
+        actor="operator",
+        corpus="legacy",
+        login="fixture",
+        origin="https://coach.invalid",
+    )
+    client = app.test_client()
+    headers = {"Tailscale-User-Login": "fixture"}
+    with monkeypatch.context() as patch:
+
+        def forbidden(*args, **kwargs):
+            raise AssertionError("capture analysis ran on the daily plan")
+
+        patch.setattr("chess_coach.capture_plan.report", forbidden)
+        plan = client.get("/plan", base_url="https://coach.invalid", headers=headers)
+    assert plan.status_code == 200 and b"/plan/captures" in plan.data
+    single = client.get("/plan/captures", base_url="https://coach.invalid", headers=headers)
+    assert single.status_code == 200 and b"single game does not establish recurrence" in single.data
+    assert b"No certified assessment for this source" in single.data
+
+    board = chess.Board("4k3/7p/8/8/3q4/8/8/3RK3 w - - 0 1")
+    game = chess.pgn.Game()
+    game.setup(board)
+    game.headers["White"] = LEARNER
+    game.headers["Black"] = "fixture_opponent"
+    game.headers["Result"] = "*"
+    game.headers["UTCDate"] = "2026.01.01"
+    game.headers["UTCTime"] = "12:01:00"
+    node = game.add_variation(board.parse_uci("e1f1"))
+    board.push_uci("e1f1")
+    node.add_variation(board.parse_uci("e8f8"))
+    config = PipelineConfig(learner=LEARNER, engine_path=sys.executable, nodes=100)
+    new_evidence = []
+    for _ in range(2):
+        ingest_pgn(db, str(game))
+        game_id = db.connection.execute("SELECT MAX(id) FROM games").fetchone()[0]
+        position = db.connection.execute(
+            "SELECT id FROM positions WHERE game_id=? ORDER BY ply LIMIT 1", (game_id,)
+        ).fetchone()[0]
+        assert (
+            run_analysis(
+                db, game_id, game_input(db, game_id), config, engine_identity(sys.executable)
+            )["status"]
+            == "complete"
+        )
+        new_evidence.append(process_decision(db, position, LEARNER)["evidence_ids"][0])
+
+    from chess_coach.recurrence_cursor import MAX_ID
+    from chess_coach.recurrence_sources import evidence as recurrence_evidence
+
+    bounded, truncated = recurrence_evidence(
+        db, LEARNER, "hanging_piece", "execute", MAX_ID, failure_only=True, limit=1
+    )
+    assert len(bounded) == 1 and truncated
+    repeated = report(db, LEARNER)
+    assert repeated["source"]["games"] == 2
+    assert repeated["source"]["observations"] == 2
+    page = client.get("/plan/captures", base_url="https://coach.invalid", headers=headers)
+    assert b"across 2 independent games" in page.data
+    assert b"detector was not rerun" in page.data
+    linked = client.get(
+        f"/decisions/{repeated['source']['position_id']}/related-captures",
+        base_url="https://coach.invalid",
+        headers=headers,
+    )
+    assert linked.status_code == 200
+    for evidence_id in new_evidence:
+        review_evidence(db, evidence_id, decision="reject", actor="reviewer")
+    assert report(db, LEARNER)["source"]["games"] == 1
+    review_evidence(db, first, decision="reject", actor="reviewer")
+    assert report(db, LEARNER)["source"] is None
     db.close()

@@ -1,6 +1,7 @@
 """Preview and start current owned capture transfers in the private browser."""
 
 import secrets
+import sqlite3
 
 from flask import Blueprint, current_app, redirect, render_template, request, session, url_for
 
@@ -57,3 +58,14 @@ def begin(position):
         ), 400
     session["unified_attempt"] = attempt
     return redirect(url_for("unified_practice.show_page", attempt=attempt), code=303)
+
+
+@related_capture.get("/plan/captures")
+def plan():
+    from .capture_plan import report
+
+    try:
+        result = report(database(), current_app.config["SUBJECT"])
+    except (sqlite3.Error, ValueError, TypeError, KeyError, IndexError):
+        return render_template("capture_plan.html", report=None, error=True)
+    return render_template("capture_plan.html", report=result, error=None)
