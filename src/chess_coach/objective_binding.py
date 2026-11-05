@@ -1,7 +1,7 @@
 """Bind supported owned objective versions to the session snapshot."""
 
 from .objective_binding_forks import BINDINGS as FORK_BINDINGS
-from .objective_binding_scope import owned_scope
+from .objective_binding_scope import owned_scope, owned_snapshot_scope
 from .objective_capture_contract import (
     GAIN_OBJECTIVE,
     GAIN_VERSION,
@@ -27,6 +27,15 @@ from .objective_short_source import VERSION as SHORT_VERSION
 def matches(session, data, request):
     return (public_scope(session, request) and public_binding(data, request)) or (
         owned_scope(session, request) and _binding(session, data, request)
+    )
+
+
+def matches_short_terminal(session, data, request):
+    return (
+        session["status"] in {"needs_verification", "objective_verified"}
+        and (session["source_version"], session["objective"]) == (SHORT_VERSION, "mate_within_two")
+        and owned_snapshot_scope(session, request)
+        and _binding(session, data, request)
     )
 
 

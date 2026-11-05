@@ -6,6 +6,13 @@ from .objective_short_history import history_hash, validate_later_events
 
 
 def resume(db, session, row, result, board, move):
+    result = continuation(result, board, move)
+    if not result["complete"]:
+        validate_later_events(db, session, row["event_id"], result["board"])
+    return result
+
+
+def continuation(result, board, move):
     proof = result["proof"]
     if proof["status"] != "proved" or proof["move"]["uci"] != move.uci():
         raise ValueError("continuation proof unavailable")
@@ -16,7 +23,6 @@ def resume(db, session, row, result, board, move):
     selected = min(line.split() for line in lines)
     defense, mate = selected[1:]
     board.push(board.parse_uci(defense))
-    validate_later_events(db, session, row["event_id"], board)
     return {"board": board, "defense": defense, "mate": mate, "complete": False}
 
 
