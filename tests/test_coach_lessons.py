@@ -405,8 +405,8 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
 
     calls = []
 
-    def synthetic_publish(database, intent_path, course, *, action):
-        calls.append((database, intent_path, course, action))
+    def synthetic_publish(database, intent_path, course, *, action, check=None):
+        calls.append((database, intent_path, course, action, check))
         return "synthetic destination"
 
     with monkeypatch.context() as patch:
@@ -418,9 +418,18 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
         )
         assert calls[0][1].name == f"tactical-study-{selected_hash}-intent.json"
         assert calls[0][2]["course_sha256"] == selected_hash
+        assert (
+            tactical_session.publish_locked(project, related_output, selected_hash)
+            == "synthetic destination"
+        )
+        assert calls[1][1] == calls[0][1] and calls[1][2] == calls[0][2]
+        assert calls[1][3].keywords["strict"] is True
+        assert calls[1][4] is calls[1][3].keywords["check"]
         with pytest.raises(ValueError):
             tactical_session.prepare_locked(project, related_output, "0" * 64)
-        assert len(calls) == 1 and not calls[0][1].exists()
+        with pytest.raises(ValueError):
+            tactical_session.publish_locked(project, related_output, "0" * 64)
+        assert len(calls) == 2 and not calls[0][1].exists()
     conflicting = json.loads(related_preview_path.read_bytes())
     pattern = conflicting["preview"]["patterns"][0]
     conflicting["preview"]["selection"]["unavailable"].append(
@@ -476,7 +485,7 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
         patch.setattr(tactical_session, "_publish", synthetic_publish)
         with pytest.raises(ValueError):
             tactical_session.prepare_locked(project, related_output, selected_hash)
-        assert len(calls) == 1 and not json.loads(calls[0][1].read_text())["create_pending"]
+        assert len(calls) == 2 and not json.loads(calls[0][1].read_text())["create_pending"]
     stale_output = planning / "stale-export.json"
     with pytest.raises(ValueError):
         export_candidate(project, first_preview, preview["preview_sha256"], stale_output)
@@ -545,7 +554,31 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
     assert not (planning / "publisher-intent.json").exists()
     db.close()
 
+    from chess_coach.deep_selection_source import learner_key
+
+    private_hash = "a" * 64
+    private_receipt = planning / f"tactical-study-{private_hash}-intent.json"
+    private_receipt.write_text(
+        json.dumps(
+            {
+                "course_sha256": private_hash,
+                "complete": True,
+                "privacy_verified": True,
+                "anonymous_verified": True,
+                "ordered_verified": True,
+                "learner_key": learner_key(LEARNER),
+                "study": "abcd1234",
+                "entry_chapter": "ch000000",
+                "chapter_ids": ["ch000000"],
+                "chapters": ["done"],
+                "chapter_modes": ["conceal"],
+                "verified_at": "2026-01-01T00:00:00+00:00",
+            }
+        )
+    )
+    private_receipt.chmod(0o600)
     app = create_app(
+        project_root=project,
         db_path=path,
         subject=LEARNER,
         actor="fixture",
@@ -558,6 +591,8 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
     assert client.get("/coaching", base_url="https://coach.invalid").status_code == 403
     page = client.get("/coaching", base_url="https://coach.invalid", headers=headers)
     assert page.status_code == 200
+    assert b"Open your tactical course" in page.data
+    assert b"/study/abcd1234/ch000000#0" in page.data
     assert b"Finding captures" in page.data and b"2 independent games" in page.data
     assert b"Source position before the move" in page.data and b'class="board"' in page.data
     assert b"Only 1 of three" in page.data and b"Recorded best-search continuation" in page.data

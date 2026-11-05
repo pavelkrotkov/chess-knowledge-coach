@@ -5,6 +5,7 @@ from flask import Blueprint, abort, current_app, redirect, render_template, url_
 from .coaching_practice import choices
 from .coaching_report import VERSION, report
 from .lesson_history import save
+from .tactical_study_status import status as tactical_study_status
 from .web_board import board_rows
 from .web_db import database
 from .web_study_status import status as study_status
@@ -27,6 +28,9 @@ def index():
         board_rows=board_rows,
         practice=practice,
         study_status=study_status(current_app.config["PROJECT_ROOT"]),
+        tactical_study_status=tactical_study_status(
+            current_app.config["PROJECT_ROOT"], current_app.config["SUBJECT"]
+        ),
     )
 
 

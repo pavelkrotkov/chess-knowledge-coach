@@ -34,7 +34,7 @@ def publish_locked(path, planning, preview, course):
         return _publish(path, intent, course)
 
 
-def _publish(path, intent, course, *, action=publish):
+def _publish(path, intent, course, *, action=publish, check=lambda: None):
     db = Database(path)
     try:
         with private_network_logs(), httpx.Client(timeout=30.0, follow_redirects=False) as client:
@@ -42,7 +42,7 @@ def _publish(path, intent, course, *, action=publish):
                 os.environ["LICHESS_STUDY_TOKEN"],
                 os.environ["CHESS_SUBJECT"],
                 client,
-                guard=lambda: _guard(db),
+                guard=lambda: _guard(db, check),
                 observe=lambda response: observe_response(db, response, None),
             )
             return action(remote, intent, course)
@@ -50,6 +50,7 @@ def _publish(path, intent, course, *, action=publish):
         db.close()
 
 
-def _guard(db):
+def _guard(db, check=lambda: None):
+    check()
     if active_deadline(db, None) is not None:
         raise StudyError("Lichess has requested a retry delay")
