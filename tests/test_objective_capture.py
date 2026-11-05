@@ -282,7 +282,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
     shown = client.get(post.headers["Location"], base_url="https://coach.invalid", headers=headers)
     assert b"Capture the piece on d4" in shown.data and b"It is your turn as white" in shown.data
     check_db = Database(path)
-    assert latest(check_db, LEARNER, 1)["status"] == "incomplete"
+    assert latest(check_db, LEARNER, 1, "capture")["status"] == "incomplete"
     check_db.close()
     attempt = token(shown, "attempt")
     if mode == "assisted":
@@ -320,7 +320,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
     pending_page = client.get("/plan/captures", base_url="https://coach.invalid", headers=headers)
     assert b"awaiting verification" in pending_page.data
     db = Database(path)
-    pending_history = latest(db, LEARNER, 1)
+    pending_history = latest(db, LEARNER, 1, "capture")
     assert pending_history["status"] == "pending"
     assert pending_history["hints"] == (2 if mode == "assisted" else 0)
     if mode == "unresolved":
@@ -343,8 +343,9 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
     result = show(db, attempt, LEARNER)["verification"]
     assert result["status"] == expected
     assert result["assistance"] == ("revealed" if mode == "assisted" else "unassisted")
-    history = latest(db, LEARNER, 1)
+    history = latest(db, LEARNER, 1, "capture")
     assert history["status"] == ("unavailable" if mode == "tampered" else expected)
+    assert latest(db, LEARNER, 1, "different")["status"] == "none"
     assert history["hints"] == (2 if mode == "assisted" else 0)
     finished = client.get(
         move.headers["Location"], base_url="https://coach.invalid", headers=headers
@@ -366,6 +367,9 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         "tampered": b"latest assessment could not be checked",
     }
     assert adaptive_text[mode] in adaptive.data
+    assert (b"Explore another unfamiliar capture example" in adaptive.data) == (
+        mode in {"correct", "incorrect"}
+    )
     assert b"Comparisons need more comparable first attempts" in adaptive.data
     assert db.connection.execute("SELECT COUNT(*) FROM training_attempts").fetchone()[0] == 0
     if mode == "correct":
@@ -383,11 +387,11 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
             rehearsal.headers["Location"], base_url="https://coach.invalid", headers=headers
         )
         assert b"Find a continuation" in rehearsal_page.data
-        assert latest(db, LEARNER, 1)["status"] == "correct"
+        assert latest(db, LEARNER, 1, "capture")["status"] == "correct"
     review_evidence(db, evidence, decision="reject", actor="reviewer")
     with pytest.raises(ValueError):
         show(db, attempt, LEARNER)
-    assert latest(db, LEARNER, 1)["status"] == "stale"
+    assert latest(db, LEARNER, 1, "capture")["status"] == "stale"
     if mode == "correct":
         for index in range(101):
             db.connection.execute(
@@ -400,7 +404,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
                 (f"unrelated-{index:03}", LEARNER, chess.STARTING_FEN, chess.STARTING_FEN),
             )
         db.connection.commit()
-        limited = latest(db, LEARNER, 1)
+        limited = latest(db, LEARNER, 1, "capture")
         assert limited["status"] == "none" and limited["limited"]
     db.close()
 
@@ -420,12 +424,12 @@ def test_capture_plan_uses_independent_current_sources_and_is_lazy(tmp_path, mon
     path = tmp_path / "capture-plan.sqlite"
     db = make_game(path, monkeypatch)
     first = process_decision(db, 1, LEARNER)["evidence_ids"][0]
-    initial = report(db, LEARNER)
+    initial = report(db, LEARNER, "legacy")
     assert initial["source"]["games"] == 1 and initial["history"]["status"] == "none"
     before = db.connection.total_changes
     operations = []
     db.connection.set_trace_callback(lambda sql: operations.append(sql.split(None, 1)[0].upper()))
-    assert report(db, LEARNER)["source"]["games"] == 1
+    assert report(db, LEARNER, "legacy")["source"]["games"] == 1
     db.connection.set_trace_callback(None)
     assert not {"BEGIN", "SAVEPOINT"} & set(operations)
     assert db.connection.total_changes == before
@@ -450,7 +454,7 @@ def test_capture_plan_uses_independent_current_sources_and_is_lazy(tmp_path, mon
     assert plan.status_code == 200 and b"/plan/captures" in plan.data
     single = client.get("/plan/captures", base_url="https://coach.invalid", headers=headers)
     assert single.status_code == 200 and b"single game does not establish recurrence" in single.data
-    assert b"No certified assessment for this source" in single.data
+    assert b"No certified assessment in the active corpus for this source" in single.data
 
     board = chess.Board("4k3/7p/8/8/3q4/8/8/3RK3 w - - 0 1")
     game = chess.pgn.Game()
@@ -486,7 +490,7 @@ def test_capture_plan_uses_independent_current_sources_and_is_lazy(tmp_path, mon
         db, LEARNER, "hanging_piece", "execute", MAX_ID, failure_only=True, limit=1
     )
     assert len(bounded) == 1 and truncated
-    repeated = report(db, LEARNER)
+    repeated = report(db, LEARNER, "legacy")
     assert repeated["source"]["games"] == 2
     assert repeated["source"]["observations"] == 2
     page = client.get("/plan/captures", base_url="https://coach.invalid", headers=headers)
@@ -500,7 +504,7 @@ def test_capture_plan_uses_independent_current_sources_and_is_lazy(tmp_path, mon
     assert linked.status_code == 200
     for evidence_id in new_evidence:
         review_evidence(db, evidence_id, decision="reject", actor="reviewer")
-    assert report(db, LEARNER)["source"]["games"] == 1
+    assert report(db, LEARNER, "legacy")["source"]["games"] == 1
     review_evidence(db, first, decision="reject", actor="reviewer")
-    assert report(db, LEARNER)["source"] is None
+    assert report(db, LEARNER, "legacy")["source"] is None
     db.close()

@@ -65,7 +65,7 @@ def plan():
     from .capture_plan import report
 
     try:
-        result = report(database(), current_app.config["SUBJECT"])
+        result = report(database(), current_app.config["SUBJECT"], current_app.config["CORPUS"])
     except (sqlite3.Error, ValueError, TypeError, KeyError, IndexError):
         return render_template("capture_plan.html", report=None, error=True)
     return render_template("capture_plan.html", report=result, error=None)

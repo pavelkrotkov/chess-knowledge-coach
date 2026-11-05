@@ -19,13 +19,17 @@ def _rows(db, subject):
     ).fetchall()
 
 
-def _selected(rows, position):
+def _matching(row, position, corpus):
+    if row["source_version"] != corpus or not is_source(row):
+        return False
+    binding = json.loads(row["provenance_json"])["related_capture"]
+    return binding["position_id"] == position
+
+
+def _selected(rows, position, corpus):
     chosen = None
     for row in rows:
-        if not is_source(row):
-            continue
-        binding = json.loads(row["provenance_json"])["related_capture"]
-        if binding["position_id"] != position:
+        if not _matching(row, position, corpus):
             continue
         when = parse_utc(row["started_at"])
         if when is None or when.isoformat() != row["started_at"]:
@@ -39,12 +43,12 @@ def _selected(rows, position):
     return chosen
 
 
-def latest(db, subject, position):
+def latest(db, subject, position, corpus):
     try:
         # Inspect only the newest bounded session window; an older result may exist.
         rows = _rows(db, subject)
         limited = len(rows) > LIMIT
-        row = _selected(rows[:LIMIT], position)
+        row = _selected(rows[:LIMIT], position, corpus)
         if row is None:
             return {"status": "none", "limited": limited}
         if row["status"] == "active":
