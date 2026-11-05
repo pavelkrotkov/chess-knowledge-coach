@@ -6,6 +6,15 @@ from .style_schedule_clock import reached
 from .style_schedule_game import MAX_POSITIONS, _standard
 
 
+def _consistent(board, row):
+    move = chess.Move.from_uci(row[3])
+    if move.promotion or move not in board.legal_moves:
+        raise ValueError("unsupported or illegal move")
+    board.push(move)
+    if row[5] is None or row[5] > 200 or board.fen() != row[4]:
+        raise ValueError("stored move and position disagree")
+
+
 def _checked_board(row, color):
     # The previous row stores the board after its move: this turn's start.
     fen, size = row[1], row[2]
@@ -14,7 +23,9 @@ def _checked_board(row, color):
     board = chess.Board(fen)
     if not board.is_valid() or board.turn != (color == "white"):
         raise ValueError("invalid position or turn")
-    return board.is_check() and board.legal_moves.count() > 1
+    candidate = board.is_check() and board.legal_moves.count() > 1
+    _consistent(board, row)
+    return candidate
 
 
 def _count(rows, color):
@@ -34,7 +45,8 @@ def inspect(db, game, color):
         raise ValueError("unsupported game")
     # ponytail: at most 1,001 rows per game; full replay validates provenance.
     rows = db.connection.execute(
-        """SELECT p.ply, substr(prev.fen, 1, 201), length(prev.fen)
+        """SELECT p.ply, substr(prev.fen, 1, 201), length(prev.fen),
+               substr(p.uci, 1, 6), substr(p.fen, 1, 201), length(p.fen)
         FROM positions p LEFT JOIN positions prev
           ON prev.game_id=p.game_id AND prev.ply=p.ply-1
         WHERE p.game_id=? ORDER BY p.ply LIMIT ?""",

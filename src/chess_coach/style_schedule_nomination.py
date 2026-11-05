@@ -20,6 +20,9 @@ def _collect(db, ordered, coverage):
         try:
             checks, checked, count = inspect(db, game, color)
         except (ValueError, TypeError, IndexError):
+            if reached():
+                coverage["nomination_unchecked_games"] = len(ordered) - index
+                break
             coverage["nomination_unknown_games"] += 1
             continue
         coverage["nomination_checked_decisions"] += checked
