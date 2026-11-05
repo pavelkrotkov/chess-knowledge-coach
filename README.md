@@ -1030,6 +1030,27 @@ legal session and reveal paths. Other operation-specific transfer adapters
 remain required release work.
 
 
+### Mate-in-one game samples
+
+The private Daily plan and Recurring patterns pages link to a separate game
+sample view. It selects the newest 20 independent attributable games and the
+preceding 20 by verified UTC game-start time, then legally replays every recorded
+learner decision in games marked finished and checks every legal move for
+immediate mate. The two sample dates,
+games, opportunities, misses and games with misses are shown; observations link
+to source decisions. This uses game decisions, not training attempts or
+detector-selected positions.
+
+The view checks up to 100 game records, 1 MB per record and 1,000 positions per
+game, collapses duplicate imports and checks the next independent game at the older boundary.
+Unknown dates or ownership, unavailable games, insufficient games, or tied
+boundary times prevent a comparison. Game starts do not establish move order
+for overlapping games. Sample sizes are small and opportunities within a game
+can be correlated, and the game record cannot prove whether moves are missing;
+this describes the selected games, not a causal training effect or confirmed
+improvement. Other patterns and broader periods remain
+separate work.
+
 ### Recurring-pattern candidates
 
 `chess-coach --db PATH recurrence --learner NAME` and the private **Recurring

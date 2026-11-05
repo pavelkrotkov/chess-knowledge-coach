@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Mate-in-one game samples — Chess coach{% endblock %}
+{% block content %}
+<h2>Mate-in-one in your games</h2>
+<p>These are two consecutive samples of up to 20 independent games, ordered by recorded UTC game-start time. Every recorded learner move in a game marked finished is replayed and checked for a legal immediate checkmate. The samples can cover different lengths of time and overlapping games.</p>
+{% if report.comparable %}
+<p>Both 20-game samples and their boundaries were verified. Counts describe these games only.</p>
+{% else %}
+<p>Comparison unavailable: the two complete samples or their boundaries could not be verified. The counts below are partial and should not be compared.</p>
+{% endif %}
+<p>Small samples and repeated opportunities within a game make the counts uncertain. Game context can differ. These observations do not establish improvement, mastery, or a cause; practice attempts are not included.</p>
+{% for label, sample in (("More recent", report.newer), ("Earlier", report.earlier)) %}
+<section><h3>{{ label }} games</h3>
+<p>{{ sample.games }} games{% if sample.newest %}, from {{ sample.oldest }} to {{ sample.newest }} UTC{% endif %}.</p>
+<p>{{ sample.misses }} missed of {{ sample.opportunities }} verified mate-in-one opportunities, across {{ sample.miss_games }} games with a miss.</p>
+<p>Source decisions: {% for item in sample.examples %}<a href="{{ url_for('views.decision_detail', position_id=item.position_id) }}">{{ "Miss" if item.missed else "Mate played" }}</a>{% if not loop.last %}; {% endif %}{% else %}none{% endfor %}.</p>
+</section>
+{% endfor %}
+<details><summary>Coverage details</summary>
+<p>Up to 100 dated game records are considered to find 40 independent games and check the next boundary. Duplicates removed: {{ report.duplicates }}. Unavailable games: {{ report.unavailable }}. Unknown game dates: at least {{ report.coverage.unknown_time_lower_bound }}. Unknown ownership, stale or mismatched time projections: at least {{ report.coverage.unknown_ownership_global_lower_bound }}. Candidate rechecks failed: {{ report.coverage.candidate_recheck_failed }}.</p>
+<p>Each game is limited to 1,000 stored positions and a 1 MB game record. Equal game-start times at a sample boundary, unavailable games, uncertain dates or ownership, and insufficient independent games prevent a comparison. The game's start time does not establish the order of moves in overlapping games. Only recorded moves can be checked; the game record cannot prove whether moves are missing. This check does not use detector-selected or practice evidence.</p>
+</details>
+{% endblock %}
