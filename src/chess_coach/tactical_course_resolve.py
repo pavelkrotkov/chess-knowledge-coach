@@ -3,6 +3,7 @@
 from .tactical_course_budget import PreviewUnavailable
 from .tactical_course_chapters import owned
 from .tactical_course_deadline import PreviewDeadline
+from .tactical_course_familiar import familiarity
 from .tactical_course_related import unfamiliar
 
 
@@ -18,8 +19,9 @@ def related(db, subject, corpus, choice, budget):
     if choice["kind"] == "protection":
         return None, "related matching unsupported"
     try:
+        familiar_data = familiarity(db, subject, budget)
         with budget.scope(snapshot=False):
-            item = unfamiliar(db, subject, corpus, choice)
+            item = unfamiliar(db, subject, corpus, choice, familiar_data=familiar_data)
     except PreviewDeadline:
         budget.check()
         return None, "related matching deferred: time budget"

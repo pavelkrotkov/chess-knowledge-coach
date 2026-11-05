@@ -11,15 +11,19 @@ from .related_transfer_admission import admit
 from .unified_sources import resolve_source
 
 
-def unfamiliar(db, subject, corpus, choice):
+def unfamiliar(db, subject, corpus, choice, *, familiar_data=None):
     kind = choice["kind"]
     if kind == "protection":
         return None
     if kind == "capture":
-        selected = capture_selection(db, subject, choice["position_id"], corpus)
+        selected = capture_selection(
+            db, subject, choice["position_id"], corpus, familiar_data=familiar_data
+        )
         version, motif = CAPTURE_VERSION, "material_capture"
     else:
-        selected = mate_selection(db, subject, choice["evidence_id"], corpus)
+        selected = mate_selection(
+            db, subject, choice["evidence_id"], corpus, familiar_data=familiar_data
+        )
         version, motif = MATE_VERSION, "mate"
     if selected is None or not selected[3]:
         return None

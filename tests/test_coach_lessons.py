@@ -179,6 +179,75 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
     )
     material_decision(db, position, LEARNER)
 
+    # Compare the paged scan with the established complete scan.
+    import sqlite3
+
+    import chess
+
+    import chess_coach.tactical_course_familiar_games as familiarity_games
+    from chess_coach.related_capture_familiar import familiarity as original_familiarity
+    from chess_coach.tactical_course_budget import Budget, PreviewUnavailable
+    from chess_coach.tactical_course_deadline import PreviewDeadline
+    from chess_coach.tactical_course_familiar import familiarity as paged_familiarity
+
+    db.connection.execute(
+        "INSERT INTO puzzle_sessions(attempt_id,corpus_version,corpus_checksum,puzzle_id,"
+        "initial_fen,solution,current_fen,next_index,status,hints_used,started_at) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            "familiar-fixture",
+            "test",
+            "checksum",
+            "puzzle",
+            chess.STARTING_FEN,
+            "e2e4 e7e5",
+            chess.STARTING_FEN,
+            0,
+            "active",
+            0,
+            "2026-01-01",
+        ),
+    )
+    db.connection.execute(
+        "INSERT INTO games(pgn,white,black,result) VALUES(?,?,?,?)",
+        ("unrelated", "other", "other", "*"),
+    )
+    db.connection.commit()
+    with monkeypatch.context() as patch:
+        patch.setattr(familiarity_games, "PAGE", 1)
+        original = original_familiarity(db, LEARNER)
+        budget = Budget(db)
+        paged = paged_familiarity(db, LEARNER, budget)
+        assert paged[:2] == original[:2]
+        assert paged_familiarity(db, LEARNER, budget) is paged
+        for key in paged[0]:
+            assert paged[2](key) == original[2](key)
+
+    original_pages = familiarity_games._pages
+
+    def changed_pages(*args, **kwargs):
+        for rows in original_pages(*args, **kwargs):
+            yield rows
+            with sqlite3.connect(path) as writer:
+                writer.execute("UPDATE games SET event=event WHERE id=1")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(familiarity_games, "PAGE", 1)
+        patch.setattr(familiarity_games, "_pages", changed_pages)
+        with pytest.raises(PreviewUnavailable, match="changed"):
+            paged_familiarity(db, LEARNER, Budget(db))
+    with monkeypatch.context() as patch:
+
+        def interrupted(*_args):
+            raise PreviewDeadline()
+
+        patch.setattr(familiarity_games, "_initial_prompt", interrupted)
+        budget = Budget(db)
+        with pytest.raises(PreviewDeadline):
+            paged_familiarity(db, LEARNER, budget)
+        with pytest.raises(PreviewDeadline):
+            paged_familiarity(db, LEARNER, budget)
+
     from chess_coach.course_preview import preview_hash
     from chess_coach.ops_tactical_course import prepare
     from chess_coach.ops_tactical_export import prepare as export_candidate
@@ -317,6 +386,14 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
     related_output = planning / "related-export.json"
     prepare(project, related_preview_path)
     related_preview = json.loads(related_preview_path.read_bytes())
+    from chess_coach.related_capture import _selection as capture_selection
+
+    position_id = json.loads(first_content)["preview"]["chapters"][0]["source"]["position_id"]
+    old_selection = capture_selection(db, LEARNER, position_id, "test")
+    new_selection = capture_selection(
+        db, LEARNER, position_id, "test", familiar_data=paged_familiarity(db, LEARNER, Budget(db))
+    )
+    assert new_selection == old_selection
     assert len(related_preview["preview"]["chapters"]) == 2
     export_candidate(
         project, related_preview_path, related_preview["preview_sha256"], related_output

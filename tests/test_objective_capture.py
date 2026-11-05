@@ -215,7 +215,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         matched, reason = related(db, LEARNER, "capture", choice, Budget(db))
         assert reason is None and matched["mode"] == "conceal"
 
-        def slow_match(*_args):
+        def slow_match(*_args, **_kwargs):
             time.sleep(0.05)
 
         with monkeypatch.context() as patch:
@@ -230,7 +230,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
             )
         assert item is None and reason == "related matching deferred: time budget"
 
-        def slow_sql(connection_db, *_args):
+        def slow_sql(connection_db, *_args, **_kwargs):
             connection_db.connection.execute(
                 "WITH RECURSIVE n(x) AS (VALUES(0) UNION ALL SELECT x+1 FROM n WHERE x<100000000) SELECT sum(x) FROM n"
             ).fetchone()
