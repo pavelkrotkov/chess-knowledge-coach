@@ -6,6 +6,7 @@ from .study_import import upload_all
 from .study_intent import open_intent
 from .study_privacy import metadata
 from .study_remote import StudyError
+from .tactical_study_intents import require_clear
 
 
 def publish(remote, path, course):
@@ -13,7 +14,9 @@ def publish(remote, path, course):
     account = remote.account()
     require_scopes(remote)
     if state["study"] is None:
-        destination(remote, path, state, account)
+        destination(
+            remote, path, state, account, before_create=lambda: require_clear(path.parent, path)
+        )
     if metadata(remote, state["study"]).get("name") != state["marker"]:
         raise StudyError("Study marker no longer matches the publication intent")
     upload_all(remote, path, state, course["course"]["chapters"])

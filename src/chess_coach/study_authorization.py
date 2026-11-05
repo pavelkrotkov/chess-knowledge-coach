@@ -5,6 +5,12 @@ class StudyError(ValueError):
     """Study publication cannot safely proceed."""
 
 
+class StudyHTTPError(StudyError):
+    def __init__(self, status, message):
+        super().__init__(message)
+        self.status = status
+
+
 def require_scopes(remote):
     result = remote.request(
         "POST", "/api/token/test", content=remote.token, headers_override=True
@@ -21,4 +27,4 @@ def fail(status):
         403: "Lichess permission or scope denied",
         429: "Lichess rate limit requested",
     }
-    raise StudyError(messages.get(status, "Lichess request did not complete"))
+    raise StudyHTTPError(status, messages.get(status, "Lichess request did not complete"))
