@@ -185,6 +185,75 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
     )
     db.connection.execute("UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus,))
     db.connection.commit()
+    if mode == "correct":
+        from chess_coach.recurrence_snapshot import read_snapshot
+        from chess_coach.tactical_course_related import unfamiliar
+
+        with read_snapshot(db):
+            course_chapter = unfamiliar(
+                db,
+                LEARNER,
+                "capture",
+                {"kind": "capture", "position_id": 1, "evidence_id": evidence},
+            )
+        assert course_chapter["mode"] == "conceal"
+        assert "Pattern-cued unfamiliar worked example" in course_chapter["pgn"]
+        assert "Worked example, ungraded" in course_chapter["pgn"]
+        with pytest.raises(ValueError, match="differs"):
+            unfamiliar(
+                db,
+                LEARNER,
+                "capture",
+                {"kind": "capture", "position_id": 1, "evidence_id": evidence + 1},
+            )
+        import time
+
+        from chess_coach.tactical_course_budget import Budget, PreviewUnavailable
+        from chess_coach.tactical_course_resolve import related
+
+        choice = {"kind": "capture", "position_id": 1, "evidence_id": evidence}
+        matched, reason = related(db, LEARNER, "capture", choice, Budget(db))
+        assert reason is None and matched["mode"] == "conceal"
+
+        def slow_match(*_args):
+            time.sleep(0.05)
+
+        with monkeypatch.context() as patch:
+            patch.setattr("chess_coach.tactical_course_budget.SLICE_SECONDS", 0.01)
+            patch.setattr("chess_coach.tactical_course_resolve.unfamiliar", slow_match)
+            item, reason = related(
+                db,
+                LEARNER,
+                "capture",
+                {"kind": "capture", "position_id": 1, "evidence_id": evidence},
+                Budget(db),
+            )
+        assert item is None and reason == "related matching deferred: time budget"
+
+        def slow_sql(connection_db, *_args):
+            connection_db.connection.execute(
+                "WITH RECURSIVE n(x) AS (VALUES(0) UNION ALL SELECT x+1 FROM n WHERE x<100000000) SELECT sum(x) FROM n"
+            ).fetchone()
+
+        with monkeypatch.context() as patch:
+            patch.setattr("chess_coach.tactical_course_budget.SLICE_SECONDS", 0.01)
+            patch.setattr("chess_coach.tactical_course_resolve.unfamiliar", slow_sql)
+            item, reason = related(db, LEARNER, "capture", choice, Budget(db))
+        assert item is None and reason == "related matching deferred: time budget"
+        assert not db.connection.in_transaction
+
+        def concurrent_slow(*_args):
+            import sqlite3
+
+            with sqlite3.connect(path) as other:
+                other.execute("UPDATE games SET event=event WHERE id=1")
+            time.sleep(0.5)
+
+        with monkeypatch.context() as patch:
+            patch.setattr("chess_coach.tactical_course_budget.SLICE_SECONDS", 0.2)
+            patch.setattr("chess_coach.tactical_course_resolve.unfamiliar", concurrent_slow)
+            with pytest.raises(PreviewUnavailable, match="changed"):
+                related(db, LEARNER, "capture", choice, Budget(db))
     db.close()
     app = create_app(
         db_path=path,

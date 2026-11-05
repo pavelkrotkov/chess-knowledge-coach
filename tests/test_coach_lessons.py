@@ -154,7 +154,16 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
     from tests.test_material_pipeline import LEARNER, make_game
     from tests.test_unified_sessions import token
 
-    path = tmp_path / "coaching.sqlite"
+    project = tmp_path / "project"
+    path = project / ".runtime" / "data" / "coaching.sqlite"
+    path.parent.mkdir(parents=True)
+    (project / ".runtime").chmod(0o700)
+    planning = project / ".runtime" / "planning"
+    planning.mkdir(mode=0o700)
+    (project / ".runtime" / "entry").mkdir(mode=0o700)
+    monkeypatch.setenv("CHESS_DB", str(path))
+    monkeypatch.setenv("CHESS_SUBJECT", LEARNER)
+    monkeypatch.setenv("CHESS_CORPUS", "test")
     db = make_game(path, monkeypatch)
     material_decision(db, 1, LEARNER)
     pgn = db.connection.execute("SELECT pgn FROM games WHERE id=1").fetchone()[0]
@@ -169,6 +178,118 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
         == "complete"
     )
     material_decision(db, position, LEARNER)
+
+    from chess_coach.course_preview import preview_hash
+    from chess_coach.ops_tactical_course import prepare
+    from chess_coach.study_publisher import publish
+
+    first_preview = planning / "tactical-first.json"
+    second_preview = planning / "tactical-second.json"
+    prepare(project, first_preview)
+    first_content = first_preview.read_bytes()
+    preview = json.loads(first_content)
+    assert preview["kind"] == "local-tactical-course-v1"
+    assert preview["preview_sha256"] == preview_hash(preview["preview"])
+    assert [item["kind"] for item in preview["preview"]["patterns"]] == ["capture"]
+    assert preview["preview"]["patterns"][0]["independent_games"] == 2
+    supports = preview["preview"]["patterns"][0]["supporting_sources"]
+    assert len(supports) == 2 and len({item["game_key"] for item in supports}) == 2
+    assert all(item["lineage_sha256"] and item["fact_ids"] for item in supports)
+    assert preview["preview"]["chapters"][0]["mode"] == "conceal"
+    chapter = preview["preview"]["chapters"][0]
+    assert "Worked example, ungraded" in chapter["pgn"]
+    assert "Source review: unreviewed." in chapter["pgn"]
+    assert "Played " in chapter["pgn"] and "Goal:" in chapter["pgn"]
+    import io
+
+    import chess.pgn
+
+    from chess_coach.coaching_report import report as coaching_report
+
+    saved_group = coaching_report(db, LEARNER)["groups"][0]
+    selected_id = chapter["source"]["evidence_id"]
+    example = next(
+        item for item in saved_group["lesson"]["examples"] if item["evidence_id"] == selected_id
+    )
+    parsed = chess.pgn.read_game(io.StringIO(chapter["pgn"]))
+    assert parsed is not None
+    note = " ".join(parsed.comment.split())
+    assert example["played"] in note and example["facts"][0] in note
+    assert saved_group["lesson"]["question"] in note and saved_group["lesson"]["habit"] in note
+    assert (
+        preview["preview"]["selection"]["unavailable"][0]["reason"]
+        == "related corpus or compatible unfamiliar example unavailable"
+    )
+    prepare(project, second_preview)
+    assert first_preview.read_bytes() == first_content
+    second = json.loads(second_preview.read_bytes())
+    assert second["preview_sha256"] == preview["preview_sha256"]
+    assert preview["preview"]["selection"]["corpus_version"] == "test"
+    with pytest.raises(ValueError):
+        prepare(project, first_preview)
+
+    other_id = next(item["evidence_id"] for item in supports if item["evidence_id"] != selected_id)
+    review_evidence(db, other_id, decision="accept", actor="fixture")
+    reviewed_first = planning / "reviewed-first.json"
+    prepare(project, reviewed_first)
+    review_evidence(db, other_id, decision="accept", actor="fixture")
+    reviewed_second = planning / "reviewed-second.json"
+    prepare(project, reviewed_second)
+    first_reviewed = json.loads(reviewed_first.read_bytes())
+    second_reviewed = json.loads(reviewed_second.read_bytes())
+    assert (
+        first_reviewed["preview"]["patterns"][0]["review_states"]
+        == second_reviewed["preview"]["patterns"][0]["review_states"]
+    )
+    assert first_reviewed["preview_sha256"] != second_reviewed["preview_sha256"]
+    assert first_reviewed["preview"]["chapters"][0] == second_reviewed["preview"]["chapters"][0]
+    assert first_preview.read_bytes() == first_content
+
+    import time
+
+    import chess_coach.tactical_course_publish as tactical_publish
+    from chess_coach.tactical_course_budget import Budget, PreviewUnavailable
+    from chess_coach.tactical_course_deadline import PreviewDeadline
+
+    with monkeypatch.context() as patch:
+        patch.setattr("chess_coach.tactical_course_budget.SLICE_SECONDS", 0.01)
+        with pytest.raises(PreviewDeadline), Budget(db).scope(snapshot=True):
+            time.sleep(0.05)
+    assert not db.connection.in_transaction
+
+    original_stage = tactical_publish.stage
+
+    def concurrent_stage(output, value):
+        temporary = original_stage(output, value)
+        assert not output.exists() and json.loads(temporary.read_bytes())["kind"] == preview["kind"]
+        db.connection.execute("UPDATE games SET event=event WHERE id=1")
+        db.connection.commit()
+        return temporary
+
+    changed = planning / "concurrent.json"
+    with monkeypatch.context() as patch:
+        patch.setattr(tactical_publish, "stage", concurrent_stage)
+        with pytest.raises(PreviewUnavailable, match="changed"):
+            prepare(project, changed)
+    assert not changed.exists()
+    assert not list(planning.glob(".tactical-preview-*"))
+    assert first_preview.read_bytes() == first_content
+
+    def fail_link(temporary, output, **_kwargs):
+        assert not output.exists()
+        assert json.loads(temporary.read_bytes())["kind"] == preview["kind"]
+        raise OSError("synthetic publication failure")
+
+    failed = planning / "failed-publication.json"
+    with monkeypatch.context() as patch:
+        patch.setattr(tactical_publish.os, "link", fail_link)
+        with pytest.raises(OSError, match="synthetic"):
+            prepare(project, failed)
+    assert not failed.exists() and not list(planning.glob(".tactical-preview-*"))
+    assert first_preview.read_bytes() == first_content
+    with pytest.raises(KeyError):
+        publish(object(), planning / "publisher-intent.json", preview)
+    assert not (planning / "publisher-intent.json").exists()
     db.close()
 
     app = create_app(
@@ -258,9 +379,30 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
         ).fetchone()[0]
     )
     assert revalidate_group(db, LEARNER, saved_lesson["groups"][0]) == 2
+    import chess_coach.tactical_course_chapters as course_chapters
+    import chess_coach.tactical_course_evidence as course_evidence
+
+    original = course_evidence.decisions_for_game
+
+    def duplicate_identity(*args, **kwargs):
+        decisions = original(*args, **kwargs)
+        assert decisions is not None
+        for item in decisions.values():
+            item["game_key"] = "same synthetic game"
+        return decisions
+
+    with monkeypatch.context() as patch:
+        patch.setattr(course_evidence, "decisions_for_game", duplicate_identity)
+        with pytest.raises(ValueError, match="independent"):
+            course_chapters.owned(db, LEARNER, saved_lesson["groups"][0])
     review_evidence(db, int(key), decision="reject", actor="fixture")
     with pytest.raises(ValueError, match="evidence changed"):
         revalidate_group(db, LEARNER, saved_lesson["groups"][0])
+    from chess_coach.tactical_course_budget import PreviewUnavailable
+
+    with pytest.raises(PreviewUnavailable):
+        prepare(project, planning / "after-rejection.json")
+    assert not (planning / "after-rejection.json").exists()
     db.close()
     stale = client.post(
         "/unified/start",
