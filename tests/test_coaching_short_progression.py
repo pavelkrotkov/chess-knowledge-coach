@@ -73,6 +73,28 @@ def test_private_card_rotates_only_after_complete_unassisted_rehearsal(tmp_path,
         examples.append(describe(inspected))
         detector_version = inspected["evidence"]["facts"][0]["detector_version"]
 
+    if form == "prepared":
+        from chess_coach.tactical_course import build
+
+        with monkeypatch.context() as patch:
+            patch.setattr("chess_coach.tactical_course_selection.PER_PAIR", 2)
+            patch.setattr("chess_coach.tactical_course.PER_PAIR", 2)
+            tactical = build(db, SUBJECT, "test")
+        assert [item["kind"] for item in tactical["preview"]["patterns"]] == ["short_mate"]
+        assert all(item["mode"] == "conceal" for item in tactical["preview"]["chapters"])
+        assert "Worked example, ungraded" in tactical["preview"]["chapters"][0]["pgn"]
+        assert (
+            tactical["preview"]["selection"]["unavailable"][0]["reason"]
+            == "related corpus or compatible unfamiliar example unavailable"
+        )
+        calculation = next(
+            item
+            for item in tactical["preview"]["selection"]["coverage"]
+            if item["skill"] == "calculation"
+        )
+        assert calculation["examined"] == 2 and calculation["limited"]
+        assert tactical["preview"]["selection"]["per_pair_limit"] == 2
+
     lesson = {
         "skill": "calculation",
         "operation": "execute",

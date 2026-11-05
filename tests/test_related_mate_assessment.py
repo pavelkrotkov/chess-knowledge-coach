@@ -42,6 +42,24 @@ def test_related_short_mate_assessment_workflow(tmp_path, monkeypatch, mode):
     db.connection.execute("INSERT INTO puzzle_themes VALUES(?,?,'mateIn2',1200)", (corpus, "short"))
     db.connection.execute("UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus,))
     db.connection.commit()
+    if mode == "unassisted":
+        from chess_coach.recurrence_snapshot import read_snapshot
+        from chess_coach.tactical_course_related import unfamiliar
+
+        with read_snapshot(db):
+            course_chapter = unfamiliar(
+                db, SUBJECT, "short", {"kind": "short_mate", "evidence_id": evidence}
+            )
+        assert course_chapter["mode"] == "conceal"
+        assert "Pattern-cued unfamiliar worked example" in course_chapter["pgn"]
+        assert "Worked example, ungraded" in course_chapter["pgn"]
+        from chess_coach.tactical_course_budget import Budget
+        from chess_coach.tactical_course_resolve import related
+
+        matched, reason = related(
+            db, SUBJECT, "short", {"kind": "short_mate", "evidence_id": evidence}, Budget(db)
+        )
+        assert reason is None and matched["mode"] == "conceal"
     selected = preview(db, SUBJECT, evidence, "short")
     assert selected["mate_timing"] == "mate_within_two"
     assert len(selected["items"]) == 1 and selected["items"][0]["assessment_available"]
