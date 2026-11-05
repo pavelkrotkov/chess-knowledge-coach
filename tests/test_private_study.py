@@ -30,6 +30,8 @@ class Provider:
         self.timeout_create = True
         self.timeout_upload = True
         self.inventory_count = 1
+        self.create_status = None
+        self.empty_id = "empty000"
         self.scopes = "study:read,study:write"
 
     def request(self, method, url, **kwargs):
@@ -51,6 +53,8 @@ class Provider:
             return httpx.Response(200, text="\n".join(map(json.dumps, rows)), request=request)
         if path == "/api/study" and method == "POST":
             self.created += 1
+            if self.create_status is not None:
+                return httpx.Response(self.create_status, request=request)
             assert kwargs["data"]["visibility"] == "private"
             assert all(kwargs["data"][key] == value for key, value in SETTINGS.items())
             self.name = kwargs["data"]["name"]
@@ -59,7 +63,7 @@ class Provider:
                 raise httpx.ReadTimeout("uncertain", request=request)
             return httpx.Response(200, json={"id": "abcd1234"}, request=request)
         if path.startswith("/study/abcd1234"):
-            chapters = [{"id": "empty", "name": "Empty"}]
+            chapters = [{"id": self.empty_id, "name": "Empty"}]
             chapters.extend(
                 {"id": f"ch{i:06d}", "name": item["name"]} for i, item in enumerate(self.uploaded)
             )
@@ -256,6 +260,12 @@ def test_private_publication_reconciles_timeouts_and_rejects_public_destination(
     assert tactical_provider.created == 1 and not tactical_provider.uploaded
     with pytest.raises(StudyError, match="another tactical"):
         tactical_intent(planning, second_course["course_sha256"])
+    # An unresolved tactical create also blocks a new legacy create.
+    legacy_provider = Provider()
+    legacy_remote = Remote("fixture-token", "learner", legacy_provider)
+    with pytest.raises(StudyError, match="another tactical"):
+        publish(legacy_remote, planning / "other-poc-intent.json", course)
+    assert legacy_provider.created == 0
     for count in (0, 2):
         tactical_provider.inventory_count = count
         with pytest.raises(StudyError, match="unresolved"):
@@ -273,19 +283,68 @@ def test_private_publication_reconciles_timeouts_and_rejects_public_destination(
     with pytest.raises(StudyError, match="restrictions"):
         prepare_destination(tactical_remote, first_intent, first_course)
     tactical_provider.settings = dict(SETTINGS)
+    tactical_provider.empty_id = ""
+    with pytest.raises(StudyError, match="invalid Study identifier"):
+        prepare_destination(tactical_remote, first_intent, first_course)
+    assert json.loads(first_intent.read_text())["create_pending"]
+    tactical_provider.empty_id = "empty000"
     assert prepare_destination(tactical_remote, first_intent, first_course) == "abcd1234"
     assert prepare_destination(tactical_remote, first_intent, first_course) == "abcd1234"
     state = json.loads(first_intent.read_text())
-    assert state["empty_chapter"] == "empty" and not state["complete"]
+    assert state["empty_chapter"] == "empty000" and not state["complete"]
     assert tactical_provider.created == 1 and not tactical_provider.uploaded
     second_intent = tactical_intent(planning, second_course["course_sha256"])
     assert second_intent != first_intent and not second_intent.exists()
     second_provider = Provider()
     second_provider.timeout_create = False
-    second_remote = Remote("fixture-token", "learner", second_provider)
+    observed = []
+    second_remote = Remote(
+        "fixture-token",
+        "learner",
+        second_provider,
+        observe=lambda response: observed.append(response.status_code),
+    )
+    for status_code in (401, 403, 429):
+        second_provider.create_status = status_code
+        with pytest.raises(StudyError):
+            prepare_destination(second_remote, second_intent, second_course)
+        assert not json.loads(second_intent.read_text())["create_pending"]
+    assert observed[-1] == 429
+    second_provider.create_status = None
     assert prepare_destination(second_remote, second_intent, second_course) == "abcd1234"
     assert json.loads(second_intent.read_text())["marker"] != state["marker"]
-    assert second_provider.created == 1 and not second_provider.uploaded
+    assert second_provider.created == 4 and not second_provider.uploaded
+    # A freshness failure after the pending marker is saved precedes any POST.
+    changing_body = {"chapters": [], "version": "changing"}
+    changing_course = {"course": changing_body, "course_sha256": preview_hash(changing_body)}
+    changing_intent = tactical_intent(planning, changing_course["course_sha256"])
+    changing_provider = Provider()
+    changing_remote = Remote("fixture-token", "learner", changing_provider)
+    checks = []
+
+    def stale_after_save():
+        checks.append(True)
+        if len(checks) == 3:
+            raise StudyError("source changed")
+
+    with pytest.raises(StudyError, match="source changed"):
+        prepare_destination(
+            changing_remote, changing_intent, changing_course, check=stale_after_save
+        )
+    assert len(checks) == 3 and changing_provider.created == 0
+    assert not json.loads(changing_intent.read_text())["create_pending"]
+    third_body = {"chapters": [], "version": "third"}
+    third_course = {"course": third_body, "course_sha256": preview_hash(third_body)}
+    third_intent = tactical_intent(planning, third_course["course_sha256"])
+    failed_provider = Provider()
+    failed_provider.create_status = 500
+    failed_remote = Remote("fixture-token", "learner", failed_provider)
+    with pytest.raises(StudyError):
+        prepare_destination(failed_remote, third_intent, third_course)
+    assert json.loads(third_intent.read_text())["create_pending"]
+    with pytest.raises(StudyError, match="unresolved"):
+        prepare_destination(failed_remote, third_intent, third_course)
+    assert failed_provider.created == 1
     assert old_intent.read_bytes() == old_bytes
     with (
         locked(tmp_path / "fixture.sqlite", planning),
