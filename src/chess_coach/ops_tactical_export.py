@@ -1,0 +1,57 @@
+"""Create one private non-overwriting tactical export candidate."""
+
+import argparse
+import os
+import re
+import sqlite3
+from pathlib import Path
+from types import SimpleNamespace
+
+from .tactical_course_budget import Budget
+from .tactical_course_deadline import PreviewDeadline
+from .tactical_course_files import paths
+from .tactical_course_publish import publish
+from .tactical_export import build
+from .tactical_export_input import load
+
+
+def prepare(root, preview, expected_hash, output):
+    database, output = paths(root, output)
+    connection = sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=1)
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA query_only=ON")
+    try:
+        db = SimpleNamespace(connection=connection)
+        budget = Budget(db)
+        with budget.scope(snapshot=False):
+            envelope = load(root, preview)
+            if (
+                not isinstance(envelope, dict)
+                or not re.fullmatch(r"[0-9a-f]{64}", expected_hash)
+                or envelope.get("preview_sha256") != expected_hash
+            ):
+                raise ValueError("selected preview hash differs")
+        result = build(
+            db, os.environ["CHESS_SUBJECT"], os.environ["CHESS_CORPUS"], envelope, budget
+        )
+        publish(output, result, budget, readonly=True)
+    finally:
+        connection.close()
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Prepare one private tactical export candidate")
+    parser.add_argument("--project-root", required=True, type=Path)
+    parser.add_argument("--preview", required=True, type=Path)
+    parser.add_argument("--preview-sha256", required=True)
+    parser.add_argument("--output", required=True, type=Path)
+    args = parser.parse_args()
+    try:
+        prepare(args.project_root, args.preview, args.preview_sha256, args.output)
+    except (Exception, PreviewDeadline):
+        raise SystemExit("Tactical export unavailable; no candidate was published.") from None
+    print("Private tactical export candidate prepared.")
+
+
+if __name__ == "__main__":
+    main()

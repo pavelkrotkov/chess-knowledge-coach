@@ -352,6 +352,25 @@ skips. This hosted run uses
 public source and synthetic tests; its engine may differ from Hermes and it
 does not replace private deployment or performance checks.
 
+## Private tactical course export
+
+To revalidate a saved `local-tactical-course-v1` preview and prepare a separate,
+owner-read-only candidate, use the reviewed release and existing private environment:
+
+```sh
+release="$PWD/.runtime/releases/<reviewed-sha>/venv/bin/python"
+"$release" -I -B -m chess_coach.ops_tactical_export --project-root "$PWD" \
+  --preview "$PWD/.runtime/planning/<saved-preview>.json" \
+  --preview-sha256 "<preview-sha256>" \
+  --output "$PWD/.runtime/planning/<new-export>.json"
+```
+
+The supplied hash must match the preview envelope and its contents. The command
+rechecks owned sources and included related chapters under a shared deadline, opens
+the database read-only, and refuses an existing output. It retains provisional preview
+ranking and coverage without reranking them. This export is a local candidate; the
+existing fixed proof-of-concept Study publisher does not accept it.
+
 ## Private coaching Study
 
 Prepare and inspect the owner-only course artifact before publication. Use the reviewed

@@ -9,10 +9,14 @@ from .unified_sources import resolve_source
 
 def owned(db, subject, group):
     bindings = independent(db, subject, group)
-    count = len({item["game_key"] for item in bindings})
     choice = choices(db, subject, {"groups": [group]})[0]
     if choice is None or choice["kind"] not in {"capture", "protection", "mate", "short_mate"}:
         return None
+    return choice, owned_chapter(db, subject, group, choice, bindings), bindings
+
+
+def owned_chapter(db, subject, group, choice, bindings):
+    count = len({item["game_key"] for item in bindings})
     snapshot = resolve_source(db, "own-game", choice["version"], choice["key"], subject=subject)
     lesson = group["lesson"]
     example = next(
@@ -26,7 +30,7 @@ def owned(db, subject, group):
     )
     note, _ = objective(note, snapshot, choice["kind"])
     result = chapter("Your recurring pattern", note, snapshot, {"type": "own-game", **choice})
-    return choice, result, bindings
+    return result
 
 
 def challenge(choice):
