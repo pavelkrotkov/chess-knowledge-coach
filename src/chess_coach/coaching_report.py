@@ -4,12 +4,13 @@ from collections import Counter, defaultdict
 
 from .coaching_failures_page import collect_page
 from .coaching_rank import rank
+from .diagnostic_coverage import diagnostic_coverage
 from .learner_identity import normalize_identity
 from .preview_snapshot import preview_history
 from .recurrence_cursor import MAX_ID
 from .recurrence_skills import PAIRS
 from .recurrence_snapshot import read_snapshot
-from .recurrence_sources import evidence, games
+from .recurrence_sources import evidence
 
 VERSION = "coaching-preview-v1"
 
@@ -20,7 +21,7 @@ def report(db, subject):
         raise ValueError("learner unavailable")
     with read_snapshot(db), preview_history(db, learner) as history:
         groups, limits = collect(db, learner, history)
-        _, coverage = games(db, learner)
+        coverage = diagnostic_coverage(db, learner)
         coverage["database_games"] = db.connection.execute("SELECT COUNT(*) FROM games").fetchone()[
             0
         ]

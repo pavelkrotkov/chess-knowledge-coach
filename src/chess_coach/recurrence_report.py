@@ -1,5 +1,6 @@
 """Bounded descriptive candidate reports over explicit game-start windows."""
 
+from .diagnostic_coverage import diagnostic_coverage
 from .recurrence_collect import collect, deduplicate
 from .recurrence_page import navigation, select
 from .recurrence_report_helpers import target_history, update_coverage
@@ -43,7 +44,8 @@ def _report(db, learner, start, end, compare_start, *, skill, operation, cursor,
     )
     if _history is not None:
         target_history(db, learner, pairs, before, _history)
-    source, coverage = games(db, learner)
+    source, _ = games(db, learner)
+    coverage = diagnostic_coverage(db, learner)
     found, exclusions, limited, cache, recorded, next_before = collect(
         db, learner, source, begin, finish, previous, pairs, before, _history=_history
     )
