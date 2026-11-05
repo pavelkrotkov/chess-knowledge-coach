@@ -62,10 +62,37 @@ def test_recorded_capture_and_missed_capture_are_bounded_observations(monkeypatc
             "chess_coach.capture_game_proof.opportunities",
             lambda *_: ({"d1d4"}, {"e1f1"}, None),
         )
+        assert classify(board, "d1d4", 1, lambda: 0) == ("played", None)
+        assert classify(board, "d1a1", 1, lambda: 0) == ("other", None)
         assert classify(board, "e1f1", 1, lambda: 0) == (
             "opportunity_unresolved",
             "played_capture_unresolved",
         )
+    from chess_coach.capture_game_counts import add, empty, finish
+
+    counts = empty(42)
+    for number in range(20):
+        add(
+            counts,
+            {"position_id": number, "played_move": "e1f1"},
+            "unknown",
+            "unresolved_capture",
+            board,
+        )
+        add(
+            counts,
+            {"position_id": number, "played_move": "e1f1"},
+            "opportunity_unresolved",
+            "unresolved",
+            board,
+        )
+    add(counts, {"position_id": 99, "played_move": "d1d4"}, "played", None, board)
+    add(counts, {"position_id": 100, "played_move": "e1f1"}, "other", None, board)
+    result = finish(counts)
+    assert len(result["examples"]) == 20
+    assert [row["position_id"] for row in result["examples"][:2]] == [99, 100]
+    assert result["examples"][0]["played_san"] == "Rxd4"
+    assert not result["complete"]
     monkeypatch.setattr("chess_coach.capture_game_roots.unresolved_reply", lambda *_: True)
     assert classify(board, "e1f1", 1, lambda: 0) == ("unknown", "unresolved_capture")
     assert board.fen() == "4k3/8/8/8/3q4/8/8/3RK3 w - - 0 1"

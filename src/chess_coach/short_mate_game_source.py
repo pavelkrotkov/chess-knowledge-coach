@@ -1,6 +1,7 @@
 """Load and recheck one dated, attributable game without holding a proof lock."""
 
 from .learner_identity import normalize_identity
+from .mate_game_eligibility import require_game
 from .mate_game_sample import prepared_game
 from .pipeline_inputs import game_input
 from .recurrence_snapshot import read_snapshot
@@ -29,6 +30,10 @@ def recheck(db, learner, source):
     subject = normalize_identity(learner)
     with read_snapshot(db):
         game = _game(db, subject, source["game_id"])
+        try:
+            require_game(db, game)
+        except ValueError:
+            raise ValueError("game changed during inspection") from None
         if _signature(db, game) != source["signature"]:
             raise ValueError("game changed during inspection")
 

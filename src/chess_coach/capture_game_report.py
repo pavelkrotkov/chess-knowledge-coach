@@ -33,5 +33,5 @@ def _inspect(turns, deadline, clock):
         if clock() >= deadline:
             break
         outcome, reason = classify(board, context["played_move"], deadline, clock)
-        add(counts, context, outcome, reason)
+        add(counts, context, outcome, reason, board)
     return finish(counts)

@@ -93,6 +93,23 @@ def test_game_report_is_read_only_bounded_and_rechecks_source(tmp_path, monkeypa
     with pytest.raises(ValueError):
         report(db, "fixture_c", 1, seconds=1, clock=lambda: 0)
     source = prepare(db, "fixture_a", 1)
+    position = db.connection.execute(
+        "SELECT fen,san,uci FROM positions WHERE game_id=1 AND ply=1"
+    ).fetchone()
+    db.connection.executemany(
+        "INSERT INTO positions(game_id,ply,fen,san,uci) VALUES(1,?,?,?,?)",
+        ((ply, *position) for ply in range(2, 1002)),
+    )
+    db.connection.commit()
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            "chess_coach.short_mate_game_source._signature",
+            lambda *_: pytest.fail("oversized source must not be rehashed"),
+        )
+        with pytest.raises(ValueError, match="changed"):
+            recheck(db, "fixture_a", source)
+    db.connection.execute("DELETE FROM positions WHERE game_id=1 AND ply>1")
+    db.connection.commit()
     db.connection.execute("UPDATE games SET result='0-1' WHERE id=1")
     db.connection.commit()
     with pytest.raises(ValueError, match="changed"):
@@ -131,6 +148,7 @@ def test_game_report_is_read_only_bounded_and_rechecks_source(tmp_path, monkeypa
     page = client.get(path, base_url="https://coach.invalid", headers=headers)
     assert page.status_code == 200 and b"Played a proved capture: 100.0%" in page.data
     assert b"/decisions/" in page.data and b"other merits" in page.data
+    assert b"Played: Rxd4" in page.data
     other_page = client.get(
         "/games/2/capture-opportunities", base_url="https://coach.invalid", headers=headers
     )
