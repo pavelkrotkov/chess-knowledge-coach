@@ -31,11 +31,13 @@ def _sync_directory(path):
         os.close(fd)
 
 
-def publish(output, value, budget):
+def publish(output, value, budget, *, readonly=False):
     temporary = None
     try:
         with budget.scope(snapshot=False):
             temporary = stage(output, value)
+            if readonly:
+                temporary.chmod(0o400)
         with budget.publication():
             os.link(temporary, output, follow_symlinks=False)
         _sync_directory(output.parent)

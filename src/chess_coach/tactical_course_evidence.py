@@ -6,10 +6,11 @@ from .lesson_source import source
 from .mastery_game_lookup import decisions_for_game
 
 
-def _binding(db, subject, example):
-    current = source(
-        db, subject, {"id": example["evidence_id"], "position_id": example["position_id"]}
-    )
+def _binding(db, subject, example, *, current=None):
+    if current is None:
+        current = source(
+            db, subject, {"id": example["evidence_id"], "position_id": example["position_id"]}
+        )
     decisions = decisions_for_game(db, example["game_id"], subject)
     decision = decisions.get(example["position_id"]) if decisions else None
     if not current or not decision or not decision["subject"]:

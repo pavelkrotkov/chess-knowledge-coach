@@ -181,6 +181,7 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
 
     from chess_coach.course_preview import preview_hash
     from chess_coach.ops_tactical_course import prepare
+    from chess_coach.ops_tactical_export import prepare as export_candidate
     from chess_coach.study_publisher import publish
 
     first_preview = planning / "tactical-first.json"
@@ -225,11 +226,86 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
     second = json.loads(second_preview.read_bytes())
     assert second["preview_sha256"] == preview["preview_sha256"]
     assert preview["preview"]["selection"]["corpus_version"] == "test"
+
+    export_path = planning / "tactical-export.json"
+    export_candidate(project, first_preview, preview["preview_sha256"], export_path)
+    exported_bytes = export_path.read_bytes()
+    exported = json.loads(exported_bytes)
+    assert exported["kind"] == "local-tactical-course-export-v1"
+    assert exported["export_sha256"] == preview_hash(exported["export"])
+    assert exported["export"]["preview_sha256"] == preview["preview_sha256"]
+    assert exported["export"]["chapters"] == preview["preview"]["chapters"]
+    assert exported["export"]["selection"] == preview["preview"]["selection"]
+    assert export_path.stat().st_mode & 0o777 == 0o400
+    with pytest.raises(ValueError):
+        export_candidate(project, first_preview, preview["preview_sha256"], export_path)
+    assert (
+        export_path.read_bytes() == exported_bytes and first_preview.read_bytes() == first_content
+    )
+    invalid_preview = planning / "invalid-chapter.json"
+    invalid = json.loads(first_content)
+    invalid["preview"]["chapters"][0]["pgn"] += "\n{ changed }\n"
+    invalid["preview_sha256"] = preview_hash(invalid["preview"])
+    invalid_preview.write_text(json.dumps(invalid))
+    invalid_preview.chmod(0o600)
+    invalid_output = planning / "invalid-export.json"
+    with pytest.raises(ValueError):
+        export_candidate(project, invalid_preview, invalid["preview_sha256"], invalid_output)
+    assert not invalid_output.exists() and export_path.read_bytes() == exported_bytes
+    with pytest.raises(ValueError):
+        export_candidate(project, first_preview, "0" * 64, invalid_output)
+    assert not invalid_output.exists()
     with pytest.raises(ValueError):
         prepare(project, first_preview)
 
+    # A real synthetic unfamiliar source is reconstructed and bound as well.
+    import chess
+
+    db.connection.execute(
+        "INSERT INTO puzzle_corpora(version,source,checksum,state) VALUES('test','fixture','checksum','staging')"
+    )
+    corpus_id = db.connection.execute(
+        "SELECT id FROM puzzle_corpora WHERE version='test'"
+    ).fetchone()[0]
+    board = chess.Board("4k3/8/8/8/3q4/8/8/3RK3 b - - 0 1")
+    board.set_piece_at(chess.A7, chess.Piece(chess.PAWN, chess.BLACK))
+    db.connection.execute(
+        """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,rating_deviation,themes_json,objective)
+        VALUES('fixture-related',?,?,'https://example.invalid','a7a6 d1d4',1200,80,'["hangingPiece"]','unknown')""",
+        (corpus_id, board.fen()),
+    )
+    db.connection.execute(
+        "INSERT INTO puzzle_themes VALUES(?,?,'hangingPiece',1200)", (corpus_id, "fixture-related")
+    )
+    db.connection.execute("UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus_id,))
+    db.connection.commit()
+    related_preview_path = planning / "related-preview.json"
+    related_output = planning / "related-export.json"
+    prepare(project, related_preview_path)
+    related_preview = json.loads(related_preview_path.read_bytes())
+    assert len(related_preview["preview"]["chapters"]) == 2
+    export_candidate(
+        project, related_preview_path, related_preview["preview_sha256"], related_output
+    )
+    related_export = json.loads(related_output.read_bytes())
+    assert related_export["export"]["chapters"] == related_preview["preview"]["chapters"]
+    altered = json.loads(related_preview_path.read_bytes())
+    altered["preview"]["chapters"][1]["source"]["binding"]["rank_version"] = "changed"
+    altered["preview_sha256"] = preview_hash(altered["preview"])
+    altered_path = planning / "altered-related.json"
+    altered_path.write_text(json.dumps(altered))
+    altered_path.chmod(0o600)
+    rejected = planning / "altered-related-export.json"
+    with pytest.raises(ValueError):
+        export_candidate(project, altered_path, altered["preview_sha256"], rejected)
+    assert not rejected.exists() and related_output.is_file()
+
     other_id = next(item["evidence_id"] for item in supports if item["evidence_id"] != selected_id)
     review_evidence(db, other_id, decision="accept", actor="fixture")
+    stale_output = planning / "stale-export.json"
+    with pytest.raises(ValueError):
+        export_candidate(project, first_preview, preview["preview_sha256"], stale_output)
+    assert not stale_output.exists() and export_path.read_bytes() == exported_bytes
     reviewed_first = planning / "reviewed-first.json"
     prepare(project, reviewed_first)
     review_evidence(db, other_id, decision="accept", actor="fixture")
@@ -289,6 +365,8 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
     assert first_preview.read_bytes() == first_content
     with pytest.raises(KeyError):
         publish(object(), planning / "publisher-intent.json", preview)
+    with pytest.raises(KeyError):
+        publish(object(), planning / "publisher-intent.json", exported)
     assert not (planning / "publisher-intent.json").exists()
     db.close()
 
