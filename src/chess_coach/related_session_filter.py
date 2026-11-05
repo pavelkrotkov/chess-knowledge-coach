@@ -12,6 +12,21 @@ from .related_protection_contract import FILTER_VERSION as PROTECTION_FILTER
 
 
 def apply_filter(snapshot, provenance, provenance_key, line_filter):
+    if provenance_key == "related_capture":
+        return _capture(snapshot, provenance, line_filter)
+    return _other(snapshot, provenance, provenance_key, line_filter)
+
+
+def _capture(snapshot, provenance, line_filter):
+    if line_filter is not None:
+        raise ValueError("unsupported capture line selection")
+    if provenance and provenance.get("assessment"):
+        from .related_capture_objective import apply
+
+        apply(snapshot, provenance["assessment"])
+
+
+def _other(snapshot, provenance, provenance_key, line_filter):
     if provenance_key in {
         "related_fork",
         "related_protection",

@@ -21,6 +21,7 @@ def show(position):
             position,
             current_app.config["CORPUS"],
             request.args.get("cursor"),
+            secret=current_app.secret_key,
         )
         for item in result["items"]:
             item["board"] = board_rows(item["fen"])
@@ -46,11 +47,13 @@ def begin(position):
             position=position,
             corpus_version=corpus,
             reference=reference,
+            assessment=request.form.get("assessment") == "1",
+            secret=current_app.secret_key,
         )
     except ValueError:
         return render_template(
             "error.html",
-            message="That transfer preview is unavailable or changed. Restart from the decision.",
+            message="This example changed or the capture could not be verified. Try another example or practice the supplied line.",
         ), 400
     session["unified_attempt"] = attempt
     return redirect(url_for("unified_practice.show_page", attempt=attempt), code=303)

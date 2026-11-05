@@ -14,6 +14,7 @@ from .objective_pin_prevent_contract import is_source as pin_prevent_source
 from .objective_promotion_contract import OBJECTIVES as PROMOTION_OBJECTIVES
 from .objective_protection_contract import VERSION as PROTECTION_VERSION
 from .objective_short_source import VERSION as SHORT_VERSION
+from .related_capture_objective import is_source as capture_assessment
 from .unified_session_state import now
 
 
@@ -51,7 +52,8 @@ def _supported(session):
     if session["source_type"] == "public":
         return session["objective"] in PROMOTION_OBJECTIVES
     return (
-        fork_source(session)
+        capture_assessment(session)
+        or fork_source(session)
         or pawn_source(session)
         or pin_source(session)
         or pin_prevent_source(session)

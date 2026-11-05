@@ -11,11 +11,13 @@ from .objective_pin_contract import is_source as pin_source
 from .objective_pin_prevent_contract import is_source as pin_prevent_source
 from .objective_protection_contract import VERSION as PROTECTION_VERSION
 from .objective_short_source import VERSION as SHORT_VERSION
+from .related_capture_objective import is_source as capture_assessment
 
 
 def objective_assistance(row):
     return (
-        fork_source(row)
+        capture_assessment(row)
+        or fork_source(row)
         or fork_avoidance_source(row)
         or fork_defense_source(row)
         or pawn_source(row)

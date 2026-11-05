@@ -7,9 +7,14 @@ from .objective_pawn_contract import is_source as owned_pawn
 from .objective_pin_contract import is_source as owned_pin
 from .objective_pin_prevent_contract import is_source as owned_pin_prevent
 from .objective_promotion_contract import OBJECTIVES
+from .related_capture_objective import is_source as capture_assessment
 
 
 def needs_verification(row):
+    return capture_assessment(row) or _existing(row)
+
+
+def _existing(row):
     return (
         owned_fork(row)
         or owned_fork_defense(row)

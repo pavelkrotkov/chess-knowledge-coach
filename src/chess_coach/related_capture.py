@@ -17,24 +17,52 @@ def _selection(db, subject, position, corpus_version):
     return select(db, subject, source, corpus_version, VERSION)
 
 
-def preview(db, subject, position, corpus_version, cursor=None):
+def preview(db, subject, position, corpus_version, cursor=None, *, secret=None):
     selection = _selection(db, subject, position, corpus_version)
-    return present(selection, cursor)
+    result = present(selection, cursor, secret=secret)
+    # Only the browser receives opaque references and assessment controls.
+    if selection is not None and secret is not None:
+        _assessment_options(db, result["items"], selection[3], cursor, result["scope"])
+    return result
 
 
-def present(selection, cursor):
+def _assessment_options(db, visible, ordered, cursor, scope):
+    from .related_capture_assessment import setup
+
+    offset = _offset(cursor, scope)
+    for item, source in zip(visible, ordered[offset : offset + PAGE], strict=True):
+        if source["type"] != "corpus":
+            continue
+        # Eligibility is cheap; admission separately runs the capture proof.
+        try:
+            setup(db, source["version"], source["key"])
+            item["assessment_available"] = True
+        except (ValueError, TypeError, KeyError, IndexError):
+            continue
+
+
+def present(selection, cursor, *, secret=None):
     if selection is None:
         return {"status": "corpus unavailable", "items": [], "next_cursor": None}
     source, rating, corpus, ordered, scope, diagnostics = selection
-    offset = _offset(cursor, scope)
+    # A cursor may expose its tag, so reference MACs use the hidden scope itself.
+    if secret is not None:
+        from .related_mate_search_token import fingerprint
+
+        cursor_scope = fingerprint(secret, "capture-scope", scope)
+    else:
+        cursor_scope = scope
+    offset = _offset(cursor, cursor_scope)
     selected = ordered[offset : offset + PAGE]
-    items = [_present(item, scope) for item in selected]
+    items = [_present(item, scope, secret) for item in selected]
     return {
         "status": "available"
         if ordered
         else "insufficient compatible unfamiliar examples in the bounded scan",
         "items": items,
-        "next_cursor": _cursor(offset + PAGE, scope) if offset + PAGE < len(ordered) else None,
+        "next_cursor": _cursor(offset + PAGE, cursor_scope)
+        if offset + PAGE < len(ordered)
+        else None,
         "review_status": source["provenance"]["review_status"],
         "baseline": rating,
         "bounds": [corpus["lower"], corpus["upper"]],
@@ -42,11 +70,11 @@ def present(selection, cursor):
         "public_scanned": corpus["public"]["scanned"],
         "excluded": diagnostics,
         "selection": corpus["selection"],
-        "scope": scope,
+        "scope": cursor_scope,
     }
 
 
-def _present(item, scope):
+def _present(item, scope, secret=None):
     result = {
         key: value
         for key, value in item.items()
@@ -63,5 +91,11 @@ def _present(item, scope):
             "source_lines_hash",
         }
     }
-    result["reference"] = digest(canonical([scope, item["type"], item["version"], item["key"]]))
+    identity = [scope, item["type"], item["version"], item["key"]]
+    if secret is None:
+        result["reference"] = digest(canonical(identity))
+    else:
+        from .related_mate_search_token import fingerprint
+
+        result["reference"] = fingerprint(secret, "capture-reference", identity)
     return result

@@ -22,11 +22,14 @@ from .objective_protection_contract import OBJECTIVE as PROTECTION_OBJECTIVE
 from .objective_protection_contract import VERSION as PROTECTION_VERSION
 from .objective_short_source import OBJECTIVE as SHORT_OBJECTIVE
 from .objective_short_source import VERSION as SHORT_VERSION
+from .related_capture_objective import matches as capture_assessment
 
 
 def matches(session, data, request):
-    return (public_scope(session, request) and public_binding(data, request)) or (
-        owned_scope(session, request) and _binding(session, data, request)
+    return (
+        capture_assessment(session, data, request)
+        or (public_scope(session, request) and public_binding(data, request))
+        or (owned_scope(session, request) and _binding(session, data, request))
     )
 
 

@@ -44,5 +44,10 @@ def _require_related_current(db, row):
         source = source_for_position(db, row["subject"], binding["position_id"])
         if snapshot_hash(source) != binding["source_snapshot_hash"]:
             raise ValueError
+        # A corpus assessment additionally binds its reset setup and certificate.
+        if binding.get("assessment"):
+            from .related_capture_objective import current
+
+            current(db, row, binding, snapshot_hash)
     except (ValueError, TypeError, KeyError):
         raise ValueError("practice source unavailable or stale") from None
