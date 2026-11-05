@@ -5,6 +5,16 @@
 <h2>Recurring patterns</h2><p><a href="{{ url_for('lesson_history_views.history') }}">Saved lesson history</a></p>
 <details class="recurrence-controls"><summary>Change dates or filters</summary><form method="get" class="recurrence-filters"><label>Previous period begins <input name="compare_start" value="{{ previous }}" required></label><label>Current period begins <input name="start" value="{{ start }}" required></label><label>Current period ends <input name="end" value="{{ end }}" required></label><label>Skill <input name="skill" value="{{ skill or "" }}"></label><label>Operation <input name="operation" value="{{ operation or "" }}"></label><button>Compare or reset</button></form></details>
 {% if error %}<p>{{ error }}</p>{% endif %}
+{% if not error %}
+<details {% if not report %}open{% endif %}><summary>Choose a pattern</summary>
+<p>Choose one pattern to see its source-linked lessons and partial coverage. Families and pages use separate bounded samples; their counts do not share a common denominator and should not be added together.</p>
+<ul>{% for pair in pairs %}<li><a href="{{ url_for('recurrence_views.recurrence', start=start, end=end, compare_start=previous, skill=pair[0], operation=pair[1]) }}">{{ pair[0] | replace("_", " ") | capitalize }} · {{ {"execute": "Finding the idea", "prevent": "Responding to the threat", "evaluate": "Comparing choices"}.get(pair[1], pair[1] | capitalize) }}</a></li>{% endfor %}</ul>
+</details>
+{% if coverage %}
+<p>Analysis coverage sampled {{ coverage.examined_games }} attributable games: {% for status, count in coverage.analysis_stages.items() %}{{ status }} {{ count }}{% if not loop.last %}, {% endif %}{% else %}no analysis stages recorded{% endfor %}. {% set time = coverage.time_coverage %}{% include "diagnostic_time_coverage.html" %}</p>
+<p>Pawn-structure and rook-plan groups describe recurring positions, not repeated mistakes.</p>
+{% endif %}
+{% endif %}
 {% if report %}
 <p>These are provisional recorded candidates from a bounded sample, not confirmed weaknesses or mastery. Counts are partial and periods may overlap.</p>
 <p>Analysis coverage sampled {{ report.coverage.examined_games }} attributable games; the separate evidence scan replayed {{ report.coverage.replayed_games }} games and sampled {{ report.coverage.sampled_decisions }} learner decisions.</p>

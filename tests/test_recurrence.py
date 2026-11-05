@@ -72,7 +72,7 @@ def test_recurrence_review_boundaries_and_independence(tmp_path, monkeypatch):
     db.initialize()
     ingest_pgn(db, game(1))
     first = add(db, 1, 1, "failure")
-    add(db, 1, 3, "failure")
+    kept = add(db, 1, 3, "failure")
     current = report(db, "learner", START, END, PREV)
     group = current["current"][0]
     assert (group["misses"], group["miss_games"], group["games_with_repetitions"]) == (2, 1, 1)
@@ -137,6 +137,21 @@ def test_recurrence_review_boundaries_and_independence(tmp_path, monkeypatch):
     assert report(db, "other", START, END, PREV)["current"] == []
     with pytest.raises(ValueError):
         report(db, "learner", END, START, PREV)
+    # Compare identical synthetic data through the existing broad and single-pair seams.
+    broad, broad_work = measure_work(db, monkeypatch, selected=False)
+    single, single_work = measure_work(db, monkeypatch, selected=True)
+    landing_coverage, landing_work = measure_work(db, monkeypatch, selected="landing")
+    assert landing_coverage["analysis_stages"] == {"complete": 1}
+    assert landing_work["evidence_reads"] == landing_work["game_replays"] == 0
+    assert landing_work["history_rebuilds"] == landing_work["lesson_builds"] == 0
+    assert broad["current"] == single["current"] and broad["previous"] == single["previous"]
+    assert broad_work["evidence_reads"] == 38 and single_work["evidence_reads"] == 2
+    assert broad_work["game_replays"] == single_work["game_replays"] == 1
+    assert broad_work["lesson_builds"] == single_work["lesson_builds"] == 1
+    print(
+        "synthetic_recurrence_work",
+        {"broad": broad_work, "single": single_work, "landing": landing_work},
+    )
     db.close()
     app = create_app(
         db_path=path,
@@ -146,16 +161,92 @@ def test_recurrence_review_boundaries_and_independence(tmp_path, monkeypatch):
         login="login",
         origin="https://coach.invalid",
     )
-    response = app.test_client().get(
-        "/recurrence", base_url="https://coach.invalid", headers={"Tailscale-User-Login": "login"}
+    from html import unescape
+    from urllib.parse import parse_qs, urlsplit
+
+    import chess_coach.recurrence_web_report as web_report
+    from chess_coach.recurrence_skills import PAIRS
+
+    calls = []
+    original_report = web_report.report
+
+    def counted_report(*args, **kwargs):
+        calls.append((kwargs.get("skill"), kwargs.get("operation")))
+        return original_report(*args, **kwargs)
+
+    monkeypatch.setattr(web_report, "report", counted_report)
+    client = app.test_client()
+    headers = {"Tailscale-User-Login": "login"}
+    dates = {"start": START, "end": END, "compare_start": PREV}
+    landing = client.get(
+        "/recurrence", query_string=dates, base_url="https://coach.invalid", headers=headers
     )
-    assert response.status_code == 200
+    assert landing.status_code == 200 and calls == []
+    assert b"complete 1" in landing.data and b"Choose a pattern" in landing.data
+    import re
+
+    links = re.findall(r'href="([^"]+)"', unescape(landing.get_data(as_text=True)))
+    pairs = set()
+    for link in links:
+        parts = urlsplit(link)
+        query = parse_qs(parts.query)
+        if parts.path == "/recurrence" and "skill" in query and "operation" in query:
+            assert query["start"] == [START] and query["end"] == [END]
+            assert query["compare_start"] == [PREV]
+            pairs.add((query["skill"][0], query["operation"][0]))
+    assert pairs == set(PAIRS)
+    for skill, operation in PAIRS:
+        response = client.get(
+            "/recurrence",
+            query_string={**dates, "skill": skill, "operation": operation},
+            base_url="https://coach.invalid",
+            headers=headers,
+        )
+        assert response.status_code == 200
+    assert calls == list(PAIRS)
+    response = client.get(
+        "/recurrence",
+        query_string={**dates, "skill": "fork", "operation": "execute"},
+        base_url="https://coach.invalid",
+        headers=headers,
+    )
     assert b"provisional recorded candidates" in response.data
-    assert b"/evidence/" in response.data and b"game 1, ply 3" in response.data
+    assert f"/evidence/{kept}".encode() in response.data and b"game 1, ply 3" in response.data
+    assert f"/evidence/{first}".encode() not in response.data
+    assert f"/evidence/{second}".encode() not in response.data
     assert (
         b"complete 1" in response.data
         and b"tie at the indexed sample boundary: True" in response.data
     )
+    updated = Database(path)
+    review_evidence(updated, kept, decision="accept", actor="synthetic")
+    updated.close()
+    assert (
+        f"/evidence/{kept}".encode()
+        in client.get(
+            "/recurrence",
+            query_string={**dates, "skill": "fork", "operation": "execute"},
+            base_url="https://coach.invalid",
+            headers=headers,
+        ).data
+    )
+    updated = Database(path)
+    review_evidence(updated, kept, decision="revoke", actor="synthetic")
+    updated.close()
+    revoked = client.get(
+        "/recurrence",
+        query_string={**dates, "skill": "fork", "operation": "execute"},
+        base_url="https://coach.invalid",
+        headers=headers,
+    )
+    assert f"/evidence/{kept}".encode() not in revoked.data
+    invalid = client.get(
+        "/recurrence",
+        query_string={"start": END, "end": START, "compare_start": PREV},
+        base_url="https://coach.invalid",
+        headers=headers,
+    )
+    assert b"Report unavailable" in invalid.data
     coaching_page = app.test_client().get(
         "/coaching", base_url="https://coach.invalid", headers={"Tailscale-User-Login": "login"}
     )
@@ -164,6 +255,54 @@ def test_recurrence_review_boundaries_and_independence(tmp_path, monkeypatch):
         b"complete 1" in coaching_page.data
         and b"no verified start time: at least 1" in coaching_page.data
     )
+
+
+def measure_work(db, monkeypatch, *, selected):
+    import time
+
+    import chess_coach.preview_history as preview_history_module
+    import chess_coach.recurrence_collect as collect_module
+    import chess_coach.recurrence_game_cache as cache_module
+    import chess_coach.recurrence_report_helpers as helpers_module
+    import chess_coach.recurrence_web_report as web_report
+    from chess_coach.preview_snapshot import preview_history
+    from chess_coach.recurrence_snapshot import read_snapshot
+
+    counts = {"evidence_reads": 0, "game_replays": 0, "history_rebuilds": 0, "lesson_builds": 0}
+    with monkeypatch.context() as patch:
+
+        def wrap(module, name, metric):
+            original = getattr(module, name)
+
+            def counted(*args, **kwargs):
+                counts[metric] += 1
+                return original(*args, **kwargs)
+
+            patch.setattr(module, name, counted)
+
+        wrap(collect_module, "evidence", "evidence_reads")
+        wrap(helpers_module, "evidence", "evidence_reads")
+        wrap(cache_module, "load_game", "game_replays")
+        wrap(preview_history_module, "decision_context_boards", "history_rebuilds")
+        wrap(web_report, "build", "lesson_builds")
+        start = time.perf_counter()
+        if selected == "landing":
+            result = web_report.landing(db, "learner", START, END, PREV)
+        else:
+            with read_snapshot(db), preview_history(db, "learner") as history:
+                result = report(
+                    db,
+                    "learner",
+                    START,
+                    END,
+                    PREV,
+                    skill="fork" if selected else None,
+                    operation="execute" if selected else None,
+                    _history=history,
+                )
+                web_report._attach_lessons(result, db, "learner", history)
+        counts["snapshot_ms"] = round((time.perf_counter() - start) * 1000, 2)
+    return result, counts
 
 
 def test_duplicate_import_alias_and_replay_count_once(tmp_path):
