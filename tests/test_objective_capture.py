@@ -695,7 +695,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
             )
         assert seen_subjects == ["MiXeD", "MiXeD"]
         # A proof that completes after the cooperative budget is never shown.
-        clock = iter((False, True))
+        clock = iter((False, False, True))
         with monkeypatch.context() as patch:
             patch.setattr(finder_proof, "setup", lambda *_args: None)
             patch.setattr(finder_proof, "certificate", lambda *_args: None)
@@ -707,6 +707,20 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
                 lambda _: next(clock),
             )
         assert candidate is None and used == 1
+        # Setup may consume the remaining budget; do not start a proof then.
+        started = []
+        clock = iter((False, True))
+        with monkeypatch.context() as patch:
+            patch.setattr(finder_proof, "setup", lambda *_args: None)
+            patch.setattr(finder_proof, "certificate", lambda *_args: started.append(True))
+            candidate, used = finder_proof.prove(
+                db,
+                (None, None, None, [{"type": "corpus", "version": "fixture", "key": "fixture"}]),
+                1,
+                4,
+                lambda _: next(clock),
+            )
+        assert candidate is None and used == 0 and not started
         # Cheap preflight skips do not consume the proof budget or hide a later candidate.
         candidates = [
             {"type": "corpus", "version": "fixture", "key": str(index)} for index in range(16)
@@ -736,6 +750,30 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
                 db, (None, None, None, candidates), 1, 12, lambda _: False
             )
         assert candidate is None and used == 12 and len(proofs) == 12
+        proof_quotas = []
+        fake_candidate = {"type": "corpus", "version": "fixture", "key": "fixture"}
+
+        def per_source(_db, _selection, _deadline, remaining, _expired):
+            proof_quotas.append(remaining)
+            return (None, remaining) if len(proof_quotas) == 1 else (fake_candidate, 1)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(
+                finder_search,
+                "witnesses",
+                lambda *_args, **_kwargs: iter([{"position_id": 1}, {"position_id": 2}]),
+            )
+            patch.setattr(
+                finder_search,
+                "_selection",
+                lambda *_args, **_kwargs: (None, None, None, [fake_candidate], None, None),
+            )
+            patch.setattr(finder_search, "prove", per_source)
+            patch.setattr(finder_search, "present", lambda *_args, **_kwargs: {"items": [{}]})
+            answer = finder_search.search(
+                db, LEARNER, LEARNER, "capture", app.secret_key, {}, None, 1, lambda _: False
+            )
+        assert answer[0] == 2 and proof_quotas == [4, 4]
     review_evidence(db, evidence, decision="reject", actor="reviewer")
     with pytest.raises(ValueError):
         show(db, attempt, LEARNER)

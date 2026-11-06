@@ -5,6 +5,7 @@ from .capture_plan_sources import witnesses
 from .related_capture import _selection, present
 
 MAX_PROOFS = 12
+PER_SOURCE_PROOFS = 4
 
 
 def search(db, learner, subject, corpus, secret, groups, familiar, deadline, expired):
@@ -26,7 +27,9 @@ def search(db, learner, subject, corpus, secret, groups, familiar, deadline, exp
             break
         if selection is None:
             continue
-        candidate, used = prove(db, selection, deadline, MAX_PROOFS - checked, expired)
+        candidate, used = prove(
+            db, selection, deadline, min(PER_SOURCE_PROOFS, MAX_PROOFS - checked), expired
+        )
         checked += used
         if candidate is not None:
             one = (*selection[:3], [candidate], *selection[4:])

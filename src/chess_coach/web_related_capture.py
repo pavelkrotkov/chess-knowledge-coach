@@ -95,11 +95,11 @@ def find_verified():
             current_app.config["CORPUS"],
             current_app.secret_key,
         )
-        if found is not None:
-            position, result = found
-            for item in result["items"]:
-                item["board"] = board_rows(item["fen"])
-            return render_template("related_capture.html", result=result, position=position)
     except (sqlite3.Error, ValueError, TypeError, KeyError, IndexError):
-        pass
-    return render_template("capture_finder_empty.html")
+        found = None
+    if found is None:
+        return render_template("capture_finder_empty.html")
+    position, result = found
+    for item in result["items"]:
+        item["board"] = board_rows(item["fen"])
+    return render_template("related_capture.html", result=result, position=position)
