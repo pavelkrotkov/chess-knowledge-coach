@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Repeated opening exploration — Chess coach{% endblock %}
+{% block content %}
+<h2>Explore a repeated opening branch</h2>
+<p><a href="{{ url_for('repertoire_views.repertoire') }}">Back to repertoire</a></p>
+<p>This is exploration, not a recommendation or proof of soundness, competitive fit, or mastery. It looks for the same learner-to-move position in independently identified games.</p>
+<p>Latest verified-time sample: {{ report.sample }} attributable games; {{ report.scanned }} had bounded metadata inspected. Up to 100 games, first 40 plies, and learner moves from ply 4 are considered. Repeated metadata nominations: {{ report.nominations }}; checked {{ report.occurrences_checked }} occurrences across {{ report.groups_checked }} groups, within limits of eight and three. Duplicate identities: {{ report.duplicates }}; unavailable: {{ report.unavailable }}; deferred: {{ report.deferred }}. {% if report.partial %}Some nominations or checks were not completed.{% endif %}</p>
+<p>Sample limit reached: {{ report.coverage.game_limit_reached }}; boundary tie: {{ report.coverage.boundary_tie }}; verified-time candidates that failed recheck: {{ report.coverage.candidate_recheck_failed }}, including {{ report.coverage.oversized_pgn }} over the game-text limit. At least {{ report.coverage.unknown_time_lower_bound }} known-owner games have no verified time, and at least {{ report.coverage.unknown_ownership_global_lower_bound }} records have uncertain ownership or time; these are lower bounds.</p>
+{% if report.branch %}
+{% set branch = report.branch %}{% set exemplar = branch.exemplar %}
+<h3>{{ branch.color|title }} to move: verified repeated position</h3>
+<p>{{ branch.nominated }} metadata nominations; {{ branch.games|length }} distinct game identities verified here. Position: <code>{{ branch.position }}</code>.</p>
+<ul>{% for game in branch.games %}<li>Played {{ game.played }} at {{ game.played_at }} — <a href="{{ url_for('repertoire_views.opening_decision', game_id=game.game_id, position_id=game.position_id) }}">inspect this exact decision</a>.</li>{% endfor %}</ul>
+<p>In the linked exemplar you played {{ exemplar.played }}. A legal catalog alternative is {{ branch.alternative.san }}. Catalog inclusion alone does not establish that it is sound or personally suitable.</p>
+{% if branch.comparison %}<p>For that exact exemplar and alternative, the bounded same-search estimate is played {{ branch.comparison.played }} cp; alternative {{ branch.comparison.alternative }} cp at depth {{ branch.comparison.depth }}, from the learner's perspective. This is not a recommendation.</p>{% else %}<p>No current qualified comparison is shown here. Open the exact decision to request or inspect one.</p>{% endif %}
+<p><a href="{{ url_for('repertoire_views.opening_decision', game_id=exemplar.game_id, position_id=exemplar.position_id) }}">Open the exemplar decision</a> · <a href="{{ url_for('repertoire_views.opening_references', game_id=exemplar.game_id, position_id=exemplar.position_id) }}">View public reference examples</a>.</p>
+{% if branch.references %}
+<p>Up to three examples from a bounded <a href="{{ branch.references.source }}">Lichess broadcast sample</a> under <a href="{{ branch.references.license_url }}">{{ branch.references.license }}</a>; these do not establish popularity or fit.</p>
+<ul>{% for item in branch.references["items"] %}<li>{{ item.context.Event }}, {{ item.context.Date }}: {{ item.context.White }}–{{ item.context.Black }}; played {{ item.san }}. {% if item.site %}<a href="{{ item.site }}">Broadcast source</a>{% else %}<a href="{{ branch.references.source }}">Archive source</a>{% endif %}.</li>{% else %}<li>No match in this bounded sample.</li>{% endfor %}</ul>
+{% else %}<p>The public reference sample is unavailable.</p>{% endif %}
+<p>No branch-specific structure or plan is established by these checks.</p>
+{% else %}
+<p>No branch was verified in the checks completed here. This bounded result does not show that none exists.</p>
+{% endif %}
+{% endblock %}

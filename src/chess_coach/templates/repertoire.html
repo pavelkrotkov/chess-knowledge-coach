@@ -2,6 +2,7 @@
 {% block title %}Repertoire — Chess coach{% endblock %}
 {% block content %}
 <h2>Repertoire</h2>
+<p><a href="{{ url_for('repertoire_views.opening_explore') }}">Explore a repeated opening branch</a></p>
 {% if report %}
 <p>Attributable games examined: {{ report.games|length }}. Unclassified: {{ report.unclassified }}; classified without a named match: {{ report.unknown }}; stale classifications awaiting reprocessing: {{ report.stale }}. Stale classifications are excluded from position aggregates. Results and frequencies describe this sample, not skill. Small samples are unreliable.</p>
 <p>Up to 100 attributable games with verified UTC start times are selected by played time. Local ID breaks exact timestamp ties without establishing their order. Game limit reached: {{ report.game_limit_reached }}; tie at the sample boundary: {{ report.time_coverage.boundary_tie }}; games exceeding 1,000 recorded plies: {{ report.position_limit_games }}. Games with known ownership and no verified start time: at least {{ report.time_coverage.unknown_time_lower_bound }}; at least {{ report.time_coverage.unknown_ownership_global_lower_bound }} records have uncertain ownership or stale time data (not necessarily yours). Candidate rechecks failed: {{ report.time_coverage.candidate_recheck_failed }}. These bounded counts are lower bounds; excluded games cannot be placed in time and coverage may be partial.</p>
