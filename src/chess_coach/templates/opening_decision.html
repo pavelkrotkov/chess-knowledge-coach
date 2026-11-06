@@ -9,6 +9,20 @@
 <p>Position identity: <code>{{ decision.catalog.parent }}</code>. The identity excludes move counters so transpositions share a position.</p>
 {% if decision.analysis.status == "available" %}<p>Current stored same-search analysis: {{ decision.analysis.engine }} {{ decision.analysis.engine_version }}, run {{ decision.analysis.run_id }}, limits {{ decision.analysis.limits }}. Scores are centipawns from the player-to-move perspective, at the stated depth; they are bounded engine estimates.</p>{% else %}<p>Same-search comparison unavailable: {{ decision.analysis.status }}.</p>{% endif %}
 <ul>{% for item in decision.catalog["items"] %}<li><strong>{{ item.san }}</strong> — resulting position <code>{{ item.child }}</code>.
+{% set comparison = comparisons.get(item.uci, {}) %}
+{% if comparison.status == "complete" %}
+<p>Selected comparison (centipawns from your perspective, depth {{ comparison.lines[0].depth }}):
+{% for line in comparison.lines %}{% if line.root_move == item.uci %}alternative {{ line.score_value }} cp{% else %}played {{ line.score_value }} cp{% endif %}{% if not loop.last %}; {% endif %}{% endfor %}.
+These are estimates for the selected moves, not a recommendation or proof of opening fit.</p>
+{% elif comparison.status == "queued" %}<p>Comparison queued for a later worker run.</p>
+{% elif comparison.status == "unavailable" %}<p>Comparison unavailable.{% if comparison.retry_available %} You may retry.{% else %} The retry limit was reached.{% endif %}</p>
+{% elif comparison.status == "stale" %}<p>The earlier comparison is stale; request a current one.</p>{% endif %}
+{% if comparison.status != "complete" and comparison.status != "queued" and (comparison.status != "unavailable" or comparison.retry_available) %}
+<form method="post" action="{{ url_for('repertoire_views.opening_compare', game_id=decision.game_id, position_id=decision.position_id) }}">
+<input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="alternative" value="{{ item.uci }}">
+{% if comparison.status == "unavailable" %}<input type="hidden" name="retry" value="1">{% endif %}
+<button type="submit">{% if comparison.status == "unavailable" %}Retry{% else %}Compare this move{% endif %}</button>
+</form>{% endif %}
 {% if item.analysis %} Played {{ item.analysis.played }} cp; alternative {{ item.analysis.alternative }} cp at depth {{ item.analysis.depth }}. Recorded continuation: {{ item.analysis.line|join(" ") }}.{% else %} No qualified same-search comparison for this move.{% endif %}</li>{% else %}<li>No verified alternative catalog move in this bounded scan.</li>{% endfor %}</ul>
 {% if decision.catalog.truncated %}<p>Additional catalog moves were not shown.</p>{% endif %}
 {% endblock %}

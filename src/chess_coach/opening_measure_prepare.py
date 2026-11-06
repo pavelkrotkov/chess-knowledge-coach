@@ -27,17 +27,19 @@ def _config(db, game_id, engine):
     return binary, config
 
 
-def _prepare(db, game_id, position_id, alternative, output, engine):
+def _prepare(db, game_id, position_id, alternative, output, engine, *, learner=None, expected=None):
     budget = Budget(db)
     deadline = time.monotonic() + WORKER_SECONDS
     budget.expires = min(budget.expires, deadline)
     with deep_lock(db.path):
         with budget.scope(snapshot=False):
             binding, owned = selection(
-                db, game_id, position_id, os.environ["CHESS_SUBJECT"], alternative
+                db, game_id, position_id, learner or os.environ["CHESS_SUBJECT"], alternative
             )
         with budget.scope(snapshot=False):
             binary, config = _config(db, game_id, engine)
+            if expected is not None and (binding, config) != expected:
+                raise ValueError("queued source or configuration changed")
         result = measure(binary, config, owned["board"], owned["position"], alternative, deadline)
         with budget.scope(snapshot=False):
             _, after = _config(db, game_id, engine)

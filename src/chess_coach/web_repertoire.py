@@ -1,10 +1,13 @@
 """Private, attributable repertoire browser routes."""
 
-from flask import Blueprint, abort, current_app, render_template
+from flask import Blueprint, abort, current_app, redirect, render_template, request, url_for
 
 from .opening_decision import inspect
+from .opening_queue_request import admit
+from .opening_queue_view import statuses
 from .opening_reference_read import matches
 from .repertoire import game_detail, repertoire_report
+from .tactical_course_deadline import PreviewDeadline
 from .web_board import board_rows
 from .web_db import database
 
@@ -38,8 +41,39 @@ def opening_decision(game_id: int, position_id: int):
             "error.html",
             message="This opening decision is unavailable. Its ownership, game history, or pinned classification may be missing or changed.",
         ), 404
+    try:
+        comparisons = statuses(
+            database(), current_app.config["PROJECT_ROOT"], current_app.config["SUBJECT"], result
+        )
+    except (Exception, PreviewDeadline):
+        comparisons = {}
     return render_template(
-        "opening_decision.html", decision=result, board=board_rows(result["fen"], result["color"])
+        "opening_decision.html",
+        decision=result,
+        comparisons=comparisons,
+        board=board_rows(result["fen"], result["color"]),
+    )
+
+
+@repertoire_views.post("/repertoire/games/<int:game_id>/openings/<int:position_id>/compare")
+def opening_compare(game_id: int, position_id: int):
+    try:
+        admit(
+            database(),
+            current_app.config["PROJECT_ROOT"],
+            current_app.config["SUBJECT"],
+            game_id,
+            position_id,
+            request.form.get("alternative", ""),
+            retry=request.form.get("retry") == "1",
+        )
+    except (Exception, PreviewDeadline):
+        return render_template(
+            "error.html",
+            message="This comparison cannot be queued now. Another request may be pending, or this source may have changed.",
+        ), 409
+    return redirect(
+        url_for("repertoire_views.opening_decision", game_id=game_id, position_id=position_id)
     )
 
 
