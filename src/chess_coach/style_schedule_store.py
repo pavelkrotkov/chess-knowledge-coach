@@ -6,7 +6,7 @@ from .style_protection_schedule_discover import HISTORY_LIMIT, discover
 from .style_protection_schedule_store import insert as insert_protection
 from .style_schedule_budget import CURRENT
 from .style_schedule_candidates import allocate
-from .style_schedule_rotation import advance
+from .style_schedule_rotation import advance_slot
 from .style_schedule_schema import validate_style_schedule
 from .style_schedule_slots import insert_slot
 from .style_schedule_slots import pending as pending
@@ -49,8 +49,7 @@ def create_cycle(db, learner):
         slot_ids = {}
         for kind, item in slots:
             slot_ids[kind] = insert_slot(db, cursor.lastrowid, kind, item)
-            if item is not None:
-                advance(db, key, kind, item["game_id"])
+            advance_slot(db, key, kind, item, coverage.get("structural_target_selected", False))
         insert_protection(db, cursor.lastrowid, key, candidate, binding, reason, slot_ids, slots)
         db.connection.commit()
         return cursor.lastrowid

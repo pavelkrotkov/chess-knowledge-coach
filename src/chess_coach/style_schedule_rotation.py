@@ -31,3 +31,9 @@ def advance(db, key, kind, game_id):
         ON CONFLICT(learner_key,game_id,kind) DO UPDATE SET next_index=next_index+1""",
         (key, game_id, kind),
     )
+
+
+def advance_slot(db, key, kind, item, structural):
+    if item is None or (kind == "target" and structural):
+        return
+    advance(db, key, kind, item["game_id"])

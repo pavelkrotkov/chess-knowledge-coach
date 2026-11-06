@@ -11,14 +11,23 @@ def _fits(count):
     return budget is None or count * 2 <= budget["limit"] - budget["used"]
 
 
+def _firsts(first, structural_first, index, checks, structural, count):
+    if _fits(count):
+        if first is None and checks:
+            first = index
+        if structural_first is None and structural:
+            structural_first = index
+    return first, structural_first
+
+
 def _collect(db, ordered, coverage):
-    first = None
+    first = structural_first = None
     for index, (game, color) in enumerate(ordered):
         if reached():
             coverage["nomination_unchecked_games"] = len(ordered) - index
             break
         try:
-            checks, checked, count = inspect(db, game, color)
+            checks, structural, unknown, checked, count = inspect(db, game, color)
         except (ValueError, TypeError, IndexError):
             if reached():
                 coverage["nomination_unchecked_games"] = len(ordered) - index
@@ -28,9 +37,11 @@ def _collect(db, ordered, coverage):
         coverage["nomination_checked_decisions"] += checked
         coverage["nomination_games"] += bool(checks)
         coverage["nomination_turns"] += checks
-        if first is None and checks and _fits(count):
-            first = index
-    return first
+        coverage["structural_nomination_games"] += bool(structural)
+        coverage["structural_nomination_turns"] += structural
+        coverage["structural_nomination_unknown_turns"] += unknown
+        first, structural_first = _firsts(first, structural_first, index, checks, structural, count)
+    return first, structural_first
 
 
 def prioritize(db, games, sequence):
@@ -45,10 +56,16 @@ def prioritize(db, games, sequence):
         "nomination_unknown_games": 0,
         "nomination_unchecked_games": 0,
         "nomination_prioritized": False,
+        "structural_nomination_games": 0,
+        "structural_nomination_turns": 0,
+        "structural_nomination_unknown_turns": 0,
+        "structural_nomination_prioritized": False,
     }
-    first = _collect(db, ordered, coverage)
+    first, structural_first = _collect(db, ordered, coverage)
+    first = structural_first if structural_first is not None else first
     # All other games keep their original relative order, including unknowns.
     if sequence % 2 == 0 and first is not None:
         ordered.insert(0, ordered.pop(first))
         coverage["nomination_prioritized"] = True
+        coverage["structural_nomination_prioritized"] = structural_first is not None
     return ordered, coverage

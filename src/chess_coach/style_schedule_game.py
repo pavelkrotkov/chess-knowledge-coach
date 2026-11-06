@@ -6,7 +6,7 @@ import chess
 import chess.pgn
 
 from .analysis_positions import decisions
-from .style_history_lines import history_safe
+from .style_schedule_candidate import candidate as _candidate
 
 MAX_POSITIONS = 1000
 
@@ -28,20 +28,3 @@ def game_candidates(db, game, color):
             continue
         rows.append(_candidate(position, board))
     return rows
-
-
-def _candidate(position, board):
-    move = chess.Move.from_uci(position["uci"])
-    if not history_safe(board) or move.promotion:
-        detail = "history_or_promotion_unsupported"
-    elif board.legal_moves.count() <= 1:
-        detail = "forced_move"
-    else:
-        detail = "eligible"
-    return {
-        "game_id": position["game_id"],
-        "position_id": position["id"],
-        "in_check": board.is_check(),
-        "status": "ready" if detail == "eligible" else "unknown",
-        "detail": detail,
-    }

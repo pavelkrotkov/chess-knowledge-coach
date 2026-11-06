@@ -4,6 +4,7 @@ from .style_schedule_coverage import summarize_coverage
 from .style_schedule_nomination import prioritize
 from .style_schedule_rotation import choose
 from .style_schedule_scan import read_games
+from .style_schedule_target import target as _target
 from .style_time_candidates import recent_games
 
 MAX_GAMES = 10
@@ -14,8 +15,10 @@ def allocate(db, learner, key, sequence):
     ordered, nominations = prioritize(db, games, sequence)
     candidates, skipped, duplicates, exhausted, reconstructed = read_games(db, ordered, 0)
     coverage.update(nominations)
-    targets = [item for item in candidates if item["in_check"]]
-    target = choose(db, key, "target", targets)
+    target, structural, unknown = _target(db, key, sequence, candidates)
+    coverage["structural_replayed_positions"] = structural
+    coverage["structural_replayed_unknown"] = unknown
+    coverage["structural_target_selected"] = bool(sequence % 2 == 0 and structural and target)
     controls = [
         item for item in candidates if target is None or item["game_id"] != target["game_id"]
     ]
