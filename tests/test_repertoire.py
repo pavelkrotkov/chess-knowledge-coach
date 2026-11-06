@@ -158,15 +158,26 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     class Engine:
         def analyse(self, board, limit, *, multipv, root_moves):
             engine_calls.append((multipv, [move.uci() for move in root_moves]))
+
+            def variation(root):
+                line = [root]
+                replay = board.copy()
+                replay.push(root)
+                for _ in range(2):
+                    move = next(iter(replay.legal_moves))
+                    line.append(move)
+                    replay.push(move)
+                return line
+
             return [
                 {
-                    "pv": [root_moves[0]],
+                    "pv": variation(root_moves[0]),
                     "score": chess.engine.PovScore(chess.engine.Cp(0), board.turn),
                     "depth": 12,
                     "nodes": 100000,
                 },
                 {
-                    "pv": [root_moves[1]],
+                    "pv": variation(root_moves[1]),
                     "score": chess.engine.PovScore(chess.engine.Cp(120), board.turn),
                     "depth": 12,
                     "nodes": 100000,
@@ -448,6 +459,11 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     )
     queued = client.get(route, base_url="https://coach.invalid", headers=headers)
     assert b"Comparison queued" in queued.data and len(engine_calls) == before
+    experiment_url = route + "/experiment/g1f3"
+    assert (
+        client.get(experiment_url, base_url="https://coach.invalid", headers=headers).status_code
+        == 404
+    )
     second_route = f"/repertoire/games/2/openings/{transposed_move}/compare"
     assert (
         client.post(
@@ -465,6 +481,44 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     completed = client.get(route, base_url="https://coach.invalid", headers=headers)
     assert b"Selected comparison" in completed.data and b"120 cp" in completed.data
     assert len(engine_calls) == before + 1
+    assert b"Rehearse this opening experiment" in completed.data
+    experiment = client.get(experiment_url, base_url="https://coach.invalid", headers=headers)
+    assert experiment.status_code == 200
+    assert b"played 0 cp; alternative 120 cp" in experiment.data
+    assert b"choose Nf3" in experiment.data
+    assert b"Reveal your continuation" in experiment.data
+    assert b"Overall soundness and personal fit remain unknown" in experiment.data
+    assert b"alternative=g1f3" in experiment.data
+    assert client.get(experiment_url, base_url="https://coach.invalid").status_code == 403
+    assert (
+        client.get(
+            route + "/experiment/e2e4", base_url="https://coach.invalid", headers=headers
+        ).status_code
+        == 404
+    )
+    download = client.get(
+        experiment_url + "?download=1", base_url="https://coach.invalid", headers=headers
+    )
+    assert download.status_code == 200 and download.mimetype == "application/x-chess-pgn"
+    assert "no-store" in download.headers["Cache-Control"]
+    import io
+
+    import chess.pgn
+
+    chapter = chess.pgn.read_game(io.StringIO(download.get_data(as_text=True)))
+    assert chapter is not None
+    assert (
+        not chapter.errors
+        and chapter.headers["White"] == "White"
+        and chapter.headers["Black"] == "Black"
+    )
+    alternative_node = next(node for node in chapter.variations if node.move.uci() == "g1f3")
+    reply = alternative_node.variations[0].san()
+    assert f"After {reply}".encode() in experiment.data
+    assert f"after {reply}" in chapter.comment
+    assert {node.move.uci() for node in chapter.variations} == {"d2d4", "g1f3"}
+    assert all(3 <= len(list(node.mainline_moves())) + 1 <= 4 for node in chapter.variations)
+    assert len(engine_calls) == before + 1
 
     import copy
 
@@ -475,6 +529,29 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     artifact = queue_artifact.load(planning_dir, queued_slot)
     result_body = artifact["result"]
     assert qualified(result_body, queued_slot["source"], chess.Board())
+    from chess_coach.opening_experiment import qualified as experiment_qualified
+
+    choice = next(item for item in first["catalog"]["items"] if item["uci"] == "g1f3")
+    borderline = copy.deepcopy(result_body)
+    played_line = next(line for line in borderline["lines"] if line["root_move"] == "d2d4")
+    alternate_line = next(line for line in borderline["lines"] if line["root_move"] == "g1f3")
+    alternate_line["score_value"] = played_line["score_value"] - 50
+    assert experiment_qualified(first, choice, borderline)
+    alternate_line["score_value"] -= 1
+    assert experiment_qualified(first, choice, borderline) is None
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            "chess_coach.opening_experiment_current.statuses", lambda *_args: {"g1f3": borderline}
+        )
+        assert (
+            client.get(
+                experiment_url, base_url="https://coach.invalid", headers=headers
+            ).status_code
+            == 404
+        )
+    alternate_line["score_value"] += 1
+    alternate_line["pv"] = "g1f3 g8f6"
+    assert experiment_qualified(first, choice, borderline) is None
     invalid_work = copy.deepcopy(result_body)
     invalid_work["work"]["nodes"] = 200001
     assert not qualified(invalid_work, queued_slot["source"], chess.Board())
@@ -556,6 +633,16 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     )
     changed_page = client.get(second_page, base_url="https://coach.invalid", headers=headers)
     assert b"comparison is stale" in changed_page.data
+    assert (
+        client.get(experiment_url, base_url="https://coach.invalid", headers=headers).status_code
+        == 404
+    )
+    assert (
+        client.get(
+            experiment_url + "?download=1", base_url="https://coach.invalid", headers=headers
+        ).status_code
+        == 404
+    )
     monkeypatch.setattr(
         queue_binding, "_config", lambda *args: ("engine", {"engine_path": "engine"})
     )
@@ -762,6 +849,18 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     )
     assert profile_lookup.SOURCE_SHA256.encode() in profile_page.data
     assert b"played 0 cp; alternative 120 cp" in profile_page.data
+    selected_profile = client.get(
+        profile_url + "?alternative=g1f3", base_url="https://coach.invalid", headers=headers
+    )
+    assert (
+        b"Selected catalog alternative" in selected_profile.data and b"Nf3" in selected_profile.data
+    )
+    assert (
+        client.get(
+            profile_url + "?alternative=e2e4", base_url="https://coach.invalid", headers=headers
+        ).status_code
+        == 404
+    )
     assert len(engine_calls) == before_profile
 
     matching = reference_matches(tmp_path, "learner", branch_first["catalog"]["parent"])

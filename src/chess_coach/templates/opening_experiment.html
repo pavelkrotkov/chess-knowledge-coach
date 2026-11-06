@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Opening experiment — Chess coach{% endblock %}
+{% block content %}
+<h2>Opening experiment</h2>
+<p>You play {{ decision.color }}. Replay the played branch. From the starting position, choose {{ choice.san }}. After {{ experiment.alternative.san[1] }}, find your continuation before revealing the worked line.</p>
+<p><a href="{{ url_for('repertoire_views.opening_decision', game_id=decision.game_id, position_id=decision.position_id) }}">View the exact source decision</a> · <a href="{{ url_for('opening_profiles.show', game_id=decision.game_id, position_id=decision.position_id, alternative=choice.uci) }}">View public branch structures for these moves</a> · <a href="{{ download_url }}">Download private PGN</a></p>
+{% set board_label = "Opening position; learner to move" %}{% include "board.html" %}
+<p>Two-root same-search estimates from your perspective at depth {{ experiment.depth }}: played {{ experiment.played.score }} cp; alternative {{ experiment.alternative.score }} cp. The alternative is no more than 50 cp below the played move in this estimate. These estimates cover the two shown roots at the recorded depth. Overall soundness and personal fit remain unknown.</p>
+<h3>Played: {{ decision.played }}</h3><p>{{ experiment.played.san|join(" ") }}</p>
+<h3>Alternative: {{ choice.san }}</h3><p>{{ choice.san }} {{ experiment.alternative.san[1] }}</p><details><summary>Reveal your continuation</summary><p>{{ experiment.alternative.san[2:]|join(" ") }}</p></details>
+<p>These are bounded worked lines. Other legal continuations may occur.</p>
+{% endblock %}
