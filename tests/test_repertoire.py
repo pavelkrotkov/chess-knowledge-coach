@@ -190,6 +190,7 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         game_detail(db, "learner", 4)
     app = create_app(
         db_path=path,
+        project_root=tmp_path,
         subject="learner",
         actor="reviewer",
         corpus="test",
@@ -222,6 +223,67 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     response = client.get(route, base_url="https://coach.invalid", headers=headers)
     assert response.status_code == 200 and b"Nf3" in response.data
     assert b"No qualified same-search comparison" in response.data
+    assert b"See public reference games for this position" in response.data
+    import hashlib
+
+    import chess_coach.opening_reference_source as reference_source
+    from chess_coach.opening_reference_index import build as build_reference
+    from chess_coach.opening_reference_read import matches as reference_matches
+    from chess_coach.opening_reference_url import game_site, site
+
+    assert not site("https://[invalid/broadcast")
+    assert not site("https://lichess.org/broadcast/x/../abcdefgh")
+    assert not game_site("https://lichess.org/broadcast/example/series/abcdefgh")
+    assert game_site("https://lichess.org/broadcast/example/series/abcdefgh/ABCDEFGH/").endswith(
+        "ABCDEFGH"
+    )
+    reference_dir = tmp_path / ".runtime" / "planning"
+    reference_dir.mkdir(parents=True, mode=0o700)
+    archive = reference_dir / reference_source.SOURCE_NAME
+    archive.write_bytes(b"synthetic archive")
+    with pytest.raises(ValueError, match="pinned source"):
+        build_reference(tmp_path, "learner")
+    sample = (
+        game("Public A", "Public B", "1. d4 d5 2. Nf3 Nf6 3. c4")
+        + "\n"
+        + game("Public C", "Public D", "1. Nf3 Nf6 2. d4 d5 3. g3")
+    )
+    sample += "\n" + game("Public A", "Public B", "1. d4 d5 2. Nf3 Nf6 3. c4")
+    sample = sample.replace(
+        '[Event "Fixture"]',
+        '[GameURL "https://lichess.org/broadcast/example/series/abcdefgh/ABCDEFGH"]\n[Event "Fixture"]',
+        1,
+    )
+    sample = sample.replace("[GameURL ", '[UTCDate "2026.01.02"]\n[GameURL ', 1)
+    same_url = game("Changed", "Names", "1. e4 e5").replace(
+        '[Event "Fixture"]',
+        '[GameURL "https://lichess.org/broadcast/example/series/abcdefgh/ABCDEFGH"]\n[Event "Other"]',
+    )
+    sample += "\n" + same_url
+    sample += "\n" + game("Bad", "Game", "1. e4 e5", "*")
+    sample += "\n" + game("Bad", "Mate", "1. f3 e5 2. g4 Qh4#", "1-0")
+    with monkeypatch.context() as patch:
+        patch.setattr(reference_source, "SOURCE_BYTES", len(archive.read_bytes()))
+        patch.setattr(
+            reference_source, "SOURCE_SHA256", hashlib.sha256(archive.read_bytes()).hexdigest()
+        )
+        patch.setattr(reference_source, "_decode", lambda file: (sample.encode(), False))
+        coverage = build_reference(tmp_path, "learner")
+        assert coverage["accepted"] == 2 and coverage["duplicates"] == 2
+        assert coverage["excluded"] == 2
+        with pytest.raises(ValueError, match="already exists"):
+            build_reference(tmp_path, "learner")
+    matching = reference_matches(tmp_path, "learner", branch_first["catalog"]["parent"])
+    assert len(matching["items"]) == 2
+    assert any(item["context"]["Date"] == "2026.01.02" for item in matching["items"])
+    assert {item["san"] for item in matching["items"]} == {"c4", "g3"}
+    ref_response = client.get(
+        route + "/references", base_url="https://coach.invalid", headers=headers
+    )
+    assert ref_response.status_code == 200 and b"bounded convenience sample" in ref_response.data
+    assert b"Public A" in ref_response.data and b"CC BY-SA 4.0" in ref_response.data
+    assert b"https://lichess.org/broadcast/example/series/abcdefgh/ABCDEFGH" in ref_response.data
+    assert client.get(route + "/references", base_url="https://coach.invalid").status_code == 403
 
     def sample_comparison(_db, _learner, _context, _board, items):
         items[0]["analysis"] = {"played": 5, "alternative": 10, "depth": 8, "line": ["Nf3"]}

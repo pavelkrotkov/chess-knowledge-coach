@@ -3,6 +3,7 @@
 from flask import Blueprint, abort, current_app, render_template
 
 from .opening_decision import inspect
+from .opening_reference_read import matches
 from .repertoire import game_detail, repertoire_report
 from .web_board import board_rows
 from .web_db import database
@@ -40,3 +41,17 @@ def opening_decision(game_id: int, position_id: int):
     return render_template(
         "opening_decision.html", decision=result, board=board_rows(result["fen"], result["color"])
     )
+
+
+@repertoire_views.get("/repertoire/games/<int:game_id>/openings/<int:position_id>/references")
+def opening_references(game_id: int, position_id: int):
+    try:
+        decision = inspect(database(), game_id, position_id, current_app.config["SUBJECT"])
+    except ValueError:
+        abort(404)
+    references = matches(
+        current_app.config["PROJECT_ROOT"],
+        current_app.config["SUBJECT"],
+        decision["catalog"]["parent"],
+    )
+    return render_template("opening_references.html", decision=decision, references=references)
