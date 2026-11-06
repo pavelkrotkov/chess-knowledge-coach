@@ -22,14 +22,18 @@ def qualification(family):
     return text
 
 
-def build(db, learner, group, *, _history=None):
+def build(db, learner, group, *, _history=None, check=None):
     examples = []
     for candidate in group["lesson_examples"]:
+        if check is not None:
+            check()
         inspected = (
             source(db, learner, candidate)
             if _history is None
             else source(db, learner, candidate, _history=_history)
         )
+        if check is not None:
+            check()
         if inspected:
             item = describe(inspected)
             if item:

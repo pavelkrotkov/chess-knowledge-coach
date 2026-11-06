@@ -248,7 +248,9 @@ def test_recurrence_review_boundaries_and_independence(tmp_path, monkeypatch):
     )
     assert b"Report unavailable" in invalid.data
     coaching_page = app.test_client().get(
-        "/coaching", base_url="https://coach.invalid", headers={"Tailscale-User-Login": "login"}
+        "/coaching?full=1",
+        base_url="https://coach.invalid",
+        headers={"Tailscale-User-Login": "login"},
     )
     assert coaching_page.status_code == 200
     assert (

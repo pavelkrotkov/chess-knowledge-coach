@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.74.0"
+REGISTRY_VERSION = "1.75.0"
 
 CAPABILITIES = (
     {
@@ -417,7 +417,7 @@ CAPABILITIES = (
         "area": "Progress",
         "name": "Recurring patterns and improvement",
         "status": "observation-only",
-        "details": "Bounded source-linked recurring-pattern candidates compare game-start windows and context; unverified sources and sampling limits are explicit. Separate practice/game progress remains planned.",
+        "details": "A bounded quick coaching preview and an explicit complete view show source-linked recurring patterns with sampling limits. Separate practice and game progress remain scoped by their available evidence.",
     },
     {
         "id": "explanation_adapter",

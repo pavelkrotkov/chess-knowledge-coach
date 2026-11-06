@@ -6,7 +6,7 @@ from .lesson_examples import representatives
 from .lesson_narrative import build
 
 
-def rank(db, learner, groups, history):
+def rank(db, learner, groups, history, *, check=None):
     candidates: list[dict[str, Any]] = []
     for key, items in groups.items():
         games_seen = {item["game_key"] for item in items}
@@ -20,7 +20,7 @@ def rank(db, learner, groups, history):
             "version": version,
             "lesson_examples": representatives(items),
         }
-        lesson = build(db, learner, group, _history=history)
+        lesson = _lesson(db, learner, group, history, check)
         lesson["examples"] = [item for item in lesson["examples"] if item["lines"]]
         if len(lesson["examples"]) < 2:
             continue
@@ -43,6 +43,13 @@ def rank(db, learner, groups, history):
         )
     )
     return _distinct(candidates)
+
+
+def _lesson(db, learner, group, history, check):
+    if check is None:
+        return build(db, learner, group, _history=history)
+    check()
+    return build(db, learner, group, _history=history, check=check)
 
 
 def _distinct(candidates):

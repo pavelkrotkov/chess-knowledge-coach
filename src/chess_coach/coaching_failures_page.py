@@ -7,15 +7,17 @@ from .lesson_source import source
 from .recurrence_selection import consider
 
 
-def collect_page(db, learner, history, rows, groups, excluded, seen):
+def collect_page(db, learner, history, rows, groups, excluded, seen, *, check=lambda: None):
     cache, parts = {}, {}
     previous = datetime(1, 1, 1, tzinfo=UTC)
     begin = datetime(2, 1, 1, tzinfo=UTC)
     finish = datetime.now(UTC)
     for row in rows:
+        check()
         item = consider(
             db, learner, row, {}, cache, parts, excluded, begin, finish, previous, _history=history
         )
+        check()
         if item is None:
             continue
         identity = (item["game_key"], item["ply"], item["skill"], item["operation"], item["family"])
@@ -25,6 +27,7 @@ def collect_page(db, learner, history, rows, groups, excluded, seen):
         inspected = source(
             db, learner, {"id": item["id"], "position_id": item["position_id"]}, _history=history
         )
+        check()
         example = describe(inspected) if inspected else None
         if not example or not example["lines"]:
             excluded["lesson or legal line unavailable"] += 1
