@@ -39,7 +39,7 @@ def test_unlisted_owned_fork_is_proved_for_success_and_miss(tmp_path, monkeypatc
     )
     client = app.test_client()
     headers = {"Tailscale-User-Login": "fixture-login"}
-    library = client.get("/library", base_url="https://coach.invalid", headers=headers)
+    library = client.get("/library?family=fork", base_url="https://coach.invalid", headers=headers)
     section = library.get_data(as_text=True).split("<h2>Own-game fork execution</h2>", 1)[1]
     section = section.split("<h2>", 1)[0]
     assert f'name="key" value="{evidence}"' in section

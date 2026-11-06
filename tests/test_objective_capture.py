@@ -101,7 +101,9 @@ def test_browser_and_cli_resume_show_the_bound_objective(tmp_path, monkeypatch, 
     )
     client = app.test_client()
     headers = {"Tailscale-User-Login": "fixture"}
-    library = client.get("/library", base_url="https://coach.invalid", headers=headers)
+    library = client.get(
+        "/library?family=capture", base_url="https://coach.invalid", headers=headers
+    )
     assert library.status_code == 200 and b"Capture the named target" in library.data
     post = client.post(
         "/unified/start",
