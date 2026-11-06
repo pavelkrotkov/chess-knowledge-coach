@@ -5,7 +5,17 @@ from .unified_sessions import _create
 from .unified_source_current import require_current
 
 
-def start_selected(db, *, attempt_id, subject, corpus_version, reference, resolver, binding_key):
+def start_selected(
+    db,
+    *,
+    attempt_id,
+    subject,
+    corpus_version,
+    reference,
+    resolver,
+    binding_key,
+    currentness=require_current,
+):
     if not all(
         isinstance(v, str) and 0 < len(v) <= 256
         for v in (attempt_id, subject, corpus_version, reference)
@@ -32,7 +42,7 @@ def start_selected(db, *, attempt_id, subject, corpus_version, reference, resolv
             line_filter=lines,
         )
         row = session_row(db, attempt_id, subject)
-        require_current(db, row)
+        currentness(db, row)
         result = view(row)
         db.connection.commit()
         return result

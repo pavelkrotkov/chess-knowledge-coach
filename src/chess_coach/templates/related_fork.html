@@ -8,6 +8,7 @@
 {% if result.baseline %}<p>The source game recorded a learner rating of {{ result.baseline }}. It is a rough content filter, not calibrated puzzle skill.</p>{% else %}<p>Cold start: no source-game rating is available. The displayed bounds are a content filter and 1400 is a sorting anchor, not an estimate of learner skill.</p>{% endif %}
 <p>Among compatible scanned examples: {{ result.excluded.exact_source }} exact source-position duplicates, {{ result.excluded.familiar }} known familiar positions, and {{ result.excluded.duplicate }} duplicate prompts or source games were excluded.</p>
 {% else %}<p>{{ result.status }}</p>{% endif %}
+{% if result.source_outcome == "failure" %}<p><a href="{{ url_for('related_fork.find_verified', evidence_id=evidence_id) }}">Find a verified unfamiliar fork</a></p>{% endif %}
 {% for item in result['items'] %}
 <section><h3>Transfer example {{ loop.index }}</h3>
 <p>The supplied line uses the same fork operation and target roles; {% if item.same_material %}same material counts{% else %}different material counts{% endif %}{% if item.shared_phase %}; both {{ item.shared_phase }} positions{% endif %}{% if item.shared_opening %}; matching opening-family labels{% endif %}. This prompt differs from known familiar positions.</p>

@@ -7,6 +7,7 @@ from .objective_binding_scope import owned_source
 from .objective_events import prefix, prefix_hash
 from .objective_promotion_contract import OBJECTIVES as PROMOTION_OBJECTIVES
 from .related_capture_objective import is_source as capture_assessment
+from .related_fork_assessment_scope import is_source as fork_assessment
 from .unified_session_state import now
 
 
@@ -43,4 +44,4 @@ def enqueue(db, session, event_id, result):
 def _supported(session):
     if session["source_type"] == "public":
         return session["objective"] in PROMOTION_OBJECTIVES
-    return capture_assessment(session) or owned_source(session)
+    return capture_assessment(session) or fork_assessment(session) or owned_source(session)

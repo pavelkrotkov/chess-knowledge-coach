@@ -19,8 +19,30 @@ def require_current(db, row, snapshot_hash):
             db, row["source_type"], row["source_version"], row["source_key"], subject=row["subject"]
         )
         select_lines(candidate, binding)
+        if binding.get("assessment"):
+            from .related_fork_assessment_current import current
+
+            if source["outcome"] != "failure":
+                raise ValueError
+            current(db, row, binding, candidate)
         candidate["provenance"]["related_fork"] = binding
         if snapshot_hash(candidate) != row["snapshot_hash"]:
             raise ValueError
     except (ValueError, TypeError, KeyError, IndexError):
         raise ValueError("practice source unavailable or stale") from None
+
+
+def check_admitted(db, row):
+    """Check the frozen candidate after an unchanged prevalidated selection."""
+    from .related_fork_assessment_current import current
+    from .unified_source_current import snapshot_hash
+
+    binding = json.loads(row["provenance_json"])["related_fork"]
+    candidate = resolve_source(
+        db, row["source_type"], row["source_version"], row["source_key"], subject=row["subject"]
+    )
+    select_lines(candidate, binding)
+    current(db, row, binding, candidate)
+    candidate["provenance"]["related_fork"] = binding
+    if snapshot_hash(candidate) != row["snapshot_hash"]:
+        raise ValueError("practice source unavailable or stale")

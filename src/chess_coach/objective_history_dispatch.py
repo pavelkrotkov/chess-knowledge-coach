@@ -2,6 +2,7 @@
 
 from .objective_capture_contract import TARGET_OBJECTIVE
 from .objective_contract import OWNED_HISTORY, STANDALONE
+from .objective_fork_contract import OBJECTIVE as FORK_OBJECTIVE
 from .objective_history import before_answer
 from .objective_pawn_contract import OBJECTIVE as PAWN_OBJECTIVE
 from .objective_pawn_history import before_answer as pawn_before_answer
@@ -13,7 +14,7 @@ from .related_capture_assessment import HISTORY as CAPTURE_HISTORY
 def supported(request):
     return (
         (
-            request["objective_version"] == TARGET_OBJECTIVE
+            request["objective_version"] in {TARGET_OBJECTIVE, FORK_OBJECTIVE}
             and request["history_mode"] == CAPTURE_HISTORY
         )
         or request["history_mode"] == OWNED_HISTORY
@@ -26,7 +27,7 @@ def supported(request):
 
 def replay(db, session, events, request):
     if (
-        request["objective_version"] == TARGET_OBJECTIVE
+        request["objective_version"] in {TARGET_OBJECTIVE, FORK_OBJECTIVE}
         and request["history_mode"] == CAPTURE_HISTORY
     ):
         from .related_capture_objective import before_answer as capture_before_answer
