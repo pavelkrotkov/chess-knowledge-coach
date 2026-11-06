@@ -448,3 +448,24 @@ missing context and truncation. The new index is exclusive and never replaces an
 existing one. The private opening decision view can show up to three exact
 position matches without decoding or replaying reference games on a request.
 This convenience sample does not establish popularity, soundness, or fit.
+
+## Explicit opening comparison
+
+An operator can compare one displayed catalog alternative with the played move
+from a current owned opening decision. The command uses one bounded search and
+writes a new owner-only file directly in the private planning directory. It
+never overwrites a previous result. Use the game and decision selected in the
+private opening view; the alternative must be one of that view's catalog moves.
+
+```sh
+"$release" -I -B -m chess_coach.ops_opening_measure --project-root "$PWD" \
+  --game-id "$game_id" --position-id "$position_id" \
+  --alternative "$catalog_uci" --output "$PWD/.runtime/planning/opening-comparison.json"
+```
+
+The saved measurement binds the source history, pinned graph, engine configuration
+and requested roots as they were checked at publication. A complete result is a
+same-search comparison of those roots, not a global best move, proof of soundness,
+or evidence of opening fit. Insufficient results do not contain comparable
+scores. This operator artifact is not automatically refreshed or surfaced in
+the browser; that requires the separate queued workflow.
