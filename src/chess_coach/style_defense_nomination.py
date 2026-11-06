@@ -21,6 +21,10 @@ def distinct(board, played):
     return _compare(board, played, moves)
 
 
+def _supported(board, move):
+    return lines_safe(board, [{"pv": move.uci()}]) and not reached()
+
+
 def _compare(board, played, moves):
     reference = response(board, played.uci())
     unknown = False
@@ -31,7 +35,7 @@ def _compare(board, played, moves):
             continue
         alternative = response(board, move.uci())
         if any(reference[key] != alternative[key] for key in FIELDS):
-            if lines_safe(board, [{"pv": move.uci()}]):
+            if _supported(board, move):
                 return True
             unknown = True
     return None if unknown else False

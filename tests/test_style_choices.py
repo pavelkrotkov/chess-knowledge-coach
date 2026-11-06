@@ -233,6 +233,17 @@ def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch):
     with monkeypatch.context() as patch:
         patch.setattr("chess_coach.style_defense_nomination.MAX_MOVES", 0)
         assert distinct(different_board, different_board.parse_san("Ke2")) is None
+    # A qualifying alternate finishing after the worker deadline is not nominated.
+    deadline = [False]
+
+    def late_line(*_args):
+        deadline[0] = True
+        return True
+
+    with monkeypatch.context() as patch:
+        patch.setattr("chess_coach.style_defense_nomination.reached", lambda: deadline[0])
+        patch.setattr("chess_coach.style_defense_nomination.lines_safe", late_line)
+        assert distinct(different_board, different_board.parse_san("Ke2")) is None
     replayed = game_candidates(db, same_game, "black") + game_candidates(db, games[1][0], "white")
     with monkeypatch.context() as patch:
         patch.setattr(
@@ -264,6 +275,70 @@ def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch):
         fallback_root, _, _ = choose_target(db, learner_key(LEARNER), 1, same_game_roots)
     assert count == 1 and priority_root["position_id"] == checks[-1]["position_id"]
     assert fallback_root["position_id"] == checks[0]["position_id"]
+    from chess_coach.style_schedule_priority import choose as structural_choice
+
+    qualified = [
+        item for item in replayed + same_game_roots if item.get("structural_defense") is True
+    ]
+    assert {
+        structural_choice(learner_key(LEARNER), sequence, qualified)["game_id"]
+        for sequence in (0, 2)
+    } == {2, 5}
+    # Priority cycles do not consume the legacy fallback cursor. With the
+    # structural root in the middle hash slot, fallback cycles still visit all
+    # three checked roots rather than repeating that same slot forever.
+    from chess_coach import style_schedule_store
+
+    ranked = {
+        checks[0]["position_id"]: 0,
+        checks[-1]["position_id"]: 1,
+        checks[1]["position_id"]: 2,
+    }
+
+    def fixed_rank(_key, _kind, game, position):
+        return (game, ranked.get(position, 0))
+
+    control = game_candidates(db, games[0][0], "white")[0]
+
+    def cycle_allocation(database, _learner, key, sequence):
+        selected, count, _unknown = choose_target(database, key, sequence, same_game_roots)
+        structural = bool(sequence % 2 == 0 and count and selected)
+        return (
+            {"structural_target_selected": structural},
+            (("target", selected), ("control", control)),
+            same_game_roots,
+        )
+
+    positions = []
+    with monkeypatch.context() as patch:
+        patch.setattr("chess_coach.style_schedule_rotation.rank", fixed_rank)
+        patch.setattr(style_schedule_store, "allocate", cycle_allocation)
+        patch.setattr(
+            style_schedule_store, "discover", lambda *_args: (None, None, "unavailable", 0)
+        )
+        patch.setattr(style_schedule_store, "insert_protection", lambda *_args: None)
+        for _ in range(6):
+            with history_budget():
+                cycle = style_schedule_store.create_cycle(db, LEARNER)
+            positions.append(
+                db.connection.execute(
+                    "SELECT position_id FROM style_schedule_slots WHERE cycle_id=? AND kind=?",
+                    (cycle, "target"),
+                ).fetchone()[0]
+            )
+    cursor_rows = dict(
+        db.connection.execute(
+            "SELECT kind,next_index FROM style_schedule_rotation WHERE learner_key=? AND game_id IN (?,?)",
+            (learner_key(LEARNER), combined_game["id"], control["game_id"]),
+        ).fetchall()
+    )
+    assert cursor_rows == {"target": 3, "control": 6}
+    assert positions[::2] == [checks[-1]["position_id"]] * 3
+    assert positions[1::2] == [
+        checks[0]["position_id"],
+        checks[-1]["position_id"],
+        checks[1]["position_id"],
+    ]
     fallback, coverage = prioritize(db, games, 1)
     assert fallback[0][0]["id"] == 1 and not coverage["nomination_prioritized"]
     fallback, _ = prioritize(db, games, 3)

@@ -1,5 +1,6 @@
 """Choose a fully replayed target while preserving fallback rotation."""
 
+from .style_schedule_priority import choose as choose_structural
 from .style_schedule_rotation import choose
 
 
@@ -15,5 +16,8 @@ def target(db, key, sequence, candidates):
     targets = [item for item in candidates if item["in_check"]]
     structural = [item for item in targets if _structural(item)]
     unknown = sum(_unknown(item) for item in targets)
-    preferred = structural if sequence % 2 == 0 and structural else targets
-    return choose(db, key, "target", preferred), len(structural), unknown
+    if sequence % 2 == 0 and structural:
+        selected = choose_structural(key, sequence, structural)
+    else:
+        selected = choose(db, key, "target", targets)
+    return selected, len(structural), unknown
