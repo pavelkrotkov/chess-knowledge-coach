@@ -6,6 +6,9 @@ from .related_backrank_view import add_fields as add_backrank_fields
 from .related_fork_prevention_view import add_fields as add_prevention_fields
 from .related_protection_view import add_fields as add_protection_fields
 from .unified_owned_view import add_fields as add_owned_fields
+from .unified_public_outcome import direct as direct_public
+from .unified_public_outcome import outcome as public_outcome
+from .unified_session_recent import recent as recent
 
 
 def now():
@@ -37,6 +40,12 @@ def view(row):
     }
     if row["status"] in {"active", "needs_verification"}:
         result.pop("source_key")
+    public = public_outcome(row)
+    if public is not None:
+        result["public_outcome"] = public
+        result["status"] = public
+        if direct_public(row):
+            result["source_key"] = row["source_key"]
     if row["source_type"] == "corpus":
         import json
 
@@ -56,17 +65,4 @@ def view(row):
     add_protection_fields(result, row)
     add_prevention_fields(result, row)
     add_backrank_fields(result, row)
-    return result
-
-
-def recent(db, subject):
-    rows = db.connection.execute(
-        """SELECT attempt_id,source_type,source_version,source_key,status
-        FROM unified_sessions WHERE subject=? ORDER BY started_at DESC,attempt_id LIMIT 20""",
-        (subject,),
-    ).fetchall()
-    result = [dict(row) for row in rows]
-    for item in result:
-        if item["source_type"] == "own-game" or item["status"] in {"active", "needs_verification"}:
-            item.pop("source_key")
     return result

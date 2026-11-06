@@ -41,6 +41,7 @@ def fixture_db(path):
             json.dumps(["e2e4 e7e5 g1f3", "e2e4 c7c5 g1f3", "d2d4 d7d5 c2c4"]),
         ),
         (1, "mate", "7k/8/6K1/2Q5/8/8/8/8 w - - 1 2", "checkmate", json.dumps(["c5f8", "c5c8"])),
+        (1, "mate-alt", "7k/8/6K1/2Q5/8/8/8/8 w - - 1 2", "checkmate", json.dumps(["c5f8"])),
         (
             1,
             "promotion",
@@ -54,6 +55,24 @@ def fixture_db(path):
     rows.append((1, "black", black.fen(), "legal_line", json.dumps(["e7e5"])))
     db.connection.executemany("INSERT INTO public_tasks VALUES(?,?,?,?,?)", rows)
     db.connection.execute("UPDATE public_collections SET state=\u0027ready\u0027 WHERE id=1")
+    from chess_coach.objective_contract import VERSION as MATE_ONE_VERSION
+
+    db.connection.execute(
+        """INSERT INTO public_collections(version,source_url,source_revision,source_sha256,
+        content_sha256,content_format,license,attribution,license_notice,accepted,excluded,state)
+        SELECT ?,source_url,source_revision,source_sha256,content_sha256,content_format,
+        license,attribution,license_notice,2,0,'staging' FROM public_collections WHERE id=1""",
+        (MATE_ONE_VERSION,),
+    )
+    db.connection.execute(
+        """INSERT INTO public_tasks SELECT 2,task_id,prompt_fen,objective,lines_json
+        FROM public_tasks WHERE collection_id=1 AND task_id='mate-alt'"""
+    )
+    db.connection.execute(
+        """INSERT INTO public_tasks SELECT 2,task_id,prompt_fen,objective,lines_json
+        FROM public_tasks WHERE collection_id=1 AND task_id='multi'"""
+    )
+    db.connection.execute("UPDATE public_collections SET state='ready' WHERE id=2")
     db.connection.commit()
     return db
 
@@ -64,7 +83,7 @@ def begin(db, attempt, source="public", version="public", key="multi", subject="
     )
 
 
-def test_public_multiline_resume_hints_and_no_hidden_solution(tmp_path):
+def test_public_multiline_resume_hints_and_no_hidden_solution(tmp_path, monkeypatch):
     db = fixture_db(tmp_path / "coach.sqlite")
     initial = begin(db, "a1")
     assert initial["fen"] == chess.STARTING_FEN and initial["learner_color"] == "white"
@@ -88,6 +107,137 @@ def test_public_multiline_resume_hints_and_no_hidden_solution(tmp_path):
     assert db.connection.execute("SELECT COUNT(*) FROM training_attempts").fetchone()[0] == 0
     with pytest.raises(ValueError, match="unknown"):
         show(db, "a1", "other")
+
+    # A legal alternate actual mate needs no worker; other public deviations
+    # remain explicitly ungraded without changing the immutable event schema.
+    begin(db, "alternate-mate", key="mate-alt")
+    alternate = submit(db, "alternate-mate", "learner", event_id="m", move="c5c8")
+    assert alternate["status"] == alternate["feedback"] == "objective_verified"
+    begin(db, "ungraded")
+    other = submit(db, "ungraded", "learner", event_id="m", move="g1f3")
+    assert other["status"] == "ungraded" and other["feedback"] == "ungraded"
+    assert show(db, "ungraded", "learner")["public_outcome"] == "ungraded"
+    assert db.connection.execute("SELECT COUNT(*) FROM objective_requests").fetchone()[0] == 0
+    assert db.connection.execute("SELECT COUNT(*) FROM training_attempts").fetchone()[0] == 0
+
+    from chess_coach.objective_contract import VERSION as MATE_ONE_VERSION
+    from chess_coach.unified_session_branch import move_state
+    from chess_coach.unified_session_legal_move import apply
+    from chess_coach.unified_session_state import recent
+    from chess_coach.unified_session_state import view as current_view
+
+    begin(db, "collision", version=MATE_ONE_VERSION, key="mate-alt")
+    assert (
+        submit(db, "collision", "learner", event_id="m", move="c5c8")["status"]
+        == "objective_verified"
+    )
+    related = {
+        "source_type": "public",
+        "objective": "checkmate",
+        "next_index": 0,
+        "source_version": MATE_ONE_VERSION,
+        "provenance_json": json.dumps({"related_mate": {}}),
+    }
+    related_result = apply(
+        related,
+        chess.Board("7k/8/6K1/2Q5/8/8/8/8 w - - 1 2"),
+        [["c5f8"]],
+        [0],
+        chess.Move.from_uci("c5c8"),
+    )
+    assert related_result["status"] == "needs_verification"
+    assert related_result["feedback"] == "ungraded"
+    from chess_coach.unified_public_outcome import outcome as public_outcome
+
+    related.update(
+        status="needs_verification",
+        current_fen=related_result["fen"],
+        attempt_id="related",
+        source_key="private-related",
+        learner_color="white",
+        hints_used=0,
+        started_at="now",
+        finished_at="now",
+    )
+    assert public_outcome(related) == "ungraded"
+    related_view = current_view(related)
+    assert related_view["status"] == "ungraded" and "source_key" not in related_view
+    from flask import render_template
+
+    related_app = create_app(
+        db_path=tmp_path / "coach.sqlite",
+        subject="learner",
+        actor="operator",
+        corpus="legacy",
+        login="fixture",
+        origin="https://coach.invalid",
+    )
+    with related_app.test_request_context("/"):
+        related_page = render_template(
+            "unified_practice.html",
+            state=related_view,
+            board=board_rows(related_view["fen"], "white"),
+            steps=[{"fen": related_view["fen"], "label": "Current"}],
+            step=0,
+            at_current=True,
+            board_label="Position",
+            event="e",
+            csrf="token",
+            notice=None,
+        )
+    assert "no verification was queued" in related_page
+    assert "Return to the library or coaching" in related_page
+    assert "Restart this exercise" not in related_page
+
+    begin(db, "collision-other", version=MATE_ONE_VERSION, key="multi")
+    collision = submit(db, "collision-other", "learner", event_id="m", move="g1f3")
+    assert collision["status"] == "ungraded" and "verification" not in show(
+        db, "collision-other", "learner"
+    )
+    assert db.connection.execute("SELECT COUNT(*) FROM objective_requests").fetchone()[0] == 0
+
+    # Simulate a pre-fix immutable event and leave its stored response untouched.
+    begin(db, "legacy-unlisted", key="mate-alt")
+    begin(db, "legacy-other")
+
+    def legacy_view(row):
+        result = current_view(row)
+        result["status"] = row["status"]
+        result.pop("public_outcome", None)
+        result.pop("source_key", None)
+        return result
+
+    with monkeypatch.context() as patch:
+        patch.setattr("chess_coach.unified_session_apply.view", legacy_view)
+        patch.setattr(
+            "chess_coach.unified_session_legal_move._unmatched",
+            lambda row, board, index, candidates: move_state(
+                board, "needs_verification", "needs_verification", index, candidates
+            ),
+        )
+        legacy = submit(db, "legacy-unlisted", "learner", event_id="m", move="c5c8")
+        legacy_other = submit(db, "legacy-other", "learner", event_id="m", move="g1f3")
+    assert legacy_other["status"] == "needs_verification"
+    assert show(db, "legacy-other", "learner")["status"] == "ungraded"
+    assert submit(db, "legacy-other", "learner", event_id="m", move="g1f3") == legacy_other
+    stored = db.connection.execute(
+        "SELECT response_json FROM unified_session_events WHERE attempt_id=? AND event_id=?",
+        ("legacy-unlisted", "m"),
+    ).fetchone()[0]
+    assert legacy["status"] == "needs_verification"
+    assert show(db, "legacy-unlisted", "learner")["public_outcome"] == "checkmate_reached"
+    assert submit(db, "legacy-unlisted", "learner", event_id="m", move="c5c8") == legacy
+    assert (
+        db.connection.execute(
+            "SELECT response_json FROM unified_session_events WHERE attempt_id=? AND event_id=?",
+            ("legacy-unlisted", "m"),
+        ).fetchone()[0]
+        == stored
+    )
+    assert (
+        next(item for item in recent(db, "learner") if item["attempt_id"] == "ungraded")["status"]
+        == "ungraded"
+    )
 
 
 def token(response, name):
@@ -118,7 +268,7 @@ def test_private_browser_starts_and_completes_direct_prompt(tmp_path):
         "/unified/start",
         base_url="https://coach.invalid",
         headers=headers | {"Origin": "https://coach.invalid"},
-        data={"csrf": csrf, "source_type": "public", "version": "public", "key": "mate"},
+        data={"csrf": csrf, "source_type": "public", "version": "public", "key": "mate-alt"},
     )
     assert posted.status_code == 303
     resume_url = posted.headers["Location"]
@@ -145,7 +295,7 @@ def test_private_browser_starts_and_completes_direct_prompt(tmp_path):
             "csrf": csrf,
             "attempt": token(page, "attempt"),
             "event": token(page, "event"),
-            "move": "c5f8",
+            "move": "c5c8",
         },
     )
     assert posted.status_code == 303
@@ -154,6 +304,55 @@ def test_private_browser_starts_and_completes_direct_prompt(tmp_path):
         b"Checkmate verified" in page.data
         and b"stated checkmate objective was verified" in page.data
     )
+
+    library = client.get("/library", base_url="https://coach.invalid", headers=headers)
+    csrf = token(library, "csrf")
+    started = client.post(
+        "/unified/start",
+        base_url="https://coach.invalid",
+        headers=headers | {"Origin": "https://coach.invalid"},
+        data={"csrf": csrf, "source_type": "public", "version": "public", "key": "multi"},
+    )
+    page = client.get(
+        started.headers["Location"], base_url="https://coach.invalid", headers=headers
+    )
+    submitted = client.post(
+        "/unified/move",
+        base_url="https://coach.invalid",
+        headers=headers | {"Origin": "https://coach.invalid"},
+        data={
+            "csrf": csrf,
+            "attempt": token(page, "attempt"),
+            "event": token(page, "event"),
+            "move": "g1f3",
+        },
+    )
+    page = client.get(
+        submitted.headers["Location"], base_url="https://coach.invalid", headers=headers
+    )
+    assert b"Status: Ungraded" in page.data and b"no verification was queued" in page.data
+    assert b"Restart this exercise" in page.data
+    restarted = client.post(
+        "/unified/start",
+        base_url="https://coach.invalid",
+        headers=headers | {"Origin": "https://coach.invalid"},
+        data={
+            "csrf": csrf,
+            "source_type": "public",
+            "version": token(page, "version"),
+            "key": token(page, "key"),
+        },
+    )
+    assert (
+        restarted.status_code == 303
+        and restarted.headers["Location"] != submitted.headers["Location"]
+    )
+    page = client.get(
+        restarted.headers["Location"], base_url="https://coach.invalid", headers=headers
+    )
+    assert b"Status: In progress" in page.data
+    library = client.get("/library", base_url="https://coach.invalid", headers=headers)
+    assert b"Ungraded" in library.data
 
 
 def test_black_orientation_and_subject_bound_idempotency(tmp_path):

@@ -17,23 +17,28 @@ def owned_scope(session, request):
     return session["status"] == "needs_verification" and owned_snapshot_scope(session, request)
 
 
+def owned_source(session):
+    return session["source_type"] == "own-game" and (
+        session["source_version"],
+        session["objective"],
+    ) in {
+        *FORK_SCOPES,
+        (PIN_VERSION, PIN_GOAL),
+        (PIN_PREVENT_VERSION, PIN_PREVENT_GOAL),
+        (PAWN_VERSION, "preserve_pawn_win"),
+        (PAWN_VERSION, "preserve_pawn_draw"),
+        (PROTECTION_VERSION, "protect_threatened_piece"),
+        (TARGET_VERSION, "capture_named_target"),
+        (GAIN_VERSION, "bounded_material_gain"),
+        (VERSION, "mate_in_one"),
+        (SHORT_VERSION, "mate_within_two"),
+        (DEFENSE_VERSION, "avoid_immediate_mate"),
+    }
+
+
 def owned_snapshot_scope(session, request):
     return (
-        session["source_type"] == "own-game"
-        and (session["source_version"], session["objective"])
-        in {
-            *FORK_SCOPES,
-            (PIN_VERSION, PIN_GOAL),
-            (PIN_PREVENT_VERSION, PIN_PREVENT_GOAL),
-            (PAWN_VERSION, "preserve_pawn_win"),
-            (PAWN_VERSION, "preserve_pawn_draw"),
-            (PROTECTION_VERSION, "protect_threatened_piece"),
-            (TARGET_VERSION, "capture_named_target"),
-            (GAIN_VERSION, "bounded_material_gain"),
-            (VERSION, "mate_in_one"),
-            (SHORT_VERSION, "mate_within_two"),
-            (DEFENSE_VERSION, "avoid_immediate_mate"),
-        }
+        owned_source(session)
         and session["snapshot_hash"] == request["snapshot_hash"]
         and session["learner_color"] == request["learner_color"]
     )

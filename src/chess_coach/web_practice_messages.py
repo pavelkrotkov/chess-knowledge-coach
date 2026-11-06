@@ -12,7 +12,7 @@ def move_notice(feedback, objective=None):
         "illegal": "That move is not legal. Try again.",
         "line_match": "Move played; continue from this position.",
         "needs_verification": "This legal move needs verification.",
-        "ungraded": "This first move remains ungraded.",
+        "ungraded": "This legal move remains ungraded.",
         "line_completed": "The supplied line is complete.",
         "objective_verified": "The checkmate objective was verified.",
     }
