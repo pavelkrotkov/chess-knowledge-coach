@@ -182,7 +182,7 @@ def test_private_card_rotates_only_after_complete_unassisted_rehearsal(tmp_path,
     headers = {"Tailscale-User-Login": "fixture"}
     origin = headers | {"Origin": "https://coach.invalid"}
     base = "https://coach.invalid"
-    page = client.get("/coaching", base_url=base, headers=headers)
+    page = client.get("/coaching?full=1", base_url=base, headers=headers)
     first_key = token(page, "key")
     assert first_key == str(examples[0]["evidence_id"])
     assert choices(db, SUBJECT, preview)[0]["key"] == first_key
@@ -235,7 +235,7 @@ def test_private_card_rotates_only_after_complete_unassisted_rehearsal(tmp_path,
         return page, mate
 
     page, mate = root_and_mate(begin())
-    assert token(client.get("/coaching", base_url=base, headers=headers), "key") == first_key
+    assert token(client.get("/coaching?full=1", base_url=base, headers=headers), "key") == first_key
     hinted = client.post(
         "/unified/hint",
         data={"csrf": csrf, "attempt": token(page, "attempt"), "event": token(page, "event")},
@@ -244,10 +244,10 @@ def test_private_card_rotates_only_after_complete_unassisted_rehearsal(tmp_path,
     )
     page = client.get(hinted.location, base_url=base, headers=headers)
     move(page, mate)
-    assert token(client.get("/coaching", base_url=base, headers=headers), "key") == first_key
+    assert token(client.get("/coaching?full=1", base_url=base, headers=headers), "key") == first_key
 
     page, mate = root_and_mate(begin())
-    assert token(client.get("/coaching", base_url=base, headers=headers), "key") == first_key
+    assert token(client.get("/coaching?full=1", base_url=base, headers=headers), "key") == first_key
     attempt = token(page, "attempt")
     if form == "async_final":
         board = chess.Board(
@@ -264,17 +264,20 @@ def test_private_card_rotates_only_after_complete_unassisted_rehearsal(tmp_path,
     if form == "async_final":
         from chess_coach.objective_worker import process
 
-        assert token(client.get("/coaching", base_url=base, headers=headers), "key") == first_key
+        assert (
+            token(client.get("/coaching?full=1", base_url=base, headers=headers), "key")
+            == first_key
+        )
         assert process(db, SUBJECT)["outcomes"] == {"correct": 1}
         completed = client.get("/unified/" + attempt, base_url=base, headers=headers)
     assert b"checkmate objective was verified" in completed.data
-    page = client.get("/coaching", base_url=base, headers=headers)
+    page = client.get("/coaching?full=1", base_url=base, headers=headers)
     assert token(page, "key") == str(examples[2]["evidence_id"])
     assert b"Try a different position or explore related unfamiliar practice" in page.data
     assert b"Find related short-mate practice for this source" in page.data
     assert choices(db, SUBJECT, preview)[0]["key"] == first_key
     lesson["examples"] = examples[1:]
-    page = client.get("/coaching", base_url=base, headers=headers)
+    page = client.get("/coaching?full=1", base_url=base, headers=headers)
     assert token(page, "key") == str(examples[2]["evidence_id"])
     assert b"Try a different position or explore related unfamiliar practice" in page.data
     assert choices(db, SUBJECT, preview)[0]["key"] == str(examples[1]["evidence_id"])
@@ -282,7 +285,7 @@ def test_private_card_rotates_only_after_complete_unassisted_rehearsal(tmp_path,
     assert db.connection.execute("SELECT COUNT(*) FROM mastery_events").fetchone()[0] == 0
 
     review_evidence(db, int(first_key), decision="reject", actor="fixture")
-    page = client.get("/coaching", base_url=base, headers=headers)
+    page = client.get("/coaching?full=1", base_url=base, headers=headers)
     assert b"You completed a recent short-mate example" not in page.data
     db.close()
 

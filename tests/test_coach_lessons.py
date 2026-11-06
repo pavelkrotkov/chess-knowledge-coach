@@ -594,8 +594,121 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
     )
     client = app.test_client()
     headers = {"Tailscale-User-Login": "login"}
-    assert client.get("/coaching", base_url="https://coach.invalid").status_code == 403
-    page = client.get("/coaching", base_url="https://coach.invalid", headers=headers)
+    assert client.get("/coaching?full=1", base_url="https://coach.invalid").status_code == 403
+    import chess_coach.coaching_quick_pair as quick_pair
+    import chess_coach.coaching_quick_run as quick_run
+
+    original_evidence = quick_pair.evidence
+    calls = []
+
+    def bounded_evidence(*args, **kwargs):
+        calls.append(kwargs["limit"])
+        return original_evidence(*args, **kwargs)
+
+    read_only = Database(path)
+    statements = []
+    read_only.connection.set_trace_callback(
+        lambda sql: statements.append(sql.split(None, 1)[0].upper())
+    )
+    with monkeypatch.context() as patch:
+        patch.setattr("chess_coach.web_coaching.database", lambda: read_only)
+        patch.setattr(quick_pair, "evidence", bounded_evidence)
+        patch.setattr(
+            "chess_coach.web_coaching.report",
+            lambda *_args: (_ for _ in ()).throw(AssertionError("full report on quick GET")),
+        )
+        quick = client.get("/coaching", base_url="https://coach.invalid", headers=headers)
+    read_only.close()
+    assert not {"INSERT", "UPDATE", "DELETE", "REPLACE"} & set(statements)
+    assert quick.status_code == 200
+    assert calls and len(calls) <= 4 and set(calls) == {5}
+    assert b"Quick preview:" in quick.data and b"<h3>Finding captures</h3>" in quick.data
+    assert b"2 independent games" in quick.data and b"Source position before the move" in quick.data
+    assert b"/evidence/" in quick.data and b"/decisions/" in quick.data
+    assert b"Save this coaching preview" not in quick.data
+    assert b"Open your tactical course" in quick.data and b"Daily plan" in quick.data
+    from chess_coach.recurrence_skills import PAIRS
+
+    for skill, operation in PAIRS:
+        assert f"pattern={skill}.{operation}".encode() in quick.data
+    focused = client.get(
+        "/coaching?pattern=hanging_piece.execute", base_url="https://coach.invalid", headers=headers
+    )
+    assert focused.status_code == 200 and b"<h3>Finding captures</h3>" in focused.data
+    assert b"18 other supported patterns" in focused.data
+    assert (
+        client.get(
+            "/coaching?pattern=unsupported.execute",
+            base_url="https://coach.invalid",
+            headers=headers,
+        ).status_code
+        == 400
+    )
+    assert (
+        client.get(
+            "/coaching?full=1&pattern=hanging_piece.execute",
+            base_url="https://coach.invalid",
+            headers=headers,
+        ).status_code
+        == 400
+    )
+
+    original_build = quick_run.build
+
+    def deferred(db, learner, pair, check):
+        if pair == ("hanging_piece", "prevent"):
+            from chess_coach.tactical_course_budget import PreviewUnavailable
+
+            raise PreviewUnavailable("synthetic deadline")
+        return original_build(db, learner, pair, check)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(quick_run, "build", deferred)
+        partial = client.get("/coaching", base_url="https://coach.invalid", headers=headers)
+    assert b"<h3>Finding captures</h3>" in partial.data
+    assert b"did not complete checking: Protecting pieces" in partial.data
+    with monkeypatch.context() as patch:
+        patch.setattr(quick_run, "PAIR_SECONDS", 0)
+        timed_out = client.get("/coaching", base_url="https://coach.invalid", headers=headers)
+    assert timed_out.status_code == 200 and b"did not complete checking" in timed_out.data
+    assert b"Complete preview" in timed_out.data and b"Saved lesson history" in timed_out.data
+
+    import chess_coach.coaching_failures_page as failures_page
+    from chess_coach.tactical_course_budget import PreviewUnavailable
+
+    def interrupted(*_args, **_kwargs):
+        raise PreviewUnavailable("synthetic in-snapshot cutoff")
+
+    reading = Database(path)
+    with monkeypatch.context() as patch:
+        patch.setattr("chess_coach.web_coaching.database", lambda: reading)
+        patch.setattr(failures_page, "source", interrupted)
+        interrupted_page = client.get(
+            "/coaching?pattern=hanging_piece.execute",
+            base_url="https://coach.invalid",
+            headers=headers,
+        )
+    assert b"did not complete checking" in interrupted_page.data
+    assert not reading.connection.in_transaction
+    assert reading.connection.execute("PRAGMA query_only").fetchone()[0] == 0
+    reading.close()
+
+    changed = []
+
+    def changing(db, learner, pair, check):
+        result = original_build(db, learner, pair, check)
+        if not changed:
+            with sqlite3.connect(path) as other:
+                other.execute("UPDATE games SET event=event WHERE id=1")
+            changed.append(True)
+        return result
+
+    with monkeypatch.context() as patch:
+        patch.setattr(quick_run, "build", changing)
+        stale = client.get("/coaching", base_url="https://coach.invalid", headers=headers)
+    assert b"The source changed or the quick checks were unavailable" in stale.data
+    assert b"<h3>Finding captures</h3>" not in stale.data
+    page = client.get("/coaching?full=1", base_url="https://coach.invalid", headers=headers)
     assert page.status_code == 200
     assert b"Open your tactical course" in page.data
     assert b"/study/abcd1234/ch000000#0" in page.data
@@ -705,7 +818,7 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
         headers=origin,
     )
     assert stale.status_code == 400
-    page = client.get("/coaching", base_url="https://coach.invalid", headers=headers)
+    page = client.get("/coaching?full=1", base_url="https://coach.invalid", headers=headers)
     assert b"Only 0 of three" in page.data
     assert (
         b"Finding captures"
@@ -846,7 +959,7 @@ def test_protection_lesson_offers_only_a_current_bounded_line_replay(tmp_path, m
     replay_page = client.get(replay.location, base_url="https://coach.invalid", headers=headers)
     assert b"does not prove every defense" in replay_page.data
 
-    page = client.get("/coaching", base_url="https://coach.invalid", headers=headers)
+    page = client.get("/coaching?full=1", base_url="https://coach.invalid", headers=headers)
     assert b"Protecting pieces" in page.data and b"Replay a defensive line" in page.data
     csrf, version, key = token(page, "csrf"), token(page, "version"), token(page, "key")
     selected = int(key.split(":")[-1])
@@ -986,7 +1099,7 @@ def test_mate_lesson_starts_owned_practice_and_rechecks_review(tmp_path, monkeyp
     origin = headers | {"Origin": "https://coach.invalid"}
     plan = client.get("/plan", base_url="https://coach.invalid", headers=headers)
     assert b"Practice your recurring patterns" in plan.data
-    page = client.get("/coaching", base_url="https://coach.invalid", headers=headers)
+    page = client.get("/coaching?full=1", base_url="https://coach.invalid", headers=headers)
     assert b"Finding mate in one" in page.data and b"Find related mate practice" in page.data
     csrf, version, key = token(page, "csrf"), token(page, "version"), token(page, "key")
     assert (
@@ -1024,7 +1137,7 @@ def test_mate_lesson_starts_owned_practice_and_rechecks_review(tmp_path, monkeyp
         assisted_move.location, base_url="https://coach.invalid", headers=headers
     )
     assert b"checkmate objective was verified" in assisted_result.data
-    page = client.get("/coaching", base_url="https://coach.invalid", headers=headers)
+    page = client.get("/coaching?full=1", base_url="https://coach.invalid", headers=headers)
     assert token(page, "key") == key
     started = client.post(
         "/unified/start",
@@ -1046,7 +1159,7 @@ def test_mate_lesson_starts_owned_practice_and_rechecks_review(tmp_path, monkeyp
     )
     completed = client.get(moved.location, base_url="https://coach.invalid", headers=headers)
     assert b"checkmate objective was verified" in completed.data
-    page = client.get("/coaching", base_url="https://coach.invalid", headers=headers)
+    page = client.get("/coaching?full=1", base_url="https://coach.invalid", headers=headers)
     assert token(page, "key") != key
     assert (
         b"Try this example next. No unassisted first-move checkmate was found for it in recent practice"
@@ -1061,7 +1174,7 @@ def test_mate_lesson_starts_owned_practice_and_rechecks_review(tmp_path, monkeyp
     assert db.connection.execute("SELECT COUNT(*) FROM training_items").fetchone()[0] == 0
     review_evidence(db, int(key), decision="accept", actor="fixture")
     db.close()
-    page = client.get("/coaching", base_url="https://coach.invalid", headers=headers)
+    page = client.get("/coaching?full=1", base_url="https://coach.invalid", headers=headers)
     assert token(page, "key") == key
     db = Database(path)
     review_evidence(db, int(key), decision="reject", actor="fixture")
