@@ -375,7 +375,9 @@ individual work limits; an interrupted familiarity scan is deferred, not a
 completed search with no match. Each run checks for source changes before reuse.
 
 To publish an explicitly reviewed tactical export as a separate private Study, use
-its exact export hash and an owner-only file under the same planning directory:
+its exact export hash and an owner-only file under the project planning directory.
+The directory must be owned by the current user and accessible only to that user
+(mode `0700`); publication fails before contacting Lichess otherwise:
 
 ```sh
 timeout --signal=TERM 100s "$release" -I -B -m chess_coach.ops_tactical_study_publish --project-root "$PWD" \
