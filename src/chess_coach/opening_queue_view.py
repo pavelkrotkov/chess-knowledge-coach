@@ -7,7 +7,7 @@ from .opening_queue_validate import valid
 from .opening_queue_view_state import state
 
 
-def statuses(db, root, learner, decision, *, deadline=None):
+def statuses(db, root, learner, decision, *, deadline=None, with_identity=False):
     directory, database = location(db, root, learner)
     items = decision["catalog"]["items"]
     if not items:
@@ -29,6 +29,7 @@ def statuses(db, root, learner, decision, *, deadline=None):
         budget.check()
         binding = {**source, "alternative": choice["uci"], "child": choice["child"]}
         current = request(database, binding, config)
-        output[choice["uci"]] = state(directory, current, slot, owned["board"])
+        value = state(directory, current, slot, owned["board"])
+        output[choice["uci"]] = {**value, "_identity": current["id"]} if with_identity else value
     budget.check()
     return output

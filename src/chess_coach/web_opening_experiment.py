@@ -56,3 +56,12 @@ def show(game_id, position_id, move):
             download=1,
         ),
     )
+
+
+@opening_experiments.get(
+    "/repertoire/games/<int:game_id>/openings/<int:position_id>/experiment/<move>/course"
+)
+def course(game_id, position_id, move):
+    from .web_opening_course import show as show_course
+
+    return show_course(game_id, position_id, move)
