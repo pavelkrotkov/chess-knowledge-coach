@@ -35,5 +35,6 @@
 <p>This is feedback on one prompt. Comparisons need more comparable first attempts. Supplied-line rehearsal and assisted attempts are separate from an unassisted assessment.</p>
 <p><a href="{{ url_for('related_capture.show', position=report.source.position_id) }}">{% if history.status in ["correct", "incorrect"] and history.assistance == "unassisted" %}Explore another unfamiliar capture example{% else %}Find related capture practice{% endif %}</a></p>
 {% endif %}
+<p><a href="{{ url_for('related_capture.find_verified') }}">Find a verified unfamiliar capture</a>. This search may take some time.</p>
 <p><a href="{{ url_for('related_capture.history') }}">View first-encounter capture history</a> · <a href="{{ url_for('short_mate_game_views.capture_samples') }}">Capture choices in your games</a> · <a href="{{ url_for('views.plan') }}">Daily plan</a> · <a href="{{ url_for('recurrence_views.recurrence') }}">Recurring patterns</a></p>
 {% endblock %}

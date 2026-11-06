@@ -2,6 +2,7 @@
 {% block title %}Related capture practice — Chess coach{% endblock %}
 {% block content %}
 <h2>Practice this capture pattern</h2>
+{% if result.certified %}<p>This unfamiliar prompt passed the bounded capture proof. Starting it rechecks the source and proof; other legal moves may remain ungraded.</p>{% endif %}
 {% if result.scanned is defined %}
 <p>Source observation: {{ "reviewed" if result.review_status == "accepted" else "provisional" }}. Matching describes the supplied lines, not a general proof of all alternatives.</p>
 <p>{{ result.status }}. Searched {{ result.scanned }} corpus items in a bounded, rating-bucketed pool{% if result.bounds %} ({{ result.bounds[0] }}–{{ result.bounds[1] }}){% endif %}. {% if result.selection %}This is a declared, nonrepresentative source-order prefix of {{ result.selection.fullsource_count }} records.{% else %}Corpus selection metadata is unavailable.{% endif %} Up to 100 items per rating bucket and 100 per public collection (500 total) are inspected; results are not exhaustive.</p>
@@ -15,7 +16,7 @@
 {% set board = item.board %}{% set board_label = "Transfer position; side to move at the bottom" %}{% include "board.html" %}
 <form method="post" action="{{ url_for('related_capture.begin', position=position) }}">
 <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="reference" value="{{ item.reference }}"><button>Practice the supplied line</button></form>
-{% if item.assessment_available %}<form method="post" action="{{ url_for('related_capture.begin', position=position) }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="reference" value="{{ item.reference }}"><input type="hidden" name="assessment" value="1"><button>Check my capture choice</button></form><p>This unfamiliar position is eligible for a bounded capture check. If the proof cannot be completed, try the supplied line.</p>{% endif %}</section>
+{% if item.assessment_available %}<form method="post" action="{{ url_for('related_capture.begin', position=position) }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="reference" value="{{ item.reference }}"><input type="hidden" name="assessment" value="1"><button>Check my capture choice</button></form><p>{% if item.assessment_proved %}The supplied capture passed the bounded proof at search time.{% else %}This unfamiliar position is eligible for a bounded capture check. If the proof cannot be completed, try the supplied line.{% endif %}</p>{% endif %}</section>
 {% endfor %}
 {% if result.next_cursor %}<p><a href="{{ url_for('related_capture.show', position=position, cursor=result.next_cursor) }}">More examples</a></p>{% endif %}
 {% endblock %}

@@ -553,6 +553,8 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         new_game.setup(new_board)
         new_game.headers["White"] = LEARNER
         new_game.headers["Black"] = "fixture_opponent"
+        new_game.headers["UTCDate"] = "2026.01.02"
+        new_game.headers["UTCTime"] = "12:00:00"
         node = new_game.add_variation(new_board.parse_uci("e1f1"))
         new_board.push_uci("e1f1")
         node.add_variation(new_board.parse_uci("e8f8"))
@@ -583,15 +585,167 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         across_sources = first_history(db, LEARNER, "capture")
         assert across_sources["counts"]["unassisted_correct"] == 1
         assert across_sources["counts"]["incomplete"] == 2
+        # The opt-in finder skips a source whose candidate proofs do not pass,
+        # then displays a proved candidate from a second current owned source.
+        import chess_coach.capture_finder as finder
+        import chess_coach.capture_finder_proof as finder_proof
+        import chess_coach.capture_finder_search as finder_search
+
+        original_select = finder_search._selection
+        original_certificate = finder_proof.certificate
+        original_familiarity = finder.familiarity
+        positions, familiarity_calls = [], []
+
+        def selected_source(*args, **kwargs):
+            positions.append(args[2])
+            return original_select(*args, **kwargs)
+
+        def proof_after_first(*args):
+            if len(positions) == 1:
+                raise ValueError("synthetic unresolved proof")
+            return original_certificate(*args)
+
+        def counted_familiarity(*args):
+            familiarity_calls.append(True)
+            return original_familiarity(*args)
+
+        before_count = db.connection.execute("SELECT COUNT(*) FROM unified_sessions").fetchone()[0]
+        with monkeypatch.context() as patch:
+            patch.setattr(finder_search, "_selection", selected_source)
+            patch.setattr(finder_proof, "certificate", proof_after_first)
+            patch.setattr(finder, "familiarity", counted_familiarity)
+            found = client.get(
+                "/plan/captures/find-verified", base_url="https://coach.invalid", headers=headers
+            )
+        assert len(positions) >= 2, (len(positions), len(familiarity_calls))
+        assert found.status_code == 200 and b"passed the bounded capture proof" in found.data
+        assert len(positions) >= 2 and positions[0] != positions[1] and len(familiarity_calls) == 1
+        assert (
+            db.connection.execute("SELECT COUNT(*) FROM unified_sessions").fetchone()[0]
+            == before_count
+        )
+        assert b"private-fixture" not in found.data
+        proved_forms = re.findall(r"<form\b.*?</form>", found.get_data(as_text=True), re.DOTALL)
+        proved_form = next(form for form in proved_forms if 'name="assessment"' in form)
+        form_action = re.search(r"action=\"([^\"]+)\"", proved_form)
+        proved_reference = re.search(r"name=\"reference\" value=\"([^\"]+)\"", proved_form)
+        assert form_action and proved_reference
+        accepted = client.post(
+            form_action.group(1),
+            base_url="https://coach.invalid",
+            headers=headers | {"Origin": "https://coach.invalid"},
+            data={
+                "csrf": token(found, "csrf"),
+                "reference": proved_reference.group(1),
+                "assessment": "1",
+            },
+        )
+        assert accepted.status_code == 303
+        stale = client.post(
+            form_action.group(1),
+            base_url="https://coach.invalid",
+            headers=headers | {"Origin": "https://coach.invalid"},
+            data={
+                "csrf": token(found, "csrf"),
+                "reference": proved_reference.group(1),
+                "assessment": "1",
+            },
+        )
+        assert stale.status_code == 400
+        assert (
+            db.connection.execute("SELECT COUNT(*) FROM unified_sessions").fetchone()[0]
+            == before_count + 1
+        )
+        with monkeypatch.context() as patch:
+            patch.setattr(finder, "SECONDS", 0)
+            patch.setattr(finder, "_groups", lambda *_: (_ for _ in ()).throw(AssertionError()))
+            empty = client.get(
+                "/plan/captures/find-verified", base_url="https://coach.invalid", headers=headers
+            )
+        assert empty.status_code == 200 and b"bounded search" in empty.data
+        # Unsupported sources are skipped and scope uses the original subject.
+        seen_subjects = []
+
+        def unsupported_then_empty(_db, subject, position, _corpus, **_kwargs):
+            seen_subjects.append(subject)
+            if position == 1:
+                raise ValueError("unsupported mechanism")
+            return None
+
+        with monkeypatch.context() as patch:
+            patch.setattr(
+                finder_search,
+                "witnesses",
+                lambda *_args, **_kwargs: iter([{"position_id": 1}, {"position_id": 2}]),
+            )
+            patch.setattr(finder_search, "_selection", unsupported_then_empty)
+            assert (
+                finder_search.search(
+                    db,
+                    "normalized",
+                    "MiXeD",
+                    "capture",
+                    app.secret_key,
+                    {},
+                    None,
+                    1,
+                    lambda _: False,
+                )
+                is None
+            )
+        assert seen_subjects == ["MiXeD", "MiXeD"]
+        # A proof that completes after the cooperative budget is never shown.
+        clock = iter((False, True))
+        with monkeypatch.context() as patch:
+            patch.setattr(finder_proof, "setup", lambda *_args: None)
+            patch.setattr(finder_proof, "certificate", lambda *_args: None)
+            candidate, used = finder_proof.prove(
+                db,
+                (None, None, None, [{"type": "corpus", "version": "fixture", "key": "fixture"}]),
+                1,
+                1,
+                lambda _: next(clock),
+            )
+        assert candidate is None and used == 1
+        # Cheap preflight skips do not consume the proof budget or hide a later candidate.
+        candidates = [
+            {"type": "corpus", "version": "fixture", "key": str(index)} for index in range(16)
+        ]
+
+        def last_only(_db, _version, key):
+            if key != "15":
+                raise ValueError("unsupported setup")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(finder_proof, "setup", last_only)
+            patch.setattr(finder_proof, "certificate", lambda *_args: None)
+            candidate, used = finder_proof.prove(
+                db, (None, None, None, candidates), 1, 12, lambda _: False
+            )
+        assert candidate["key"] == "15" and used == 1
+        proofs = []
+
+        def unresolved(*args):
+            proofs.append(True)
+            raise ValueError("unresolved")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(finder_proof, "setup", lambda *_args: None)
+            patch.setattr(finder_proof, "certificate", unresolved)
+            candidate, used = finder_proof.prove(
+                db, (None, None, None, candidates), 1, 12, lambda _: False
+            )
+        assert candidate is None and used == 12 and len(proofs) == 12
     review_evidence(db, evidence, decision="reject", actor="reviewer")
     with pytest.raises(ValueError):
         show(db, attempt, LEARNER)
     assert latest(db, LEARNER, 1, "capture")["status"] == "stale"
     from chess_coach.capture_history_first import report as first_report
 
-    assert first_report(db, LEARNER, "capture")["counts"]["stale"] == (
-        2 if mode == "correct" else 1
+    expected_stale = (
+        2 + int(form_action.group(1).startswith("/decisions/1/")) if mode == "correct" else 1
     )
+    assert first_report(db, LEARNER, "capture")["counts"]["stale"] == expected_stale
     if mode == "correct":
         for index in range(101):
             db.connection.execute(
@@ -674,7 +828,10 @@ def test_capture_plan_uses_independent_current_sources_and_is_lazy(tmp_path, mon
         patch.setattr("chess_coach.capture_plan.report", forbidden)
         plan = client.get("/plan", base_url="https://coach.invalid", headers=headers)
     assert plan.status_code == 200 and b"/plan/captures" in plan.data
-    single = client.get("/plan/captures", base_url="https://coach.invalid", headers=headers)
+    with monkeypatch.context() as patch:
+        patch.setattr("chess_coach.capture_finder.find", forbidden)
+        single = client.get("/plan/captures", base_url="https://coach.invalid", headers=headers)
+    assert b"Find a verified unfamiliar capture" in single.data
     assert single.status_code == 200 and b"single game does not establish recurrence" in single.data
     assert b"No certified assessment in the active corpus for this source" in single.data
 
