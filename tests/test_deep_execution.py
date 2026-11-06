@@ -16,12 +16,13 @@ from tests.test_deep_selection import LEARNER, setup_game
 
 
 class DeepEngine:
-    def __init__(self, db=None, *, score=20, mode="normal", name="Synthetic"):
+    def __init__(self, db=None, *, score=20, mode="normal", name="Synthetic", include_root=None):
         self.id = {"name": name}
         self.options = {}
         self.db = db
         self.score = score
         self.mode = mode
+        self.include_root = include_root
         self.calls = []
         self.closed = False
 
@@ -37,6 +38,9 @@ class DeepEngine:
         if self.mode == "timeout":
             raise TimeoutError("synthetic timeout")
         choices = root_moves or list(board.legal_moves)[:multipv]
+        if root_moves is None and self.include_root:
+            played = board.parse_uci(self.include_root)
+            choices = [played, *(move for move in board.legal_moves if move != played)][:multipv]
         if self.mode == "partial" and root_moves is None:
             choices = choices[:1]
         values = []
@@ -99,7 +103,8 @@ def test_bounded_execution_preserves_cheap_and_shared_work(tmp_path, monkeypatch
     original_evidence = db.connection.execute("SELECT COUNT(*) FROM evidence_mappings").fetchone()[
         0
     ]
-    engine = DeepEngine(db)
+    played_move = inspect_decision(db, first["position_id"], learner=LEARNER)["played_move"]
+    engine = DeepEngine(db, include_root=played_move)
     use_engine(monkeypatch, engine)
     result = run_deep(db, selection_id, learner=LEARNER, options=options())
     assert result["status"] == "partial" and len(result["processed"]) == 1
@@ -118,6 +123,45 @@ def test_bounded_execution_preserves_cheap_and_shared_work(tmp_path, monkeypatch
     assert deep["result"]["played_work"]["nodes"] == 200
     assert deep["result"]["played"]["root_move"] == report["played_move"]
     assert "engine_sha256" not in deep["result"]["limits"]
+    # Compare two roots only when they belong to this exact current MultiPV search.
+    import json
+
+    from chess_coach.decision_history import decision_board
+    from chess_coach.opening_decision_analysis import comparison
+
+    position = db.connection.execute(
+        "SELECT * FROM positions WHERE id=?", (first["position_id"],)
+    ).fetchone()
+    board = decision_board(db, position)
+    alternatives = deep["result"]["alternatives"]
+    other_root = next(
+        item["line"]["root_move"]
+        for item in alternatives
+        if item["line"]["root_move"] != played_move
+    )
+    choices = [{"uci": other_root}]
+    context = {"position_id": first["position_id"], "played_move": played_move}
+    summary = comparison(db, LEARNER, context, board, choices)
+    assert summary["status"] == "available" and choices[0]["analysis"]["depth"] == 5
+    row = db.connection.execute(
+        "SELECT attempt_id,rank,line_json FROM deep_analysis_alternatives WHERE json_extract(line_json, '$.root_move')=?",
+        (other_root,),
+    ).fetchone()
+    altered = json.loads(row["line_json"])
+    altered["depth"] = 6
+    db.connection.execute(
+        "UPDATE deep_analysis_alternatives SET line_json=? WHERE attempt_id=? AND rank=?",
+        (json.dumps(altered), row["attempt_id"], row["rank"]),
+    )
+    db.connection.commit()
+    choices = [{"uci": other_root}]
+    comparison(db, LEARNER, context, board, choices)
+    assert "analysis" not in choices[0]
+    db.connection.execute(
+        "UPDATE deep_analysis_alternatives SET line_json=? WHERE attempt_id=? AND rank=?",
+        (row["line_json"], row["attempt_id"], row["rank"]),
+    )
+    db.connection.commit()
     unrelated = next(
         item["position_id"]
         for item in selection["items"]
@@ -135,6 +179,7 @@ def test_bounded_execution_preserves_cheap_and_shared_work(tmp_path, monkeypatch
         == original_evidence
     )
     assert db.connection.execute("SELECT COUNT(*) FROM mastery_states").fetchone()[0] == 0
+    engine.include_root = None
     again = run_deep(db, selection_id, learner=LEARNER, options=options(max_jobs=3))
     assert len(again["processed"]) == 2
     assert db.connection.execute("SELECT COUNT(*) FROM deep_analysis_attempts").fetchone()[0] == 3

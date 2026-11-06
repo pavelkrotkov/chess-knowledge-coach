@@ -21,7 +21,7 @@ def position_data(db, game_id, opening):
         "position_id": match["id"] if match else None,
         "ply": ply or None,
         "line": [p["san"] for p in positions if p["ply"] <= ply],
-        "moves": [{"id": p["id"], "ply": p["ply"], "san": p["san"]} for p in positions],
+        "moves": [_move(p) for p in positions],
         "opening_positions": _opening_positions(positions, ply),
         "positions_truncated": truncated,
     }
@@ -42,3 +42,10 @@ def _opening_positions(positions, ply):
             }
         )
     return output
+
+
+def _move(position):
+    fields = position["fen"].split()
+    turn = fields[1] if len(fields) > 1 else None
+    mover = {"b": "white", "w": "black"}.get(turn)
+    return {"id": position["id"], "ply": position["ply"], "san": position["san"], "mover": mover}

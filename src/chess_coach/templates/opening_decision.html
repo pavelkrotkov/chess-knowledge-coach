@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Opening alternatives — Chess coach{% endblock %}
+{% block content %}
+<h2>Opening alternatives</h2>
+<p>You played {{ decision.played }} as {{ decision.color }} at ply {{ decision.ply }}. <a href="{{ url_for("repertoire_views.repertoire_game", game_id=decision.game_id) }}">Back to this game</a>.</p>
+{% set board_label = "Opening position; learner to move" %}{% include "board.html" %}
+<p>Catalog: <a href="{{ decision.opening.source_url }}">Lichess CC0 opening snapshot {{ decision.opening.version }}</a>, revision {{ decision.opening.content_revision }}. These legal catalog moves are possibilities to explore; catalog inclusion does not establish soundness or personal fit.</p>
+<p>Position identity: <code>{{ decision.catalog.parent }}</code>. The identity excludes move counters so transpositions share a position.</p>
+{% if decision.analysis.status == "available" %}<p>Current stored same-search analysis: {{ decision.analysis.engine }} {{ decision.analysis.engine_version }}, run {{ decision.analysis.run_id }}, limits {{ decision.analysis.limits }}. Scores are centipawns from the player-to-move perspective, at the stated depth; they are bounded engine estimates.</p>{% else %}<p>Same-search comparison unavailable: {{ decision.analysis.status }}.</p>{% endif %}
+<ul>{% for item in decision.catalog["items"] %}<li><strong>{{ item.san }}</strong> — resulting position <code>{{ item.child }}</code>.
+{% if item.analysis %} Played {{ item.analysis.played }} cp; alternative {{ item.analysis.alternative }} cp at depth {{ item.analysis.depth }}. Recorded continuation: {{ item.analysis.line|join(" ") }}.{% else %} No qualified same-search comparison for this move.{% endif %}</li>{% else %}<li>No verified alternative catalog move in this bounded scan.</li>{% endfor %}</ul>
+{% if decision.catalog.truncated %}<p>Additional catalog moves were not shown.</p>{% endif %}
+{% endblock %}
