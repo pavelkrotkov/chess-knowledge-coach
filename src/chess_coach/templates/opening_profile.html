@@ -16,6 +16,6 @@
 <p><a href="{{ url_for('repertoire_views.opening_decision', game_id=decision.game_id, position_id=decision.position_id) }}">Back to this exact decision</a></p>
 <p>These are supported pawn geometries observed after the exact move in a bounded convenience sample. Generic ideas depend on the pieces and position; these counts do not establish popularity, soundness, personal fit, or a recommended plan.</p>
 {{ sample("Your played move", decision.played, played) }}
-{% if alternative %}{{ sample("One legal catalog alternative", alternative.san, other) }}{% else %}<p>No legal catalog alternative is available at this position.</p>{% endif %}
+{% if alternative %}{{ sample("Selected catalog alternative" if selected else "One legal catalog alternative", alternative.san, other) }}{% else %}<p>No legal catalog alternative is available at this position.</p>{% endif %}
 {% if measured %}<p>For this exact owned decision, the qualified same-search estimate is played {{ measured.played }} cp; alternative {{ measured.alternative }} cp at depth {{ measured.depth }}, from your perspective. This estimate is separate from the public sample and is not a recommendation.</p>{% else %}<p>No qualified exact-decision comparison is shown here. You can inspect or request one on the decision page.</p>{% endif %}
 {% endblock %}

@@ -3,6 +3,7 @@
 from flask import Blueprint, abort, current_app, redirect, render_template, request, url_for
 
 from .opening_decision import inspect
+from .opening_experiment import qualified as qualifies_experiment
 from .opening_explore import explore
 from .opening_explore_enrich import enrich
 from .opening_queue_request import admit
@@ -67,6 +68,7 @@ def opening_decision(game_id: int, position_id: int):
         "opening_decision.html",
         decision=result,
         comparisons=comparisons,
+        qualifies_experiment=qualifies_experiment,
         board=board_rows(result["fen"], result["color"]),
     )
 
