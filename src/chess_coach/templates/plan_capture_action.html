@@ -9,7 +9,7 @@
 {% elif history.status == "pending" %}
 <p><a href="{{ url_for('unified_practice.show_page', attempt=history.attempt_id) }}">Check your capture assessment status</a>.</p>
 {% elif history.status == "correct" and history.assistance == "unassisted" %}
-<p>Your latest checked capture was correct without assistance. <a href="{{ url_for('related_capture.find_verified', position=capture.source.position_id) }}">Find another verified unfamiliar capture of this pattern (same-pattern practice; difficulty and context can differ)</a>.</p>
+<p>Your latest checked capture was correct without assistance. <a href="{{ url_for('related_capture.find_verified', attempt=history.attempt_id, position=capture.source.position_id) }}">Find a verified unfamiliar capture with matching comparison context</a>. Or <a href="{{ url_for('related_capture.find_verified', position=capture.source.position_id) }}">Find another verified unfamiliar capture of this pattern (same-pattern practice; difficulty and context can differ)</a>.</p>
 {% elif history.status == "incorrect" and history.assistance == "unassisted" %}
 <p>Your latest checked move missed the target. <a href="{{ url_for('views.evidence_detail', evidence_id=capture.source.evidence_id) }}">Review the source</a>, then <a href="{{ url_for('related_capture.find_verified', position=capture.source.position_id) }}">find a fresh verified assessment of this pattern (same-pattern practice; difficulty and context can differ)</a>.</p>
 {% elif history.status in ("correct", "incorrect", "unresolved") %}

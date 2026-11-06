@@ -12,18 +12,26 @@ from .web_db import database
 def page():
     from .capture_finder import find
 
+    attempt = request.args.get("attempt")
+    position = None
     try:
+        options = option(request.args.get("position"))
+        position = options.get("position")
+        if attempt is not None:
+            options["attempt"] = attempt
         found = find(
             database(),
             current_app.config["SUBJECT"],
             current_app.config["CORPUS"],
             current_app.secret_key,
-            **option(request.args.get("position")),
+            **options,
         )
     except (sqlite3.Error, ValueError, TypeError, KeyError, IndexError):
         found = None
     if found is None:
-        return render_template("capture_finder_empty.html")
+        return render_template(
+            "capture_finder_empty.html", matched=attempt is not None, position=position
+        )
     position, result = found
     for item in result["items"]:
         item["board"] = board_rows(item["fen"])

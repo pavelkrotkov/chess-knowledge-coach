@@ -15,12 +15,16 @@ def _supported(db, candidate):
         return False
 
 
-def prove(db, selection, deadline, remaining, expired):
+def _eligible(db, candidate, accept):
+    return (accept is None or accept(candidate)) and _supported(db, candidate)
+
+
+def prove(db, selection, deadline, remaining, expired, *, accept=None):
     checked = 0
     for candidate in selection[3][:PER_SOURCE]:
         if expired(deadline) or checked >= remaining:
             break
-        if not _supported(db, candidate):
+        if not _eligible(db, candidate, accept):
             continue
         if expired(deadline):
             break

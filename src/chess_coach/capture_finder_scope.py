@@ -25,3 +25,7 @@ def option(raw):
     if not raw.isascii() or not raw.isdecimal() or len(raw) > 19:
         raise ValueError("capture source unavailable")
     return {"position": validate(int(raw))}
+
+
+def search_options(expected):
+    return {"expected": expected} if expected is not None else {}

@@ -3,7 +3,7 @@
 import json
 
 from .capture_compare_context import valid
-from .fact_fingerprint import canonical
+from .capture_compare_signature import signature
 from .related_capture import VERSION as RANK_VERSION
 from .related_capture_assessment import HISTORY, PROOF_VERSION, VERSION
 
@@ -42,30 +42,8 @@ def scope(row, corpus):
     context = assessment.get("context")
     if not valid(context):
         return None
-    baseline = context["ranking_baseline"]
-    signature = [
-        corpus,
-        context["corpus_checksum"],
-        row["objective"],
-        RANK_VERSION,
-        VERSION,
-        PROOF_VERSION,
-        HISTORY,
-        context["mechanism"],
-        context["source_mechanism"],
-        context["content_phase"],
-        context["source_phase"],
-        context["same_phase"],
-        context["same_geometry"],
-        context["same_opening"],
-        context["same_material"],
-        context["material_distance"],
-        None if baseline is None else baseline // 200,
-        context["content_rating"] // 200,
-        context["content_deviation"] // 100,
-    ]
     return {
-        "key": canonical(signature),
+        "key": signature(context, corpus),
         "rating_start": context["content_rating"] // 200 * 200,
         "deviation_start": context["content_deviation"] // 100 * 100,
     }

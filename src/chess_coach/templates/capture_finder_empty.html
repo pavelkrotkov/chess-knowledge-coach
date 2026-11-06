@@ -2,6 +2,7 @@
 {% block title %}Find an unfamiliar capture — Chess coach{% endblock %}
 {% block content %}
 <h2>Find an unfamiliar capture</h2>
-<p>No fully verified unfamiliar capture was found in this bounded search, or its sources changed. This does not mean no other examples exist. Individual source and matching checks may run past the search time budget.</p>
+<p>No fully verified unfamiliar capture {% if matched %}with the same comparison context {% endif %}was found in this bounded search, or its sources changed. This does not mean no other examples exist. Individual source and matching checks may run past the search time budget.</p>
+{% if matched and position %}<p><a href="{{ url_for('related_capture.find_verified', position=position) }}">Find a verified unfamiliar capture of the same pattern</a>. Its comparison context may differ.</p>{% endif %}
 <p><a href="{{ url_for("related_capture.plan") }}">Back to capture practice</a></p>
 {% endblock %}

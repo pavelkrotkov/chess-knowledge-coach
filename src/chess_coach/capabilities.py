@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.70.0"
+REGISTRY_VERSION = "1.71.0"
 
 CAPABILITIES = (
     {
@@ -403,7 +403,7 @@ CAPABILITIES = (
         "area": "Training",
         "name": "Multi-skill adaptive curriculum",
         "status": "planned",
-        "details": "The plan schedules mate-in-one and can show an advisory capture next step. Broader multi-skill scheduling, prerequisites and difficulty adaptation remain planned.",
+        "details": "The plan schedules mate-in-one and can offer an advisory capture next step, including a bounded search for the same comparison context. Broader multi-skill scheduling, prerequisites and difficulty adaptation remain planned.",
     },
     {
         "id": "mastery_v2",
