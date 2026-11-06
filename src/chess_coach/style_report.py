@@ -2,6 +2,7 @@
 
 from collections import Counter
 
+from .engine_report_cache import report_digests
 from .recurrence_snapshot import read_snapshot
 from .repertoire_sources import MAX_GAMES
 from .style_protection_budget import MAX_WORK as PROTECTION_WORK_LIMIT
@@ -17,7 +18,7 @@ MATE_SEARCH_LIMIT = 100
 
 
 def style_report(db, learner, *, max_games=MAX_GAMES):
-    with read_snapshot(db):
+    with report_digests(), read_snapshot(db):
         return _style_report(db, learner, max_games=max_games)
 
 

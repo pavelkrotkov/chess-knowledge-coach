@@ -356,3 +356,97 @@ def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch):
     assert coverage["nomination_unknown_games"] == 0
     assert coverage["nomination_unchecked_games"] == 2
     db.close()
+
+
+def test_report_engine_digest_reuse_and_freshness(tmp_path, monkeypatch):
+    import hashlib
+    import os
+    from pathlib import Path
+
+    import pytest
+
+    import chess_coach.engine_report_cache as digest_cache
+    import chess_coach.style_report as report_module
+    from chess_coach.analysis_configuration import engine_config
+
+    binary = tmp_path / "engine"
+    binary.write_bytes(b"first")
+    binary.chmod(0o700)
+    db = Database(":memory:")
+    db.initialize()
+    real_digest = hashlib.file_digest
+    hashed = []
+
+    def counted(file, algorithm):
+        hashed.append(True)
+        return real_digest(file, algorithm)
+
+    def configure():
+        return engine_config(binary, 100, None, None, 2, 1, 16, {})["engine_sha256"]
+
+    real_open = Path.open
+    denied = False
+
+    def open_checked(path, *args, **kwargs):
+        if denied and path == binary:
+            raise PermissionError("synthetic unavailable engine")
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(digest_cache.hashlib, "file_digest", counted)
+    monkeypatch.setattr(Path, "open", open_checked)
+
+    def exercise(_db, _learner, *, max_games):
+        nonlocal denied
+        first = configure()
+        assert configure() == first and len(hashed) == 1
+        previous = binary.stat()
+        binary.write_bytes(b"other")
+        os.utime(binary, ns=(previous.st_atime_ns, previous.st_mtime_ns))
+        changed = configure()
+        assert changed != first and len(hashed) == 2
+        replacement = tmp_path / "replacement"
+        replacement.write_bytes(b"third")
+        replacement.chmod(0o700)
+        replacement.replace(binary)
+        assert configure() != changed and len(hashed) == 3
+        denied = True
+        with pytest.raises(PermissionError):
+            configure()
+        denied = False
+        binary.write_bytes(b"forth")
+        real_hash = digest_cache._digest
+
+        def changing(file):
+            value = real_hash(file)
+            binary.write_bytes(b"final")
+            return value
+
+        with monkeypatch.context() as patch:
+            patch.setattr(digest_cache, "_digest", changing)
+            with pytest.raises(OSError, match="changed"):
+                configure()
+        assert configure() != changed and len(hashed) == 5
+        binary.write_bytes(b"before")
+        new_binary = tmp_path / "new-engine"
+        new_binary.write_bytes(b"after")
+        new_binary.chmod(0o700)
+
+        def replacing(file):
+            value = real_hash(file)
+            new_binary.replace(binary)
+            return value
+
+        with monkeypatch.context() as patch:
+            patch.setattr(digest_cache, "_digest", replacing)
+            with pytest.raises(OSError, match="changed"):
+                configure()
+        configure()
+        assert len(hashed) == 7
+        return {"max_games": max_games}
+
+    monkeypatch.setattr(report_module, "_style_report", exercise)
+    assert report_module.style_report(db, LEARNER, max_games=1) == {"max_games": 1}
+    configure()
+    configure()
+    assert len(hashed) == 9
+    db.close()
