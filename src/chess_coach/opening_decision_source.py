@@ -5,6 +5,7 @@ from typing import cast
 from .learner_context import decision_context_boards
 from .opening_decision_budget import classification
 from .opening_storage import position_key
+from .recurrence_snapshot import read_snapshot
 
 
 def _validate_board(board):
@@ -28,6 +29,7 @@ def _history(db, game_id, position_id, learner, opening):
 
 
 def source(db, game_id, position_id, learner):
-    opening = classification(db, game_id)
+    with read_snapshot(db):
+        opening = classification(db, game_id)
     context, board = _history(db, game_id, position_id, learner, opening)
     return opening, context, board

@@ -142,6 +142,26 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         inspect_opening(db, 1, first_move, "learner")
     db.connection.execute("UPDATE opening_datasets SET content_revision=1 WHERE version='test'")
     db.connection.commit()
+    # The bounded graph and fingerprint share a short snapshot, not the game replay.
+    import chess_coach.opening_decision_budget as opening_budget
+    import chess_coach.opening_decision_source as opening_source_module
+
+    graph_reader = opening_budget.opening_graph
+    history_reader = opening_source_module._history
+
+    def checked_graph(database, selected_dataset):
+        assert database.connection.in_transaction
+        return graph_reader(database, selected_dataset)
+
+    def checked_history(database, *args):
+        assert not database.connection.in_transaction
+        return history_reader(database, *args)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(opening_budget, "opening_graph", checked_graph)
+        patch.setattr(opening_source_module, "_history", checked_history)
+        assert inspect_opening(db, 1, first_move, "learner")["played"] == "d4"
+
     original_fen = db.connection.execute(
         "SELECT fen FROM positions WHERE id=?", (first_move,)
     ).fetchone()[0]
