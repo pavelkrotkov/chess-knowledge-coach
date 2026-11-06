@@ -17,14 +17,14 @@ def enrich(db, root, learner, report):
     branch["references"] = matches(root, learner, branch["position"])
     branch["comparison"] = None
     if time.monotonic() + 5 < report["_deadline"]:
-        branch["comparison"] = _comparison(db, root, learner, exemplar, alternative)
+        branch["comparison"] = comparison(db, root, learner, exemplar, alternative)
     else:
         report["partial"] = True
     if db.connection.execute("PRAGMA data_version").fetchone()[0] != report["_version"]:
         raise ValueError("opening sample changed")
 
 
-def _comparison(db, root, learner, exemplar, alternative):
+def comparison(db, root, learner, exemplar, alternative):
     decision = {
         "game_id": exemplar["game_id"],
         "position_id": exemplar["position_id"],

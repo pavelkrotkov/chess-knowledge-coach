@@ -3,6 +3,7 @@
 {% block content %}
 <h2>Opening alternatives</h2>
 <p>You played {{ decision.played }} as {{ decision.color }} at ply {{ decision.ply }}. <a href="{{ url_for("repertoire_views.repertoire_game", game_id=decision.game_id) }}">Back to this game</a>.</p>
+<p><a href="{{ url_for('opening_profiles.show', game_id=decision.game_id, position_id=decision.position_id) }}">Explore ordered public branch structures</a>.</p>
 <p><a href="{{ url_for("repertoire_views.opening_references", game_id=decision.game_id, position_id=decision.position_id) }}">See public reference games for this position</a>.</p>
 {% set board_label = "Opening position; learner to move" %}{% include "board.html" %}
 <p>Catalog: <a href="{{ decision.opening.source_url }}">Lichess CC0 opening snapshot {{ decision.opening.version }}</a>, revision {{ decision.opening.content_revision }}. These legal catalog moves are possibilities to explore; catalog inclusion does not establish soundness or personal fit.</p>

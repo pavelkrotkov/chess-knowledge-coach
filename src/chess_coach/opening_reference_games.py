@@ -12,7 +12,9 @@ MAX_RECORDS = 5000
 MAX_GAMES = 1000
 
 
-def collect(text, truncated):
+def collect(text, truncated, *, parser=None):
+    if parser is None:
+        parser = parse_record
     stream = io.StringIO(text)
     records, seen, urls = [], set(), set()
     counts = {"examined": 0, "excluded": 0, "duplicates": 0, "unknown_context": 0}
@@ -23,7 +25,7 @@ def collect(text, truncated):
             break
         raw = text[start : stream.tell()]
         counts["examined"] += 1
-        record = parse_record(game, raw, counts["examined"])
+        record = parser(game, raw, counts["examined"])
         _admit(record, records, counts, seen, urls)
     counts["accepted"] = len(records)
     counts["truncated"] = truncated or stream.tell() < len(text)
