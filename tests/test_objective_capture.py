@@ -397,6 +397,21 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         "/plan/captures/history", base_url="https://coach.invalid", headers=headers
     )
     assert b"1 pending" in history_page.data and b"puzzle rating 1200" in history_page.data
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            "chess_coach.capture_compare_samples.verify",
+            lambda *_args: (_ for _ in ()).throw(
+                AssertionError("sparse comparison performed proof work")
+            ),
+        )
+        sparse_page = client.get(
+            "/plan/captures/comparison", base_url="https://coach.invalid", headers=headers
+        )
+    assert (
+        sparse_page.status_code == 200
+        and b"largest group has 1 recorded matches" in sparse_page.data
+    )
+    assert b"not verified comparison results" in sparse_page.data
     db = Database(path)
     pending_history = latest(db, LEARNER, 1, "capture")
     assert pending_history["status"] == "pending"
@@ -585,6 +600,106 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         across_sources = first_history(db, LEARNER, "capture")
         assert across_sources["counts"]["unassisted_correct"] == 1
         assert across_sources["counts"]["incomplete"] == 2
+        # Two synthetic nonoverlapping, matched cohorts exercise the comparison
+        # gates without creating or publishing any learner attempts.
+        import chess_coach.capture_compare_report as comparison_report
+        import chess_coach.capture_compare_select as comparison_select
+        import chess_coach.capture_compare_verify as comparison_verify
+        from chess_coach.capture_compare_scope import scope as comparison_scope
+
+        original_row = dict(
+            db.connection.execute(
+                "SELECT * FROM unified_sessions WHERE attempt_id=?", (attempt,)
+            ).fetchone()
+        )
+        synthetic = []
+        for index in range(20):
+            position_board = chess.Board.empty()
+            position_board.set_piece_at(index, chess.Piece(chess.PAWN, chess.WHITE))
+            row = dict(
+                original_row,
+                attempt_id=f"cohort-{index:02}",
+                prompt_fen=position_board.fen(),
+                started_at=f"2026-01-01T00:00:{index:02}+00:00",
+            )
+            synthetic.append(row)
+        assert comparison_scope(synthetic[0], "capture") is not None
+        bad_context = json.loads(synthetic[0]["provenance_json"])
+        bad_context["related_capture"]["assessment"]["context"]["same_geometry"] ^= True
+        assert (
+            comparison_scope(dict(synthetic[0], provenance_json=json.dumps(bad_context)), "capture")
+            is None
+        )
+
+        def synthetic_item(_db, row, _corpus, _cache, _check):
+            number = int(row["attempt_id"].split("-")[-1])
+            return {
+                "attempt_id": row["attempt_id"],
+                "started_at": row["started_at"],
+                "status": "correct" if number < 15 else "incorrect",
+                "hints": 0,
+                "reveals": 0,
+            }
+
+        with monkeypatch.context() as patch:
+            patch.setattr(comparison_select, "rows", lambda *_args: (synthetic[:19], False))
+            patch.setattr(
+                "chess_coach.capture_compare_samples.verify",
+                lambda *_args: (_ for _ in ()).throw(AssertionError("sparse proof")),
+            )
+            assert comparison_report.report(db, LEARNER, "capture")["status"] == "sparse"
+            duplicate = [
+                *synthetic[:19],
+                dict(synthetic[19], prompt_fen=synthetic[0]["prompt_fen"]),
+            ]
+            patch.setattr(comparison_select, "rows", lambda *_args: (duplicate, False))
+            assert comparison_report.report(db, LEARNER, "capture")["status"] == "sparse"
+            different = json.loads(synthetic[19]["provenance_json"])
+            different["related_capture"]["assessment"]["context"]["content_rating"] = 1600
+            split = [*synthetic[:19], dict(synthetic[19], provenance_json=json.dumps(different))]
+            patch.setattr(comparison_select, "rows", lambda *_args: (split, False))
+            assert comparison_report.report(db, LEARNER, "capture")["status"] == "sparse"
+        with monkeypatch.context() as patch:
+            patch.setattr(comparison_select, "rows", lambda *_args: (synthetic, False))
+            patch.setattr(comparison_verify, "item", synthetic_item)
+            matched = comparison_report.report(db, LEARNER, "capture")
+            assert matched["status"] == "comparable" and matched["checked"] == 20
+            assert matched["earlier"]["unassisted"]["verified"] == 10
+            assert matched["later"]["unassisted"]["verified"] == 5
+            assert matched["later"]["unassisted"]["incorrect"] == 5
+            assert matched["earlier"]["end"] < matched["later"]["start"]
+            compared_page = client.get(
+                "/plan/captures/comparison", base_url="https://coach.invalid", headers=headers
+            )
+            assert (
+                compared_page.status_code == 200
+                and b"Both nonoverlapping samples" in compared_page.data
+            )
+            assert b"10 correct" in compared_page.data and b"5 incorrect" in compared_page.data
+            tied = list(synthetic)
+            tied[10] = dict(tied[10], started_at=tied[9]["started_at"])
+            patch.setattr(comparison_select, "rows", lambda *_args: (tied, False))
+            assert comparison_report.report(db, LEARNER, "capture")["status"] == "unavailable"
+            patch.setattr(comparison_select, "rows", lambda *_args: (synthetic, False))
+            patch.setattr(
+                comparison_verify, "item", lambda *args: {**synthetic_item(*args), "hints": 1}
+            )
+            assert comparison_report.report(db, LEARNER, "capture")["status"] == "unavailable"
+            patch.setattr(
+                comparison_verify,
+                "item",
+                lambda *args: {"status": "stale", "started_at": args[1]["started_at"]},
+            )
+            assert comparison_report.report(db, LEARNER, "capture")["status"] == "unavailable"
+            patch.setattr(comparison_verify, "SECONDS", 0)
+            assert comparison_report.report(db, LEARNER, "capture")["checked"] == 0
+        with monkeypatch.context() as patch:
+            patch.setattr(comparison_select, "rows", lambda *_args: (synthetic, True))
+            patch.setattr(
+                "chess_coach.capture_compare_samples.verify",
+                lambda *_args: (_ for _ in ()).throw(AssertionError("incomplete proof")),
+            )
+            assert comparison_report.report(db, LEARNER, "capture")["status"] == "incomplete"
         # The opt-in finder skips a source whose candidate proofs do not pass,
         # then displays a proved candidate from a second current owned source.
         import chess_coach.capture_finder as finder

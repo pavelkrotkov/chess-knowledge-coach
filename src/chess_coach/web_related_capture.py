@@ -103,3 +103,16 @@ def find_verified():
     for item in result["items"]:
         item["board"] = board_rows(item["fen"])
     return render_template("related_capture.html", result=result, position=position)
+
+
+@related_capture.get("/plan/captures/comparison")
+def comparison():
+    from .capture_compare_report import report
+
+    try:
+        result = report(database(), current_app.config["SUBJECT"], current_app.config["CORPUS"])
+    except (sqlite3.Error, ValueError, TypeError, KeyError, IndexError):
+        return render_template(
+            "error.html", message="Capture comparison is unavailable or changed."
+        ), 400
+    return render_template("capture_comparison.html", report=result)
