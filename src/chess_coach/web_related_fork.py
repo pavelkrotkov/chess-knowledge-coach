@@ -1,7 +1,9 @@
 """Preview and start explicitly selected fork transfers in the private browser."""
 
 import secrets
+import sqlite3
 
+import chess
 from flask import Blueprint, current_app, redirect, render_template, request, session, url_for
 
 from .related_fork import preview
@@ -36,14 +38,27 @@ def show(evidence_id):
 def begin(evidence_id):
     attempt = secrets.token_urlsafe(24)
     try:
-        start_related(
-            database(),
-            attempt_id=attempt,
-            subject=current_app.config["SUBJECT"],
-            evidence_id=evidence_id,
-            corpus_version=current_app.config["CORPUS"],
-            reference=request.form.get("reference", ""),
-        )
+        if request.form.get("assessment") == "1":
+            from .related_fork_assessment_start import start
+
+            start(
+                database(),
+                attempt_id=attempt,
+                subject=current_app.config["SUBJECT"],
+                evidence_id=evidence_id,
+                corpus_version=current_app.config["CORPUS"],
+                reference=request.form.get("reference", ""),
+                secret=current_app.secret_key,
+            )
+        else:
+            start_related(
+                database(),
+                attempt_id=attempt,
+                subject=current_app.config["SUBJECT"],
+                evidence_id=evidence_id,
+                corpus_version=current_app.config["CORPUS"],
+                reference=request.form.get("reference", ""),
+            )
     except ValueError:
         return render_template(
             "error.html",
@@ -51,3 +66,24 @@ def begin(evidence_id):
         ), 400
     session["unified_attempt"] = attempt
     return redirect(url_for("unified_practice.show_page", attempt=attempt), code=303)
+
+
+@related_fork.get("/evidence/<int:evidence_id>/related-forks/find-verified")
+def find_verified(evidence_id):
+    from .related_fork_assessment_finder import find
+
+    try:
+        result = find(
+            database(),
+            current_app.config["SUBJECT"],
+            evidence_id,
+            current_app.config["CORPUS"],
+            current_app.secret_key,
+        )
+        if result:
+            item = result["items"][0]
+            item["board"] = board_rows(item["fen"])
+            item["color"] = "White" if chess.Board(item["fen"]).turn else "Black"
+    except (ValueError, sqlite3.OperationalError):
+        result = None
+    return render_template("related_fork_assessment.html", result=result, evidence_id=evidence_id)
