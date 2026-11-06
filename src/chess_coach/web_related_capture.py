@@ -82,3 +82,24 @@ def history():
             "error.html", message="Capture history is unavailable or changed."
         ), 400
     return render_template("capture_history.html", report=result)
+
+
+@related_capture.get("/plan/captures/find-verified")
+def find_verified():
+    from .capture_finder import find
+
+    try:
+        found = find(
+            database(),
+            current_app.config["SUBJECT"],
+            current_app.config["CORPUS"],
+            current_app.secret_key,
+        )
+    except (sqlite3.Error, ValueError, TypeError, KeyError, IndexError):
+        found = None
+    if found is None:
+        return render_template("capture_finder_empty.html")
+    position, result = found
+    for item in result["items"]:
+        item["board"] = board_rows(item["fen"])
+    return render_template("related_capture.html", result=result, position=position)

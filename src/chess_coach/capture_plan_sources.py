@@ -45,7 +45,11 @@ def _groups(db, learner):
     return groups, limited, len(rows)
 
 
-def _chosen(db, learner, groups):
+def _finished(checked, stop):
+    return checked >= SOURCE_CHECKS or stop()
+
+
+def witnesses(db, learner, groups, *, stop=lambda: False):
     ranked = sorted(
         groups.values(), key=lambda items: (-len({x["game_key"] for x in items}), -items[0]["id"])
     )
@@ -53,14 +57,14 @@ def _chosen(db, learner, groups):
     checked = 0
     for items in ranked:
         for item in items:
-            if checked >= SOURCE_CHECKS:
-                return None
+            if _finished(checked, stop):
+                return
             checked += 1
             try:
                 source = source_for_position(db, learner, item["position_id"])
                 if source["provenance"]["evidence_id"] != item["id"]:
                     continue
-                return {
+                yield {
                     "position_id": item["position_id"],
                     "games": len({x["game_key"] for x in items}),
                     "observations": len(items),
@@ -68,7 +72,10 @@ def _chosen(db, learner, groups):
                 }
             except (ValueError, TypeError, KeyError, IndexError):
                 continue
-    return None
+
+
+def _chosen(db, learner, groups):
+    return next(witnesses(db, learner, groups), None)
 
 
 def choose(db, subject):
