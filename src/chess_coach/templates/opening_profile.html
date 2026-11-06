@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Opening branch structures — Chess coach{% endblock %}
+{% macro sample(label, move, data) %}
+<section><h3>{{ label }}: {{ move }}</h3>
+{% if data %}
+<p>Ordered public sample: {{ data.games }} distinct games actually played this exact position and move. Up to ten games are selected, using the first such occurrence in each game within the first forty plies and up to twelve post-move positions, starting with the matching move. {% if data.more_matches %}Additional matching games were not shown.{% endif %}</p>
+<p>{{ data.no_supported_match }} selected games had no supported named geometry in the checked window; {{ data.short_windows }} had fewer than twelve checked positions, and {{ data.window_cutoffs }} continued beyond the window.</p>
+<ul>{% for shape in data.families %}<li><strong>{{ shape.name }}</strong> ({{ shape.color }}): {{ shape.count }} of {{ data.games }} selected games. {{ shape.rule }} <a href="{{ shape.source }}">Pattern source</a>. Typical ideas: {{ shape.plans }}</li>{% else %}<li>No supported named geometry was detected in these windows.</li>{% endfor %}</ul>
+<ul>{% for item in data.examples %}<li>{{ item.context.Event }}, {{ item.context.Date }}: {{ item.context.White }}–{{ item.context.Black }}. First matching move at ply {{ item.first_ply }}. {% if item.site %}<a href="{{ item.site }}">Broadcast source</a>{% else %}<a href="{{ data.source }}">Archive source</a>{% endif %}.</li>{% else %}<li>No matching games in this bounded sample.</li>{% endfor %}</ul>
+<p>Source: <a href="{{ data.source }}">Lichess September 2026 broadcasts</a>, <a href="{{ data.license_url }}">{{ data.license }}</a>. Archive SHA-256: <code>{{ data.source_sha256 }}</code>. Sample {{ data.coverage.accepted }} accepted from {{ data.coverage.examined }} examined; {{ data.coverage.excluded }} excluded, {{ data.coverage.duplicates }} duplicates, and {{ data.coverage.unknown_context }} with missing context. Games with the same players and complete move sequence are conservatively counted once. {% if data.coverage.truncated %}The archive scan was truncated.{% endif %}</p>
+{% else %}<p>The ordered public reference sample is unavailable.</p>{% endif %}
+</section>
+{% endmacro %}
+{% block content %}
+<h2>Opening branch structures</h2>
+<p><a href="{{ url_for('repertoire_views.opening_decision', game_id=decision.game_id, position_id=decision.position_id) }}">Back to this exact decision</a></p>
+<p>These are supported pawn geometries observed after the exact move in a bounded convenience sample. Generic ideas depend on the pieces and position; these counts do not establish popularity, soundness, personal fit, or a recommended plan.</p>
+{{ sample("Your played move", decision.played, played) }}
+{% if alternative %}{{ sample("One legal catalog alternative", alternative.san, other) }}{% else %}<p>No legal catalog alternative is available at this position.</p>{% endif %}
+{% if measured %}<p>For this exact owned decision, the qualified same-search estimate is played {{ measured.played }} cp; alternative {{ measured.alternative }} cp at depth {{ measured.depth }}, from your perspective. This estimate is separate from the public sample and is not a recommendation.</p>{% else %}<p>No qualified exact-decision comparison is shown here. You can inspect or request one on the decision page.</p>{% endif %}
+{% endblock %}

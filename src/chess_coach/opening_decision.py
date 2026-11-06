@@ -26,6 +26,7 @@ def inspect(db, game_id, position_id, learner):
         "color": context["learner_color"],
         "fen": context["pre_move_fen"],
         "played": board.san(played),
+        "played_uci": context["played_move"],
         "opening": opening,
         "catalog": result,
         "analysis": analysis,

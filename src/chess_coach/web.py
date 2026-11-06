@@ -14,6 +14,7 @@ from .web_db import close_database
 from .web_lesson_history import lesson_history_views
 from .web_lessons import lesson_views
 from .web_mate import mate_views
+from .web_opening_profile import opening_profiles
 from .web_pawn import pawn_views
 from .web_practice import practice
 from .web_practice_tools import practice_tools
@@ -87,6 +88,7 @@ def create_app(
     app.register_blueprint(practice_tools)
     app.register_blueprint(unified_practice)
     app.register_blueprint(repertoire_views)
+    app.register_blueprint(opening_profiles)
     app.register_blueprint(recurrence_views)
     app.register_blueprint(short_mate_game_views)
     app.register_blueprint(style_views)

@@ -9,8 +9,10 @@ from .opening_reference_url import site as _site
 from .opening_reference_validate import valid as _valid
 
 
-def record(game, raw, number):
-    if not _valid(game, raw) or not (played := _moves(game)):
+def record(game, raw, number, *, play=None):
+    if play is None:
+        play = _moves
+    if not _valid(game, raw) or not (played := play(game)):
         return None
     moves, positions = played
     context = context_for(game.headers)

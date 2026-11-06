@@ -662,6 +662,108 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         assert coverage["excluded"] == 2
         with pytest.raises(ValueError, match="already exists"):
             build_reference(tmp_path, "learner")
+    # Build a separate ordered index from the same synthetic pinned archive.
+
+    import chess_coach.opening_profile_lookup as profile_lookup
+    from chess_coach.opening_profile_index import INDEX_NAME as PROFILE_INDEX
+    from chess_coach.opening_profile_index import build as build_profile
+    from chess_coach.opening_profile_read import profile as read_profile
+    from chess_coach.opening_reference_index import INDEX_NAME as REFERENCE_INDEX
+    from chess_coach.opening_storage import position_key
+
+    french = game(
+        "Public E",
+        "Public F",
+        "1. e4 e6 2. d4 d5 3. e5 c5 4. Nf3 Nc6 5. Ng1 Nb8 6. Nf3 Nc6 7. Nc3 Bd7",
+    )
+    black_french = game("Public G", "Public H", "1. e3 e5 2. d4 d5 3. c4 e4")
+    repeated = game("Repeater", "Public I", "1. Nf3 Nf6 2. Ng1 Ng8 3. Nf3 Nf6 4. g3")
+    french_copy = french.replace('[Event "Fixture"]', '[Event "Other event"]')
+    profile_sample = (
+        sample + "\n" + french + "\n" + french_copy + "\n" + black_french + "\n" + repeated
+    )
+    for index in range(11):
+        profile_sample += "\n" + game(f"Sample {index}", f"Opponent {index}", "1. Nf3 Nf6")
+    old_index = reference_dir / REFERENCE_INDEX
+    old_hash = hashlib.sha256(old_index.read_bytes()).hexdigest()
+    with monkeypatch.context() as patch:
+        patch.setattr(reference_source, "SOURCE_BYTES", len(archive.read_bytes()))
+        patch.setattr(
+            reference_source, "SOURCE_SHA256", hashlib.sha256(archive.read_bytes()).hexdigest()
+        )
+        patch.setattr(reference_source, "_decode", lambda file: (profile_sample.encode(), False))
+        ordered_coverage = build_profile(tmp_path, "learner")
+        assert ordered_coverage["accepted"] == 16 and ordered_coverage["duplicates"] == 3
+        with pytest.raises(ValueError, match="already exists"):
+            build_profile(tmp_path, "learner")
+    assert hashlib.sha256(old_index.read_bytes()).hexdigest() == old_hash
+    start_key = position_key(chess.Board())
+    white_profile = read_profile(tmp_path, "learner", start_key, "e2e4")
+    assert white_profile["games"] == 1
+    assert any(
+        shape["family"] == "french_advance" and shape["color"] == "white" and shape["count"] == 1
+        for shape in white_profile["families"]
+    )
+    assert white_profile["short_windows"] == 0 and white_profile["window_cutoffs"] == 1
+    black_profile = read_profile(tmp_path, "learner", start_key, "e2e3")
+    assert black_profile["games"] == 1 and black_profile["short_windows"] == 1
+    assert any(
+        shape["family"] == "french_advance" and shape["color"] == "black" and shape["count"] == 1
+        for shape in black_profile["families"]
+    )
+    ordered_path = reference_dir / PROFILE_INDEX
+    with sqlite3.connect(ordered_path.as_uri() + "?mode=ro", uri=True) as ordered:
+        repeater_id = next(
+            row[0]
+            for row in ordered.execute("SELECT id,context FROM games")
+            if json.loads(row[1])["White"] == "Repeater"
+        )
+        occurrences = ordered.execute(
+            "SELECT ply FROM moves WHERE game_id=? AND parent=? AND uci=? ORDER BY ply",
+            (repeater_id, start_key, "g1f3"),
+        ).fetchall()
+    assert occurrences == [(1,), (5,)]
+    repeated_profile = read_profile(tmp_path, "learner", start_key, "g1f3")
+    assert repeated_profile["games"] == 10 and repeated_profile["more_matches"]
+    assert (
+        next(
+            item for item in repeated_profile["examples"] if item["context"]["White"] == "Repeater"
+        )["first_ply"]
+        == 1
+    )
+    assert read_profile(tmp_path, "learner", start_key, "e2e5")["games"] == 0
+    with monkeypatch.context() as patch:
+        patch.setattr(profile_lookup, "GRAPH_SHA256", "different")
+        assert read_profile(tmp_path, "learner", start_key, "e2e4") is None
+    with monkeypatch.context() as patch:
+        patch.setattr(profile_lookup, "SOURCE_SHA256", "different")
+        assert read_profile(tmp_path, "learner", start_key, "e2e4") is None
+
+    import chess_coach.opening_profile_read as profile_read
+
+    nonfile = reference_dir / "not-an-index"
+    nonfile.mkdir(mode=0o700)
+    with monkeypatch.context() as patch:
+        patch.setattr(profile_read, "INDEX_NAME", nonfile.name)
+        assert read_profile(tmp_path, "learner", start_key, "e2e4") is None
+
+    profile_url = route + "/profile"
+    assert client.get(profile_url, base_url="https://coach.invalid").status_code == 403
+    before_profile = len(engine_calls)
+    profile_page = client.get(profile_url, base_url="https://coach.invalid", headers=headers)
+    assert profile_page.status_code == 200
+    assert (
+        b"Your played move" in profile_page.data
+        and b"One legal catalog alternative" in profile_page.data
+    )
+    assert (
+        b"bounded convenience sample" in profile_page.data
+        and b"Broadcast source" in profile_page.data
+    )
+    assert profile_lookup.SOURCE_SHA256.encode() in profile_page.data
+    assert b"played 0 cp; alternative 120 cp" in profile_page.data
+    assert len(engine_calls) == before_profile
+
     matching = reference_matches(tmp_path, "learner", branch_first["catalog"]["parent"])
     assert len(matching["items"]) == 2
     assert any(item["context"]["Date"] == "2026.01.02" for item in matching["items"])

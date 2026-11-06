@@ -13,22 +13,26 @@ INDEX_NAME = "opening-reference-broadcast-2026-09-v1.sqlite"
 
 
 def build(root, subject):
+    return _build(root, subject, INDEX_NAME, collect, _store)
+
+
+def _build(root, subject, index_name, collector, store):
     directory, _ = planning(root, subject)
     source = directory / SOURCE_NAME
     if source.is_symlink() or source.resolve(strict=True).parent != directory:
         raise ValueError("reference source unavailable")
-    output = directory / INDEX_NAME
+    output = directory / index_name
     if output.exists() or output.is_symlink():
         raise ValueError("reference index already exists")
     text, truncated = read(source)
-    records, coverage = collect(text, truncated)
+    records, coverage = collector(text, truncated)
     if not records:
         raise ValueError("no valid reference games")
     descriptor, name = tempfile.mkstemp(prefix=".opening-reference-", dir=directory)
     os.close(descriptor)
     temporary = Path(name)
     try:
-        _store(temporary, records, coverage)
+        store(temporary, records, coverage)
         if temporary.stat().st_size > 20_000_000:
             raise ValueError("reference index exceeds size limit")
         temporary.chmod(0o400)
