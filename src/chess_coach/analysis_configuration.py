@@ -1,11 +1,10 @@
 """Record the analysis limits and decision/score conventions."""
 
-import hashlib
+from .engine_report_cache import engine_digest
 
 
 def engine_config(binary, nodes, time_limit, depth, multipv, threads, hash_mb, compatibility):
-    with binary.open("rb") as file:
-        binary_sha256 = hashlib.file_digest(file, "sha256").hexdigest()
+    binary_sha256 = engine_digest(binary)
     config = {
         "nodes": nodes,
         "depth": depth,
