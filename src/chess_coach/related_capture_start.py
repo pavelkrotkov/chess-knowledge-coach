@@ -16,6 +16,19 @@ def _reference(selected, reference, secret):
     raise ValueError("capture selection changed")
 
 
+def _attach_assessment(db, source_type, version, key, binding, selected, secret):
+    if secret is None or source_type != "corpus":
+        raise ValueError("capture assessment unavailable")
+    from .related_capture_assessment import certificate
+    from .related_capture_assessment_context import capture
+
+    binding["assessment"] = certificate(db, version, key)
+    try:
+        binding["assessment"]["context"] = capture(db, version, key, *selected[:3])
+    except (ValueError, TypeError, KeyError):
+        binding["assessment"]["context"] = None
+
+
 def _admit(db, subject, position, corpus_version, reference, secret, assessment):
     if secret is None and not assessment:
         from .related_capture_admission import admit as legacy_admit
@@ -30,11 +43,7 @@ def _admit(db, subject, position, corpus_version, reference, secret, assessment)
         selected, reference, VERSION, "material_capture"
     )
     if assessment:
-        if secret is None or source_type != "corpus":
-            raise ValueError("capture assessment unavailable")
-        from .related_capture_assessment import certificate
-
-        binding["assessment"] = certificate(db, version, key)
+        _attach_assessment(db, source_type, version, key, binding, selected, secret)
     return source_type, version, key, binding, lines
 
 
