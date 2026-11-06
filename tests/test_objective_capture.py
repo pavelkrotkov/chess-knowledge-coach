@@ -693,6 +693,31 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
             assert comparison_report.report(db, LEARNER, "capture")["status"] == "unavailable"
             patch.setattr(comparison_verify, "SECONDS", 0)
             assert comparison_report.report(db, LEARNER, "capture")["checked"] == 0
+        # The omitted middle record must not tie either selected cutoff.
+        board21 = chess.Board.empty()
+        board21.set_piece_at(20, chess.Piece(chess.PAWN, chess.WHITE))
+        extra = dict(
+            synthetic[19],
+            attempt_id="cohort-20",
+            prompt_fen=board21.fen(),
+            started_at="2026-01-01T00:00:20+00:00",
+        )
+        for tied_index in (9, 11):
+            twenty_one = [*synthetic, extra]
+            twenty_one[10] = dict(twenty_one[10], started_at=twenty_one[tied_index]["started_at"])
+            with monkeypatch.context() as patch:
+                patch.setattr(
+                    comparison_select, "rows", lambda *_args, rows=twenty_one: (rows, False)
+                )
+                patch.setattr(
+                    "chess_coach.capture_compare_samples.verify",
+                    lambda *_args: (_ for _ in ()).throw(AssertionError("tied boundary proof")),
+                )
+                ambiguous = comparison_report.report(db, LEARNER, "capture")
+            assert (
+                ambiguous["status"] == "unavailable" and ambiguous["reason"] == "ambiguous_boundary"
+            )
+            assert ambiguous["checked"] == 0
         with monkeypatch.context() as patch:
             patch.setattr(comparison_select, "rows", lambda *_args: (synthetic, True))
             patch.setattr(

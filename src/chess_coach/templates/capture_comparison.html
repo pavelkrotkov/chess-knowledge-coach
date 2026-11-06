@@ -15,7 +15,7 @@
 {% endfor %}{% endif %}
 {% if report.status == "comparable" %}
 <p>Both nonoverlapping samples are current, complete and unassisted. These small practice samples may differ in ways the recorded context does not capture; they do not establish improvement or a change in game play.</p>
-{% else %}<p>A comparison is unavailable until both samples have 10 current, complete, unassisted results. A bounded check can stop before all selected sources are verified.</p>{% endif %}
+{% elif report.reason is defined %}<p>A comparison is unavailable because a sample boundary has tied start times.</p>{% else %}<p>A comparison is unavailable until both samples have 10 current, complete, unassisted results. A bounded check can stop before all selected sources are verified.</p>{% endif %}
 {% endif %}
 {% if report.unmatched %}<p>{{ report.unmatched }} recorded capture assessments lacked compatible admission context or were from another collection; they remain descriptive in the history.</p>{% endif %}
 <p><a href="{{ url_for("related_capture.find_verified") }}">Find another verified unfamiliar capture</a> · <a href="{{ url_for("related_capture.history") }}">Capture history</a> · <a href="{{ url_for("short_mate_game_views.capture_samples") }}">Capture choices in your games</a></p>
