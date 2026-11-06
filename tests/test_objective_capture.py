@@ -361,6 +361,21 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
     assert context["corpus_checksum"] == "checksum" and context["mechanism"]["target"]
     check_db.close()
     attempt = token(shown, "attempt")
+
+    def daily_attempt():
+        with monkeypatch.context() as patch:
+            patch.setattr(
+                "chess_coach.capture_plan.choose",
+                lambda *_, **_kwargs: {
+                    "source": {"position_id": 1, "evidence_id": evidence, "games": 2},
+                    "limited": False,
+                    "scanned": 2,
+                },
+            )
+            return client.get("/plan", base_url="https://coach.invalid", headers=headers)
+
+    if mode == "correct":
+        assert b"Continue your capture assessment" in daily_attempt().data
     if mode == "assisted":
         for endpoint in ("/unified/hint", "/unified/reveal"):
             clue = client.post(
@@ -393,6 +408,8 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         move.headers["Location"], base_url="https://coach.invalid", headers=headers
     )
     assert b"Verification is queued" in pending.data
+    if mode == "correct":
+        assert b"Check your capture assessment status" in daily_attempt().data
     pending_page = client.get("/plan/captures", base_url="https://coach.invalid", headers=headers)
     assert b"awaiting verification" in pending_page.data
     history_page = client.get(
@@ -453,6 +470,18 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         "tampered": b"bounded capture objective is verified",
     }
     assert text[mode] in finished.data
+    daily = daily_attempt()
+    assert daily.status_code == 200
+    assert (b"Find another verified unfamiliar capture of this pattern" in daily.data) == (
+        mode == "correct"
+    )
+    assert (b"find a fresh verified assessment of this pattern" in daily.data) == (
+        mode == "incorrect"
+    )
+    if mode in {"assisted", "unresolved"}:
+        assert b"does not advance this recommendation" in daily.data
+    if mode == "tampered":
+        assert b"latest assessment could not be checked" in daily.data
     adaptive = client.get("/plan/captures", base_url="https://coach.invalid", headers=headers)
     adaptive_text = {
         "correct": b"first move was verified without a hint or reveal",
@@ -751,6 +780,28 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
             familiarity_calls.append(True)
             return original_familiarity(*args)
 
+        filtered = []
+        with monkeypatch.context() as patch:
+            patch.setattr(
+                finder,
+                "_groups",
+                lambda *_: ({("capture", "v"): [{"position_id": 1}, {"position_id": 2}]}, False, 2),
+            )
+            patch.setattr(finder, "familiarity", lambda *_: {})
+            patch.setattr(finder, "search", lambda *args: filtered.append(args[5]))
+            scoped = client.get(
+                "/plan/captures/find-verified?position=2",
+                base_url="https://coach.invalid",
+                headers=headers,
+            )
+            invalid = client.get(
+                "/plan/captures/find-verified?position=9223372036854775808",
+                base_url="https://coach.invalid",
+                headers=headers,
+            )
+        assert scoped.status_code == invalid.status_code == 200
+        assert filtered == [{("capture", "v"): [{"position_id": 2}]}]
+
         before_count = db.connection.execute("SELECT COUNT(*) FROM unified_sessions").fetchone()[0]
         with monkeypatch.context() as patch:
             patch.setattr(finder_search, "_selection", selected_source)
@@ -958,6 +1009,19 @@ def test_capture_plan_uses_independent_current_sources_and_is_lazy(tmp_path, mon
     path = tmp_path / "capture-plan.sqlite"
     db = make_game(path, monkeypatch)
     first = process_decision(db, 1, LEARNER)["evidence_ids"][0]
+    from chess_coach.capture_plan_sources import _groups
+    from chess_coach.tactical_course_budget import PreviewUnavailable
+
+    checkpoints = []
+
+    def deadline():
+        checkpoints.append(True)
+        if len(checkpoints) == 2:
+            raise PreviewUnavailable("deadline")
+
+    with pytest.raises(PreviewUnavailable):
+        _groups(db, LEARNER, check=deadline)
+    assert len(checkpoints) == 2
     initial = report(db, LEARNER, "legacy")
     assert initial["source"]["games"] == 1 and initial["history"]["status"] == "none"
     # A full history still shows the newest distinct first encounters.
@@ -1005,9 +1069,26 @@ def test_capture_plan_uses_independent_current_sources_and_is_lazy(tmp_path, mon
         def forbidden(*args, **kwargs):
             raise AssertionError("capture analysis ran on the daily plan")
 
-        patch.setattr("chess_coach.capture_plan.report", forbidden)
+        patch.setattr("chess_coach.capture_finder.find", forbidden)
         plan = client.get("/plan", base_url="https://coach.invalid", headers=headers)
     assert plan.status_code == 200 and b"/plan/captures" in plan.data
+    assert b"<h3>Capture practice</h3>" not in plan.data
+    with monkeypatch.context() as patch:
+        patch.setattr("chess_coach.capture_plan.report", forbidden)
+        patch.setattr(
+            "chess_coach.web_views.daily_plan",
+            lambda *_args, **_kwargs: {
+                "items": [],
+                "evidence": {"state": "fixture"},
+                "corpus_status": "fixture",
+                "diagnostic": None,
+                "next_cursor": None,
+            },
+        )
+        continuation = client.get(
+            "/plan?cursor=next", base_url="https://coach.invalid", headers=headers
+        )
+    assert continuation.status_code == 200 and b"<h3>Capture practice</h3>" not in continuation.data
     with monkeypatch.context() as patch:
         patch.setattr("chess_coach.capture_finder.find", forbidden)
         single = client.get("/plan/captures", base_url="https://coach.invalid", headers=headers)
@@ -1052,6 +1133,51 @@ def test_capture_plan_uses_independent_current_sources_and_is_lazy(tmp_path, mon
     repeated = report(db, LEARNER, "legacy")
     assert repeated["source"]["games"] == 2
     assert repeated["source"]["observations"] == 2
+    with monkeypatch.context() as patch:
+        patch.setattr("chess_coach.capture_finder.find", forbidden)
+        daily = client.get("/plan", base_url="https://coach.invalid", headers=headers)
+    assert b"<h3>Capture practice</h3>" in daily.data
+    assert b"Find a verified unfamiliar capture" in daily.data
+    assert b"Compare matched capture assessments" in daily.data
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            "chess_coach.web_views.daily_plan",
+            lambda *_args, **_kwargs: {
+                "items": [
+                    {
+                        "objective": "Fixture scheduled review",
+                        "kind": "review",
+                        "reason": "",
+                        "due": None,
+                        "corpus_version": "legacy",
+                        "puzzle_id": "fixture",
+                    }
+                ],
+                "evidence": {"state": "fixture"},
+                "corpus_status": "fixture",
+                "diagnostic": None,
+                "next_cursor": None,
+            },
+        )
+        scheduled = client.get("/plan", base_url="https://coach.invalid", headers=headers)
+    assert scheduled.data.index(b"Fixture scheduled review") < scheduled.data.index(
+        b"<h3>Capture practice</h3>"
+    )
+    from chess_coach.tactical_course_budget import PreviewUnavailable
+
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            "chess_coach.capture_plan.report",
+            lambda *_, **_kwargs: (_ for _ in ()).throw(PreviewUnavailable()),
+        )
+        timed_out = client.get("/plan", base_url="https://coach.invalid", headers=headers)
+    assert timed_out.status_code == 200 and b"<h3>Capture practice</h3>" not in timed_out.data
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            "chess_coach.capture_plan.report", lambda *_: (_ for _ in ()).throw(ValueError())
+        )
+        fallback = client.get("/plan", base_url="https://coach.invalid", headers=headers)
+    assert fallback.status_code == 200 and b"<h3>Capture practice</h3>" not in fallback.data
     page = client.get("/plan/captures", base_url="https://coach.invalid", headers=headers)
     assert b"across 2 independent games" in page.data
     assert b"detector was not rerun" in page.data

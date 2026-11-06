@@ -26,9 +26,10 @@ def _matching(row, position, corpus):
     return binding["position_id"] == position
 
 
-def _selected(rows, position, corpus):
+def _selected(rows, position, corpus, *, check=lambda: None):
     chosen = None
     for row in rows:
+        check()
         if not _matching(row, position, corpus):
             continue
         when = parse_utc(row["started_at"])
@@ -43,18 +44,27 @@ def _selected(rows, position, corpus):
     return chosen
 
 
-def latest(db, subject, position, corpus):
+def latest(db, subject, position, corpus, *, check=None):
     try:
         # Inspect only the newest bounded session window; an older result may exist.
         rows = _rows(db, subject)
+        if check is not None:
+            check()
         limited = len(rows) > LIMIT
-        row = _selected(rows[:LIMIT], position, corpus)
+        options = {"check": check} if check is not None else {}
+        row = _selected(rows[:LIMIT], position, corpus, **options)
         if row is None:
             return {"status": "none", "limited": limited}
         if row["status"] == "active":
-            require_current(db, row)
+            require_current(db, row, related_check=check)
         observed = replay(db, row)
-        state = {"status": "incomplete"} if row["status"] == "active" else result(db, row, observed)
+        if check is not None:
+            check()
+        state = (
+            {"status": "incomplete"}
+            if row["status"] == "active"
+            else result(db, row, observed, related_check=check)
+        )
         return {
             **state,
             "attempt_id": row["attempt_id"],

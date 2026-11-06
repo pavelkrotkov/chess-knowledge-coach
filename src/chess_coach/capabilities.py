@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.69.0"
+REGISTRY_VERSION = "1.70.0"
 
 CAPABILITIES = (
     {
@@ -382,7 +382,7 @@ CAPABILITIES = (
         "area": "Training",
         "name": "Verified public-corpus mate practice",
         "status": "supported",
-        "details": "The daily plan selects legally verified mate-in-one corpus tasks and schedules individual items with FSRS.",
+        "details": "The daily plan schedules verified mate-in-one items with FSRS. A bounded capture recommendation is advisory and does not change scheduling.",
     },
     {
         "id": "own_game_practice",
@@ -403,7 +403,7 @@ CAPABILITIES = (
         "area": "Training",
         "name": "Multi-skill adaptive curriculum",
         "status": "planned",
-        "details": "The current plan is restricted to mate-in-one; broader skills, prerequisites and difficulty adaptation remain planned.",
+        "details": "The plan schedules mate-in-one and can show an advisory capture next step. Broader multi-skill scheduling, prerequisites and difficulty adaptation remain planned.",
     },
     {
         "id": "mastery_v2",

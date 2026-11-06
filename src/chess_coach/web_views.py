@@ -14,6 +14,7 @@ from .named_structure_source import source_position
 from .named_structures import VERSION, VERSIONS
 from .pawn_structure_source import current_lesson
 from .pipeline_status import pipeline_status
+from .plan_page import render as render_plan
 from .puzzle_snapshot_state import statuses
 from .web_board import board_rows
 from .web_db import database
@@ -72,18 +73,7 @@ def evidence_review(evidence_id: int):
 
 @views.get("/plan")
 def plan():
-    try:
-        result = daily_plan(
-            database(),
-            subject=current_app.config["SUBJECT"],
-            corpus_version=current_app.config["CORPUS"],
-            cursor=request.args.get("cursor"),
-        )
-    except ValueError:
-        return render_template(
-            "plan.html", error="The plan changed. Restart planning.", plan=None
-        ), 400
-    return render_template("plan.html", plan=result, error=None)
+    return render_plan(daily_plan)
 
 
 @views.get("/capabilities")
