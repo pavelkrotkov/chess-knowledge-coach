@@ -429,3 +429,22 @@ client as a crawler. The publisher identifies itself with a Mozilla-compatible
 ChessCoach user agent, as checked against the provider's Study controller. Any missing
 privacy or chapter metadata still stops publication. Study activity is not imported as
 a local practice attempt or mastery event.
+
+## Offline opening reference sample
+
+An operator can prepare one indexed sample from the pinned September 2026
+Lichess broadcast archive under the private `.runtime/planning` directory:
+
+```sh
+"$release" -I -B -m chess_coach.ops_opening_reference_import --project-root "$PWD"
+```
+
+The source file must be named `opening-reference-source-2026-09.pgn.zst` and
+match the pinned source bytes and SHA-256. The archive is published by Lichess
+under CC BY-SA 4.0; the index retains attribution and source metadata. The
+import stops at 32 MB decoded, 5,000 records, or 1,000 unique completed legal
+standard games, and indexes the first 40 plies. It reports exclusions, duplicates,
+missing context and truncation. The new index is exclusive and never replaces an
+existing one. The private opening decision view can show up to three exact
+position matches without decoding or replaying reference games on a request.
+This convenience sample does not establish popularity, soundness, or fit.
