@@ -8,15 +8,15 @@ from .objective_events import prefix, prefix_hash
 from .unified_source_current import require_current
 
 
-def current(db, request, *, related_cache=None):
-    return _current(db, request, matches, related_cache)
+def current(db, request, *, related_cache=None, related_check=None):
+    return _current(db, request, matches, related_cache, related_check)
 
 
 def short_terminal(db, request):
     return _current(db, request, matches_short_terminal)
 
 
-def _current(db, request, binding, related_cache=None):
+def _current(db, request, binding, related_cache=None, related_check=None):
     session = db.connection.execute(
         "SELECT * FROM unified_sessions WHERE attempt_id=?", (request["attempt_id"],)
     ).fetchone()
@@ -25,7 +25,7 @@ def _current(db, request, binding, related_cache=None):
     data = json.loads(session["provenance_json"])
     if not binding(session, data, request):
         raise ValueError("verification source changed")
-    require_current(db, session, related_cache=related_cache)
+    require_current(db, session, related_cache=related_cache, related_check=related_check)
     events = prefix(db, request["attempt_id"], request["event_id"])
     if prefix_hash(events) != request["event_prefix_hash"]:
         raise ValueError("verification history changed")

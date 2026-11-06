@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Capture assessment history — Chess coach{% endblock %}
 {% block content %}
-<h2>First encounters in recorded capture practice</h2>
-<p>These pattern-cued assessments were unfamiliar in the sources checked at admission; they do not establish that you had never seen the position elsewhere. {% if report.limited %}Only a bounded part of recorded sessions was checked.{% endif %} Comparisons are not yet available.</p>
+<h2>{% if report.limited %}Capture assessments in inspected sessions{% else %}First encounters in recorded capture practice{% endif %}</h2>
+<p>These pattern-cued assessments were unfamiliar in the sources checked at admission; they do not establish that you had never seen the position elsewhere. {% if report.limited %}Only a bounded part of recorded sessions was checked, so earlier encounters may be missing.{% endif %} Comparisons are not yet available.</p>
 {% set counts = report.counts %}
 <p>{{ counts.get("unassisted_correct", 0) }} correct without assistance; {{ counts.get("unassisted_incorrect", 0) }} incorrect without assistance; {{ counts.get("assisted_correct", 0) + counts.get("assisted_incorrect", 0) }} assisted; {{ counts.get("pending", 0) }} pending; {{ counts.get("unresolved", 0) }} ungraded; {{ counts.get("incomplete", 0) }} in progress; {{ counts.get("stale", 0) + counts.get("unavailable", 0) }} unavailable or stale.</p>
 <ul>{% for entry in report["items"] %}<li>{{ entry.started_at }} · {{ entry.status }}{% if entry.hints is defined %} · {{ entry.hints }} hints/reveals{% endif %} · {% if entry.rating is not none %}puzzle rating {{ entry.rating }}–{{ entry.rating + 199 }}{% else %}difficulty at admission unavailable{% endif %}{% if entry.status != "stale" %} · <a href="{{ url_for("unified_practice.show_page", attempt=entry.attempt_id) }}">Open assessment</a>{% endif %}.</li>{% else %}<li>No certified assessments found in the checked sessions.</li>{% endfor %}</ul>

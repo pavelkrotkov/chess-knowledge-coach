@@ -88,7 +88,7 @@ def _matches(result, request, events, board, move, target, observed):
     return _limits(result) and _move(result, board, move) and _outcome(result, board, move, target)
 
 
-def result(db, row, observed, *, related_cache=None):
+def result(db, row, observed, *, related_cache=None, related_check=None):
     requests = db.connection.execute(
         "SELECT * FROM objective_requests WHERE attempt_id=? ORDER BY rowid LIMIT 2",
         (row["attempt_id"],),
@@ -97,7 +97,7 @@ def result(db, row, observed, *, related_cache=None):
         return {"status": "unavailable"}
     request = requests[0]
     # Recheck the exact source and event prefix before trusting a worker result.
-    session, events = current(db, request, related_cache=related_cache)
+    session, events = current(db, request, related_cache=related_cache, related_check=related_check)
     board, move = before_answer(db, session, events, request)
     record = db.connection.execute(
         "SELECT result_json FROM objective_results WHERE attempt_id=? AND event_id=?",

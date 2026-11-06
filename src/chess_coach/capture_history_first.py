@@ -9,6 +9,10 @@ from .capture_history_select import select
 SECONDS = 3.0
 
 
+class HistoryDeadline(Exception):
+    """Stop after the current bounded source check."""
+
+
 def _category(entry):
     state = entry["status"]
     if state in {"correct", "incorrect"}:
@@ -21,11 +25,20 @@ def report(db, subject, corpus):
     deadline = time.monotonic() + SECONDS
     selected, limited = select(db, subject)
     found, cache = [], {}
-    for row in reversed(selected):
+
+    def check():
         if time.monotonic() >= deadline:
+            raise HistoryDeadline()
+
+    for row in reversed(selected):
+        try:
+            check()
+            entry = item(db, row, corpus, cache, check)
+            check()
+        except HistoryDeadline:
             limited = True
             break
-        found.append(item(db, row, corpus, cache))
+        found.append(entry)
     found.reverse()
     if db.connection.execute("PRAGMA data_version").fetchone()[0] != before:
         raise ValueError("capture history changed")

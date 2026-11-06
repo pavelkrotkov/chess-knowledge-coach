@@ -507,9 +507,9 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         original_source = source_module.source_for_position
         checks = []
 
-        def counted_source(*args):
+        def counted_source(*args, **kwargs):
             checks.append(True)
-            return original_source(*args)
+            return original_source(*args, **kwargs)
 
         with monkeypatch.context() as patch:
             patch.setattr(source_module, "source_for_position", counted_source)
@@ -517,6 +517,25 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         assert assessed["counts"]["unassisted_correct"] == 1
         assert assessed["counts"]["incomplete"] == 1 and len(checks) == 1
         assert {entry["rating"] for entry in assessed["items"]} == {None, 1200}
+        from chess_coach.capture_history_first import HistoryDeadline
+
+        checks = []
+
+        def expiring_check():
+            checks.append(True)
+            if len(checks) == 2:
+                raise HistoryDeadline()
+
+        with pytest.raises(HistoryDeadline):
+            original_source(db, LEARNER, 1, check=expiring_check)
+        assert len(checks) == 2
+        with monkeypatch.context() as patch:
+            patch.setattr("chess_coach.capture_history_first.SECONDS", 0)
+            partial = client.get(
+                "/plan/captures/history", base_url="https://coach.invalid", headers=headers
+            )
+        assert b"Capture assessments in inspected sessions" in partial.data
+        assert b"earlier encounters may be missing" in partial.data
         # A second owned source contributes another independently admitted prompt.
         import sys
 
