@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Piece-protection rehearsal — Chess coach{% endblock %}
+{% block content %}
+<h2>Piece-protection rehearsal</h2>
+<p><a href="{{ url_for('views.plan') }}">Back to the daily plan</a></p>
+{% if report %}
+<p>Checked up to {{ report.scanned }} recent prevention markers. {{ report.groups }} same-version groups contained markers from at least two independent candidate games. Checked {{ report.checked }} prepared source candidates, up to five; {{ report.unavailable }} checked source{% if report.unavailable != 1 %}s were{% else %} was{% endif %} unavailable or ineligible. {% if report.limited %}More markers remain outside this bounded scan.{% endif %} {% if report.partial %}Some candidates were not checked for a replay.{% endif %}</p>
+<p>These counts describe provisional candidate games. {% if report.source %}The selected replay is checked separately.{% else %}Prepared replay checks are separate.{% endif %}</p>
+{% if report.source %}
+<p>This marker group includes {{ report.source.markers }} observations from {{ report.source.games }} independent candidate games. The selected source is {{ report.source.review_status }} and was checked for a prepared replay. You play {{ report.source.color }}.</p>
+<p>Before choosing a move, identify the piece under threat and ask how your move protects it.</p>
+<p><a href="{{ url_for('views.evidence_detail', evidence_id=report.source.evidence_id) }}">Review the exact source evidence</a>.</p>
+<form method="post" action="{{ url_for('unified_practice.begin') }}">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<input type="hidden" name="source_type" value="own-game">
+<input type="hidden" name="version" value="{{ report.source.version }}">
+<input type="hidden" name="key" value="{{ report.source.key }}">
+<button>Replay the prepared defensive line</button>
+</form>
+<p>This is a provisional replay of a prepared line. Other legal defenses may remain ungraded. This replay keeps your schedule and mastery record separate.</p>
+{% else %}
+<p>No replay was available in the sources checked.</p>
+{% endif %}
+{% else %}
+<p>Protection rehearsal is temporarily unavailable or source checks exceeded their budget. Your scheduled reviews are unchanged.</p>
+{% endif %}
+{% endblock %}

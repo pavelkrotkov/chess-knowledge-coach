@@ -1162,6 +1162,7 @@ def test_capture_plan_uses_independent_current_sources_and_is_lazy(tmp_path, mon
             "/plan?cursor=next", base_url="https://coach.invalid", headers=headers
         )
     assert continuation.status_code == 200 and b"<h3>Capture practice</h3>" not in continuation.data
+    assert b"Practice protecting a piece" not in continuation.data
     with monkeypatch.context() as patch:
         patch.setattr("chess_coach.capture_finder.find", forbidden)
         single = client.get("/plan/captures", base_url="https://coach.invalid", headers=headers)

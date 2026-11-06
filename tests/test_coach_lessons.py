@@ -731,6 +731,10 @@ def test_protection_lesson_offers_only_a_current_bounded_line_replay(tmp_path, m
     path = tmp_path / "protection-coaching.sqlite"
     db = make_protection_game(path, monkeypatch)
     material_decision(db, 1, LEARNER)
+    from chess_coach.protection_plan import report as protection_report
+
+    single = protection_report(db, LEARNER)
+    assert single["groups"] == 0 and single["source"] is None and single["checked"] == 0
     pgn = db.connection.execute("SELECT pgn FROM games WHERE id=1").fetchone()[0]
     ingest_pgn(db, pgn.replace("2026.01.01", "2026.01.02"))
     position = db.connection.execute(
@@ -767,6 +771,81 @@ def test_protection_lesson_offers_only_a_current_bounded_line_replay(tmp_path, m
     client = app.test_client()
     headers = {"Tailscale-User-Login": "login"}
     origin = headers | {"Origin": "https://coach.invalid"}
+    import chess_coach.protection_plan_select as protection_select
+    import chess_coach.protection_plan_source as protection_source
+
+    current_protection = protection_source.current
+    checked = []
+
+    def first_ineligible(db, evidence_id, subject, **kwargs):
+        checked.append(evidence_id)
+        if len(checked) == 1:
+            raise ValueError("synthetic source is not replayable")
+        return current_protection(db, evidence_id, subject, **kwargs)
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("unexpected source scan or engine work")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(protection_select, "resolve", forbidden)
+        patch.setattr("chess_coach.protection_plan._groups", forbidden)
+        daily = client.get("/plan", base_url="https://coach.invalid", headers=headers)
+    assert b"Practice protecting a piece" in daily.data
+    assert client.get("/plan/protection", base_url="https://coach.invalid").status_code == 403
+    reading = Database(path)
+    statements = []
+    reading.connection.set_trace_callback(
+        lambda sql: statements.append(sql.split(None, 1)[0].upper())
+    )
+    with monkeypatch.context() as patch:
+        patch.setattr("chess_coach.web_protection_plan.database", lambda: reading)
+        patch.setattr(protection_source, "current", first_ineligible)
+        patch.setattr("chess_coach.related_capture_familiar.familiarity", forbidden)
+        patch.setattr("chess_coach.deep_execution_engine.start_engine", forbidden)
+        protection_page = client.get(
+            "/plan/protection", base_url="https://coach.invalid", headers=headers
+        )
+    reading.close()
+    assert not {"INSERT", "UPDATE", "DELETE", "REPLACE"} & set(statements)
+    assert protection_page.status_code == 200 and len(checked) == 2
+    assert b"2 independent candidate games" in protection_page.data
+    assert b"1 checked source was unavailable or ineligible" in protection_page.data
+    assert b"provisional candidate games" in protection_page.data
+    assert b"The selected replay is checked separately" in protection_page.data
+    assert b"identify the piece under threat" in protection_page.data
+    assert b"You play white" in protection_page.data and b"d4d5" not in protection_page.data
+    protection_key = token(protection_page, "key")
+    assert int(protection_key.split(":")[-1]) == checked[1]
+    assert f"/evidence/{checked[1]}".encode() in protection_page.data
+    assert b"This replay keeps your schedule and mastery record separate" in protection_page.data
+
+    class Budget:
+        def check(self):
+            pass
+
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            protection_select,
+            "resolve",
+            lambda *_args: (_ for _ in ()).throw(ValueError("unavailable")),
+        )
+        missing, count = protection_select.select(None, LEARNER, [[{} for _ in range(6)]], Budget())
+    assert missing is None and count == 5
+    replay = client.post(
+        "/unified/start",
+        data={
+            "csrf": token(protection_page, "csrf"),
+            "source_type": "own-game",
+            "version": token(protection_page, "version"),
+            "key": protection_key,
+        },
+        base_url="https://coach.invalid",
+        headers=origin,
+    )
+    assert replay.status_code == 303
+    replay_page = client.get(replay.location, base_url="https://coach.invalid", headers=headers)
+    assert b"does not prove every defense" in replay_page.data
+
     page = client.get("/coaching", base_url="https://coach.invalid", headers=headers)
     assert b"Protecting pieces" in page.data and b"Replay a defensive line" in page.data
     csrf, version, key = token(page, "csrf"), token(page, "version"), token(page, "key")

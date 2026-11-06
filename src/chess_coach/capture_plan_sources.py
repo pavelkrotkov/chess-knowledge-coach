@@ -14,9 +14,9 @@ SCAN = 20
 SOURCE_CHECKS = 3
 
 
-def _groups(db, learner, *, check=lambda: None):
+def _groups(db, learner, *, check=lambda: None, operation="execute"):
     rows, limited = evidence(
-        db, learner, "hanging_piece", "execute", MAX_ID, failure_only=True, limit=SCAN
+        db, learner, "hanging_piece", operation, MAX_ID, failure_only=True, limit=SCAN
     )
     cache, parts, excluded, seen = {}, {}, Counter(), set()
     groups = defaultdict(list)

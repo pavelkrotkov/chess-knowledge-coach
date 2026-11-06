@@ -20,6 +20,7 @@ from .web_pawn import pawn_views
 from .web_practice import practice
 from .web_practice_tools import practice_tools
 from .web_probes import probe_views
+from .web_protection_plan import protection_plan
 from .web_purpose import purpose_views
 from .web_recurrence import recurrence_views
 from .web_related_backrank import related_backrank
@@ -90,6 +91,7 @@ def create_app(
     app.register_blueprint(unified_practice)
     app.register_blueprint(repertoire_views)
     app.register_blueprint(opening_profiles)
+    app.register_blueprint(protection_plan)
     app.register_blueprint(opening_experiments)
     app.register_blueprint(recurrence_views)
     app.register_blueprint(short_mate_game_views)
