@@ -674,6 +674,197 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     assert b"https://lichess.org/broadcast/example/series/abcdefgh/ABCDEFGH" in ref_response.data
     assert client.get(route + "/references", base_url="https://coach.invalid").status_code == 403
 
+    # The lazy branch uses pre-move identity and independently replayed games.
+    import chess_coach.opening_explore_verify as explore_verify
+    from chess_coach.opening_explore import explore
+
+    before_explore = len(engine_calls)
+    branch_url = "/repertoire/explore"
+    assert client.get(branch_url, base_url="https://coach.invalid").status_code == 403
+    branch_page = client.get(branch_url, base_url="https://coach.invalid", headers=headers)
+    assert branch_page.status_code == 200
+    assert b"2 distinct game identities verified" in branch_page.data
+    assert b"Played c4" in branch_page.data and b"Played g3" in branch_page.data
+    assert b"legal catalog alternative" in branch_page.data
+    assert b"Public A" in branch_page.data and b"Public C" in branch_page.data
+    # The score belongs to another decision even though it is from this game.
+    assert b"120 cp" not in branch_page.data and len(engine_calls) == before_explore
+
+    import chess_coach.opening_explore_enrich as explore_enrich
+
+    score_calls = []
+
+    def exact_score(_db, _root, _learner, decision):
+        score_calls.append((decision["game_id"], decision["position_id"]))
+        choice = decision["catalog"]["items"][0]["uci"]
+        return {
+            choice: {
+                "status": "complete",
+                "lines": [
+                    {"root_move": "g2g3", "score_value": 0, "depth": 12},
+                    {"root_move": choice, "score_value": 120, "depth": 12},
+                ],
+            }
+        }
+
+    with monkeypatch.context() as patch:
+        patch.setattr(explore_enrich, "statuses", exact_score)
+        scored = client.get(branch_url, base_url="https://coach.invalid", headers=headers)
+        assert b"played 0 cp; alternative 120 cp" in scored.data
+        assert score_calls == [(2, after_second)]
+    assert f"/repertoire/games/1/openings/{after_first}".encode() in branch_page.data
+    assert f"/repertoire/games/2/openings/{after_second}".encode() in branch_page.data
+
+    actual_identities = explore_verify.decisions_for_game
+
+    def duplicate_game(*args):
+        identities = actual_identities(*args)
+        assert identities is not None
+        for item in identities.values():
+            item["game_key"] = "same-game"
+        return identities
+
+    with monkeypatch.context() as patch:
+        patch.setattr(explore_verify, "decisions_for_game", duplicate_game)
+        duplicate = explore(db, "learner")
+        assert duplicate["branch"] is None and duplicate["duplicates"] >= 1
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            explore_verify,
+            "classification",
+            lambda *args: (_ for _ in ()).throw(ValueError("stale")),
+        )
+        stale_branch = explore(db, "learner")
+        assert stale_branch["branch"] is None and stale_branch["unavailable"] >= 1
+
+    from chess_coach.opening_explore_nomination import _game as nominate_game
+    from chess_coach.tactical_course_budget import PreviewUnavailable
+
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            explore_verify,
+            "classification",
+            lambda *args: (_ for _ in ()).throw(PreviewUnavailable("deferred")),
+        )
+        deferred = explore(db, "learner")
+        assert deferred["branch"] is None and deferred["deferred"] >= 1 and deferred["partial"]
+
+    # Different castling rights are distinct metadata positions.
+    black_to_move = chess.Board()
+    black_to_move.push_uci("e2e4")
+    no_rights = black_to_move.copy()
+    no_rights.castling_rights = 0
+    next_position = {"id": 2, "ply": 4, "fen": black_to_move.fen()}
+    first = {"id": 1, "ply": 3, "fen": black_to_move.fen()}
+    other = {**first, "fen": no_rights.fen()}
+    sample_game = {"id": 1, "projected_start": "2026-01-01"}
+    assert (
+        nominate_game(sample_game, "black", [first, next_position])[0][0]
+        != nominate_game(sample_game, "black", [other, next_position])[0][0]
+    )
+    assert not nominate_game(sample_game, "white", [first, next_position])
+
+    # Two real import records of the same synthetic game do not form a branch.
+    duplicate_db = Database(tmp_path / "duplicate-fixture.sqlite")
+    duplicate_db.initialize()
+    duplicate_text = game("Learner", "Opponent", "1. d4 d5 2. Nf3 Nf6 3. c4", second=3)
+    ingest_pgn(duplicate_db, duplicate_text, source="fixture-a")
+    ingest_pgn(duplicate_db, duplicate_text, source="fixture-b")
+    import_openings(duplicate_db, source, version="test", source_url="cc0://test")
+    for game_id in (1, 2):
+        run_opening(duplicate_db, game_id, game_input(duplicate_db, game_id), config)
+    only_duplicate = explore(duplicate_db, "learner")
+    assert only_duplicate["branch"] is None and only_duplicate["duplicates"] >= 1
+    ingest_pgn(
+        duplicate_db,
+        game("Learner", "Opponent", "1. Nf3 Nf6 2. d4 d5 3. g3", "0-1", second=3),
+        source="fixture-c",
+    )
+    run_opening(duplicate_db, 3, game_input(duplicate_db, 3), config)
+    independent = explore(duplicate_db, "learner")
+    assert len(independent["branch"]["games"]) == 2 and independent["duplicates"] >= 1
+
+    # Oversized PGN text is excluded before reprojection or Python loading.
+    oversized = duplicate_text.replace("1. d4", "{" + "\x00" + "x" * 1_000_001 + "} 1. d4")
+    ingest_pgn(duplicate_db, oversized, source="fixture-oversized")
+    from chess_coach.opening_explore_recent import recent as bounded_recent
+
+    bounded_games, bounded_coverage = bounded_recent(duplicate_db, "learner")
+    assert (
+        duplicate_db.connection.execute(
+            "SELECT instr(CAST(pgn AS BLOB),X'00') FROM games WHERE source='fixture-oversized'"
+        ).fetchone()[0]
+        > 0
+    )
+    assert len(bounded_games) == 3 and bounded_coverage["oversized_pgn"] == 1
+    assert all(set(game) == {"id", "projected_start"} for game, _ in bounded_games)
+    assert bounded_coverage["candidate_recheck_failed"] >= 1
+
+    # A repeated position after the last named match is not nominated.
+    short_source = tmp_path / "short-opening.tsv"
+    short_source.write_text("eco\tname\tmoves\nD00\tEarlier\td4 d5 Nf3 Nf6\n")
+    boundary_db = Database(tmp_path / "boundary-fixture.sqlite")
+    boundary_db.initialize()
+    ingest_pgn(boundary_db, duplicate_text, source="fixture-a")
+    ingest_pgn(boundary_db, duplicate_text, source="fixture-b")
+    ingest_pgn(
+        boundary_db,
+        game("Learner", "Opponent", "1. Nf3 Nf6 2. d4 d5 3. g3", "0-1", second=3),
+        source="fixture-c",
+    )
+    import_openings(boundary_db, short_source, version="test", source_url="cc0://test")
+    for game_id in (1, 2, 3):
+        run_opening(boundary_db, game_id, game_input(boundary_db, game_id), config)
+    short_graph = opening_graph(boundary_db, 1)
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            "chess_coach.opening_decision_budget.GRAPH_SHA256", digest(canonical(short_graph))
+        )
+        after_boundary = explore(boundary_db, "learner")
+        assert after_boundary["branch"] is None and after_boundary["nominations"] == 0
+
+        # Oversized stored FENs are SQL-truncated before any chess parser sees them.
+        boundary_db.connection.execute(
+            "UPDATE positions SET fen=fen || ? WHERE game_id=3 AND ply=3",
+            ("\x00" + "x" * 1_000_001,),
+        )
+        boundary_db.connection.commit()
+        import chess_coach.opening_explore_nomination as nomination
+        from chess_coach.opening_queue_budget import BrowserBudget
+
+        original_game = nomination._game
+        inspected = []
+        omitted = []
+
+        def bounded_positions(game, color, positions):
+            inspected.extend(len(row["fen"] or "") for row in positions)
+            omitted.extend(row["fen"] is None for row in positions)
+            return original_game(game, color, positions)
+
+        patch.setattr(nomination, "_game", bounded_positions)
+        rows, coverage_after = bounded_recent(boundary_db, "learner")
+        assert rows, coverage_after
+        nomination.candidates(boundary_db, rows, BrowserBudget(boundary_db))
+        assert inspected and max(inspected) <= 200 and any(omitted)
+        assert (
+            boundary_db.connection.execute(
+                "SELECT instr(CAST(fen AS BLOB),X'00') FROM positions WHERE game_id=3 AND ply=3"
+            ).fetchone()[0]
+            > 0
+        )
+        patch.setattr(explore_verify, "classification", lambda *_: pytest.fail("unbounded replay"))
+        with pytest.raises(ValueError, match="input limits"):
+            explore_verify.verify(
+                boundary_db,
+                "learner",
+                ("white", "unused"),
+                {"game_id": 3, "position_id": 1, "played_at": "unused"},
+                BrowserBudget(boundary_db),
+                {},
+            )
+    boundary_db.close()
+    duplicate_db.close()
+
     def sample_comparison(_db, _learner, _context, _board, items):
         items[0]["analysis"] = {"played": 5, "alternative": 10, "depth": 8, "line": ["Nf3"]}
         return {

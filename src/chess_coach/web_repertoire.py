@@ -3,6 +3,8 @@
 from flask import Blueprint, abort, current_app, redirect, render_template, request, url_for
 
 from .opening_decision import inspect
+from .opening_explore import explore
+from .opening_explore_enrich import enrich
 from .opening_queue_request import admit
 from .opening_queue_view import statuses
 from .opening_reference_read import matches
@@ -21,6 +23,20 @@ def repertoire():
     except ValueError:
         report = None
     return render_template("repertoire.html", report=report)
+
+
+@repertoire_views.get("/repertoire/explore")
+def opening_explore():
+    try:
+        report = explore(database(), current_app.config["SUBJECT"])
+        enrich(
+            database(), current_app.config["PROJECT_ROOT"], current_app.config["SUBJECT"], report
+        )
+    except (Exception, PreviewDeadline):
+        return render_template(
+            "error.html", message="This opening sample could not be checked now. Please try again."
+        ), 503
+    return render_template("opening_explore.html", report=report)
 
 
 @repertoire_views.get("/repertoire/games/<int:game_id>")
