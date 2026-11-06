@@ -277,7 +277,6 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
     reference = match.group(1)
     if mode == "correct":
         import base64
-        import json
         import sqlite3
         from html import unescape
         from urllib.parse import parse_qs, urlparse
@@ -352,6 +351,12 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
     assert b"Capture the piece on d4" in shown.data and b"It is your turn as white" in shown.data
     check_db = Database(path)
     assert latest(check_db, LEARNER, 1, "capture")["status"] == "incomplete"
+    admitted = check_db.connection.execute(
+        "SELECT provenance_json FROM unified_sessions"
+    ).fetchone()[0]
+    context = json.loads(admitted)["related_capture"]["assessment"]["context"]
+    assert context["content_rating"] == 1200 and context["content_deviation"] == 80
+    assert context["corpus_checksum"] == "checksum" and context["mechanism"]["target"]
     check_db.close()
     attempt = token(shown, "attempt")
     if mode == "assisted":
@@ -388,6 +393,10 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
     assert b"Verification is queued" in pending.data
     pending_page = client.get("/plan/captures", base_url="https://coach.invalid", headers=headers)
     assert b"awaiting verification" in pending_page.data
+    history_page = client.get(
+        "/plan/captures/history", base_url="https://coach.invalid", headers=headers
+    )
+    assert b"1 pending" in history_page.data and b"puzzle rating 1200" in history_page.data
     db = Database(path)
     pending_history = latest(db, LEARNER, 1, "capture")
     assert pending_history["status"] == "pending"
@@ -436,6 +445,19 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         "tampered": b"latest assessment could not be checked",
     }
     assert adaptive_text[mode] in adaptive.data
+    assert b"View first-encounter capture history" in adaptive.data
+    assert b"Capture choices in your games" in adaptive.data
+    count_text = {
+        "correct": b"1 correct without assistance",
+        "assisted": b"1 assisted",
+        "incorrect": b"1 incorrect without assistance",
+        "unresolved": b"1 ungraded",
+        "tampered": b"1 unavailable or stale",
+    }
+    history_page = client.get(
+        "/plan/captures/history", base_url="https://coach.invalid", headers=headers
+    )
+    assert count_text[mode] in history_page.data
     assert (b"Explore another unfamiliar capture example" in adaptive.data) == (
         mode in {"correct", "incorrect"}
     )
@@ -457,10 +479,119 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         )
         assert b"Find a continuation" in rehearsal_page.data
         assert latest(db, LEARNER, 1, "capture")["status"] == "correct"
+        # A second unfamiliar prompt shares source checking, while old snapshots
+        # without admission context remain descriptive and unranked.
+        next_page = client.get(
+            "/decisions/1/related-captures", base_url="https://coach.invalid", headers=headers
+        )
+        forms = re.findall(r"<form\b.*?</form>", next_page.get_data(as_text=True), re.DOTALL)
+        next_form = next(form for form in forms if 'name="assessment"' in form)
+        next_match = re.search(r"name=\"reference\" value=\"([^\"]+)\"", next_form)
+        assert next_match
+        next_ref = next_match.group(1)
+        with monkeypatch.context() as patch:
+            patch.setattr(
+                "chess_coach.related_capture_assessment_context.capture",
+                lambda *args: (_ for _ in ()).throw(ValueError()),
+            )
+            second = client.post(
+                "/decisions/1/related-captures/start",
+                base_url="https://coach.invalid",
+                headers=headers | {"Origin": "https://coach.invalid"},
+                data={"csrf": token(next_page, "csrf"), "reference": next_ref, "assessment": "1"},
+            )
+        assert second.status_code == 303
+        import chess_coach.related_capture_source as source_module
+        from chess_coach.capture_history_first import report as first_history
+
+        original_source = source_module.source_for_position
+        checks = []
+
+        def counted_source(*args, **kwargs):
+            checks.append(True)
+            return original_source(*args, **kwargs)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(source_module, "source_for_position", counted_source)
+            assessed = first_history(db, LEARNER, "capture")
+        assert assessed["counts"]["unassisted_correct"] == 1
+        assert assessed["counts"]["incomplete"] == 1 and len(checks) == 1
+        assert {entry["rating"] for entry in assessed["items"]} == {None, 1200}
+        from chess_coach.capture_history_first import HistoryDeadline
+
+        checks = []
+
+        def expiring_check():
+            checks.append(True)
+            if len(checks) == 2:
+                raise HistoryDeadline()
+
+        with pytest.raises(HistoryDeadline):
+            original_source(db, LEARNER, 1, check=expiring_check)
+        assert len(checks) == 2
+        with monkeypatch.context() as patch:
+            patch.setattr("chess_coach.capture_history_first.SECONDS", 0)
+            partial = client.get(
+                "/plan/captures/history", base_url="https://coach.invalid", headers=headers
+            )
+        assert b"Capture assessments in inspected sessions" in partial.data
+        assert b"earlier encounters may be missing" in partial.data
+        # A second owned source contributes another independently admitted prompt.
+        import sys
+
+        from chess import pgn
+
+        from chess_coach.ingest import ingest_pgn
+        from chess_coach.pipeline_config import PipelineConfig
+        from chess_coach.pipeline_inputs import engine_identity, game_input
+        from chess_coach.pipeline_work import run_analysis
+        from chess_coach.related_capture import preview as capture_preview
+        from chess_coach.related_capture_start import start_related
+
+        new_board = chess.Board("4k3/7p/8/8/3q4/8/8/3RK3 w - - 0 1")
+        new_game = pgn.Game()
+        new_game.setup(new_board)
+        new_game.headers["White"] = LEARNER
+        new_game.headers["Black"] = "fixture_opponent"
+        node = new_game.add_variation(new_board.parse_uci("e1f1"))
+        new_board.push_uci("e1f1")
+        node.add_variation(new_board.parse_uci("e8f8"))
+        ingest_pgn(db, str(new_game))
+        game_id = db.connection.execute("SELECT MAX(id) FROM games").fetchone()[0]
+        position = db.connection.execute(
+            "SELECT id FROM positions WHERE game_id=? ORDER BY ply LIMIT 1", (game_id,)
+        ).fetchone()[0]
+        config = PipelineConfig(learner=LEARNER, engine_path=sys.executable, nodes=100)
+        run_analysis(db, game_id, game_input(db, game_id), config, engine_identity(sys.executable))
+        assert process_decision(db, position, LEARNER)["evidence_ids"]
+        second_source = capture_preview(db, LEARNER, position, "capture", secret=app.secret_key)
+        reference = next(
+            value["reference"]
+            for value in second_source["items"]
+            if value.get("assessment_available")
+        )
+        start_related(
+            db,
+            attempt_id="another-source",
+            subject=LEARNER,
+            position=position,
+            corpus_version="capture",
+            reference=reference,
+            assessment=True,
+            secret=app.secret_key,
+        )
+        across_sources = first_history(db, LEARNER, "capture")
+        assert across_sources["counts"]["unassisted_correct"] == 1
+        assert across_sources["counts"]["incomplete"] == 2
     review_evidence(db, evidence, decision="reject", actor="reviewer")
     with pytest.raises(ValueError):
         show(db, attempt, LEARNER)
     assert latest(db, LEARNER, 1, "capture")["status"] == "stale"
+    from chess_coach.capture_history_first import report as first_report
+
+    assert first_report(db, LEARNER, "capture")["counts"]["stale"] == (
+        2 if mode == "correct" else 1
+    )
     if mode == "correct":
         for index in range(101):
             db.connection.execute(
@@ -495,6 +626,28 @@ def test_capture_plan_uses_independent_current_sources_and_is_lazy(tmp_path, mon
     first = process_decision(db, 1, LEARNER)["evidence_ids"][0]
     initial = report(db, LEARNER, "legacy")
     assert initial["source"]["games"] == 1 and initial["history"]["status"] == "none"
+    # A full history still shows the newest distinct first encounters.
+    import chess_coach.capture_history_select as history_selection
+
+    samples = []
+    for index, square in enumerate(chess.SQUARES[:10]):
+        board = chess.Board.empty()
+        board.set_piece_at(square, chess.Piece(chess.PAWN, chess.WHITE))
+        samples.append(
+            {
+                "attempt_id": str(index),
+                "started_at": "2026-01-01T00:00:00+00:00",
+                "prompt_fen": board.fen(),
+            }
+        )
+    samples.append(dict(samples[0]))
+    with monkeypatch.context() as patch:
+        patch.setattr(history_selection, "rows", lambda *_: (samples, False))
+        patch.setattr(history_selection, "is_source", lambda _: True)
+        recent, limited = history_selection.select(db, LEARNER)
+    assert limited and [row["attempt_id"] for row in recent] == [
+        str(index) for index in range(2, 10)
+    ]
     before = db.connection.total_changes
     operations = []
     db.connection.set_trace_callback(lambda sql: operations.append(sql.split(None, 1)[0].upper()))

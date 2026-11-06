@@ -69,3 +69,16 @@ def plan():
     except (sqlite3.Error, ValueError, TypeError, KeyError, IndexError):
         return render_template("capture_plan.html", report=None, error=True)
     return render_template("capture_plan.html", report=result, error=None)
+
+
+@related_capture.get("/plan/captures/history")
+def history():
+    from .capture_history_first import report
+
+    try:
+        result = report(database(), current_app.config["SUBJECT"], current_app.config["CORPUS"])
+    except (sqlite3.Error, ValueError, TypeError, KeyError, IndexError):
+        return render_template(
+            "error.html", message="Capture history is unavailable or changed."
+        ), 400
+    return render_template("capture_history.html", report=result)

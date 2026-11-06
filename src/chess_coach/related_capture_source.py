@@ -8,9 +8,11 @@ from .unified_own_game_evidence import LIMIT, _inspect, _rows
 from .unified_own_game_snapshot import snapshot
 
 
-def source_for_position(db, subject, position):
+def source_for_position(db, subject, position, *, check=lambda: None):
     for row in _rows(db, subject, position)[:LIMIT]:
+        check()
         view, review, reasons = _inspect(db, row["id"], subject)
+        check()
         if (
             not reasons
             and view["outcome"] == "failure"
