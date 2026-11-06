@@ -412,6 +412,12 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
     with monkeypatch.context() as patch:
         patch.setattr(tactical_session, "_publish", synthetic_publish)
         selected_hash = related_export["export_sha256"]
+        planning.chmod(0o755)
+        for action in (tactical_session.prepare_locked, tactical_session.publish_locked):
+            with pytest.raises(ValueError, match="planning path unavailable"):
+                action(project, related_output, selected_hash)
+        assert not calls
+        planning.chmod(0o700)
         assert (
             tactical_session.prepare_locked(project, related_output, selected_hash)
             == "synthetic destination"
