@@ -459,6 +459,76 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
     assert history["status"] == ("unavailable" if mode == "tampered" else expected)
     assert latest(db, LEARNER, 1, "different")["status"] == "none"
     assert history["hints"] == (2 if mode == "assisted" else 0)
+    if mode == "correct":
+        import chess_coach.capture_finder_match as match_policy
+        import chess_coach.capture_finder_proof as finder_proof
+
+        original_context = match_policy.capture
+        checked = []
+
+        def first_mismatch(*args):
+            context = original_context(*args)
+            checked.append(True)
+            if len(checked) == 1:
+                context["content_rating"] += 200
+            return context
+
+        with monkeypatch.context() as patch:
+            patch.setattr(match_policy, "capture", first_mismatch)
+            matched_page = client.get(
+                f"/plan/captures/find-verified?attempt={attempt}&position=1",
+                base_url="https://coach.invalid",
+                headers=headers,
+            )
+        assert len(checked) >= 2
+        assert matched_page.status_code == 200
+        assert b"passed the bounded capture proof" in matched_page.data
+        assert b"same comparison context" in matched_page.data
+        from chess_coach.capture_compare_signature import signature
+        from chess_coach.fact_fingerprint import canonical
+        from chess_coach.related_capture_start import _admit
+
+        form = next(
+            form
+            for form in re.findall(
+                r"<form\b.*?</form>", matched_page.get_data(as_text=True), re.DOTALL
+            )
+            if 'name="assessment"' in form
+        )
+        reference_match = re.search(r'name="reference" value="([^"]+)"', form)
+        assert reference_match
+        matched_reference = reference_match.group(1)
+        admitted_again = _admit(db, LEARNER, 1, "capture", matched_reference, app.secret_key, True)
+        next_context = json.loads(canonical(admitted_again[3]["assessment"]["context"]))
+        assert signature(next_context, "capture") == signature(context, "capture")
+
+        def no_match(*args):
+            context = original_context(*args)
+            context["content_rating"] += 200
+            return context
+
+        with monkeypatch.context() as patch:
+            patch.setattr(match_policy, "capture", no_match)
+            patch.setattr(
+                finder_proof,
+                "certificate",
+                lambda *_: (_ for _ in ()).throw(AssertionError("proved a mismatched candidate")),
+            )
+            empty = client.get(
+                f"/plan/captures/find-verified?attempt={attempt}&position=1",
+                base_url="https://coach.invalid",
+                headers=headers,
+            )
+        assert b"with the same comparison context" in empty.data
+        assert b"Find a verified unfamiliar capture of the same pattern" in empty.data
+        assert b"/plan/captures/find-verified?position=1" in empty.data
+    else:
+        blocked = client.get(
+            f"/plan/captures/find-verified?attempt={attempt}&position=1",
+            base_url="https://coach.invalid",
+            headers=headers,
+        )
+        assert b"with the same comparison context" in blocked.data
     finished = client.get(
         move.headers["Location"], base_url="https://coach.invalid", headers=headers
     )
@@ -472,6 +542,9 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
     assert text[mode] in finished.data
     daily = daily_attempt()
     assert daily.status_code == 200
+    assert (
+        b"Find a verified unfamiliar capture with matching comparison context" in daily.data
+    ) == (mode == "correct")
     assert (b"Find another verified unfamiliar capture of this pattern" in daily.data) == (
         mode == "correct"
     )

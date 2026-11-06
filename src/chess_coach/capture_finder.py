@@ -2,7 +2,8 @@
 
 import time
 
-from .capture_finder_scope import restrict, validate
+from .capture_finder_prior import prepare
+from .capture_finder_scope import restrict, search_options, validate
 from .capture_finder_search import search
 from .capture_plan_sources import _groups
 from .learner_identity import normalize_identity
@@ -15,7 +16,7 @@ def _expired(deadline):
     return time.monotonic() >= deadline
 
 
-def find(db, subject, corpus, secret, *, position=None):
+def find(db, subject, corpus, secret, *, position=None, attempt=None):
     learner = normalize_identity(subject)
     if not learner or secret is None:
         raise ValueError("capture finder unavailable")
@@ -24,6 +25,7 @@ def find(db, subject, corpus, secret, *, position=None):
     before = db.connection.execute("PRAGMA data_version").fetchone()[0]
     if _expired(deadline):
         return None
+    position, expected = prepare(db, subject, corpus, attempt, position, deadline, _expired)
     groups, _, _ = _groups(db, learner)
     groups = restrict(groups, position)
     found = None
@@ -31,7 +33,16 @@ def find(db, subject, corpus, secret, *, position=None):
         familiar = familiarity(db, subject)
         if not _expired(deadline):
             found = search(
-                db, learner, subject, corpus, secret, groups, familiar, deadline, _expired
+                db,
+                learner,
+                subject,
+                corpus,
+                secret,
+                groups,
+                familiar,
+                deadline,
+                _expired,
+                **search_options(expected),
             )
     if db.connection.execute("PRAGMA data_version").fetchone()[0] != before:
         raise ValueError("capture sources changed")
