@@ -155,7 +155,8 @@ def test_bounded_execution_preserves_cheap_and_shared_work(tmp_path, monkeypatch
     )
     db.connection.commit()
     choices = [{"uci": other_root}]
-    comparison(db, LEARNER, context, board, choices)
+    unavailable = comparison(db, LEARNER, context, board, choices)
+    assert unavailable["status"] == "no catalog alternative has a qualified same-search comparison"
     assert "analysis" not in choices[0]
     db.connection.execute(
         "UPDATE deep_analysis_alternatives SET line_json=? WHERE attempt_id=? AND rank=?",

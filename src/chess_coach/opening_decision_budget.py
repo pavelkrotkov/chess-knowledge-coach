@@ -1,8 +1,10 @@
 """Bound the input rereads for one opening decision."""
 
+from .classification_inputs import opening_graph
+from .fact_fingerprint import canonical, digest
 from .objective_source_budget import MAX_GAME_BYTES
 from .opening_classification import CLASSIFIER_VERSION
-from .opening_snapshot import SOURCE, VERSION
+from .opening_snapshot import GRAPH_SHA256, SOURCE, VERSION
 from .repertoire_game import _opening, _stale
 
 MAX_POSITIONS = 1000
@@ -41,6 +43,9 @@ def classification(db, game_id):
     if identity != (VERSION, SOURCE, CLASSIFIER_VERSION, 1) or not opening["position_key"]:
         raise ValueError("current pinned opening classification unavailable")
     bounded(db, game_id, opening["dataset_id"])
-    if _stale(db, game_id, opening):
+    graph = opening_graph(db, opening["dataset_id"])
+    if digest(canonical(graph)) != GRAPH_SHA256:
+        raise ValueError("pinned opening graph differs")
+    if _stale(db, game_id, opening, graph=graph):
         raise ValueError("opening classification is stale")
     return dict(opening)

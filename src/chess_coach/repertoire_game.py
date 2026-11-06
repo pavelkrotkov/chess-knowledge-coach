@@ -25,8 +25,11 @@ def _outcome(result, color):
     return "win" if (result == "1-0") == (color == "white") else "loss"
 
 
-def _stale(db, game_id, opening):
-    value = opening_input(db, game_id, opening["dataset_id"])
+def _stale(db, game_id, opening, *, graph=None):
+    if graph is None:
+        value = opening_input(db, game_id, opening["dataset_id"])
+    else:
+        value = opening_input(db, game_id, opening["dataset_id"], graph=graph)
     if opening["pipeline_generation"] is not None:
         value = digest(
             canonical({"base": value, "pipeline_generation": opening["pipeline_generation"]})

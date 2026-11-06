@@ -3,10 +3,13 @@
 from .opening_decision_analysis import comparison
 from .opening_decision_catalog import catalog
 from .opening_decision_source import source
+from .recurrence_cursor import _valid_id
 from .style_history_lines import history_safe
 
 
 def inspect(db, game_id, position_id, learner):
+    if not _valid_id(game_id) or not _valid_id(position_id):
+        raise ValueError("opening decision unavailable")
     version = db.connection.execute("PRAGMA data_version").fetchone()[0]
     opening, context, board = source(db, game_id, position_id, learner)
     if not history_safe(board):

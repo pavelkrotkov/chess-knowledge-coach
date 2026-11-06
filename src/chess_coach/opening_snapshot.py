@@ -8,6 +8,7 @@ from .openings import import_rows
 
 VERSION = "e76b8b4ec5c8aeeba41dac6caf4a60b938f652db"
 SOURCE = f"https://github.com/lichess-org/chess-openings/tree/{VERSION}"
+GRAPH_SHA256 = "d77862145712b2d250980fa4c645238bd3f1e09e443b052b11cdff230818a5bb"
 CHECKSUMS = {
     "a": "3282e4c9155289a29224f9a85fba0decb46efa35c2fa5e39662d2ac48fb0f793",
     "b": "4bf2269a8e7571a00a7b346bae4fa86a241a6e7e86beab01783c81acb1622b63",

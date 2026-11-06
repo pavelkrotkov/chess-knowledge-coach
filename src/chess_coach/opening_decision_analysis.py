@@ -17,8 +17,11 @@ def comparison(db, learner, context, board, items):
     played, _ = chosen(lines, context["played_move"])
     if played is None:
         return {"status": "played move not covered by an exact score"}
+    attached = 0
     for item in items:
-        _attach(board, played, lines, item)
+        attached += _attach(board, played, lines, item)
+    if not attached:
+        return {"status": "no catalog alternative has a qualified same-search comparison"}
     return {
         "status": "available",
         "engine": result["engine"],
@@ -31,10 +34,11 @@ def comparison(db, learner, context, board, items):
 def _attach(board, played, lines, item):
     line, _ = chosen(lines, item["uci"])
     if line is None or line["depth"] != played["depth"] or not lines_safe(board, [played, line]):
-        return
+        return 0
     item["analysis"] = {
         "played": played["score_value"],
         "alternative": line["score_value"],
         "depth": line["depth"],
         "line": line["san"],
     }
+    return 1
