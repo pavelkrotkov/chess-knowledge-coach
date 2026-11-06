@@ -134,13 +134,11 @@ def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch):
     db = Database(":memory:")
     db.initialize()
     ingest_pgn(db, PGN)
-    checked = PGN.replace('White "fixture_learner"', 'White "fixture_opponent"')
-    checked = checked.replace('Black "fixture_opponent"', 'Black "fixture_learner"')
-    checked = checked[: checked.index("1. e4")] + "1. e4 d5 2. Bb5+ c6 *\n"
+    checked = PGN[: PGN.index("1. e4")] + "1. d4 c6 2. e4 Qa5+ 3. Ke2 *\n"
     ingest_pgn(db, checked)
     games = [
         (db.connection.execute("SELECT * FROM games WHERE id=?", (i,)).fetchone(), color)
-        for i, color in ((1, "white"), (2, "black"))
+        for i, color in ((1, "white"), (2, "white"))
     ]
     with history_budget() as budget:
         budget["limit"] = 12
@@ -148,6 +146,9 @@ def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch):
         assert ordered[0][0]["id"] == 2
         assert coverage["nomination_games"] == 1
         assert coverage["nomination_turns"] == 1
+        assert coverage["structural_nomination_games"] == 1
+        assert coverage["structural_nomination_turns"] == 1
+        assert coverage["structural_nomination_prioritized"]
         candidates, _, _, exhausted, reconstructed = read_games(db, ordered, 0)
         assert reconstructed == 1 and exhausted
         assert any(item["in_check"] and item["status"] == "ready" for item in candidates)
@@ -158,37 +159,116 @@ def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch):
         assert coverage["nomination_games"] == 1
         assert coverage["reconstructed_games"] == 1 and coverage["history_budget_exhausted"]
         assert dict(slots)["target"]["game_id"] == 2
+        assert coverage["structural_replayed_positions"] == 1
+        assert coverage["structural_target_selected"]
     # A plausible FEN is not proof that the recorded move or game is valid.
-    db.connection.execute("UPDATE positions SET uci='a1a1' WHERE game_id=2 AND ply=4")
+    db.connection.execute("UPDATE positions SET uci='a1a1' WHERE game_id=2 AND ply=5")
     ordered, coverage = prioritize(db, games, 0)
     assert coverage["nomination_unknown_games"] == 1 and ordered[0][0]["id"] == 1
     with history_budget() as budget:
-        budget["limit"] = 32
+        budget["limit"] = 100
         candidates, skipped, _, _, reconstructed = read_games(db, ordered, 0)
         assert skipped == 1 and reconstructed == 1
         assert not any(item["in_check"] for item in candidates)
-    db.connection.execute("UPDATE positions SET uci='c7c6' WHERE game_id=2 AND ply=4")
+    db.connection.execute("UPDATE positions SET uci='e1e2' WHERE game_id=2 AND ply=5")
     after_fen = db.connection.execute(
-        "SELECT fen FROM positions WHERE game_id=2 AND ply=4"
+        "SELECT fen FROM positions WHERE game_id=2 AND ply=5"
     ).fetchone()[0]
     db.connection.execute(
-        "UPDATE positions SET fen=(SELECT fen FROM positions WHERE game_id=2 AND ply=3) "
-        "WHERE game_id=2 AND ply=4"
+        "UPDATE positions SET fen=(SELECT fen FROM positions WHERE game_id=2 AND ply=4) "
+        "WHERE game_id=2 AND ply=5"
     )
     ordered, coverage = prioritize(db, games, 0)
     assert coverage["nomination_unknown_games"] == 1 and ordered[0][0]["id"] == 1
-    db.connection.execute("UPDATE positions SET fen=? WHERE game_id=2 AND ply=4", (after_fen,))
+    db.connection.execute("UPDATE positions SET fen=? WHERE game_id=2 AND ply=5", (after_fen,))
     db.connection.commit()
-    forced = checked.replace("1. e4 d5 2. Bb5+ c6", "1. e4 f6 2. Qh5+ g6")
+    forced = PGN.replace('White "fixture_learner"', 'White "fixture_opponent"')
+    forced = forced.replace('Black "fixture_opponent"', 'Black "fixture_learner"')
+    forced = forced[: forced.index("1. e4")] + "1. e4 f6 2. Qh5+ g6 *\n"
     ingest_pgn(db, forced)
     forced_game = db.connection.execute("SELECT * FROM games WHERE id=3").fetchone()
     ordered, coverage = prioritize(db, [(forced_game, "black"), games[1]], 0)
     assert ordered[0][0]["id"] == 2 and coverage["nomination_games"] == 1
+    # Another legal nonforced check has only interpositions: it remains a
+    # fallback, while a genuinely different legal response gets priority.
+    same = PGN.replace('White "fixture_learner"', 'White "fixture_opponent"')
+    same = same.replace('Black "fixture_opponent"', 'Black "fixture_learner"')
+    same = same[: same.index("1. e4")] + "1. e4 d5 2. Bb5+ c6 *\n"
+    ingest_pgn(db, same)
+    same_game = db.connection.execute("SELECT * FROM games WHERE id=4").fetchone()
+    ordered, coverage = prioritize(db, [(same_game, "black"), games[1]], 0)
+    assert ordered[0][0]["id"] == 2 and coverage["nomination_games"] == 2
+    assert coverage["structural_nomination_games"] == 1
+    assert coverage["structural_nomination_turns"] == 1
+    assert coverage["structural_nomination_prioritized"]
+    from chess_coach.style_defense_nomination import distinct
+    from chess_coach.style_schedule_game import game_candidates
+    from chess_coach.style_schedule_target import target as choose_target
+
+    different_board = chess.Board()
+    for san in ("d4", "c6", "e4", "Qa5+"):
+        different_board.push_san(san)
+    assert distinct(different_board, different_board.parse_san("Ke2")) is True
+    capture_board = chess.Board("rnbq1bnr/p2ppkpp/5p2/1pp5/2B1P3/5P1P/PPPP2PR/RNBQK1N1 b Q - 2 7")
+    assert capture_board.is_valid() and capture_board.is_check()
+    assert distinct(capture_board, capture_board.parse_uci("f7e8")) is True
+    from chess_coach.style_defense_evasion import response as defense_response
+
+    assert not defense_response(capture_board, "f7e8")["capture"]
+    assert defense_response(capture_board, "b5c4")["capture"]
+    same_board = chess.Board()
+    for san in ("e4", "d5", "Bb5+"):
+        same_board.push_san(san)
+    assert distinct(same_board, same_board.parse_san("c6")) is False
+    forced_board = chess.Board()
+    for san in ("e4", "f6", "Qh5+"):
+        forced_board.push_san(san)
+    assert distinct(forced_board, forced_board.parse_san("g6")) is False
+    with monkeypatch.context() as patch:
+        patch.setattr("chess_coach.style_defense_nomination.lines_safe", lambda *_: False)
+        assert distinct(different_board, different_board.parse_san("Ke2")) is None
+        _, unknown_coverage = prioritize(db, games, 0)
+        assert unknown_coverage["structural_nomination_unknown_turns"] == 1
+        assert not unknown_coverage["structural_nomination_prioritized"]
+    with monkeypatch.context() as patch:
+        patch.setattr("chess_coach.style_defense_nomination.MAX_MOVES", 0)
+        assert distinct(different_board, different_board.parse_san("Ke2")) is None
+    replayed = game_candidates(db, same_game, "black") + game_candidates(db, games[1][0], "white")
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            "chess_coach.style_schedule_rotation.rank",
+            lambda _key, _kind, game, position: (-game, position),
+        )
+        chosen, structural, unknown = choose_target(db, learner_key(LEARNER), 0, replayed)
+        assert chosen["game_id"] == 2 and structural == 1 and unknown == 0
+        fallback_target, _, _ = choose_target(db, learner_key(LEARNER), 1, replayed)
+        assert fallback_target["game_id"] == 4
+    # In one fully replayed game, choose the structurally distinct later root
+    # instead of two earlier same-category check evasions on priority cycles.
+    two_checks = PGN[: PGN.index("1. e4")] + (
+        "1. Na3 c6 2. d4 Qa5+ 3. b4 Qxb4+ 4. Qd2 a5 5. Qxb4 a4 "
+        "6. f3 Ra5 7. Qb6 Rh5 8. Qd8+ Kxd8 9. Kf2 d6 10. Bd2 e5 "
+        "11. Kg3 Rh3+ 12. Kf2 *\n"
+    )
+    ingest_pgn(db, two_checks)
+    combined_game = db.connection.execute("SELECT * FROM games WHERE id=5").fetchone()
+    same_game_roots = game_candidates(db, combined_game, "white")
+    checks = [item for item in same_game_roots if item["in_check"]]
+    assert [item["structural_defense"] for item in checks] == [False, False, True]
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            "chess_coach.style_schedule_rotation.rank",
+            lambda _key, _kind, game, position: (game, position),
+        )
+        priority_root, count, _ = choose_target(db, learner_key(LEARNER), 0, same_game_roots)
+        fallback_root, _, _ = choose_target(db, learner_key(LEARNER), 1, same_game_roots)
+    assert count == 1 and priority_root["position_id"] == checks[-1]["position_id"]
+    assert fallback_root["position_id"] == checks[0]["position_id"]
     fallback, coverage = prioritize(db, games, 1)
     assert fallback[0][0]["id"] == 1 and not coverage["nomination_prioritized"]
     fallback, _ = prioritize(db, games, 3)
     assert fallback[0][0]["id"] == 2
-    db.connection.execute("DELETE FROM positions WHERE game_id=2 AND ply=3")
+    db.connection.execute("DELETE FROM positions WHERE game_id=2 AND ply=4")
     ordered, coverage = prioritize(db, games, 0)
     assert ordered[0][0]["id"] == 1 and coverage["nomination_unknown_games"] == 1
     assert coverage["nomination_games"] == 0

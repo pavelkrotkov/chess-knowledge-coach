@@ -2,6 +2,7 @@
 
 import chess
 
+from .style_defense_nomination import distinct
 from .style_schedule_clock import reached
 from .style_schedule_game import MAX_POSITIONS, _standard
 
@@ -23,21 +24,27 @@ def _checked_board(row, color):
     board = chess.Board(fen)
     if not board.is_valid() or board.turn != (color == "white"):
         raise ValueError("invalid position or turn")
-    candidate = board.is_check() and board.legal_moves.count() > 1
+    checked = board.is_check() and board.legal_moves.count() > 1
+    structural = distinct(board, chess.Move.from_uci(row[3])) if checked else False
     _consistent(board, row)
-    return candidate
+    return checked, structural
 
 
 def _count(rows, color):
-    checks = checked = 0
+    checks = structural = unknown = checked = 0
     # Consecutive standard-start plies establish an advisory side to move.
     for expected, row in enumerate(rows, start=1):
         if reached() or row[0] != expected:
             raise ValueError("incomplete position metadata")
         if expected > 1 and expected % 2 == (color == "white"):
-            checks += _checked_board(row, color)
+            is_check, different = _checked_board(row, color)
+            if reached():
+                raise ValueError("incomplete position metadata")
+            checks += is_check
+            structural += different is True
+            unknown += different is None
             checked += 1
-    return checks, checked, len(rows)
+    return checks, structural, unknown, checked, len(rows)
 
 
 def inspect(db, game, color):
