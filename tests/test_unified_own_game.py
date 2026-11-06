@@ -81,12 +81,93 @@ def test_private_browser_own_game_and_unlisted_move(tmp_path, monkeypatch):
     )
     client = app.test_client()
     headers = {"Tailscale-User-Login": "fixture"}
-    library = client.get("/library", base_url="https://coach.invalid", headers=headers)
+    import chess_coach.web_library_owned as owned_library
+
+    calls = []
+    with monkeypatch.context() as patch:
+        for name, (label, field, selector) in tuple(owned_library.FAMILIES.items()):
+
+            def counted(*args, _selector=selector, _name=name, **kwargs):
+                calls.append(_name)
+                return _selector(*args, **kwargs)
+
+            patch.setitem(owned_library.FAMILIES, name, (label, field, counted))
+        landing = client.get("/library", base_url="https://coach.invalid", headers=headers)
+        assert landing.status_code == 200 and b"Practice from your games" in landing.data
+        assert b"family=material" in landing.data and calls == []
+        library = client.get(
+            "/library?family=material", base_url="https://coach.invalid", headers=headers
+        )
+        assert calls == ["material"]
     assert (
         library.status_code == 200
         and b"provisional" in library.data
         and b"d4d5" not in library.data
     )
+    assert (
+        client.get(
+            "/library?family=unknown", base_url="https://coach.invalid", headers=headers
+        ).status_code
+        == 404
+    )
+
+    # Every advertised family renders with only its own selector invoked.
+    family_calls = []
+    empty = {
+        "scanned": 0,
+        "truncated": False,
+        "excluded": {},
+        "candidates": [],
+        "next_before": None,
+        "version": "fixture",
+        "target_version": "target",
+        "gain_version": "gain",
+    }
+    with monkeypatch.context() as patch:
+        for name, (label, field, _selector) in tuple(owned_library.FAMILIES.items()):
+
+            def empty_family(*args, _name=name, **kwargs):
+                family_calls.append(_name)
+                return empty
+
+            patch.setitem(owned_library.FAMILIES, name, (label, field, empty_family))
+        for name in owned_library.FAMILIES:
+            response = client.get(
+                f"/library?family={name}", base_url="https://coach.invalid", headers=headers
+            )
+            assert response.status_code == 200
+        assert family_calls == list(owned_library.FAMILIES)
+
+    before_values = []
+
+    def fake_pawn(_db, _subject, *, before=None):
+        before_values.append(before)
+        return {
+            "scanned": 0,
+            "truncated": False,
+            "excluded": {},
+            "candidates": [],
+            "next_before": "123" if before is None else None,
+            "version": "fixture",
+        }
+
+    with monkeypatch.context() as patch:
+        label, field, _ = owned_library.FAMILIES["pawn"]
+        patch.setitem(owned_library.FAMILIES, "pawn", (label, field, fake_pawn))
+        first = client.get(
+            "/library?family=pawn", base_url="https://coach.invalid", headers=headers
+        )
+        assert b"family=pawn&amp;pawn_before=123" in first.data
+        next_page = client.get(
+            "/library?family=pawn&pawn_before=123",
+            base_url="https://coach.invalid",
+            headers=headers,
+        )
+        legacy = client.get(
+            "/library?pawn_before=123", base_url="https://coach.invalid", headers=headers
+        )
+        assert next_page.status_code == legacy.status_code == 200
+        assert before_values == [None, "123", "123"]
     csrf = token(library, "csrf")
     posted = client.post(
         "/unified/start",
@@ -235,7 +316,9 @@ def test_successful_protection_never_exposes_answer_destination_before_hint(
     )
     client = app.test_client()
     headers = {"Tailscale-User-Login": "fixture"}
-    library = client.get("/library", base_url="https://coach.invalid", headers=headers)
+    library = client.get(
+        "/library?family=material", base_url="https://coach.invalid", headers=headers
+    )
     body = library.get_data(as_text=True)
     assert f"material_protection:{destination}" not in body
     assert token(library, "key").split(":")[-1] == str(evidence)
