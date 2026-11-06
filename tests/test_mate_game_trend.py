@@ -222,12 +222,21 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
     from chess_coach.capture_game_trend_validate import validate as capture_validate
 
     mate_before = read(location(db, root), binding(db, "fixture_a"))
+    # The new policy starts a distinct sidecar and keeps the earlier history.
+    capture_cache = capture_location(db, root)
+    assert capture_cache.name.endswith(".capture-trend-v2.json")
+    old_capture_cache = capture_cache.with_name(
+        capture_cache.name.replace(".capture-trend-v2.json", ".capture-trend.json")
+    )
+    old_capture_cache.write_bytes(b"synthetic prior capture cache")
+    old_capture_cache.chmod(0o600)
     monkeypatch.setattr(
         capture_scan,
         "classify",
         lambda board, move, deadline, clock: ("played" if move.endswith("g7") else "other", None),
     )
     capture_scan.run(db, "fixture_a", root)
+    assert old_capture_cache.read_bytes() == b"synthetic prior capture cache"
     capture_partial = capture_report(db, "fixture_a", root)
     assert capture_partial["comparable"] and not capture_partial["qualified"]
     assert capture_partial["newer"]["checked"] == capture_partial["earlier"]["checked"] == 2
@@ -242,6 +251,7 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
     )
     assert capture_complete["newer"]["played"] == capture_complete["newer"]["other"] == 10
     assert read(location(db, root), binding(db, "fixture_a")) == mate_before
+    assert old_capture_cache.read_bytes() == b"synthetic prior capture cache"
     capture_cache = capture_location(db, root)
     capture_state = read(
         capture_cache, capture_binding(db, "fixture_a"), validator=capture_validate

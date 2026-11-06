@@ -38,8 +38,36 @@ def test_recorded_capture_and_missed_capture_are_bounded_observations(monkeypatc
     taken = material_observation(board, "d1d4", best, best)
     assert taken["outcome"] == "success"
 
+    # A legal opponent reply elsewhere can refute retained gain, even when an
+    # earlier reply is unsupported. This is not a verdict on the played move.
+    from chess_coach.capture_game_replies import inspect as inspect_replies
+    from chess_coach.capture_game_roots import inspect as inspect_root
+
+    counterexample = chess.Board("r3k3/8/8/8/3q4/8/7K/Q2R4 w - - 0 1")
+    capture = chess.Move.from_uci("d1d4")
+    after = counterexample.copy()
+    after.push(capture)
+    replies = list(after.legal_moves)
+    refutation = chess.Move.from_uci("a8a1")
+    assert refutation in replies and not after.gives_check(refutation)
+    assert any(after.gives_check(reply) for reply in replies[: replies.index(refutation)])
+    assert inspect_replies(counterexample, capture) == "disproved"
+    assert inspect_root(counterexample, capture) == "outside"
+    from chess_coach.capture_game_proof import classify
+
+    only_capture = chess.Board("4k3/8/5n2/3Q4/7q/8/K7/7R w - - 0 1")
+    assert classify(only_capture, "h1h4", 1, lambda: 0) == ("no_opportunity", None)
+    ticks = iter([0, 0, 0, 2])
+    assert classify(only_capture, "h1h4", 1, lambda: next(ticks, 2)) == ("unknown", "deadline")
+    with monkeypatch.context() as patch:
+        patch.setattr("chess_coach.capture_game_replies.MAX_REPLIES", 0)
+        assert inspect_replies(counterexample, capture) == "unknown"
+    with monkeypatch.context() as patch:
+        patch.setattr("chess_coach.capture_game_replies._reply", lambda *_: "unknown")
+        assert inspect_replies(counterexample, capture) == "unknown"
+    assert counterexample.fen() == "r3k3/8/8/8/3q4/8/7K/Q2R4 w - - 0 1"
     # The game audit proves the same opportunity before inspecting either choice.
-    from chess_coach.capture_game_proof import classify, opportunities
+    from chess_coach.capture_game_proof import opportunities
 
     roots, unresolved, reason = opportunities(board, 1, lambda: 0)
     assert roots == {"d1d4"} and not unresolved and reason is None
@@ -93,7 +121,7 @@ def test_recorded_capture_and_missed_capture_are_bounded_observations(monkeypatc
     assert [row["position_id"] for row in result["examples"][:2]] == [99, 100]
     assert result["examples"][0]["played_san"] == "Rxd4"
     assert not result["complete"]
-    monkeypatch.setattr("chess_coach.capture_game_roots.unresolved_reply", lambda *_: True)
+    monkeypatch.setattr("chess_coach.capture_game_roots.inspect_replies", lambda *_: "unknown")
     assert classify(board, "e1f1", 1, lambda: 0) == ("unknown", "unresolved_capture")
     assert board.fen() == "4k3/8/8/8/3q4/8/8/3RK3 w - - 0 1"
 

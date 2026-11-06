@@ -2,9 +2,9 @@
 
 import chess
 
+from .capture_game_replies import inspect as inspect_replies
 from .material_capture_gain import capture_gain
 from .material_exchange_rules import has_legal_recapture
-from .material_reply_guard import unresolved_reply
 
 
 def _scope(board, move):
@@ -25,6 +25,7 @@ def inspect(board, move):
     if has_legal_recapture(board, move):
         return "outside"
     gain, reason, _ = capture_gain(board, move, board.piece_at(move.to_square))
-    if reason or gain is None or unresolved_reply(board, move):
+    if reason or gain is None:
         return "unknown"
-    return "proved"
+    result = inspect_replies(board, move)
+    return "outside" if result == "disproved" else result
