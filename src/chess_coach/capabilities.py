@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.73.0"
+REGISTRY_VERSION = "1.74.0"
 
 CAPABILITIES = (
     {
@@ -389,7 +389,7 @@ CAPABILITIES = (
         "area": "Training",
         "name": "Own-game exercises",
         "status": "observation-only",
-        "details": "Own-game material practice requires a current verified witness and eligible review state. Protection version 1.0.0 and capture version 1.1.0 have scoped validation; bounded mate and pawn prepared lines are provisional and do not update mastery. Unreviewed sources remain provisional.",
+        "details": "Own-game material practice requires a current verified witness and eligible review state. A bounded daily-plan link checks repeated protection markers for a prepared replay. Protection version 1.0.0 and capture version 1.1.0 have scoped validation; prepared lines and unreviewed sources remain provisional and do not update mastery.",
     },
     {
         "id": "broader_practice",

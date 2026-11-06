@@ -10,6 +10,7 @@
 <button>Start practice</button>
 </form>
 </li>{% endfor %}</ul>{% else %}<p>No practice items on this page.</p>{% endif %}
+{% if not request.args.get("cursor") %}<p><a href="{{ url_for('protection_plan.show') }}">Practice protecting a piece</a> · A separate source check opens on the next page.</p>{% endif %}
 {% if capture %}{% include "plan_capture_action.html" %}{% endif %}
 {% if plan.diagnostic %}<p role="alert">{{ plan.diagnostic }}</p>{% endif %}
 {% if plan.next_cursor %}<p>More checks are needed: {{ plan.continuation_reason }}. <a href="{{ url_for('views.plan', cursor=plan.next_cursor) }}">Continue plan</a>
