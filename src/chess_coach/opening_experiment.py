@@ -2,22 +2,25 @@
 
 import chess
 
-from .opening_experiment_line import branch
+from .opening_experiment_line import pair
 
 MAX_DISADVANTAGE = 50
 
 
-def qualified(decision, choice, result):
+def assess(decision, choice, result):
     if result.get("status") != "complete":
-        return None
+        return None, "unavailable"
     lines = {line["root_move"]: line for line in result["lines"]}
     played, alternative = lines.get(decision["played_uci"]), lines.get(choice["uci"])
     if played is None or alternative is None:
-        return None
+        return None, "unavailable"
     if alternative["score_value"] < played["score_value"] - MAX_DISADVANTAGE:
-        return None
-    board = chess.Board(decision["fen"])
-    original, revised = branch(board, played), branch(board, alternative)
-    if original is None or revised is None:
-        return None
-    return {"played": original, "alternative": revised, "depth": played["depth"]}
+        return None, "score_gap"
+    branches, reason = pair(chess.Board(decision["fen"]), played, alternative)
+    if branches is None:
+        return None, reason
+    return {**branches, "depth": played["depth"]}, None
+
+
+def qualified(decision, choice, result):
+    return assess(decision, choice, result)[0]

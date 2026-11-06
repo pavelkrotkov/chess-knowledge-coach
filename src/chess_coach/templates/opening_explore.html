@@ -11,8 +11,18 @@
 <h3>{{ branch.color|title }} to move: verified repeated position</h3>
 <p>{{ branch.nominated }} metadata nominations; {{ branch.games|length }} distinct game identities verified here. Position: <code>{{ branch.position }}</code>.</p>
 <ul>{% for game in branch.games %}<li>Played {{ game.played }} at {{ game.played_at }} — <a href="{{ url_for('repertoire_views.opening_decision', game_id=game.game_id, position_id=game.position_id) }}">inspect this exact decision</a>.</li>{% endfor %}</ul>
-<p>In the linked exemplar you played {{ exemplar.played }}. A legal catalog alternative is {{ branch.alternative.san }}. Catalog inclusion alone does not establish that it is sound or personally suitable.</p>
-{% if branch.comparison %}<p>For that exact exemplar and alternative, the bounded same-search estimate is played {{ branch.comparison.played }} cp; alternative {{ branch.comparison.alternative }} cp at depth {{ branch.comparison.depth }}, from the learner's perspective. This is not a recommendation.</p>{% else %}<p>No current qualified comparison is shown here. Open the exact decision to request or inspect one.</p>{% endif %}
+<p>In the linked exemplar you played {{ exemplar.played }}. These legal catalog alternatives belong to that exact decision. Catalog inclusion alone does not establish soundness or personal fit.</p>
+<ul>{% for item in branch.alternatives %}<li><strong>{{ item.choice.san }}</strong>:
+{% if item.status == "complete" %}played {{ item.played }} cp; alternative {{ item.alternative }} cp at depth {{ item.depth }}, from your perspective. These estimates cover only the two shown moves.
+{% if item.ready %}<a href="{{ url_for('opening_experiments.show', game_id=exemplar.game_id, position_id=exemplar.position_id, move=item.choice.uci) }}">Rehearse this experiment</a> · <a href="{{ url_for('opening_profiles.show', game_id=exemplar.game_id, position_id=exemplar.position_id, alternative=item.choice.uci) }}">View this alternative's public profile</a>.
+{% elif item.reason == "score_gap" %}The alternative is more than 50 cp below the played move, outside this rehearsal policy.
+{% elif item.reason == "short_line" %}The completed comparison has fewer than three plies in a line, so the worked experiment is unavailable.
+{% else %}The worked experiment is unavailable.{% endif %}
+{% elif item.status == "none" %}No current comparison was found.
+{% elif item.status == "queued" %}Comparison queued.
+{% elif item.status == "stale" %}Comparison is stale.
+{% elif item.status == "unavailable" %}Comparison unavailable.
+{% else %}Comparison status is unknown.{% endif %}</li>{% endfor %}</ul>
 <p><a href="{{ url_for('repertoire_views.opening_decision', game_id=exemplar.game_id, position_id=exemplar.position_id) }}">Open the exemplar decision</a> · <a href="{{ url_for('repertoire_views.opening_references', game_id=exemplar.game_id, position_id=exemplar.position_id) }}">View public reference examples</a>.</p>
 {% if branch.references %}
 <p>Up to three examples from a bounded <a href="{{ branch.references.source }}">Lichess broadcast sample</a> under <a href="{{ branch.references.license_url }}">{{ branch.references.license }}</a>; these do not establish popularity or fit.</p>

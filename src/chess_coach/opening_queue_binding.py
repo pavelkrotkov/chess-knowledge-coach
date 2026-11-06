@@ -13,8 +13,10 @@ def identity(database, source, config):
     return digest(canonical([VERSION, database, source, config]))
 
 
-def snapshot(db, database, learner, game, position, alternative):
+def snapshot(db, database, learner, game, position, alternative, *, deadline=None):
     budget = BrowserBudget(db)
+    if deadline is not None:
+        budget.expires = min(budget.expires, deadline)
     with budget.scope(snapshot=False):
         source, owned = selection(db, game, position, learner, alternative)
     with budget.scope(snapshot=False):
