@@ -469,3 +469,10 @@ same-search comparison of those roots, not a global best move, proof of soundnes
 or evidence of opening fit. Insufficient results do not contain comparable
 scores. This operator artifact is not automatically refreshed or surfaced in
 the browser; that requires the separate queued workflow.
+
+The private opening view can also queue one selected catalog comparison for the
+ordinary worker after higher-priority processing. The queue holds one request at
+a time, allows at most three attempts, and retains completed attempt files.
+Repeated submissions do not rerun a complete result. The browser rechecks the
+source and engine configuration before showing scores; a changed source is stale.
+The scheduled worker must use the same default Stockfish path as the request.

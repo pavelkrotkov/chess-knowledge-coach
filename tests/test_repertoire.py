@@ -30,7 +30,11 @@ def game(white, black, moves, result="1-0", *, second=None):
 
 
 def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypatch):
-    path = tmp_path / "test.sqlite"
+    data_dir = tmp_path / ".runtime" / "data"
+    data_dir.mkdir(parents=True, mode=0o700)
+    planning_dir = tmp_path / ".runtime" / "planning"
+    planning_dir.mkdir(mode=0o700)
+    path = data_dir / "test.sqlite"
     db = Database(path)
     db.initialize()
     for text in (
@@ -291,6 +295,7 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     with pytest.raises(PreviewUnavailable):
         opening_measure._prepare(db, 1, first_move, "g1f3", stale, "engine")
     assert not stale.exists()
+    monkeypatch.setattr(opening_measure, "measure", real_measure)
 
     with pytest.raises(ValueError, match="unavailable"):
         inspect_opening(db, 3, first_move, "learner")
@@ -383,6 +388,231 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     assert response.status_code == 200 and b"Nf3" in response.data
     assert b"No qualified same-search comparison" in response.data
     assert b"See public reference games for this position" in response.data
+
+    # The authenticated form queues one immutable source-bound request. GET never
+    # starts the engine; a later worker completes it once and recovers its result.
+    import chess_coach.opening_queue_binding as queue_binding
+    import chess_coach.opening_queue_worker as queue_worker
+
+    monkeypatch.setattr(
+        queue_binding, "_config", lambda *args: ("engine", {"engine_path": "engine"})
+    )
+    with client.session_transaction(base_url="https://coach.invalid") as browser_session:
+        csrf = browser_session["csrf"]
+    post_headers = {**headers, "Origin": "https://coach.invalid"}
+    form = {"csrf": csrf, "alternative": "g1f3"}
+    compare_route = route + "/compare"
+    assert (
+        client.post(compare_route, data=form, base_url="https://coach.invalid").status_code == 403
+    )
+    assert (
+        client.post(
+            compare_route, data=form, base_url="https://coach.invalid", headers=headers
+        ).status_code
+        == 403
+    )
+    before = len(engine_calls)
+
+    # Waitress runs requests off the main thread; its SQLite connection and
+    # deadline guard must work there without using process signals.
+    from concurrent.futures import ThreadPoolExecutor
+
+    def threaded_request():
+        browser = app.test_client()
+        page = browser.get(route, base_url="https://coach.invalid", headers=headers)
+        with browser.session_transaction(base_url="https://coach.invalid") as session:
+            threaded_csrf = session["csrf"]
+        sent = browser.post(
+            compare_route,
+            data={"csrf": threaded_csrf, "alternative": "g1f3"},
+            base_url="https://coach.invalid",
+            headers=post_headers,
+        )
+        shown = browser.get(route, base_url="https://coach.invalid", headers=headers)
+        return page.status_code, sent.status_code, b"Comparison queued" in shown.data
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        assert pool.submit(threaded_request).result() == (200, 302, True)
+    assert len(engine_calls) == before
+    assert (
+        client.post(
+            compare_route, data=form, base_url="https://coach.invalid", headers=post_headers
+        ).status_code
+        == 302
+    )
+    assert (
+        client.post(
+            compare_route, data=form, base_url="https://coach.invalid", headers=post_headers
+        ).status_code
+        == 302
+    )
+    queued = client.get(route, base_url="https://coach.invalid", headers=headers)
+    assert b"Comparison queued" in queued.data and len(engine_calls) == before
+    second_route = f"/repertoire/games/2/openings/{transposed_move}/compare"
+    assert (
+        client.post(
+            second_route,
+            data={"csrf": csrf, "alternative": "d2d4"},
+            base_url="https://coach.invalid",
+            headers=post_headers,
+        ).status_code
+        == 409
+    )
+    queue_worker.run(db, config, tmp_path)
+    assert len(engine_calls) == before + 1
+    queue_worker.run(db, config, tmp_path)
+    assert len(engine_calls) == before + 1
+    completed = client.get(route, base_url="https://coach.invalid", headers=headers)
+    assert b"Selected comparison" in completed.data and b"120 cp" in completed.data
+    assert len(engine_calls) == before + 1
+
+    import copy
+
+    import chess_coach.opening_queue_artifact as queue_artifact
+    from chess_coach.opening_queue_proof import complete as qualified
+
+    queued_slot = json.loads((planning_dir / "opening-comparison-slot.json").read_text())
+    artifact = queue_artifact.load(planning_dir, queued_slot)
+    result_body = artifact["result"]
+    assert qualified(result_body, queued_slot["source"], chess.Board())
+    invalid_work = copy.deepcopy(result_body)
+    invalid_work["work"]["nodes"] = 200001
+    assert not qualified(invalid_work, queued_slot["source"], chess.Board())
+    invalid_work["work"]["nodes"] = None
+    assert not qualified(invalid_work, queued_slot["source"], chess.Board())
+    invalid_envelope = {"measurement": copy.deepcopy(artifact)}
+    invalid_envelope["measurement"]["version"] = "unsupported"
+    invalid_envelope["sha256"] = digest(canonical(invalid_envelope["measurement"]))
+    with monkeypatch.context() as patch:
+        patch.setattr(queue_artifact, "read", lambda path: invalid_envelope)
+        with pytest.raises(ValueError, match="version"):
+            queue_artifact.load(planning_dir, queued_slot)
+
+    # Replacing the slot preserves completed history and bounded prior attempts.
+    second_form = {"csrf": csrf, "alternative": "d2d4"}
+    second_page = f"/repertoire/games/2/openings/{transposed_move}"
+    assert (
+        client.post(
+            second_route, data=second_form, base_url="https://coach.invalid", headers=post_headers
+        ).status_code
+        == 302
+    )
+    monkeypatch.setattr(
+        opening_measure,
+        "measure",
+        lambda *args: {"status": "insufficient", "reason": "engine_timeout"},
+    )
+    for attempt in range(3):
+        queue_worker.run(db, config, tmp_path)
+        unavailable = client.get(second_page, base_url="https://coach.invalid", headers=headers)
+        assert b"Comparison unavailable" in unavailable.data
+        if attempt < 2:
+            assert b">Retry</button>" in unavailable.data
+            assert (
+                client.post(
+                    second_route,
+                    data={**second_form, "retry": "1"},
+                    base_url="https://coach.invalid",
+                    headers=post_headers,
+                ).status_code
+                == 302
+            )
+    assert b"retry limit was reached" in unavailable.data
+    assert b">Retry</button>" not in unavailable.data
+    earlier = client.get(route, base_url="https://coach.invalid", headers=headers)
+    assert b"Selected comparison" in earlier.data and b"120 cp" in earlier.data
+    assert (
+        client.post(
+            compare_route,
+            data={**form, "retry": "1"},
+            base_url="https://coach.invalid",
+            headers=post_headers,
+        ).status_code
+        == 302
+    )
+    slot = json.loads((planning_dir / "opening-comparison-slot.json").read_text())
+    assert slot["attempt"] == 0
+    queue_worker.run(db, config, tmp_path)
+    assert len(engine_calls) == before + 1
+    assert (
+        client.post(
+            second_route,
+            data={**second_form, "retry": "1"},
+            base_url="https://coach.invalid",
+            headers=post_headers,
+        ).status_code
+        == 409
+    )
+    assert (
+        client.post(
+            second_route, data=second_form, base_url="https://coach.invalid", headers=post_headers
+        ).status_code
+        == 302
+    )
+    slot = json.loads((planning_dir / "opening-comparison-slot.json").read_text())
+    assert slot["attempt"] == 2
+    monkeypatch.setattr(
+        queue_binding, "_config", lambda *args: ("engine", {"engine_path": "changed"})
+    )
+    changed_page = client.get(second_page, base_url="https://coach.invalid", headers=headers)
+    assert b"comparison is stale" in changed_page.data
+    monkeypatch.setattr(
+        queue_binding, "_config", lambda *args: ("engine", {"engine_path": "engine"})
+    )
+    monkeypatch.setattr(opening_measure, "measure", real_measure)
+
+    # Changed engine policy is rejected before the queued worker starts a search.
+    black_route = f"/repertoire/games/3/openings/{black_move}/compare"
+    assert (
+        client.post(
+            black_route,
+            data={"csrf": csrf, "alternative": "g8f6"},
+            base_url="https://coach.invalid",
+            headers=post_headers,
+        ).status_code
+        == 302
+    )
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            opening_measure, "_config", lambda *args: ("engine", {"engine_path": "changed"})
+        )
+        queue_worker.run(db, config, tmp_path)
+    assert len(engine_calls) == before + 1
+    black_page = client.get(
+        f"/repertoire/games/3/openings/{black_move}",
+        base_url="https://coach.invalid",
+        headers=headers,
+    )
+    assert b"Comparison unavailable" in black_page.data
+    failed_slot = json.loads((planning_dir / "opening-comparison-slot.json").read_text())
+    receipt = planning_dir / f"opening-comparison-{failed_slot['id']}-0.failed.json"
+    failure = json.loads(receipt.read_text())["failure"]
+    assert failure["status"] == "unavailable" and "score" not in failure
+    # Replacing the slot cannot erase the failed attempt or restart it at zero.
+    assert (
+        client.post(
+            compare_route, data=form, base_url="https://coach.invalid", headers=post_headers
+        ).status_code
+        == 302
+    )
+    revisited = client.get(
+        f"/repertoire/games/3/openings/{black_move}",
+        base_url="https://coach.invalid",
+        headers=headers,
+    )
+    assert b"Comparison unavailable" in revisited.data
+    assert (
+        client.post(
+            black_route,
+            data={"csrf": csrf, "alternative": "g8f6", "retry": "1"},
+            base_url="https://coach.invalid",
+            headers=post_headers,
+        ).status_code
+        == 302
+    )
+    retried = json.loads((planning_dir / "opening-comparison-slot.json").read_text())
+    assert retried["attempt"] == 1
+
     import hashlib
 
     import chess_coach.opening_reference_source as reference_source
@@ -397,7 +627,7 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         "ABCDEFGH"
     )
     reference_dir = tmp_path / ".runtime" / "planning"
-    reference_dir.mkdir(parents=True, mode=0o700)
+    reference_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
     archive = reference_dir / reference_source.SOURCE_NAME
     archive.write_bytes(b"synthetic archive")
     with pytest.raises(ValueError, match="pinned source"):
