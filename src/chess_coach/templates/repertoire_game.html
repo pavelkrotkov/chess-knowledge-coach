@@ -8,7 +8,7 @@
 {% if game.position_id %}<p>Played line: {{ game.line|join(' ') }}. <a href="{{ url_for('views.structure_position', position_id=game.position_id) }}">View reached position</a> (ply {{ game.ply }}).</p>{% endif %}
 <p>Structure extraction: {{ game.structures.status }}; named families: {{ game.structures.families|join(', ') or 'none' }}. Position limit reached: {{ game.structures.truncated }}.</p>
 <h3>Game moves</h3><p>Each move links to its recorded position. {% if game.positions_truncated %}Only the first 1,000 plies are shown.{% endif %}</p>
-<ol>{% for move in game.moves %}<li><a href="{{ url_for('views.structure_position', position_id=move.id) }}">{{ move.san }}</a></li>{% else %}<li>No recorded moves.</li>{% endfor %}</ol>
+<ol>{% for move in game.moves %}<li><a href="{{ url_for('views.structure_position', position_id=move.id) }}">{{ move.san }}</a>{% if game.opening and not game.classification_stale and game.ply and move.ply <= game.ply and move.mover == game.color %} · <a href="{{ url_for('repertoire_views.opening_decision', game_id=game.id, position_id=move.id) }}">Explore opening alternatives</a>{% endif %}</li>{% else %}<li>No recorded moves.</li>{% endfor %}</ol>
 <h3>Accepted active failure evidence</h3><ul>{% for evidence in game.evidence %}<li><a href="{{ url_for('views.evidence_detail', evidence_id=evidence.id) }}">{{ evidence.skill }} / {{ evidence.operation }}, ply {{ evidence.ply }}</a></li>{% else %}<li>No accepted failure evidence.</li>{% endfor %}</ul>
 <p><a href="{{ url_for('repertoire_views.repertoire') }}">Back to repertoire</a></p>
 {% endblock %}
