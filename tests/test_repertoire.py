@@ -49,7 +49,7 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         ingest_pgn(db, text)
     source = tmp_path / "opening.tsv"
     source.write_text(
-        "eco\tname\tmoves\nD00\tTest\td4 d5 Nf3 Nf6\nA04\tAlternate\tNf3 Nf6 d4 d5\nD20\tOther\td4 Nf6 c4\nD30\tC line\td4 d5 Nf3 Nf6 c4\nA10\tG line\tNf3 Nf6 d4 d5 g3\n"
+        "eco\tname\tmoves\nD00\tTest\td4 d5 Nf3 Nf6\nA04\tAlternate\tNf3 Nf6 d4 d5\nD20\tOther\td4 Nf6 c4\nD30\tC line\td4 d5 Nf3 Nf6 c4\nA10\tG line\tNf3 Nf6 d4 d5 g3\nD31\tE line\td4 d5 Nf3 Nf6 e3\n"
     )
     import_openings(db, source, version="test", source_url="cc0://test")
     config = PipelineConfig(
@@ -891,28 +891,138 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     # The score belongs to another decision even though it is from this game.
     assert b"120 cp" not in branch_page.data and len(engine_calls) == before_explore
 
+    # Store two independently bound synthetic worker results for the actual
+    # exemplar. The first is outside the threshold; the later one qualifies.
+    from chess_coach.opening_queue_location import location as queue_location
+
+    directory, database_key = queue_location(db, tmp_path, "learner")
+    real_choices = branch_second["catalog"]["items"]
+    assert len(real_choices) >= 2
+    for index, candidate in enumerate(real_choices[:2]):
+        _budget, binding, measured_config, owned = queue_binding.snapshot(
+            db, database_key, "learner", 2, after_second, candidate["uci"]
+        )
+        item = queue_binding.request(database_key, binding, measured_config)
+        board = owned["board"]
+        roots = [chess.Move.from_uci(binding["played"]), chess.Move.from_uci(candidate["uci"])]
+        raw = Engine().analyse(board, None, multipv=2, root_moves=roots)
+        raw[1]["score"] = chess.engine.PovScore(
+            chess.engine.Cp(-51 if index == 0 else 20), board.turn
+        )
+        measured_lines, problem = opening_grade.grade(
+            board, owned["position"], [move.uci() for move in roots], raw, None
+        )
+        assert problem is None and measured_lines
+        payload = {
+            **artifact,
+            "source": binding,
+            "configuration": measured_config,
+            "result": {**result_body, "lines": measured_lines},
+        }
+        envelope = {"measurement": payload, "sha256": digest(canonical(payload))}
+        path_for_result = queue_artifact.path(directory, item)
+        path_for_result.write_text(json.dumps(envelope))
+        path_for_result.chmod(0o600)
+
+    before_explore = len(engine_calls)
+    actual_scored = client.get(branch_url, base_url="https://coach.invalid", headers=headers)
+    assert actual_scored.status_code == 200
+    assert b"more than 50 cp below the played move" in actual_scored.data
+    assert f"/experiment/{real_choices[0]['uci']}".encode() not in actual_scored.data
+    assert f"/experiment/{real_choices[1]['uci']}".encode() in actual_scored.data
+    assert f"alternative={real_choices[1]['uci']}".encode() in actual_scored.data
+    assert (
+        client.get(
+            f"/repertoire/games/2/openings/{after_second}/experiment/{real_choices[1]['uci']}",
+            base_url="https://coach.invalid",
+            headers=headers,
+        ).status_code
+        == 200
+    )
+    assert len(engine_calls) == before_explore
+
     import chess_coach.opening_explore_enrich as explore_enrich
 
-    score_calls = []
+    score_calls, offered = [], []
 
-    def exact_score(_db, _root, _learner, decision):
-        score_calls.append((decision["game_id"], decision["position_id"]))
-        choice = decision["catalog"]["items"][0]["uci"]
+    def line_for(board, root, value):
+        replay = board.copy()
+        moves = [replay.parse_uci(root)]
+        replay.push(moves[0])
+        for _ in range(2):
+            move = next(iter(replay.legal_moves))
+            moves.append(move)
+            replay.push(move)
         return {
-            choice: {
+            "root_move": root,
+            "pv": " ".join(move.uci() for move in moves),
+            "score_value": value,
+            "depth": 12,
+        }
+
+    def exact_score(_db, _root, _learner, decision, *, deadline=None):
+        assert deadline is not None
+        score_calls.append((decision["game_id"], decision["position_id"]))
+        choices = decision["catalog"]["items"]
+        assert len(choices) >= 2
+        offered[:] = choices
+        board = chess.Board(decision["fen"])
+        played = line_for(board, decision["played_uci"], 0)
+        return {
+            choice["uci"]: {
                 "status": "complete",
-                "lines": [
-                    {"root_move": "g2g3", "score_value": 0, "depth": 12},
-                    {"root_move": choice, "score_value": 120, "depth": 12},
-                ],
+                "lines": [played, line_for(board, choice["uci"], -51 if index == 0 else 20)],
             }
+            for index, choice in enumerate(choices)
         }
 
     with monkeypatch.context() as patch:
         patch.setattr(explore_enrich, "statuses", exact_score)
         scored = client.get(branch_url, base_url="https://coach.invalid", headers=headers)
-        assert b"played 0 cp; alternative 120 cp" in scored.data
+        assert b"played 0 cp; alternative -51 cp" in scored.data
+        assert b"more than 50 cp below the played move" in scored.data
+        assert f"/experiment/{offered[0]['uci']}".encode() not in scored.data
+        assert f"/experiment/{offered[1]['uci']}".encode() in scored.data
+        assert f"alternative={offered[1]['uci']}".encode() in scored.data
         assert score_calls == [(2, after_second)]
+
+    def short_score(*args, **kwargs):
+        states = exact_score(*args, **kwargs)
+        first = states[offered[0]["uci"]]
+        first["lines"][1]["score_value"] = 0
+        first["lines"][1]["pv"] = " ".join(first["lines"][1]["pv"].split()[:2])
+        return states
+
+    with monkeypatch.context() as patch:
+        patch.setattr(explore_enrich, "statuses", short_score)
+        short = client.get(branch_url, base_url="https://coach.invalid", headers=headers)
+    assert b"fewer than three plies" in short.data
+    assert f"/experiment/{offered[0]['uci']}".encode() not in short.data
+    assert f"/experiment/{offered[1]['uci']}".encode() in short.data
+    assert len(engine_calls) == before_explore
+
+    def queued_and_stale(_db, _root, _learner, decision, *, deadline=None):
+        choices = decision["catalog"]["items"]
+        return {choices[0]["uci"]: {"status": "queued"}, choices[1]["uci"]: {"status": "stale"}}
+
+    with monkeypatch.context() as patch:
+        patch.setattr(explore_enrich, "statuses", queued_and_stale)
+        waiting = client.get(branch_url, base_url="https://coach.invalid", headers=headers)
+    assert b"Comparison queued" in waiting.data and b"Comparison is stale" in waiting.data
+    with monkeypatch.context() as patch:
+        from chess_coach.tactical_course_budget import PreviewUnavailable
+
+        patch.setattr(
+            explore_enrich,
+            "statuses",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(PreviewUnavailable("deadline")),
+        )
+        deferred_page = client.get(branch_url, base_url="https://coach.invalid", headers=headers)
+    assert (
+        deferred_page.status_code == 200 and b"Comparison status is unknown" in deferred_page.data
+    )
+    assert b"Some nominations or checks were not completed" in deferred_page.data
+    assert len(engine_calls) == before_explore
     assert f"/repertoire/games/1/openings/{after_first}".encode() in branch_page.data
     assert f"/repertoire/games/2/openings/{after_second}".encode() in branch_page.data
 

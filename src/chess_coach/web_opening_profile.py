@@ -3,7 +3,7 @@
 from flask import Blueprint, abort, current_app, render_template, request
 
 from .opening_decision import inspect
-from .opening_explore_enrich import comparison
+from .opening_explore_comparison import comparison
 from .opening_profile_read import profile
 from .web_db import database
 
