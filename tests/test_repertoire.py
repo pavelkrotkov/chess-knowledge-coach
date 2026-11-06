@@ -766,21 +766,49 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     black_french = game("Public G", "Public H", "1. e3 e5 2. d4 d5 3. c4 e4")
     repeated = game("Repeater", "Public I", "1. Nf3 Nf6 2. Ng1 Ng8 3. Nf3 Nf6 4. g3")
     french_copy = french.replace('[Event "Fixture"]', '[Event "Other event"]')
+    center_game = game("Central", "Capture", "1. d4 d5 2. e4 dxe4")
+    inconsistent_game = game("Inconsistent", "Opponent", "1. d4 d5 2. Nf3 Nf6")
     profile_sample = (
-        sample + "\n" + french + "\n" + french_copy + "\n" + black_french + "\n" + repeated
+        sample
+        + "\n"
+        + french
+        + "\n"
+        + french_copy
+        + "\n"
+        + black_french
+        + "\n"
+        + repeated
+        + "\n"
+        + center_game
+        + "\n"
+        + inconsistent_game
     )
     for index in range(11):
         profile_sample += "\n" + game(f"Sample {index}", f"Opponent {index}", "1. Nf3 Nf6")
     old_index = reference_dir / REFERENCE_INDEX
     old_hash = hashlib.sha256(old_index.read_bytes()).hexdigest()
+    import chess_coach.opening_profile_index as profile_index
+
+    original_moves_for = profile_index.moves_for
+
+    def one_inconsistent(game_value):
+        result = original_moves_for(game_value)
+        if game_value.headers.get("White") == "Inconsistent":
+            moves, positions = result
+            ply, _parent, san, uci, shapes = positions[1]
+            positions[1] = (ply, position_key(chess.Board()), san, uci, shapes)
+            return moves, positions
+        return result
+
     with monkeypatch.context() as patch:
         patch.setattr(reference_source, "SOURCE_BYTES", len(archive.read_bytes()))
         patch.setattr(
             reference_source, "SOURCE_SHA256", hashlib.sha256(archive.read_bytes()).hexdigest()
         )
         patch.setattr(reference_source, "_decode", lambda file: (profile_sample.encode(), False))
+        patch.setattr(profile_index, "moves_for", one_inconsistent)
         ordered_coverage = build_profile(tmp_path, "learner")
-        assert ordered_coverage["accepted"] == 16 and ordered_coverage["duplicates"] == 3
+        assert ordered_coverage["accepted"] == 18 and ordered_coverage["duplicates"] == 3
         with pytest.raises(ValueError, match="already exists"):
             build_profile(tmp_path, "learner")
     assert hashlib.sha256(old_index.read_bytes()).hexdigest() == old_hash
@@ -818,7 +846,56 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         )["first_ply"]
         == 1
     )
-    assert read_profile(tmp_path, "learner", start_key, "e2e5")["games"] == 0
+    empty_profile = read_profile(tmp_path, "learner", start_key, "e2e5")
+    assert empty_profile["games"] == 0 and empty_profile["center"]["valid"] == 0
+    d4_profile = read_profile(tmp_path, "learner", start_key, "d2d4")
+    assert d4_profile["games"] == 3
+    assert d4_profile["center"]["valid"] == 2
+    assert d4_profile["center"]["capture"] == 1
+    assert d4_profile["center"]["inconsistent"] == 1
+    assert repeated_profile["center"]["short"] > 0
+    for profile in (d4_profile, repeated_profile, empty_profile):
+        center = profile["center"]
+        assert (
+            sum(center[key] for key in ("valid", "short", "inconsistent", "unavailable"))
+            == profile["games"]
+        )
+
+    from chess_coach.opening_profile_center_replay import inspect as center_window
+
+    def ordered_window(board, moves):
+        parent = position_key(board)
+        rows = []
+        for ply, text in enumerate(moves, 1):
+            move = board.parse_uci(text)
+            rows.append((ply, position_key(board), text, board.san(move)))
+            board.push(move)
+        return rows, parent
+
+    recapture_board = chess.Board()
+    for text in ("e2e4", "d7d5", "e4d5"):
+        recapture_board.push_uci(text)
+    recapture_moves = ["e7e6", "d5e6", "f7e6", "g1f3"]
+    recapture_rows, recapture_parent = ordered_window(recapture_board, recapture_moves)
+    state, central = center_window(recapture_rows, 1, 4, recapture_parent, recapture_moves[0])
+    assert state == "valid" and central["capture"] and central["recapture"]
+    bad_rows = list(recapture_rows)
+    ply, parent, _uci, _san = bad_rows[1]
+    bad_rows[1] = (ply, parent, "0000", "--")
+    assert center_window(bad_rows, 1, 4, recapture_parent, recapture_moves[0])[0] == "inconsistent"
+    assert (
+        center_window(recapture_rows[:3], 1, 4, recapture_parent, recapture_moves[0])[0]
+        == "inconsistent"
+    )
+    assert (
+        center_window(recapture_rows[:3], 1, 3, recapture_parent, recapture_moves[0])[0] == "short"
+    )
+
+    opening_board = chess.Board("4k3/8/4p3/3P4/8/8/8/4K3 w - - 0 1")
+    opening_moves = ["d5e6", "e8e7", "e1d2", "e7e6"]
+    opening_rows, opening_parent = ordered_window(opening_board, opening_moves)
+    state, central = center_window(opening_rows, 1, 4, opening_parent, opening_moves[0])
+    assert state == "valid" and central["opened_d"] and central["opened_e"]
     with monkeypatch.context() as patch:
         patch.setattr(profile_lookup, "GRAPH_SHA256", "different")
         assert read_profile(tmp_path, "learner", start_key, "e2e4") is None
@@ -848,6 +925,10 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         and b"Broadcast source" in profile_page.data
     )
     assert profile_lookup.SOURCE_SHA256.encode() in profile_page.data
+    assert b"Among 2 complete, legally consistent four-ply windows" in profile_page.data
+    assert b"1 contained a central pawn-on-pawn capture" in profile_page.data
+    assert b"1 had inconsistent ordered moves" in profile_page.data
+    assert b"had a shorter valid window" in profile_page.data
     assert b"played 0 cp; alternative 120 cp" in profile_page.data
     selected_profile = client.get(
         profile_url + "?alternative=g1f3", base_url="https://coach.invalid", headers=headers

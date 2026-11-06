@@ -4,6 +4,7 @@ import json
 import sqlite3
 
 from .named_structures import VERSION as STRUCTURE_VERSION
+from .opening_profile_center import summarize as center_summary
 from .opening_profile_play import PARENT_PLIES, STORED_PLIES, WINDOW_PLIES
 from .opening_profile_store import TRANSFORM
 from .opening_reference_source import (
@@ -36,6 +37,7 @@ def lookup(path, parent, move):
         summary = summarize(db, rows[:MAX_GAMES])
         return {
             **summary,
+            "center": center_summary(db, rows[:MAX_GAMES], parent, move),
             "more_matches": len(rows) > MAX_GAMES,
             "coverage": metadata["coverage"],
             "source": SOURCE,
