@@ -519,6 +519,59 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     assert {node.move.uci() for node in chapter.variations} == {"d2d4", "g1f3"}
     assert all(3 <= len(list(node.mainline_moves())) + 1 <= 4 for node in chapter.variations)
     assert len(engine_calls) == before + 1
+    assert b"Preview an opening revision course" in experiment.data
+    course_url = experiment_url + "/course"
+    assert client.get(course_url, base_url="https://coach.invalid").status_code == 403
+    import chess_coach.web_opening_course as course_view
+    from chess_coach.tactical_course_budget import PreviewUnavailable
+    from chess_coach.tactical_course_deadline import PreviewDeadline
+
+    for error, status in (
+        (PreviewUnavailable("deadline"), 503),
+        (PreviewDeadline(), 503),
+        (OSError("temporary I/O failure"), 503),
+        (RuntimeError("deep engine is unavailable"), 503),
+        (ValueError("source unavailable"), 404),
+        (RuntimeError("unexpected failure"), 500),
+    ):
+        with monkeypatch.context() as patch:
+
+            def fail(*_args, _error=error, **_kwargs):
+                raise _error
+
+            patch.setattr(course_view, "preview", fail)
+            failed = client.get(course_url, base_url="https://coach.invalid", headers=headers)
+        assert failed.status_code == status
+    partial_course = client.get(course_url, base_url="https://coach.invalid", headers=headers)
+    assert partial_course.status_code == 200 and b"Partial preview" in partial_course.data
+    assert b"You play White" in partial_course.data and b'class="board"' in partial_course.data
+    assert b"played 0 cp; alternative 120 cp" in partial_course.data
+    assert b"Your worked comparison" in partial_course.data
+    import re
+
+    partial_version_match = re.search(
+        r"Preview version: <code>([0-9a-f]{64})</code>", partial_course.get_data(as_text=True)
+    )
+    assert partial_version_match
+    partial_version = partial_version_match.group(1)
+    assert (
+        client.get(
+            course_url + "?download=1", base_url="https://coach.invalid", headers=headers
+        ).status_code
+        == 409
+    )
+    partial_download = client.get(
+        course_url + "?download=1&version=" + partial_version,
+        base_url="https://coach.invalid",
+        headers=headers,
+    )
+    assert (
+        partial_download.status_code == 200
+        and "no-store" in partial_download.headers["Cache-Control"]
+    )
+    partial_stream = io.StringIO(partial_download.get_data(as_text=True))
+    assert chess.pgn.read_game(partial_stream) is not None
+    assert chess.pgn.read_game(partial_stream) is None
 
     import copy
 
@@ -642,6 +695,9 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
             experiment_url + "?download=1", base_url="https://coach.invalid", headers=headers
         ).status_code
         == 404
+    )
+    assert (
+        client.get(course_url, base_url="https://coach.invalid", headers=headers).status_code == 404
     )
     monkeypatch.setattr(
         queue_binding, "_config", lambda *args: ("engine", {"engine_path": "engine"})
@@ -768,8 +824,22 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     french_copy = french.replace('[Event "Fixture"]', '[Event "Other event"]')
     center_game = game("Central", "Capture", "1. d4 d5 2. e4 dxe4")
     inconsistent_game = game("Inconsistent", "Opponent", "1. d4 d5 2. Nf3 Nf6")
+    owned_alt = next(line for line in result_body["lines"] if line["root_move"] == "g1f3")
+    duplicate_game = chess.pgn.Game()
+    duplicate_game.headers["White"] = "Public duplicate"
+    duplicate_game.headers["Black"] = "Public opponent"
+    duplicate_game.headers["Result"] = "1-0"
+    replay = chess.Board()
+    node = duplicate_game
+    for text in owned_alt["pv"].split():
+        move = replay.parse_uci(text)
+        node = node.add_variation(move)
+        replay.push(move)
+    node.add_variation(next(iter(replay.legal_moves)))
     profile_sample = (
-        sample
+        str(duplicate_game)
+        + "\n\n"
+        + sample
         + "\n"
         + french
         + "\n"
@@ -808,7 +878,11 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         patch.setattr(reference_source, "_decode", lambda file: (profile_sample.encode(), False))
         patch.setattr(profile_index, "moves_for", one_inconsistent)
         ordered_coverage = build_profile(tmp_path, "learner")
-        assert ordered_coverage["accepted"] == 18 and ordered_coverage["duplicates"] == 3
+        assert (ordered_coverage["accepted"], ordered_coverage["duplicates"]) == (19, 3), (
+            ordered_coverage["accepted"],
+            ordered_coverage["duplicates"],
+            ordered_coverage["examined"],
+        )
         with pytest.raises(ValueError, match="already exists"):
             build_profile(tmp_path, "learner")
     assert hashlib.sha256(old_index.read_bytes()).hexdigest() == old_hash
@@ -942,6 +1016,80 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         ).status_code
         == 404
     )
+    assert len(engine_calls) == before_profile
+
+    # The version changes when a distinct public chapter becomes available;
+    # downloads are bound to the exact preview currently shown.
+    read_only = Database(path)
+    statements = []
+    read_only.connection.set_trace_callback(
+        lambda sql: statements.append(sql.split(None, 1)[0].upper())
+    )
+    before_files = {
+        item.name: (item.stat().st_size, item.stat().st_mtime_ns)
+        for item in reference_dir.iterdir()
+        if item.is_file()
+    }
+    with monkeypatch.context() as patch:
+        patch.setattr("chess_coach.web_opening_course.database", lambda: read_only)
+        course = client.get(course_url, base_url="https://coach.invalid", headers=headers)
+    read_only.close()
+    assert not {"INSERT", "UPDATE", "DELETE", "REPLACE"} & set(statements)
+    after_files = {
+        item.name: (item.stat().st_size, item.stat().st_mtime_ns)
+        for item in reference_dir.iterdir()
+        if item.is_file()
+    }
+    assert after_files == before_files
+    assert course.status_code == 200 and b"2. Public continuation" in course.data
+    assert b"CC BY-SA 4.0" in course.data and b"same position" in course.data
+    version_match = re.search(
+        r"Preview version: <code>([0-9a-f]{64})</code>", course.get_data(as_text=True)
+    )
+    assert version_match
+    course_version = version_match.group(1)
+    assert course_version != partial_version
+    repeated_course = client.get(course_url, base_url="https://coach.invalid", headers=headers)
+    assert course_version.encode() in repeated_course.data
+    assert (
+        client.get(
+            course_url + "?download=1&version=" + partial_version,
+            base_url="https://coach.invalid",
+            headers=headers,
+        ).status_code
+        == 409
+    )
+    exported = client.get(
+        course_url + "?download=1&version=" + course_version,
+        base_url="https://coach.invalid",
+        headers=headers,
+    )
+    assert exported.status_code == 200 and "no-store" in exported.headers["Cache-Control"]
+    stream = io.StringIO(exported.get_data(as_text=True))
+    owned_chapter = chess.pgn.read_game(stream)
+    public_chapter = chess.pgn.read_game(stream)
+    assert owned_chapter is not None and public_chapter is not None
+    assert chess.pgn.read_game(stream) is None
+    assert not owned_chapter.errors and not public_chapter.errors
+    assert all(
+        game_value.headers["White"] == "White" and game_value.headers["Black"] == "Black"
+        for game_value in (owned_chapter, public_chapter)
+    )
+    public_moves = [move.uci() for move in public_chapter.mainline_moves()]
+    assert len(public_moves) == 4 and public_moves[0] == "g1f3"
+    assert public_moves[: len(owned_alt["pv"].split())] != owned_alt["pv"].split()
+    import chess_coach.opening_course_public_lookup as course_lookup
+
+    with monkeypatch.context() as patch:
+        patch.setattr(course_lookup, "MAX_GAMES", 1)
+        duplicate_only = client.get(course_url, base_url="https://coach.invalid", headers=headers)
+    assert (
+        b"Partial preview" in duplicate_only.data
+        and b"no distinct continuation" in duplicate_only.data
+    )
+    assert position_key(public_chapter.board()) == position_key(owned_chapter.board())
+    assert "CC BY-SA 4.0" in public_chapter.comment
+    assert "https://database.lichess.org/" in public_chapter.comment
     assert len(engine_calls) == before_profile
 
     matching = reference_matches(tmp_path, "learner", branch_first["catalog"]["parent"])

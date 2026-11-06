@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Opening revision course — Chess coach{% endblock %}
+{% block content %}
+<h2>Opening revision course preview</h2>
+<p>This private exploratory preview pairs your checked opening decision with a public continuation of the same selected move when one is available. These examples support rehearsal; preparation, soundness and personal fit remain unknown.</p>
+<p>Preview version: <code>{{ course.version }}</code>. <a href="{{ download_url }}">Download this version as PGN</a> · <a href="{{ url_for('opening_experiments.show', game_id=course.decision.game_id, position_id=course.decision.position_id, move=course.choice.uci) }}">Return to your exact experiment</a>.</p>
+<section><h3>1. Your worked comparison</h3>
+<p>You play {{ course.decision.color|title }}.</p>
+{% set board_label = "Starting opening position; learner plays " + course.decision.color %}{% include "board.html" %}
+<p>Replay the played branch, then choose {{ course.choice.san }}. After {{ course.experiment.alternative.san[1] }}, find your continuation before revealing the worked line.</p>
+<p>Two-root estimates from your perspective at depth {{ course.experiment.depth }}: played {{ course.experiment.played.score }} cp; alternative {{ course.experiment.alternative.score }} cp.</p>
+<p>Played: {{ course.experiment.played.san|join(" ") }}.</p>
+<details><summary>Reveal your alternative continuation</summary><p>{{ course.experiment.alternative.san[2:]|join(" ") }}</p></details>
+</section>
+{% if course.chapters|length > 1 %}{% set public = course.chapters[1] %}
+<section><h3>2. Public continuation</h3>
+<p>From the same position, play {{ public.san[0] }}. After {{ public.san[1] }}, find your continuation, then compare it with this recorded line.</p>
+<details><summary>Reveal the public continuation</summary><p>{{ public.san[2:]|join(" ") }}</p></details>
+<p>Source: <a href="{{ public.source }}">{% if public.direct %}Broadcast source{% else %}Public broadcast archive{% endif %}</a>, <a href="{{ public.license_url }}">{{ public.license }}</a>. Archive SHA-256: <code>{{ public.archive_sha256 }}</code>.</p>
+</section>
+{% else %}
+<p>Partial preview: no distinct verified four-ply public continuation is available in the bounded source checks ({{ course.public_status }}).</p>
+{% endif %}
+{% if course.chapters|length > 1 %}<p>The public continuation uses the same board identity. Its earlier game history and move counters are not represented by this short excerpt.</p>{% endif %}
+{% endblock %}

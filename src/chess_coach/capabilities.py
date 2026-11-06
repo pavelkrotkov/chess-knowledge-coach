@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.76.0"
+REGISTRY_VERSION = "1.77.0"
 
 CAPABILITIES = (
     {
@@ -445,7 +445,7 @@ CAPABILITIES = (
         "area": "Repertoire",
         "name": "Opening classification",
         "status": "observation-only",
-        "details": "A pinned CC0 opening dataset supports source-linked repertoire and structure observations. A bounded public sample describes four-ply central-pawn activity for exact opening moves. Repeated-position alternatives can link to a qualified worked experiment; broader recommendations remain planned.",
+        "details": "A pinned CC0 opening dataset supports source-linked repertoire and structure observations. Exact opening alternatives can link to a qualified worked experiment and a private preview paired with a bounded public continuation. Broader recommendations remain planned.",
     },
     {
         "id": "style_choices",
