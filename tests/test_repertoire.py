@@ -133,6 +133,165 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     assert black_choice["color"] == "black" and black_choice["played"] == "d5"
     assert "Nf6" in [item["san"] for item in black_choice["catalog"]["items"]]
     assert first["analysis"]["status"] == "current analysis unavailable"
+
+    # A catalog selection is measured once, with no scout or global-best claim.
+    import json
+    from types import SimpleNamespace
+
+    import chess
+    import chess.engine
+
+    import chess_coach.opening_measure_engine as opening_engine
+    import chess_coach.opening_measure_grade as opening_grade
+    import chess_coach.opening_measure_prepare as opening_measure
+    import chess_coach.opening_measure_search as opening_search
+    import chess_coach.ops_opening_measure as opening_cli
+
+    db.connection.commit()
+    monkeypatch.setenv("CHESS_SUBJECT", "learner")
+    engine_calls = []
+
+    class Engine:
+        def analyse(self, board, limit, *, multipv, root_moves):
+            engine_calls.append((multipv, [move.uci() for move in root_moves]))
+            return [
+                {
+                    "pv": [root_moves[0]],
+                    "score": chess.engine.PovScore(chess.engine.Cp(0), board.turn),
+                    "depth": 12,
+                    "nodes": 100000,
+                },
+                {
+                    "pv": [root_moves[1]],
+                    "score": chess.engine.PovScore(chess.engine.Cp(120), board.turn),
+                    "depth": 12,
+                    "nodes": 100000,
+                },
+            ]
+
+    monkeypatch.setattr(
+        opening_measure, "_config", lambda *args: ("engine", {"engine_path": "engine"})
+    )
+    monkeypatch.setattr(
+        opening_engine, "start_engine", lambda *args, **kwargs: (Engine(), SimpleNamespace(id={}))
+    )
+    monkeypatch.setattr(opening_engine, "stop_engine", lambda engine: True)
+    destination = tmp_path / "opening-result.json"
+    monkeypatch.setattr(opening_cli, "planning", lambda *args: None)
+    monkeypatch.setattr(opening_cli, "paths", lambda *args: (path, destination))
+    opening_cli.prepare(tmp_path, 1, first_move, "g1f3", destination, "engine")
+    saved = json.loads(destination.read_text())
+    assert saved["sha256"] == digest(canonical(saved["measurement"]))
+    result = saved["measurement"]["result"]
+    assert result["status"] == "complete"
+    assert abs(result["lines"][0]["score_value"] - result["lines"][1]["score_value"]) == 120
+    assert engine_calls == [(2, ["d2d4", "g1f3"])]
+    assert destination.stat().st_mode & 0o777 == 0o400
+    with pytest.raises(ValueError):
+        opening_measure._prepare(db, 1, first_move, "e2e4", tmp_path / "bad.json", "engine")
+    assert len(engine_calls) == 1
+
+    # Reject non-exact or unequal-depth output, and never publish stale results.
+    raw = Engine().analyse(
+        chess.Board(),
+        None,
+        multipv=2,
+        root_moves=[chess.Move.from_uci("d2d4"), chess.Move.from_uci("g1f3")],
+    )
+    raw[1]["depth"] = 11
+    assert (
+        opening_grade.grade(
+            chess.Board(), {"id": first_move, "uci": "d2d4"}, ["d2d4", "g1f3"], raw, None
+        )[0]
+        is None
+    )
+    raw[1]["depth"] = 12
+    raw[1]["lowerbound"] = True
+    assert (
+        opening_grade.grade(
+            chess.Board(), {"id": first_move, "uci": "d2d4"}, ["d2d4", "g1f3"], raw, None
+        )[0]
+        is None
+    )
+
+    raw[1].pop("lowerbound")
+    raw[1]["score"] = chess.engine.PovScore(chess.engine.Mate(2), chess.WHITE)
+    assert (
+        opening_grade.grade(
+            chess.Board(), {"id": first_move, "uci": "d2d4"}, ["d2d4", "g1f3"], raw, None
+        )[0]
+        is None
+    )
+
+    class OversizedEngine:
+        timeout = 1
+
+        def analyse(self, *args, **kwargs):
+            raw[0]["nodes"] = 200001
+            return raw
+
+    import time
+
+    excessive = opening_search.search(
+        OversizedEngine(),
+        chess.Board(),
+        {"id": first_move, "uci": "d2d4"},
+        "g1f3",
+        time.monotonic() + 10,
+    )
+    assert excessive["status"] == "insufficient"
+    assert excessive["reason"] == "node_limit_unverified"
+
+    class TimedOutEngine:
+        timeout = 1
+
+        def analyse(self, *args, **kwargs):
+            raise TimeoutError
+
+    timed_out = opening_search.search(
+        TimedOutEngine(),
+        chess.Board(),
+        {"id": first_move, "uci": "d2d4"},
+        "g1f3",
+        time.monotonic() + 10,
+    )
+    assert timed_out == {"status": "insufficient", "reason": "engine_timeout"}
+
+    def failed_start(*args, **kwargs):
+        raise RuntimeError("sanitized")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(opening_engine, "start_engine", failed_start)
+        failed = opening_engine.measure(
+            "engine",
+            {},
+            chess.Board(),
+            {"id": first_move, "uci": "d2d4"},
+            "g1f3",
+            time.monotonic() + 10,
+        )
+    assert failed == {"status": "insufficient", "reason": "engine_start_failed"}
+
+    import sqlite3
+
+    real_measure = opening_measure.measure
+
+    def concurrent_measure(*args):
+        measured = real_measure(*args)
+        other = sqlite3.connect(path)
+        other.execute("CREATE TABLE test_concurrent_marker (id INTEGER)")
+        other.commit()
+        other.close()
+        return measured
+
+    monkeypatch.setattr(opening_measure, "measure", concurrent_measure)
+    stale = tmp_path / "stale-result.json"
+    from chess_coach.tactical_course_budget import PreviewUnavailable
+
+    with pytest.raises(PreviewUnavailable):
+        opening_measure._prepare(db, 1, first_move, "g1f3", stale, "engine")
+    assert not stale.exists()
+
     with pytest.raises(ValueError, match="unavailable"):
         inspect_opening(db, 3, first_move, "learner")
     with pytest.raises(ValueError, match="unavailable"):
