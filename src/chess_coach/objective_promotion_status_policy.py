@@ -1,35 +1,12 @@
 """Identify source-scoped sessions with verification status."""
 
-from .objective_capture_contract import VERSIONS as CAPTURE_VERSIONS
-from .objective_contract import VERSION
-from .objective_defense_source import VERSION as DEFENSE_VERSION
-from .objective_fork_avoidance_contract import is_source as owned_fork_avoidance
-from .objective_fork_contract import is_source as owned_fork
-from .objective_fork_defense_contract import is_source as owned_fork_defense
+from .objective_binding_scope import owned_source
 from .objective_promotion_contract import OBJECTIVES as PROMOTION_OBJECTIVES
-from .objective_promotion_routing import owned_pawn, owned_pin_family
-from .objective_protection_contract import VERSION as PROTECTION_VERSION
-from .objective_short_source import VERSION as SHORT_VERSION
 from .related_capture_objective import is_source as capture_assessment
 
 
 def enabled(row):
     public = row["source_type"] == "public" and row["objective"] in PROMOTION_OBJECTIVES
-    return (public or capture_assessment(row) or _owned(row)) and row[
+    return (public or capture_assessment(row) or owned_source(row)) and row[
         "status"
     ] == "needs_verification"
-
-
-def _owned(row):
-    return (
-        owned_pawn(row)
-        or owned_fork(row)
-        or owned_fork_defense(row)
-        or owned_fork_avoidance(row)
-        or owned_pin_family(row)
-        or (
-            row["source_type"] == "own-game"
-            and row["source_version"]
-            in {VERSION, SHORT_VERSION, DEFENSE_VERSION, PROTECTION_VERSION, *CAPTURE_VERSIONS}
-        )
-    )

@@ -3,7 +3,6 @@
 import secrets
 
 from flask import (
-    abort,
     current_app,
     redirect,
     render_template,
@@ -12,18 +11,16 @@ from flask import (
     url_for,
 )
 
-from .objective_contract import VERSION as MATE_ONE_VERSION
 from .objective_pawn_continue import append_reply as append_pawn_reply
 from .objective_promotion_continue import append_reply as append_promotion_reply
 from .objective_short_history import append_reply
 from .unified_session_events import show
-from .unified_session_state import session_row
 from .unified_sessions import start
-from .unified_source_current import require_current
 from .web_board import board_rows
 from .web_db import database
 from .web_practice_history import selected_step, unified_history
 from .web_unified_actions import unified_practice
+from .web_unified_unavailable import unavailable
 
 
 @unified_practice.post("/unified/start")
@@ -54,7 +51,7 @@ def show_page(attempt):
         steps = append_promotion_reply(database(), attempt, current_app.config["SUBJECT"], steps)
         index = selected_step(steps, request.args.get("step"))
     except ValueError:
-        return _unavailable(attempt)
+        return unavailable(database(), current_app.config["SUBJECT"], attempt)
     session["unified_attempt"] = attempt
     return render_template(
         "unified_practice.html",
@@ -67,18 +64,3 @@ def show_page(attempt):
         event=secrets.token_urlsafe(24),
         notice=session.pop("unified_notice", None),
     )
-
-
-def _unavailable(attempt):
-    try:
-        row = session_row(database(), attempt, current_app.config["SUBJECT"])
-        if row["source_version"] == MATE_ONE_VERSION:
-            try:
-                require_current(database(), row)
-            except (ValueError, TypeError, KeyError):
-                return render_template(
-                    "error.html", message="This practice source is unavailable or has changed."
-                ), 410
-    except ValueError:
-        pass
-    abort(404)
