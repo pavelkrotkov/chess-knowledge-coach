@@ -3,7 +3,15 @@
 import json
 import sqlite3
 
-from .opening_reference_source import SOURCE_SHA256
+from .opening_reference_source import (
+    LICENSE,
+    LICENSE_URL,
+    SOURCE,
+    SOURCE_ARCHIVE,
+    SOURCE_MONTH,
+    SOURCE_SHA256,
+    TRANSFORM,
+)
 from .opening_snapshot import GRAPH_SHA256, VERSION
 
 
@@ -19,6 +27,12 @@ def store(path, records, coverage):
         """)
         metadata = {
             "source_sha256": SOURCE_SHA256,
+            "source_url": SOURCE,
+            "source_archive": SOURCE_ARCHIVE,
+            "source_month": SOURCE_MONTH,
+            "license": LICENSE,
+            "license_url": LICENSE_URL,
+            "transform": TRANSFORM,
             "opening_graph": GRAPH_SHA256,
             "opening_version": VERSION,
             "coverage": coverage,
@@ -26,7 +40,7 @@ def store(path, records, coverage):
         db.executemany(
             "INSERT INTO metadata VALUES (?,?)", [(k, json.dumps(v)) for k, v in metadata.items()]
         )
-        for _, number, context, site, positions in records:
+        for _, number, context, site, positions, _ in records:
             db.execute("INSERT INTO games VALUES (?,?,?)", (number, json.dumps(context), site))
             db.executemany(
                 "INSERT INTO positions VALUES (?,?,?,?)",

@@ -29,6 +29,9 @@ def build(root, subject):
     temporary = Path(name)
     try:
         _store(temporary, records, coverage)
+        if temporary.stat().st_size > 20_000_000:
+            raise ValueError("reference index exceeds size limit")
+        temporary.chmod(0o400)
         with temporary.open("rb") as file:
             os.fsync(file.fileno())
         os.link(temporary, output)

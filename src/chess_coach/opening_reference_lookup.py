@@ -4,7 +4,15 @@ import json
 import sqlite3
 from pathlib import Path
 
-from .opening_reference_source import LICENSE, LICENSE_URL, SOURCE, SOURCE_SHA256
+from .opening_reference_source import (
+    LICENSE,
+    LICENSE_URL,
+    SOURCE,
+    SOURCE_ARCHIVE,
+    SOURCE_MONTH,
+    SOURCE_SHA256,
+    TRANSFORM,
+)
 from .opening_reference_url import site as valid_site
 from .opening_snapshot import GRAPH_SHA256, VERSION
 
@@ -15,9 +23,25 @@ def lookup(path: Path, key):
         metadata = {k: json.loads(v) for k, v in db.execute("SELECT key,value FROM metadata")}
         if (
             metadata.get("source_sha256"),
+            metadata.get("source_url"),
+            metadata.get("source_archive"),
+            metadata.get("source_month"),
+            metadata.get("license"),
+            metadata.get("license_url"),
+            metadata.get("transform"),
             metadata.get("opening_graph"),
             metadata.get("opening_version"),
-        ) != (SOURCE_SHA256, GRAPH_SHA256, VERSION):
+        ) != (
+            SOURCE_SHA256,
+            SOURCE,
+            SOURCE_ARCHIVE,
+            SOURCE_MONTH,
+            LICENSE,
+            LICENSE_URL,
+            TRANSFORM,
+            GRAPH_SHA256,
+            VERSION,
+        ):
             return None
         rows = db.execute(
             """SELECT games.id,context,site,san FROM positions JOIN games ON games.id=positions.game_id

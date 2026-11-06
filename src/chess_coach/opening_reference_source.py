@@ -8,6 +8,9 @@ from pathlib import Path
 from .opening_reference_decode import decode as _decode
 
 SOURCE = "https://database.lichess.org/#broadcasts"
+SOURCE_ARCHIVE = "https://database.lichess.org/broadcast/lichess_db_broadcast_2026-09.pgn.zst"
+SOURCE_MONTH = "2026-09"
+TRANSFORM = "v1:32MB-decoded;5000-records;1000-games;40-opening-plies;512-game-plies"
 LICENSE = "CC BY-SA 4.0"
 LICENSE_URL = "https://creativecommons.org/licenses/by-sa/4.0/"
 SOURCE_NAME = "opening-reference-source-2026-09.pgn.zst"
