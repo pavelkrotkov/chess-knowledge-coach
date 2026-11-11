@@ -77,7 +77,10 @@ def test_multipage_bootstrap_ties_replay_and_counts(monkeypatch):
     entries = [
         (NOW - offset, game(f"game{offset:04}", NOW - offset)) for offset in (8, 8, 9, 10, 15)
     ]
-    entries[1] = (NOW - 8, game("game000a", NOW - 8))
+    entries[1] = (
+        NOW - 8,
+        game("game000a", NOW - 8).replace("e4 e5", 'e4 {[White "A"] [%clk 0:03:00]} e5'),
+    )
     db, service, client = db_and_client(monkeypatch, entries)
     results = advance(client, db, page_size=1, since=(NOW - 100) * 1000)
     assert results[-1]["bootstrap_complete"]
@@ -86,9 +89,59 @@ def test_multipage_bootstrap_ties_replay_and_counts(monkeypatch):
     assert sum(item["positions"] for item in results) == 10
     assert db.connection.execute("SELECT COUNT(*) FROM games").fetchone()[0] == 5
     assert len(service.calls) > 2
+    original_games = [
+        tuple(row) for row in db.connection.execute("SELECT * FROM games ORDER BY id")
+    ]
+    original_positions = [
+        tuple(row) for row in db.connection.execute("SELECT * FROM positions ORDER BY id")
+    ]
+    service.entries = [
+        (
+            when,
+            raw.replace('[White "A"]\n', '[White "a"]\n')
+            if index % 2
+            else raw.replace('[Black "B"]\n', '[Black "b"]\n'),
+        )
+        for index, (when, raw) in enumerate(service.entries)
+    ]
     replay = advance(client, db, page_size=3, cycles=2)
+    assert replay[-1]["history_cycles"] >= 2 and replay[-1]["recent_complete"]
     assert sum(item["games"] for item in replay) == 0
     assert sum(item["positions"] for item in replay) == 0
+    assert [
+        tuple(row) for row in db.connection.execute("SELECT * FROM games ORDER BY id")
+    ] == original_games
+    assert [
+        tuple(row) for row in db.connection.execute("SELECT * FROM positions ORDER BY id")
+    ] == original_positions
+
+    from chess_coach.ingest import ingest_pgn
+
+    changed_comment = service.entries[1][1].replace('[White "A"] [%clk', '[White "a"] [%clk')
+    with pytest.raises(ValueError, match="conflicting PGN"):
+        ingest_pgn(db, changed_comment, source="lichess", raw_pgn_override=changed_comment)
+    changed_move = service.entries[0][1].replace("e4 e5", "d4 d5")
+    with pytest.raises(ValueError, match="conflicting PGN"):
+        ingest_pgn(db, changed_move, source="lichess", raw_pgn_override=changed_move)
+
+    from chess_coach.ingest_lichess_replay import matches
+    from chess_coach.lichess_commit import apply_window
+    from chess_coach.lichess_state import account_key, read_state
+
+    original = service.entries[1][1]
+    assert not matches(original, original.replace('[White "a"]', '[White "A"]'), "local")
+    assert not matches('[White "Ålice"]\n\n1. e4', '[White "ålice"]\n\n1. e4', "lichess")
+    assert not matches('[White "A B"]\n\n1. e4', '[White "a b"]\n\n1. e4', "lichess")
+    state = read_state(db.connection, account_key("learner"))
+    with pytest.raises(ValueError, match="conflicting PGN"):
+        apply_window(db, state, "history_windows", [changed_move])
+    assert read_state(db.connection, account_key("learner")) == state
+    assert [
+        tuple(row) for row in db.connection.execute("SELECT * FROM games ORDER BY id")
+    ] == original_games
+    assert [
+        tuple(row) for row in db.connection.execute("SELECT * FROM positions ORDER BY id")
+    ] == original_positions
 
 
 def test_interrupted_export_resumes_and_cursors_remain_durable(monkeypatch, tmp_path):
