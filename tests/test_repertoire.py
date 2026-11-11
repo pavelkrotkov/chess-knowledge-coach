@@ -49,7 +49,7 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         ingest_pgn(db, text)
     source = tmp_path / "opening.tsv"
     source.write_text(
-        "eco\tname\tmoves\nD00\tTest\td4 d5 Nf3 Nf6\nA04\tAlternate\tNf3 Nf6 d4 d5\nD20\tOther\td4 Nf6 c4\nD30\tC line\td4 d5 Nf3 Nf6 c4\nA10\tG line\tNf3 Nf6 d4 d5 g3\nD31\tE line\td4 d5 Nf3 Nf6 e3\n"
+        "eco\tname\tmoves\nD00\tTest\td4 d5 Nf3 Nf6\nA04\tAlternate\tNf3 Nf6 d4 d5\nD20\tOther\td4 Nf6 c4\nD30\tC line\td4 d5 Nf3 Nf6 c4\nA10\tG line\tNf3 Nf6 d4 d5 g3\nD31\tE line\td4 d5 Nf3 Nf6 e3\nD32\tFollow A\td4 d5 Nf3 Nf6 c4 e6 Nc3\nD33\tFollow B\tNf3 Nf6 d4 d5 c4 e6 e3\n"
     )
     import_openings(db, source, version="test", source_url="cc0://test")
     config = PipelineConfig(
@@ -1428,9 +1428,112 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         ).status_code
         == 404
     )
+    # Two additional independently replayed games share a later position.
+    # The normal first repeated branch stays visible while the latest slot
+    # nominates the exact later occurrence and its qualified alternative.
+    for text in (
+        game("Learner", "Opponent A", "1. d4 d5 2. Nf3 Nf6 3. c4 e6 4. Nc3", second=2),
+        game("Learner", "Opponent B", "1. Nf3 Nf6 2. d4 d5 3. c4 e6 4. e3", second=1),
+    ):
+        ingest_pgn(db, text)
+        added = db.connection.execute("SELECT MAX(id) FROM games").fetchone()[0]
+        assert run_opening(db, added, game_input(db, added), config)["status"] == "complete"
+    latest_game = added
+    latest_position = db.connection.execute(
+        "SELECT id FROM positions WHERE game_id=? AND ply=7", (latest_game,)
+    ).fetchone()[0]
+    later = inspect_opening(db, latest_game, latest_position, "learner")
+    choice = later["catalog"]["items"][0]
+    _budget, binding, measured_config, owned = queue_binding.snapshot(
+        db, database_key, "learner", latest_game, latest_position, choice["uci"]
+    )
+    item = queue_binding.request(database_key, binding, measured_config)
+    roots = [chess.Move.from_uci(binding["played"]), chess.Move.from_uci(choice["uci"])]
+    raw = Engine().analyse(owned["board"], None, multipv=2, root_moves=roots)
+    lines, problem = opening_grade.grade(
+        owned["board"], owned["position"], [move.uci() for move in roots], raw, None
+    )
+    assert problem is None
+    payload = {
+        **artifact,
+        "source": binding,
+        "configuration": measured_config,
+        "result": {**result_body, "lines": lines},
+    }
+    result_path = queue_artifact.path(directory, item)
+    result_path.write_text(
+        json.dumps({"measurement": payload, "sha256": digest(canonical(payload))})
+    )
+    result_path.chmod(0o600)
+    slot_path = directory / "opening-comparison-slot.json"
+    slot_path.write_text(json.dumps(item))
+    slot_path.chmod(0o600)
+    before_explore = len(engine_calls)
+    latest_page = client.get(branch_url, base_url="https://coach.invalid", headers=headers)
+    assert latest_page.status_code == 200
+    assert b"Another verified repeated branch with a ready experiment" in latest_page.data
+    assert b"White to move: verified repeated position" in latest_page.data
+    exact = f"/repertoire/games/{latest_game}/openings/{latest_position}"
+    assert exact.encode() in latest_page.data
+    assert f"{exact}/experiment/{choice['uci']}".encode() in latest_page.data
+    assert f"{exact}/experiment/{choice['uci']}/course".encode() in latest_page.data
+    assert len(engine_calls) == before_explore
+    # Only the existing top-three shortlist is eligible, even when an
+    # unneeded second-ranked group is skipped in favor of the exact slot.
+    from chess_coach import opening_explore as explore_module
+    from chess_coach import opening_explore_enrich as enrich_module
+
+    original_ranked = explore_module.ranked
+    slot_before, result_before = slot_path.read_bytes(), result_path.read_bytes()
+    changes_before = db.connection.total_changes
+
+    def rank_slot(groups, placeholders):
+        ranked = original_ranked(groups)
+        target = next(
+            pair
+            for pair in ranked[1:]
+            if any(
+                item["game_id"] == latest_game and item["position_id"] == latest_position
+                for item in pair[1]
+            )
+        )
+        return [ranked[0], *([(None, [])] * placeholders), target]
+
+    with monkeypatch.context() as patch:
+        patch.setattr(explore_module, "ranked", lambda groups: rank_slot(groups, 1))
+        third = client.get(branch_url, base_url="https://coach.invalid", headers=headers)
+    assert b"Another verified repeated branch with a ready experiment" in third.data
+    with monkeypatch.context() as patch:
+        patch.setattr(explore_module, "ranked", lambda groups: rank_slot(groups, 2))
+        fourth = client.get(branch_url, base_url="https://coach.invalid", headers=headers)
+    assert b"Another verified repeated branch with a ready experiment" not in fourth.data
+    assert b"White to move: verified repeated position" in fourth.data
+
+    original_more = enrich_module.more
+
+    def exhaust_after_normal(db, learner, nominations, slot, budget, cache, report, groups, limit):
+        assert report["branch"]["alternatives"]
+        budget.expires = 0
+        original_more(db, learner, nominations, slot, budget, cache, report, groups, limit)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(enrich_module, "more", exhaust_after_normal)
+        exhausted = client.get(branch_url, base_url="https://coach.invalid", headers=headers)
+    assert b"White to move: verified repeated position" in exhausted.data
+    assert b"Another verified repeated branch with a ready experiment" not in exhausted.data
+    assert slot_path.read_bytes() == slot_before and result_path.read_bytes() == result_before
+    assert db.connection.total_changes == changes_before and len(engine_calls) == before_explore
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            queue_binding, "_config", lambda *args: ("engine", {"engine_path": "changed"})
+        )
+        stale_latest = client.get(branch_url, base_url="https://coach.invalid", headers=headers)
+    assert b"Another verified repeated branch with a ready experiment" not in stale_latest.data
+    assert b"White to move: verified repeated position" in stale_latest.data
+
     source.write_text("eco\tname\tmoves\nD00\tTest\td4 d5 Nf3 Nf6\nC20\tNew\te4 e5\n")
     import_openings(db, source, version="test", source_url="cc0://test")
-    assert repertoire_report(db, "learner")["stale"] == 4
+    assert repertoire_report(db, "learner")["stale"] == 6
     assert run_opening(db, 5, game_input(db, 5), config)["status"] == "complete"
     assert game_detail(db, "learner", 5)["opening"]["name"] == "New"
     assert (

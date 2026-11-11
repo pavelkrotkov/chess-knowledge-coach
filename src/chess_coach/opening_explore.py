@@ -31,10 +31,13 @@ def explore(db, learner):
         "deferred": 0,
         "partial": incomplete or scanned < len(rows),
         "branch": None,
+        "_nominations": nominations,
+        "_budget": budget,
+        "_cache": {},
         "_version": budget.version,
         "_deadline": budget.expires,
     }
-    cache = {}
+    cache = report["_cache"]
     for key, items in nominations[:GROUP_LIMIT]:
         if report["occurrences_checked"] >= CHECK_LIMIT or time.monotonic() >= budget.expires:
             report["partial"] = True
@@ -44,8 +47,6 @@ def explore(db, learner):
         if branch:
             report["branch"] = branch
             break
-    if len(nominations) > report["groups_checked"]:
-        report["partial"] = True
     if db.connection.execute("PRAGMA data_version").fetchone()[0] != budget.version:
         raise ValueError("opening sample changed")
     return report
