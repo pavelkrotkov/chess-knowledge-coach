@@ -53,6 +53,8 @@ def evidence(
     if type(scan_limit) is not int or not 1 <= scan_limit <= MAX_EVIDENCE:
         raise ValueError("invalid evidence scan limit")
     subject = normalize_identity(learner)
+    # The legacy failure-only request takes precedence over an explicit outcome.
+    selected_outcome = "failure" if failure_only else outcome
     rows = db.connection.execute(
         """SELECT e.*, p.game_id, p.ply, r.status AS mapping_status,
         r.producer AS mapping_producer, r.subject AS mapping_subject,
@@ -65,9 +67,8 @@ def evidence(
         LEFT JOIN evidence_review_events v ON v.id=(SELECT id FROM evidence_review_events
             WHERE evidence_id=e.id ORDER BY id DESC LIMIT 1)
         WHERE e.subject=? AND e.skill=? AND e.operation=? AND e.id < ?
-        AND (?=0 OR e.outcome='failure')
         AND (? IS NULL OR e.outcome=?) ORDER BY e.id DESC LIMIT ?""",
-        (subject, skill, operation, before, int(failure_only), outcome, outcome, scan_limit + 1),
+        (subject, skill, operation, before, selected_outcome, selected_outcome, scan_limit + 1),
     ).fetchall()
     return rows[:scan_limit], len(rows) > scan_limit
 

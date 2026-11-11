@@ -180,6 +180,19 @@ def test_bounded_worker_publishes_relative_prevention_and_browser_explanation(
     report = process_pins(db, config, "prevent")
     assert report["outcomes"]["failure"] == 1
     assert report["outcomes"]["success"] == 1
+
+    from chess_coach.recurrence_cursor import MAX_ID
+    from chess_coach.recurrence_sources import evidence as recurrence_evidence
+
+    def outcomes(**options):
+        rows, _ = recurrence_evidence(
+            db, "fixture_learner", "relative_pin", "prevent", MAX_ID, **options
+        )
+        return [row["outcome"] for row in rows]
+
+    assert outcomes(failure_only=True) == ["failure", "failure"]
+    assert outcomes(outcome="success") == ["success"]
+    assert outcomes(failure_only=True, outcome="success") == ["failure", "failure"]
     selected = pin_report(db, "fixture_learner")["source"]
     assert selected and selected["repeated_miss"] and selected["games"] == 2
     row = db.connection.execute(
