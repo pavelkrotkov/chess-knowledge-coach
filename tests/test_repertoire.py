@@ -554,6 +554,15 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     )
     assert partial_version_match
     partial_version = partial_version_match.group(1)
+    from chess_coach import opening_study_session
+
+    with monkeypatch.context() as patch:
+        patch.setenv("CHESS_DB", str(path))
+        patch.setattr(
+            opening_study_session, "_publish", lambda *_args, **_kwargs: pytest.fail("provider")
+        )
+        with pytest.raises(ValueError, match="complete opening preview"):
+            opening_study_session.publish_locked(tmp_path, 1, first_move, "g1f3", partial_version)
     assert (
         client.get(
             course_url + "?download=1", base_url="https://coach.invalid", headers=headers
@@ -1091,6 +1100,209 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     assert "CC BY-SA 4.0" in public_chapter.comment
     assert "https://database.lichess.org/" in public_chapter.comment
     assert len(engine_calls) == before_profile
+
+    # A reviewed complete preview freezes before private create; retries reconcile.
+    from chess_coach import study_anonymous, study_session
+    from chess_coach.study_remote import StudyError
+    from tests.test_private_study import Provider
+
+    provider = Provider()
+    monkeypatch.setenv("CHESS_DB", str(path))
+    monkeypatch.setenv("LICHESS_STUDY_TOKEN", "fixture-token")
+    monkeypatch.setattr(study_anonymous, "request", provider.anonymous)
+
+    class SyntheticStudyClient:
+        def __init__(self, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            pass
+
+        def request(self, method, url, **kwargs):
+            return provider.request(method, url, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(study_session.httpx, "Client", SyntheticStudyClient)
+        with pytest.raises(ValueError, match="version"):
+            opening_study_session.publish_locked(tmp_path, 1, first_move, "g1f3", partial_version)
+        assert provider.created == 0
+        import os
+
+        from chess_coach.opening_profile_index import INDEX_NAME
+
+        original_freeze = opening_study_session.freeze
+
+        def change_after_freeze(*args):
+            guard = original_freeze(*args)
+            index = planning_dir / INDEX_NAME
+            info = index.stat()
+            os.utime(index, ns=(info.st_atime_ns, info.st_mtime_ns + 1))
+            return guard
+
+        with monkeypatch.context() as changed:
+            changed.setattr(opening_study_session, "freeze", change_after_freeze)
+            with pytest.raises(ValueError, match="source changed"):
+                opening_study_session.publish_locked(
+                    tmp_path, 1, first_move, "g1f3", course_version
+                )
+        assert provider.created == 0
+        frozen = planning_dir / f"opening-study-{course_version}-course.json"
+
+        def change_config(*args):
+            guard = original_freeze(*args)
+            config_file = tmp_path / ".runtime" / "config.env"
+            config_file.write_text("synthetic setting")
+            config_file.chmod(0o600)
+            return guard
+
+        with monkeypatch.context() as changed:
+            changed.setattr(opening_study_session, "freeze", change_config)
+            with pytest.raises(ValueError, match="source changed"):
+                opening_study_session.publish_locked(
+                    tmp_path, 1, first_move, "g1f3", course_version
+                )
+        assert provider.created == 0
+
+        def change_frozen(*args):
+            guard = original_freeze(*args)
+            info = frozen.stat()
+            os.utime(frozen, ns=(info.st_atime_ns, info.st_mtime_ns + 1))
+            return guard
+
+        with monkeypatch.context() as changed:
+            changed.setattr(opening_study_session, "freeze", change_frozen)
+            with pytest.raises(ValueError, match="frozen opening course changed"):
+                opening_study_session.publish_locked(
+                    tmp_path, 1, first_move, "g1f3", course_version
+                )
+        assert provider.created == 0
+        with monkeypatch.context() as cooldown:
+            cooldown.setattr(study_session, "active_deadline", lambda *_args: "later")
+            with pytest.raises(StudyError, match="retry delay"):
+                opening_study_session.publish_locked(
+                    tmp_path, 1, first_move, "g1f3", course_version
+                )
+        assert provider.created == 0
+        with pytest.raises(StudyError, match="unknown"):
+            opening_study_session.publish_locked(tmp_path, 1, first_move, "g1f3", course_version)
+        intent = planning_dir / f"opening-study-{course_version}-intent.json"
+        assert frozen.is_file() and frozen.stat().st_mode & 0o777 == 0o400
+        assert intent.is_file() and provider.created == 1
+
+        # A changed source cannot admit the old preview, but its uncertain create
+        # can still be resolved without publishing any stale chapters.
+        from chess_coach.opening_study_reconcile import reconcile_locked
+        from chess_coach.tactical_study_intents import require_clear
+
+        db.connection.execute(
+            "UPDATE positions SET fen=? WHERE id=?", (original_fen + " ", first_move)
+        )
+        db.connection.commit()
+        with pytest.raises(ValueError):
+            opening_study_session.publish_locked(tmp_path, 1, first_move, "g1f3", course_version)
+        other = planning_dir / ("tactical-study-" + "a" * 64 + "-intent.json")
+        with pytest.raises(StudyError, match="unresolved"):
+            require_clear(planning_dir, other)
+        pending = intent.read_bytes()
+        original_request = provider.request
+
+        def read_only_request(method, url, **kwargs):
+            assert method == "GET" or (method == "POST" and url.endswith("/api/token/test"))
+            return original_request(method, url, **kwargs)
+
+        patch.setattr(provider, "request", read_only_request)
+        provider.scopes = "study:read"
+        with pytest.raises(StudyError, match="scopes"):
+            reconcile_locked(tmp_path, course_version)
+        assert intent.read_bytes() == pending
+        provider.scopes = "study:read,study:write"
+        with monkeypatch.context() as cooldown:
+            cooldown.setattr(study_session, "active_deadline", lambda *_args: "later")
+            with pytest.raises(StudyError, match="retry delay"):
+                reconcile_locked(tmp_path, course_version)
+        for count in (0, 2):
+            provider.inventory_count = count
+            with pytest.raises(StudyError, match="unresolved"):
+                reconcile_locked(tmp_path, course_version)
+            assert intent.read_bytes() == pending
+        provider.inventory_count = 1
+        provider.private = False
+        with pytest.raises(StudyError, match="privacy"):
+            reconcile_locked(tmp_path, course_version)
+        assert intent.read_bytes() == pending
+        provider.private = True
+        import sys
+
+        from chess_coach import ops_opening_study_publish
+
+        with monkeypatch.context() as cli:
+            cli.setattr(
+                sys,
+                "argv",
+                [
+                    "publish",
+                    "--project-root",
+                    str(tmp_path),
+                    "--preview-version",
+                    course_version,
+                    "--reconcile-only",
+                ],
+            )
+            ops_opening_study_publish.main()
+        assert json.loads(intent.read_text())["study"] == "abcd1234"
+        assert provider.created == 1 and not provider.uploaded
+        assert frozen.is_file() and require_clear(planning_dir, other)
+        patch.setattr(provider, "request", original_request)
+        db.connection.execute("UPDATE positions SET fen=? WHERE id=?", (original_fen, first_move))
+        db.connection.commit()
+        with pytest.raises(StudyError, match="unknown"):
+            opening_study_session.publish_locked(tmp_path, 1, first_move, "g1f3", course_version)
+        assert len(provider.uploaded) == 1
+        result = opening_study_session.publish_locked(
+            tmp_path, 1, first_move, "g1f3", course_version
+        )
+        assert result and provider.created == 1 and len(provider.uploaded) == 2
+        assert all(
+            item["mode"] == "conceal" and item["orientation"] == "white"
+            for item in provider.uploaded
+        )
+        assert all("White" in item["name"] for item in provider.uploaded)
+        assert provider.uploaded[0]["pgn"] == str(owned_chapter)
+        assert provider.uploaded[1]["pgn"] == str(public_chapter)
+        receipt = json.loads(intent.read_text())
+        assert all(
+            receipt[flag]
+            for flag in ("complete", "privacy_verified", "anonymous_verified", "ordered_verified")
+        )
+        assert receipt["chapters"] == ["done", "done"] and len(receipt["chapter_ids"]) == 2
+        assert receipt["empty_chapter"] == provider.empty_id
+        assert len(engine_calls) == before_profile
+
+        # Strict readback must retain both branches and the public attribution.
+        original_owned = provider.uploaded[0]["pgn"]
+        altered = chess.pgn.read_game(io.StringIO(original_owned))
+        altered.variations.pop()
+        provider.uploaded[0]["pgn"] = str(altered)
+        with pytest.raises(StudyError, match="different content"):
+            opening_study_session.publish_locked(tmp_path, 1, first_move, "g1f3", course_version)
+        provider.uploaded[0]["pgn"] = original_owned
+        original_public = provider.uploaded[1]["pgn"]
+        altered = chess.pgn.read_game(io.StringIO(original_public))
+        altered.comment = "Attribution removed."
+        provider.uploaded[1]["pgn"] = str(altered)
+        with pytest.raises(StudyError, match="different content"):
+            opening_study_session.publish_locked(tmp_path, 1, first_move, "g1f3", course_version)
+        provider.uploaded[1]["pgn"] = original_public
+        unrelated = {**provider.uploaded[1], "name": "Unrelated chapter"}
+        provider.uploaded.append(unrelated)
+        with pytest.raises(StudyError):
+            opening_study_session.publish_locked(tmp_path, 1, first_move, "g1f3", course_version)
+        assert provider.uploaded[-1] == unrelated and provider.empty_id == receipt["empty_chapter"]
+        assert provider.created == 1 and len(provider.uploaded) == 3
+        provider.uploaded.pop()
 
     matching = reference_matches(tmp_path, "learner", branch_first["catalog"]["parent"])
     assert len(matching["items"]) == 2

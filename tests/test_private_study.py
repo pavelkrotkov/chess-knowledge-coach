@@ -158,6 +158,13 @@ def test_private_publication_reconciles_timeouts_and_rejects_public_destination(
     }
     assert is_mate(mate)
     chapters[2] = chapter("Mate", "Checkmate in one move.", mate, {}, gamebook=True)
+    from chess_coach.opening_study_chapter import chapter as opening_chapter
+
+    black_chapter, _ = opening_chapter(chapters[2], "black", mate["prompt_fen"])
+    assert black_chapter["orientation"] == "black" and black_chapter["mode"] == "conceal"
+    assert "Black" in black_chapter["title"] and black_chapter["pgn"] == chapters[2]["pgn"]
+    with pytest.raises(ValueError, match="orientation"):
+        opening_chapter(chapters[2], "white", mate["prompt_fen"])
     capture_snapshot = {
         "prompt_fen": "4k3/8/8/8/8/8/4q3/4R1K1 w - - 0 1",
         "learner_color": "white",
@@ -488,6 +495,11 @@ def test_private_publication_reconciles_timeouts_and_rejects_public_destination(
     assert tactical_provider.created == 1 and not tactical_provider.uploaded
     with pytest.raises(StudyError, match="another tactical"):
         tactical_intent(planning, second_course["course_sha256"])
+    from chess_coach.tactical_study_intents import require_clear
+
+    opening_intent = planning / ("opening-study-" + "f" * 64 + "-intent.json")
+    with pytest.raises(StudyError, match="another tactical"):
+        require_clear(planning, opening_intent)
     # An unresolved tactical create also blocks a new legacy create.
     legacy_provider = Provider()
     legacy_remote = Remote("fixture-token", "learner", legacy_provider)
@@ -523,6 +535,14 @@ def test_private_publication_reconciles_timeouts_and_rejects_public_destination(
     assert tactical_provider.created == 1 and not tactical_provider.uploaded
     second_intent = tactical_intent(planning, second_course["course_sha256"])
     assert second_intent != first_intent and not second_intent.exists()
+    opening_intent.write_text(json.dumps({"study": None, "create_pending": True}))
+    opening_intent.chmod(0o600)
+    with pytest.raises(StudyError, match="another tactical or opening"):
+        tactical_intent(planning, second_course["course_sha256"])
+    with pytest.raises(StudyError, match="another tactical or opening"):
+        publish(legacy_remote, planning / "another-poc-intent.json", course)
+    assert legacy_provider.created == 0
+    opening_intent.write_text(json.dumps({"study": "abcd1234", "create_pending": True}))
     second_provider = Provider()
     second_provider.timeout_create = False
     observed = []
