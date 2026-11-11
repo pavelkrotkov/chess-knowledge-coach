@@ -5,8 +5,8 @@ from .capture_game_trend_relations import valid_relations
 from .short_mate_trend_validate import valid
 
 
-def validate(data, expected):
-    if not valid(data, expected, outcomes=OUTCOMES):
+def validate(data, expected, *, outcomes=OUTCOMES):
+    if not valid(data, expected, outcomes=outcomes):
         return False
     checked = data["checked"]
     if len({row[0] for row in checked}) != len(checked):
