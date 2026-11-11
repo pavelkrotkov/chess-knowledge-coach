@@ -931,6 +931,13 @@ def test_protection_lesson_offers_only_a_current_bounded_line_replay(tmp_path, m
     assert int(protection_key.split(":")[-1]) == checked[1]
     assert f"/evidence/{checked[1]}".encode() in protection_page.data
     assert b"This replay keeps your schedule and mastery record separate" in protection_page.data
+    with monkeypatch.context() as patch:
+        patch.setattr("chess_coach.plan_capture_action.recommendation", lambda *_args: None)
+        focus = client.get("/plan/next-focus", base_url="https://coach.invalid", headers=headers)
+    assert focus.status_code == 200
+    assert b"Next focus: protect a piece" in focus.data
+    assert b"2 independent candidate games" in focus.data
+    assert b"Replay the prepared defensive line" in focus.data
 
     class Budget:
         def check(self):
