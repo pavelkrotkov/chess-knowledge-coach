@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Next practice focus — Chess coach{% endblock %}
+{% block content %}
+<h2>Next non-mate practice focus</h2>
+<p><a href="{{ url_for('views.plan') }}">Back to the daily plan</a>. Scheduled reviews come first.</p>
+<p>This check compares recurring capture and protection markers in a bounded recent sample. Counts describe the independent candidate games in this check. Rotation provides practice variety. Game progress and mastery are measured separately.</p>
+{% if capture %}
+<p>Capture: {{ capture.source.games }} independent candidate games in {{ capture.scanned }} recent markers checked. The selected source is {{ "reviewed" if capture.source.reviewed else "provisional and unreviewed" }}. {% if capture.limited %}Additional markers were not inspected.{% endif %} Marker matching does not rerun the detector for every observation.</p>
+{% else %}<p>No recurring current capture source was returned within the check, or the capture check was unavailable. Other sources may exist.</p>{% endif %}
+{% if protection %}
+<p>Protection: {{ protection.groups }} recurring marker groups in {{ protection.scanned }} recent markers checked; {{ protection.checked }} prepared sources checked, {{ protection.unavailable }} unavailable or ineligible. {% if protection.source %}The selected group has {{ protection.source.games }} independent candidate games.{% endif %} {% if protection.limited %}Additional markers were not inspected.{% endif %} {% if protection.partial %}Some candidates were not checked for a replay.{% endif %}</p>
+{% else %}<p>The protection check was unavailable or exceeded its budget; other sources may exist.</p>{% endif %}
+{% if selected == "capture" %}
+<h3>Next focus: find captures</h3>
+<p>{% if protection and protection.source %}Capture has at least as many supporting games in this check; ties favor capture.{% else %}Capture is the available recurring source in this check.{% endif %} Before moving, look for a capture of the named hanging piece.</p>
+<p><a href="{{ url_for('views.evidence_detail', evidence_id=capture.source.evidence_id) }}">Review the current source evidence</a> · <a href="{{ url_for('related_capture.show', position=capture.source.position_id) }}">Open related capture practice</a>.</p>
+{% set focus_bound = true %}{% include "plan_capture_action.html" %}
+{% elif selected == "protection" %}
+<h3>Next focus: protect a piece</h3>
+<p>{% if capture and capture.history.status == "correct" and capture.history.assistance == "unassisted" %}Your latest current capture assessment was verified correct without assistance, so this available alternative adds variety.{% elif capture %}Protection has more supporting games in this check.{% else %}Protection is the available recurring source in this check.{% endif %} Before moving, identify the threatened piece and how your move protects it.</p>
+<p>The selected source is {{ protection.source.review_status }} and was checked for a prepared replay. You play {{ protection.source.color }}. <a href="{{ url_for('views.evidence_detail', evidence_id=protection.source.evidence_id) }}">Review the exact source evidence</a> · <a href="{{ url_for('protection_plan.show') }}">Open the protection lesson</a>.</p>
+<form method="post" action="{{ url_for('unified_practice.begin') }}">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<input type="hidden" name="source_type" value="own-game">
+<input type="hidden" name="version" value="{{ protection.source.version }}">
+<input type="hidden" name="key" value="{{ protection.source.key }}">
+<button>Replay the prepared defensive line</button>
+</form>
+<p>The prepared replay is provisional; other legal defenses may remain ungraded. It does not change scheduled reviews or mastery.</p>
+{% else %}<p>No current recurring practice action was available in the sources checked. This does not rule out other sources.</p>{% endif %}
+{% endblock %}

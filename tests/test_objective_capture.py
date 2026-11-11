@@ -374,8 +374,55 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
             )
             return client.get("/plan", base_url="https://coach.invalid", headers=headers)
 
+    def focus_page(protection_games=2, *, unavailable=False):
+        from chess_coach.tactical_course_budget import PreviewUnavailable
+
+        protection = {
+            "source": {
+                "games": protection_games,
+                "evidence_id": evidence,
+                "review_status": "provisional",
+                "color": "white",
+                "version": "fixture",
+                "key": "fixture",
+            },
+            "groups": 1,
+            "scanned": 2,
+            "checked": 1,
+            "unavailable": 0,
+            "limited": True,
+            "partial": True,
+        }
+
+        def checked_protection(*_args):
+            if unavailable:
+                raise PreviewUnavailable()
+            return protection
+
+        with monkeypatch.context() as patch:
+            patch.setattr(
+                "chess_coach.capture_plan.choose",
+                lambda *_, **_kwargs: {
+                    "source": {
+                        "position_id": 1,
+                        "evidence_id": evidence,
+                        "games": 2,
+                        "reviewed": False,
+                    },
+                    "limited": True,
+                    "scanned": 2,
+                },
+            )
+            patch.setattr("chess_coach.web_protection_plan.report", checked_protection)
+            return client.get("/plan/next-focus", base_url="https://coach.invalid", headers=headers)
+
     if mode == "correct":
         assert b"Continue your capture assessment" in daily_attempt().data
+        initial_focus = focus_page()
+        assert b"Next focus: find captures" in initial_focus.data
+        assert b"Some candidates were not checked" in initial_focus.data
+        assert b"Additional markers were not inspected" in initial_focus.data
+        assert b"Protection has more supporting games" in focus_page(3).data
     if mode == "assisted":
         for endpoint in ("/unified/hint", "/unified/reveal"):
             clue = client.post(
@@ -459,6 +506,19 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
     assert history["status"] == ("unavailable" if mode == "tampered" else expected)
     assert latest(db, LEARNER, 1, "different")["status"] == "none"
     assert history["hints"] == (2 if mode == "assisted" else 0)
+    focus = focus_page()
+    if mode == "correct":
+        assert b"Next focus: protect a piece" in focus.data
+        assert b"verified correct without assistance" in focus.data
+        assert b"Replay the prepared defensive line" in focus.data
+        fallback = focus_page(unavailable=True)
+        assert b"Next focus: find captures" in fallback.data
+        assert b"matching comparison context" in fallback.data
+    else:
+        assert b"Next focus: find captures" in focus.data
+        if mode == "incorrect":
+            assert b"missed the target" in focus.data
+            assert b"fresh verified assessment" in focus.data
     if mode == "correct":
         import chess_coach.capture_finder_match as match_policy
         import chess_coach.capture_finder_proof as finder_proof
@@ -1215,6 +1275,20 @@ def test_capture_plan_uses_independent_current_sources_and_is_lazy(tmp_path, mon
     assert b"Compare matched capture assessments" in daily.data
     with monkeypatch.context() as patch:
         patch.setattr(
+            "chess_coach.web_protection_plan.report",
+            lambda *_args: (_ for _ in ()).throw(ValueError("unavailable")),
+        )
+        first_focus = client.get(
+            "/plan/next-focus", base_url="https://coach.invalid", headers=headers
+        )
+    assert b"Next focus: find captures" in first_focus.data
+    assert (
+        f"/plan/captures/find-verified?position={repeated['source']['position_id']}".encode()
+        in first_focus.data
+    )
+    assert b"protection check was unavailable" in first_focus.data
+    with monkeypatch.context() as patch:
+        patch.setattr(
             "chess_coach.web_views.daily_plan",
             lambda *_args, **_kwargs: {
                 "items": [
@@ -1237,6 +1311,10 @@ def test_capture_plan_uses_independent_current_sources_and_is_lazy(tmp_path, mon
     assert scheduled.data.index(b"Fixture scheduled review") < scheduled.data.index(
         b"<h3>Capture practice</h3>"
     )
+    assert scheduled.data.index(b"Fixture scheduled review") < scheduled.data.index(
+        b"Check your next non-mate practice focus"
+    )
+    assert b"Check your next non-mate practice focus" not in continuation.data
     from chess_coach.tactical_course_budget import PreviewUnavailable
 
     with monkeypatch.context() as patch:

@@ -4,6 +4,7 @@ import sqlite3
 
 from flask import Blueprint, current_app, render_template
 
+from .plan_capture_action import recommendation
 from .protection_plan import report
 from .tactical_course_budget import PreviewUnavailable
 from .web_db import database
@@ -18,3 +19,30 @@ def show():
     except (sqlite3.Error, ValueError, TypeError, KeyError, IndexError, PreviewUnavailable):
         result = None
     return render_template("protection_plan.html", report=result)
+
+
+@protection_plan.get("/plan/next-focus")
+def next_focus():
+    db = database()
+    subject = current_app.config["SUBJECT"]
+    capture = recommendation(db, subject, current_app.config["CORPUS"])
+    try:
+        protection = report(db, subject)
+    except (sqlite3.Error, ValueError, TypeError, KeyError, IndexError, PreviewUnavailable):
+        protection = None
+    selected = _focus(capture, protection)
+    return render_template(
+        "next_focus.html", capture=capture, protection=protection, selected=selected
+    )
+
+
+def _focus(capture, protection):
+    source = protection and protection["source"]
+    if not source:
+        return "capture" if capture else None
+    if not capture:
+        return "protection"
+    history = capture["history"]
+    if history["status"] == "correct" and history.get("assistance") == "unassisted":
+        return "protection"
+    return "protection" if source["games"] > capture["source"]["games"] else "capture"
