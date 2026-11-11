@@ -87,3 +87,14 @@ def find_verified(evidence_id):
     except (ValueError, sqlite3.OperationalError):
         result = None
     return render_template("related_fork_assessment.html", result=result, evidence_id=evidence_id)
+
+
+@related_fork.get("/plan/forks/history")
+def history():
+    from .fork_history import report
+
+    try:
+        result = report(database(), current_app.config["SUBJECT"], current_app.config["CORPUS"])
+    except (sqlite3.Error, ValueError, TypeError, KeyError, IndexError):
+        return render_template("error.html", message="Fork history is unavailable or changed."), 400
+    return render_template("fork_history.html", report=result)
