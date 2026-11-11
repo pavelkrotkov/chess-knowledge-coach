@@ -120,8 +120,12 @@ def test_end_to_end_replay_review_and_version_changes(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "chess_coach.pipeline.fork_after_pipeline", lambda *_: optional_scans.append("fork")
     )
+    monkeypatch.setattr(
+        "chess_coach.pipeline.fork_miss_after_pipeline",
+        lambda *_: optional_scans.append("fork-miss"),
+    )
     result = process_pipeline(db, config, transport=network)
-    assert optional_scans == ["mate", "capture", "opening", "fork"]
+    assert optional_scans == ["mate", "capture", "opening", "fork", "fork-miss"]
     assert result["sync"]["games"] == 3 and len(result["games"]) == 3
     assert all(item["status"] == "partial" for item in result["games"])
     assert all(item["stages"][2]["detail"] == "opening_not_configured" for item in result["games"])

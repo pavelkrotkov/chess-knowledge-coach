@@ -6,6 +6,7 @@ from .capture_game_trend_current import current, frontier_matches
 from .fork_game_counts import add, empty, finish
 from .fork_game_trend_paths import binding, location
 from .fork_game_trend_validate import validate
+from .fork_miss_report import report as miss_report
 from .short_mate_trend_cohort import snapshot
 from .short_mate_trend_store import read
 
@@ -32,11 +33,13 @@ def report(db, learner, root):
             return None
         games = state["games"]
         newer, earlier = _sample(games[:20]), _sample(games[20:40])
+        comparison = miss_report(db, learner, root, state, coverage)
         if not current(db, state, candidates, (newer, earlier), before):
             return None
         return {
             "newer": newer,
             "earlier": earlier,
+            "comparison": comparison,
             "coverage": coverage,
             "selection_complete": state["selection_complete"],
             "duplicates": state["duplicates"],

@@ -368,7 +368,7 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
         headers={"Tailscale-User-Login": "fixture"},
     )
     assert fork_empty.status_code == 200 and b"0 turns had a proved fork" in fork_empty.data
-    assert b"Rate comparisons need" in fork_empty.data and b"0.0%" not in fork_empty.data
+    assert b"Rates require" in fork_empty.data and b"0.0%" not in fork_empty.data
     assert client.get("/game-samples/captures", base_url="https://coach.invalid").status_code == 403
     capture_page = client.get(
         "/game-samples/captures",
@@ -533,7 +533,7 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
     assert page.status_code == 200 and b"3 of 3 learner turns attempted" in page.data
     assert b"2 turns had a proved fork" in page.data and b"1 await comparison" in page.data
     assert b"1 turns had at least one unproved" in page.data
-    assert b"/decisions/" in page.data and b"Rate comparisons need" in page.data
+    assert b"/decisions/" in page.data and b"Rates require" in page.data
     assert b"fixture_a" not in page.data and b"fixture_b" not in page.data
     assert b"/game-samples/knight-forks" in plan.data
     assert fork_db.connection.execute("PRAGMA data_version").fetchone()[0] == version
@@ -589,3 +589,339 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
     stale = fork_client.get(fork_url, base_url="https://coach.invalid", headers=fork_headers)
     assert b"scan is pending or its sources changed" in stale.data
     fork_db.close()
+
+    # A full, independent synthetic sample with current same-source analysis.
+    import sys
+
+    from chess_coach import fork_miss_candidate, fork_miss_worker
+    from chess_coach.pipeline_config import PipelineConfig
+    from chess_coach.pipeline_inputs import engine_identity, game_input
+    from chess_coach.pipeline_work import run_analysis
+    from tests.test_fork_pipeline import Engine
+
+    matched_path = data / "matched-forks.sqlite"
+    matched = Database(matched_path)
+    matched.initialize()
+    fen = "r3k3/7p/8/1N6/8/8/6P1/7K w - - 0 1"
+    for index in range(41):
+        position = fen if index != 1 else "r3k3/7p/8/1N6/8/8/6P1/r6K w - - 0 1"
+        move = "Kh2" if index == 1 else ("Kg1" if index % 2 else "Nc7+")
+        game = pgn(index, move).replace(FEN, position)
+        ingest_pgn(matched, game.replace('[Result "1-0"]', '[TimeControl "600+0"]\n[Result "1-0"]'))
+    monkeypatch.setattr(chess.engine.SimpleEngine, "popen_uci", lambda _: Engine())
+    config = PipelineConfig(
+        learner="fixture_a", engine_path=sys.executable, nodes=100, deep_enabled=False
+    )
+    engine_hash = engine_identity(sys.executable)
+    for game_id in (1, *range(4, 42)):
+        assert (
+            run_analysis(matched, game_id, game_input(matched, game_id), config, engine_hash)[
+                "status"
+            ]
+            == "complete"
+        )
+    for _ in range(30):
+        run_forks(matched, "fixture_a", root)
+        current = fork_report(matched, "fixture_a", root)
+        if current and current["newer"]["unchecked"] == current["earlier"]["unchecked"] == 0:
+            break
+    else:
+        pytest.fail("readiness scan did not finish")
+    for _ in range(15):
+        fork_miss_worker.run(matched, "fixture_a", root)
+        current = fork_report(matched, "fixture_a", root)
+        if (
+            current
+            and current["comparison"]
+            and not (
+                current["comparison"]["newer"]["pending"]
+                + current["comparison"]["earlier"]["pending"]
+            )
+        ):
+            break
+    assert current["comparison"] and not current["comparison"]["qualified"]
+    assert current["comparison"]["earlier"]["unresolved"] == 1
+    assert (
+        run_analysis(matched, 3, game_input(matched, 3), config, engine_hash)["status"]
+        == "complete"
+    )
+    assert fork_report(matched, "fixture_a", root)["comparison"] is None
+    fork_miss_worker.run(matched, "fixture_a", root)
+    current = fork_report(matched, "fixture_a", root)
+    assert current["comparison"]["qualified"]
+    assert current["comparison"]["newer"]["miss"] == 10
+    assert current["comparison"]["earlier"]["miss"] == 9
+    assert current["newer"]["unknown"] == 0 and current["earlier"]["unknown"] == 1
+    assert (
+        current["comparison"]["newer"]["played"] == current["comparison"]["earlier"]["played"] == 10
+    )
+    app = create_app(
+        db_path=matched_path,
+        subject="fixture_a",
+        actor="operator",
+        corpus="test",
+        login="fixture",
+        origin="https://coach.invalid",
+        project_root=root,
+    )
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            fork_miss_candidate, "fork_proof", lambda *_args, **_kw: pytest.fail("browser proof")
+        )
+        patch.setattr(
+            chess.engine.SimpleEngine, "popen_uci", lambda *_args: pytest.fail("browser engine")
+        )
+        page = app.test_client().get(
+            "/game-samples/knight-forks",
+            base_url="https://coach.invalid",
+            headers={"Tailscale-User-Login": "fixture"},
+        )
+    assert b"50.0% across 20 resolved opportunities" in page.data
+    assert b"47.4% across 19 resolved opportunities" in page.data
+
+    # A different known time control blocks comparison even for an unsupported turn.
+    from chess_coach.fork_miss_time import _times
+
+    matched.connection.execute("UPDATE games SET time_control='0+3' WHERE id=2")
+    matched.connection.commit()
+    assert _times(matched, [{"id": 2}])["0+3"] == 1
+    assert not fork_report(matched, "fixture_a", root)["comparison"]["qualified"]
+    matched.connection.execute("UPDATE games SET time_control='0+0' WHERE id=2")
+    assert _times(matched, [{"id": 2}]) is None
+    matched.connection.execute("UPDATE games SET time_control='600+0' WHERE id=2")
+    matched.connection.commit()
+
+    # A proof timeout remains pending, then the worker resumes that exact turn.
+    from chess_coach.fork_game_proof import Deadline
+    from chess_coach.fork_miss_store import binding as miss_binding
+    from chess_coach.fork_miss_store import location as miss_location
+    from chess_coach.fork_miss_store import validate as miss_validate
+
+    miss_cache = miss_location(matched, root)
+    miss_key = miss_binding(matched, "fixture_a")
+    miss_state = read(miss_cache, miss_key, validator=miss_validate)
+    position = next(key for key, row in miss_state["rows"].items() if row[2] == "miss")
+    miss_state["rows"][position][2] = "retry"
+    write(miss_cache, miss_state)
+    with monkeypatch.context() as patch:
+
+        def expire(*args, **kwargs):
+            raise Deadline()
+
+        patch.setattr(fork_miss_candidate, "fork_proof", expire)
+        fork_miss_worker.run(matched, "fixture_a", root)
+    timed = fork_report(matched, "fixture_a", root)["comparison"]
+    assert not timed["qualified"] and timed["newer"]["pending"] + timed["earlier"]["pending"] == 1
+    fork_miss_worker.run(matched, "fixture_a", root)
+    assert fork_report(matched, "fixture_a", root)["comparison"]["qualified"]
+
+    # Late per-entry expiry retries, and a cycle timeout preserves prior entries.
+    import sqlite3
+    import time
+    from contextlib import contextmanager
+
+    from chess_coach import fork_miss_entry, fork_miss_progress
+    from chess_coach.opening_queue_budget import BrowserBudget
+    from chess_coach.tactical_course_budget import PreviewUnavailable
+
+    late = {"expired": False}
+    original_config = fork_miss_entry.configuration
+    original_check = fork_miss_entry._check
+
+    def late_config(*args):
+        result = original_config(*args)
+        late["expired"] = True
+        return result
+
+    def late_check(deadline):
+        if late["expired"]:
+            raise Deadline()
+        original_check(deadline)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(fork_miss_entry, "configuration", late_config)
+        patch.setattr(fork_miss_entry, "_check", late_check)
+        retry = fork_miss_entry._entry(
+            matched,
+            "fixture_a",
+            miss_state["rows"][position][0],
+            int(position),
+            "awaiting",
+            time.monotonic() + 10,
+        )
+        assert retry[2] == "retry"
+
+    readiness_cache = fork_game_trend_paths.location(matched, root)
+    readiness_key = fork_game_trend_paths.binding(matched, "fixture_a")
+    full = read(readiness_cache, readiness_key, validator=fork_validate)
+    entries = fork_miss_progress._entries(full)
+    first, second = (str(entry[1]) for entry in entries[:2])
+    paused = read(miss_cache, miss_key, validator=miss_validate)
+    first_result = paused["rows"][first][2]
+    paused["rows"][first][2] = paused["rows"][second][2] = "retry"
+    paused["rotation"] = 0
+    write(miss_cache, paused)
+    original_step = fork_miss_progress._step
+    steps = []
+
+    original_scope = BrowserBudget.scope
+
+    @contextmanager
+    def stop_second(self, *, snapshot):
+        with original_scope(self, snapshot=snapshot):
+            yield
+            steps.append(1)
+            if len(steps) == 2:
+                raise PreviewUnavailable("synthetic timeout after guarded work")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(BrowserBudget, "scope", stop_second)
+        fork_miss_worker.run(matched, "fixture_a", root)
+    resumed = read(miss_cache, miss_key, validator=miss_validate)
+    assert resumed["rows"][first][2] == first_result and resumed["rows"][second][2] == "retry"
+    assert resumed["rotation"] == 2
+    fork_miss_worker.run(matched, "fixture_a", root)
+    assert fork_report(matched, "fixture_a", root)["comparison"]["qualified"]
+
+    # Do not publish the completed prefix if another connection changes the data.
+    write(miss_cache, paused)
+    steps.clear()
+    other = sqlite3.connect(matched_path)
+
+    def change_second(*args):
+        steps.append(1)
+        if len(steps) == 2:
+            other.execute("UPDATE analysis_runs SET engine_version='temporary' WHERE game_id=3")
+            other.commit()
+            raise PreviewUnavailable("synthetic source change")
+        return original_step(*args)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(fork_miss_progress, "_step", change_second)
+        fork_miss_worker.run(matched, "fixture_a", root)
+    assert read(miss_cache, miss_key, validator=miss_validate) == paused
+    other.execute("UPDATE analysis_runs SET engine_version='synthetic' WHERE game_id=3")
+    other.commit()
+    other.close()
+    fork_miss_worker.run(matched, "fixture_a", root)
+    assert fork_report(matched, "fixture_a", root)["comparison"]["qualified"]
+
+    # Retain exact earlier opportunities when the readiness prefix grows.
+    readiness_cache = fork_game_trend_paths.location(matched, root)
+    readiness_key = fork_game_trend_paths.binding(matched, "fixture_a")
+    full = read(readiness_cache, readiness_key, validator=fork_validate)
+    partial = deepcopy(full)
+    game = next(game for game in partial["games"] if game["results"][0][1] == "awaiting")
+    game["results"].pop()
+    write(readiness_cache, partial)
+    fork_miss_worker.run(matched, "fixture_a", root)
+    retained = read(miss_cache, miss_key, validator=miss_validate)["rows"]
+    write(readiness_cache, full)
+    fork_miss_worker.run(matched, "fixture_a", root)
+    grown = read(miss_cache, miss_key, validator=miss_validate)["rows"]
+    assert all(grown[key] == row for key, row in retained.items())
+    assert fork_report(matched, "fixture_a", root)["comparison"]["qualified"]
+
+    # Unproved turns can change the order, so overlapping bounds withhold rates.
+    uncertain_state = deepcopy(full)
+    unknown = next(
+        row
+        for game in uncertain_state["games"]
+        for row in game["results"]
+        if row[1:] == ["unknown", "unsupported_position"]
+    )
+    unknown[1:] = ["unresolved", "unresolved_roots"]
+    write(readiness_cache, uncertain_state)
+    fork_miss_worker.run(matched, "fixture_a", root)
+    uncertain = fork_report(matched, "fixture_a", root)["comparison"]
+    assert uncertain["earlier"]["uncertain"] == 1 and not uncertain["qualified"]
+    hidden = app.test_client().get(
+        "/game-samples/knight-forks",
+        base_url="https://coach.invalid",
+        headers={"Tailscale-User-Login": "fixture"},
+    )
+    assert b"additional turns had unproved fork candidates" in hidden.data
+    assert b"verified miss rate was" not in hidden.data
+    from chess_coach.fork_miss_bounds import separated
+
+    assert separated(
+        [
+            {"opportunities": 5, "miss": 0, "uncertain": 1},
+            {"opportunities": 10, "miss": 10, "uncertain": 0},
+        ]
+    )
+
+    # Other unproved roots on an already proved turn are not extra opportunities.
+    proved_state = deepcopy(full)
+    played = next(
+        row for game in proved_state["games"] for row in game["results"] if row[1] == "played"
+    )
+    played[2] = "unresolved_roots"
+    write(readiness_cache, proved_state)
+    fork_miss_worker.run(matched, "fixture_a", root)
+    proved = fork_report(matched, "fixture_a", root)["comparison"]
+    assert proved["newer"]["uncertain"] == proved["earlier"]["uncertain"] == 0
+    assert proved["qualified"]
+    write(readiness_cache, full)
+    fork_miss_worker.run(matched, "fixture_a", root)
+    assert fork_report(matched, "fixture_a", root)["comparison"]["qualified"]
+
+    # A readiness proof timeout blocks rates, unlike known unsupported coverage.
+    timeout_state = deepcopy(full)
+    unknown = next(
+        row
+        for game in timeout_state["games"]
+        for row in game["results"]
+        if row[1:] == ["unknown", "unsupported_position"]
+    )
+    unknown[2] = "turn_deadline"
+    write(readiness_cache, timeout_state)
+    fork_miss_worker.run(matched, "fixture_a", root)
+    assert not fork_report(matched, "fixture_a", root)["comparison"]["qualified"]
+    write(readiness_cache, full)
+    fork_miss_worker.run(matched, "fixture_a", root)
+    assert fork_report(matched, "fixture_a", root)["comparison"]["qualified"]
+
+    # A valid checksum cannot turn an awaiting result into a played result.
+    stable = read(miss_cache, miss_key, validator=miss_validate)
+    forged = deepcopy(stable)
+    miss_position = next(key for key, row in forged["rows"].items() if row[2] == "miss")
+    forged["rows"][miss_position][2] = "played"
+    write(miss_cache, forged)
+    assert fork_report(matched, "fixture_a", root)["comparison"] is None
+    write(miss_cache, stable)
+
+    # Changed engine identity invalidates the source and blocks matched analysis.
+    matched.connection.execute(
+        "UPDATE analysis_runs SET engine_version='different synthetic engine' WHERE game_id=3"
+    )
+    matched.connection.commit()
+    assert fork_report(matched, "fixture_a", root)["comparison"] is None
+    fork_miss_worker.run(matched, "fixture_a", root)
+    assert not fork_report(matched, "fixture_a", root)["comparison"]["qualified"]
+    matched.connection.execute(
+        "UPDATE analysis_runs SET engine_version='synthetic' WHERE game_id=3"
+    )
+    matched.connection.commit()
+    fork_miss_worker.run(matched, "fixture_a", root)
+    assert fork_report(matched, "fixture_a", root)["comparison"]["qualified"]
+
+    # A geometric played knight root may be an unresolved equivalent.
+    board = chess.Board(fen)
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            fork_miss_candidate, "fork_proof", lambda *_args, **_kw: pytest.fail("unexpected proof")
+        )
+        assert (
+            fork_miss_candidate.candidate(
+                board, chess.Move.from_uci("b5c7"), chess.Move.from_uci("b5d6"), {}, lambda: None
+            )
+            == "unresolved"
+        )
+
+    matched.connection.execute(
+        "UPDATE decision_analysis_lines SET score_value=score_value+1 WHERE position_id=3 AND role='best'"
+    )
+    matched.connection.commit()
+    assert fork_report(matched, "fixture_a", root)["comparison"] is None
+    matched.close()
