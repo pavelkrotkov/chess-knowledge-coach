@@ -1478,18 +1478,25 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     assert f"{exact}/experiment/{choice['uci']}".encode() in latest_page.data
     assert f"{exact}/experiment/{choice['uci']}/course".encode() in latest_page.data
     assert len(engine_calls) == before_explore
-    # Only the existing top-three shortlist is eligible, even when an
-    # unneeded second-ranked group is skipped in favor of the exact slot.
+    # The normal shortlist stays ranked while an exact slot may nominate
+    # one distinct group from the remaining scanned metadata.
     from chess_coach import opening_explore as explore_module
     from chess_coach import opening_explore_enrich as enrich_module
 
     original_ranked = explore_module.ranked
     slot_before, result_before = slot_path.read_bytes(), result_path.read_bytes()
     changes_before = db.connection.total_changes
+    data_version = db.connection.execute("PRAGMA data_version").fetchone()[0]
 
-    def rank_slot(groups, placeholders):
+    # A deliberately mismatched metadata group fails three source checks;
+    # the ordinary group then uses three more before the slot ranks ninth.
+    original_more = enrich_module.more
+    counts = []
+
+    def ninth_rank(groups):
         ranked = original_ranked(groups)
-        target = next(
+        first = ranked[0]
+        selected = next(
             pair
             for pair in ranked[1:]
             if any(
@@ -1497,19 +1504,55 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
                 for item in pair[1]
             )
         )
-        return [ranked[0], *([(None, [])] * placeholders), target]
+        mismatched = ((first[0][0], first[0][1] + " invalid"), first[1])
+        return [mismatched, first, *([(None, [])] * 6), selected]
+
+    def inspect_more(db, learner, nominations, slot, budget, cache, report, groups, limit):
+        assert report["branch"]["alternatives"]
+        counts.append((report["groups_checked"], report["occurrences_checked"]))
+        original_more(db, learner, nominations, slot, budget, cache, report, groups, limit)
+        counts.append((report["groups_checked"], report["occurrences_checked"]))
 
     with monkeypatch.context() as patch:
-        patch.setattr(explore_module, "ranked", lambda groups: rank_slot(groups, 1))
-        third = client.get(branch_url, base_url="https://coach.invalid", headers=headers)
-    assert b"Another verified repeated branch with a ready experiment" in third.data
-    with monkeypatch.context() as patch:
-        patch.setattr(explore_module, "ranked", lambda groups: rank_slot(groups, 2))
-        fourth = client.get(branch_url, base_url="https://coach.invalid", headers=headers)
-    assert b"Another verified repeated branch with a ready experiment" not in fourth.data
-    assert b"White to move: verified repeated position" in fourth.data
+        patch.setattr(explore_module, "ranked", ninth_rank)
+        patch.setattr(enrich_module, "more", inspect_more)
+        ninth = client.get(branch_url, base_url="https://coach.invalid", headers=headers)
+    assert counts == [(2, 6), (3, 8)]
+    assert b"Another verified repeated branch with a ready experiment" in ninth.data
+    assert b"White to move: verified repeated position" in ninth.data
+    assert f"{exact}/experiment/{choice['uci']}/course".encode() in ninth.data
+    assert b"checked 8 occurrences across 3 groups" in ninth.data
 
-    original_more = enrich_module.more
+    # A slot for a group already checked cannot create a duplicate branch.
+    checked = {}
+
+    def record_rank(groups):
+        ranked = original_ranked(groups)
+        checked.update(ranked[0][1][0])
+        return ranked
+
+    def checked_slot(*_args):
+        return {
+            **item,
+            "source": {
+                **item["source"],
+                **{"game_id": checked["game_id"], "position_id": checked["position_id"]},
+            },
+        }
+
+    with monkeypatch.context() as patch:
+        patch.setattr(explore_module, "ranked", record_rank)
+        patch.setattr(enrich_module, "hint", checked_slot)
+        same_group = client.get(branch_url, base_url="https://coach.invalid", headers=headers)
+    assert b"Another verified repeated branch with a ready experiment" not in same_group.data
+    assert b"White to move: verified repeated position" in same_group.data
+
+    later_course_url = f"{exact}/experiment/{choice['uci']}/course"
+    assert client.get(later_course_url, base_url="https://coach.invalid").status_code == 403
+    later_course = client.get(later_course_url, base_url="https://coach.invalid", headers=headers)
+    assert later_course.status_code == 200
+    assert b"Your worked comparison" in later_course.data
+    assert len(engine_calls) == before_explore
 
     def exhaust_after_normal(db, learner, nominations, slot, budget, cache, report, groups, limit):
         assert report["branch"]["alternatives"]
@@ -1523,6 +1566,7 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     assert b"Another verified repeated branch with a ready experiment" not in exhausted.data
     assert slot_path.read_bytes() == slot_before and result_path.read_bytes() == result_before
     assert db.connection.total_changes == changes_before and len(engine_calls) == before_explore
+    assert db.connection.execute("PRAGMA data_version").fetchone()[0] == data_version
     with monkeypatch.context() as patch:
         patch.setattr(
             queue_binding, "_config", lambda *args: ("engine", {"engine_path": "changed"})
