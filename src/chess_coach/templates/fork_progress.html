@@ -3,7 +3,7 @@
 {% block content %}
 <h2>Matched knight-fork practice over time</h2>
 <p>These first encounters are pattern-cued puzzle assessments. Matching uses the recorded corpus and proof versions, knight and target roles, phase, and puzzle difficulty bands. Puzzle ratings describe the positions. Practice is separate from your games. This report uses the most recent 200 current-corpus fork sessions. First encounters are checked against all recorded practice.</p>
-{% if report.window_limited %}<p>Older fork sessions fall outside this report's 200-session window and remain in history.</p>{% endif %}
+{% if report.window_limited %}<p>Older fork sessions fall outside this report's 200-session window and remain available in prior assessments.</p>{% endif %}
 {% if report.status == "incomplete" %}
 <p>The bounded selection or source checks were incomplete, so a direction is unavailable.</p>
 {% elif report.status == "sparse" %}
@@ -20,5 +20,5 @@
 {% endfor %}
 {% if report.direction %}<p>The possible correct shares are {{ report.direction }} in the recent sample than in the earlier sample. These ranges describe the selected attempts and account for unresolved moves. They do not establish a cause or a change in game play.</p>{% else %}<p>A direction is withheld because the bounds overlap, fewer than five unassisted outcomes are available in a sample, or a selected attempt is still pending, in progress, or unavailable. These ranges describe the selected attempts and account for unresolved moves. They do not establish a cause or a change in game play.</p>{% endif %}
 {% endif %}
-<p><a href="{{ url_for('related_fork.find_next') }}">Find a comparable next fork assessment</a> · <a href="{{ url_for('related_fork.history') }}">Fork assessment history and older attempts</a> · <a href="{{ url_for('short_mate_game_views.fork_samples') }}">Knight forks in your games</a> · <a href="{{ url_for('views.plan') }}">Daily plan</a></p>
+<p><a href="{{ url_for('related_fork.find_next') }}">Find a comparable next fork assessment</a> · <a href="{{ url_for('related_fork.attempts') }}">Browse prior fork assessments</a> · <a href="{{ url_for('related_fork.history') }}">First-encounter fork history</a> · <a href="{{ url_for('short_mate_game_views.fork_samples') }}">Knight forks in your games</a> · <a href="{{ url_for('views.plan') }}">Daily plan</a></p>
 {% endblock %}

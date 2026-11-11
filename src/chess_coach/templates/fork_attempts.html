@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Prior fork assessments - Chess coach{% endblock %}
+{% block content %}
+<h2>Prior fork assessments</h2>
+<p>Browse recorded fork assessments, including repeated prompts and older corpus versions. Outcomes are checked against the recorded source and events when available. An unresolved move remains ungraded.</p>
+{% if report.incomplete %}<p>Some source checks were incomplete or changed. Their outcomes are unavailable. You can <a href="{{ url_for('related_fork.attempts', cursor=request.args.get('cursor')) }}">try this page again</a> or continue to earlier attempts.</p>{% endif %}
+<ul>{% for entry in report["items"] %}<li>{{ entry.started_at }} · corpus {{ entry.source_version }}{% if entry.older %} · older corpus version{% endif %} · {{ {"correct": "Verified correct", "incorrect": "Verified miss", "unresolved": "Unresolved", "pending": "Pending", "incomplete": "In progress", "stale": "Unavailable or stale", "unavailable": "Outcome unavailable"}.get(entry.status, "Outcome unavailable") }}{% if entry.hints is defined %} · {{ entry.hints }} hints or reveals{% endif %} · <a href="{{ url_for('unified_practice.show_page', attempt=entry.attempt_id) }}">Open assessment</a></li>{% else %}<li>No certified assessments in this page.</li>{% endfor %}</ul>
+{% if report.next_cursor %}<p><a href="{{ url_for('related_fork.attempts', cursor=report.next_cursor) }}">Earlier fork assessments</a></p>{% endif %}
+<p><a href="{{ url_for('related_fork.progress') }}">Matched knight-fork practice</a> · <a href="{{ url_for('related_fork.history') }}">First-encounter history</a> · <a href="{{ url_for('views.plan') }}">Daily plan</a></p>
+{% endblock %}
