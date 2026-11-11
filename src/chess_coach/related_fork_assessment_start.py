@@ -9,7 +9,7 @@ from .related_session_start import start_selected
 from .related_transfer_admission import admit
 
 
-def start(db, *, attempt_id, subject, evidence_id, corpus_version, reference, secret):
+def start(db, *, attempt_id, subject, evidence_id, corpus_version, reference, secret, prior=None):
     if not _valid_id(evidence_id):
         raise ValueError("fork assessment unavailable")
     if db.connection.in_transaction:
@@ -23,6 +23,9 @@ def start(db, *, attempt_id, subject, evidence_id, corpus_version, reference, se
     if source_type != "corpus":
         raise ValueError("fork assessment unavailable")
     binding["assessment"] = certificate(db, version, key)
+    from .fork_followup_admission import attach
+
+    attach(db, resolved, subject, corpus_version, prior)
 
     def resolve():
         if db.connection.execute("PRAGMA data_version").fetchone()[0] != data_version:
