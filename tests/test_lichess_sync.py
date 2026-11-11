@@ -143,6 +143,22 @@ def test_multipage_bootstrap_ties_replay_and_counts(monkeypatch):
         tuple(row) for row in db.connection.execute("SELECT * FROM positions ORDER BY id")
     ] == original_positions
 
+    malformed = game("malf0001", NOW - 1).replace('[White "A"]', '[White "A" ]')
+    ingest_pgn(db, malformed, source="lichess", raw_pgn_override=malformed)
+    row = db.connection.execute(
+        "SELECT white, pgn FROM games WHERE source_id = ?", ("malf0001",)
+    ).fetchone()
+    assert tuple(row) == ("?", malformed)
+    changed_tag = malformed.replace('[White "A" ]', '[White "a" ]')
+    with pytest.raises(ValueError, match="conflicting PGN"):
+        ingest_pgn(db, changed_tag, source="lichess", raw_pgn_override=changed_tag)
+    assert (
+        db.connection.execute(
+            "SELECT pgn FROM games WHERE source_id = ?", ("malf0001",)
+        ).fetchone()[0]
+        == malformed
+    )
+
 
 def test_interrupted_export_resumes_and_cursors_remain_durable(monkeypatch, tmp_path):
     entries = [

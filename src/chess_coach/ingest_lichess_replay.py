@@ -3,7 +3,7 @@
 import re
 
 HEADERS = re.compile(r"\A(?:[ \t]*\[[^\r\n]*\][ \t]*(?:\r?\n|$))+")
-PLAYER = re.compile(r'(?m)^([ \t]*\[(?:White|Black)[ \t]+")([A-Za-z0-9_-]+)("[ \t]*\][ \t]*\r?$)')
+PLAYER = re.compile(r'(?m)^([ \t]*\[(?:White|Black)[ \t]+")([A-Za-z0-9_-]+)("\][ \t]*\r?$)')
 
 
 def matches(stored: str, raw: str, source: str) -> bool:
