@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Pin-defense practice — Chess coach{% endblock %}
+{% block content %}
+<h2>Pin-defense practice</h2>
+<p><a href="{{ url_for('views.plan') }}">Back to the daily plan</a></p>
+{% if report %}
+<p>Scanned {{ report.scanned }} recent markers and checked {{ report.checked }} sources, at most 20. {% if report.limited %}Other sources remain outside this bounded check.{% endif %}</p>
+{% if report.source %}{% set source = report.source %}{% set pin = source.named %}
+<p>{% if source.repeated_miss %}A matching missed defense was verified in {{ source.games }} independent games.{% else %}Diagnostic rehearsal: a matching threat was verified in {{ source.games }} independent games; this source records a successful defense.{% endif %}</p>
+<p>{% if pin.origin == "existing" %}The opposing piece on {{ pin.attacker }} creates a {{ pin.kind | replace("_", " ") }}: it pins your piece on {{ pin.pinned }} against the piece on {{ pin.rear }}. Find a legal capture of the pinner that proves material gain or immediate checkmate.{% else %}An opposing piece on {{ pin.attacker }} can create a {{ pin.kind | replace("_", " ") }} involving your pieces on {{ pin.pinned }} and {{ pin.rear }}. Find a move that prevents that supported immediate pin consequence.{% endif %}</p>
+<p>You play {{ source.color }}. <a href="{{ url_for('views.evidence_detail', evidence_id=source.evidence_id) }}">Inspect the exact source evidence</a>.</p>
+<form method="post" action="{{ url_for('unified_practice.begin') }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="source_type" value="own-game"><input type="hidden" name="version" value="{{ source.version }}"><input type="hidden" name="key" value="{{ source.key }}"><button>Practice this pin defense</button></form>
+<p>Supported alternatives are verified; unsupported moves remain ungraded. The check is bounded and does not establish overall safety or mastery.</p>
+{% else %}<p>No matching exercise was verified in at least two independent games within this check. Evidence may be sparse, stale, unavailable, or outside the scan.</p>{% endif %}
+{% else %}<p>Pin-defense source checks are temporarily unavailable or exceeded their budget. Your daily plan remains available.</p>{% endif %}
+{% endblock %}

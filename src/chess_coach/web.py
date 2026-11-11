@@ -17,6 +17,7 @@ from .web_mate import mate_views
 from .web_opening_experiment import opening_experiments
 from .web_opening_profile import opening_profiles
 from .web_pawn import pawn_views
+from .web_pin_plan import pin_plan
 from .web_practice import practice
 from .web_practice_tools import practice_tools
 from .web_probes import probe_views
@@ -92,6 +93,7 @@ def create_app(
     app.register_blueprint(repertoire_views)
     app.register_blueprint(opening_profiles)
     app.register_blueprint(protection_plan)
+    app.register_blueprint(pin_plan)
     app.register_blueprint(opening_experiments)
     app.register_blueprint(recurrence_views)
     app.register_blueprint(short_mate_game_views)
