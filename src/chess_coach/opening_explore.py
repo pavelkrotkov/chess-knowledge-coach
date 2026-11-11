@@ -3,6 +3,8 @@
 import time
 
 from .opening_explore_group import group
+from .opening_explore_latest import hint
+from .opening_explore_latest_extra import more
 from .opening_explore_nomination import candidates, ranked
 from .opening_explore_recent import recent
 from .opening_queue_budget import BrowserBudget
@@ -12,9 +14,10 @@ CHECK_LIMIT = 8
 TOTAL_SECONDS = 25
 
 
-def explore(db, learner):
+def explore(db, learner, root=None):
     budget = BrowserBudget(db)
     budget.expires = min(budget.expires, time.monotonic() + TOTAL_SECONDS)
+    latest = hint(db, root, learner)
     with budget.scope(snapshot=False):
         rows, coverage = recent(db, learner)
     groups, scanned, incomplete = candidates(db, rows, budget)
@@ -31,6 +34,8 @@ def explore(db, learner):
         "deferred": 0,
         "partial": incomplete or scanned < len(rows),
         "branch": None,
+        "_latest_slot": latest,
+        "_latest_candidate": None,
         "_version": budget.version,
         "_deadline": budget.expires,
     }
@@ -44,6 +49,7 @@ def explore(db, learner):
         if branch:
             report["branch"] = branch
             break
+    more(db, learner, nominations, latest, budget, cache, report, GROUP_LIMIT, CHECK_LIMIT)
     if len(nominations) > report["groups_checked"]:
         report["partial"] = True
     if db.connection.execute("PRAGMA data_version").fetchone()[0] != budget.version:

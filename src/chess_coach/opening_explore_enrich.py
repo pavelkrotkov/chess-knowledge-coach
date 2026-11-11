@@ -3,6 +3,7 @@
 import time
 
 from .opening_explore_alternatives import describe
+from .opening_explore_latest_score import attach
 from .opening_queue_view import statuses
 from .opening_reference_read import matches
 from .tactical_course_deadline import PreviewDeadline
@@ -26,5 +27,6 @@ def enrich(db, root, learner, report):
         states = {}
         report["partial"] = True
     branch["alternatives"] = describe(exemplar, states)
+    attach(db, root, learner, report)
     if db.connection.execute("PRAGMA data_version").fetchone()[0] != report["_version"]:
         raise ValueError("opening sample changed")
