@@ -14,6 +14,8 @@ from .related_protection_mechanism import mechanism
 
 
 def source_for_evidence(db, subject, evidence_id):
+    if type(evidence_id) is not int or not 0 < evidence_id < 2**63:
+        raise ValueError("protection source unavailable")
     before, review = current(
         db, evidence_id, subject, kind="material_protection", operation="prevent"
     )

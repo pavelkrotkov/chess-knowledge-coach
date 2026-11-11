@@ -6,7 +6,7 @@ from .related_protection_screen import plausible
 
 
 def matches(item, source, baseline, budget, prompt, key, lines):
-    matches = []
+    found = []
     for index, line in enumerate(lines):
         if not plausible(prompt, line.split(), source):
             continue
@@ -19,5 +19,5 @@ def matches(item, source, baseline, budget, prompt, key, lines):
             match = _scored(item, source, features, prompt, key, baseline)
             match["objective_target"] = features["target_square"]
             match["protection_mechanism"] = features["mechanism"]
-            matches.append((match, index))
-    return matches
+            found.append((match, index))
+    return found

@@ -133,6 +133,14 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
         )
         client = app.test_client()
         headers = {"Tailscale-User-Login": "fixture"}
+        assert (
+            client.get(
+                f"/evidence/{2**63}/related-protections",
+                base_url="https://coach.invalid",
+                headers=headers,
+            ).status_code
+            == 400
+        )
         source = client.get(
             f"/evidence/{evidence}", base_url="https://coach.invalid", headers=headers
         )
