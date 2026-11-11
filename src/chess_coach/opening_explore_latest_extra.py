@@ -11,5 +11,5 @@ def more(db, learner, nominations, slot, budget, cache, report, groups, limit):
     if report["occurrences_checked"] + 2 > limit or time.monotonic() >= budget.expires:
         report["partial"] = True
         return
-    remaining = nominations[report["groups_checked"] :]
+    remaining = nominations[report["groups_checked"] : groups]
     report["_latest_candidate"] = target(db, learner, remaining, slot, budget, cache, report, limit)

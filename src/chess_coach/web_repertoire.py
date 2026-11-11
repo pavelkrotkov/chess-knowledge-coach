@@ -29,9 +29,7 @@ def repertoire():
 @repertoire_views.get("/repertoire/explore")
 def opening_explore():
     try:
-        report = explore(
-            database(), current_app.config["SUBJECT"], current_app.config["PROJECT_ROOT"]
-        )
+        report = explore(database(), current_app.config["SUBJECT"])
         enrich(
             database(), current_app.config["PROJECT_ROOT"], current_app.config["SUBJECT"], report
         )

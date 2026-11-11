@@ -1478,26 +1478,49 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     assert f"{exact}/experiment/{choice['uci']}".encode() in latest_page.data
     assert f"{exact}/experiment/{choice['uci']}/course".encode() in latest_page.data
     assert len(engine_calls) == before_explore
-    # Metadata rank does not consume a group check: the exact slot may rank
-    # below the ordinary shortlist while verification remains bounded.
+    # Only the existing top-three shortlist is eligible, even when an
+    # unneeded second-ranked group is skipped in favor of the exact slot.
     from chess_coach import opening_explore as explore_module
+    from chess_coach import opening_explore_enrich as enrich_module
 
     original_ranked = explore_module.ranked
     slot_before, result_before = slot_path.read_bytes(), result_path.read_bytes()
     changes_before = db.connection.total_changes
-    with monkeypatch.context() as patch:
-        patch.setattr(
-            explore_module,
-            "ranked",
-            lambda groups: [
-                *original_ranked(groups)[:1],
-                (None, []),
-                (None, []),
-                *original_ranked(groups)[1:],
-            ],
+
+    def rank_slot(groups, placeholders):
+        ranked = original_ranked(groups)
+        target = next(
+            pair
+            for pair in ranked[1:]
+            if any(
+                item["game_id"] == latest_game and item["position_id"] == latest_position
+                for item in pair[1]
+            )
         )
-        lower_ranked = client.get(branch_url, base_url="https://coach.invalid", headers=headers)
-    assert b"Another verified repeated branch with a ready experiment" in lower_ranked.data
+        return [ranked[0], *([(None, [])] * placeholders), target]
+
+    with monkeypatch.context() as patch:
+        patch.setattr(explore_module, "ranked", lambda groups: rank_slot(groups, 1))
+        third = client.get(branch_url, base_url="https://coach.invalid", headers=headers)
+    assert b"Another verified repeated branch with a ready experiment" in third.data
+    with monkeypatch.context() as patch:
+        patch.setattr(explore_module, "ranked", lambda groups: rank_slot(groups, 2))
+        fourth = client.get(branch_url, base_url="https://coach.invalid", headers=headers)
+    assert b"Another verified repeated branch with a ready experiment" not in fourth.data
+    assert b"White to move: verified repeated position" in fourth.data
+
+    original_more = enrich_module.more
+
+    def exhaust_after_normal(db, learner, nominations, slot, budget, cache, report, groups, limit):
+        assert report["branch"]["alternatives"]
+        budget.expires = 0
+        original_more(db, learner, nominations, slot, budget, cache, report, groups, limit)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(enrich_module, "more", exhaust_after_normal)
+        exhausted = client.get(branch_url, base_url="https://coach.invalid", headers=headers)
+    assert b"White to move: verified repeated position" in exhausted.data
+    assert b"Another verified repeated branch with a ready experiment" not in exhausted.data
     assert slot_path.read_bytes() == slot_before and result_path.read_bytes() == result_before
     assert db.connection.total_changes == changes_before and len(engine_calls) == before_explore
     with monkeypatch.context() as patch:

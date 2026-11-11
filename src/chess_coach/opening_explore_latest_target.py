@@ -6,9 +6,9 @@ from .opening_explore_group import group
 def target(db, learner, nominations, slot, budget, cache, report, limit):
     source = slot["source"]
     for key, items in nominations:
-        target = next((item for item in items if _matches(item, source)), None)
-        if target is not None:
-            return _verify(db, learner, key, items, target, budget, cache, report, limit)
+        occurrence = next((item for item in items if _matches(item, source)), None)
+        if occurrence is not None:
+            return _verify(db, learner, key, items, occurrence, budget, cache, report, limit)
     return None
 
 
