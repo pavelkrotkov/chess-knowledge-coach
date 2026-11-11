@@ -135,6 +135,24 @@ def test_unfamiliar_fork_browser_and_worker(tmp_path, monkeypatch, mode):
     db.connection.execute("UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus,))
     db.connection.commit()
     assert certificate(db, "fork-fixture", "synthetic-key")["proof"]["move"] == "b5c7"
+    if mode == "correct":
+        from chess_coach import fork_followup_finder
+
+        checked = []
+
+        def later_source(_db, _subject, evidence_id, *_args, **_kwargs):
+            checked.append(evidence_id)
+            return {"items": []} if evidence_id == 4 else None
+
+        with monkeypatch.context() as patch:
+            patch.setattr(
+                fork_followup_finder,
+                "evidence",
+                lambda *_a, **_k: ([{"id": n} for n in range(1, 5)], False),
+            )
+            patch.setattr(fork_followup_finder, "find", later_source)
+            assert fork_followup_finder.first(db, SUBJECT, "fork-fixture", b"secret")[0] == 4
+        assert checked == [1, 2, 3, 4]
     db.close()
     app = create_app(
         db_path=path,
@@ -366,6 +384,52 @@ def test_unfamiliar_fork_browser_and_worker(tmp_path, monkeypatch, mode):
             "prior": attempt,
         }
         from chess_coach import fork_followup_admission
+
+        count = db.connection.execute("SELECT COUNT(*) FROM unified_sessions").fetchone()[0]
+        stripped = {key: value for key, value in form.items() if key != "prior"}
+        response = client.post(
+            f"/evidence/{evidence}/related-forks/start",
+            base_url=base,
+            headers=headers | {"Origin": base},
+            data=stripped,
+        )
+        assert response.status_code == 400
+        # Even a different eligible prior with the same cohort cannot reuse this reference.
+        expected_context = prior(db, SUBJECT, "fork-fixture", attempt)[1]
+        with monkeypatch.context() as patch:
+            patch.setattr(
+                fork_followup_admission, "previous", lambda *_args: (evidence, expected_context)
+            )
+            swapped = client.post(
+                f"/evidence/{evidence}/related-forks/start",
+                base_url=base,
+                headers=headers | {"Origin": base},
+                data={**form, "prior": "another-prior"},
+            )
+        assert swapped.status_code == 400
+        with monkeypatch.context() as patch:
+            altered_cohort = {
+                **expected_context,
+                "rating_band": expected_context["rating_band"] + 1,
+            }
+            patch.setattr(
+                fork_followup_admission, "previous", lambda *_args: (evidence, altered_cohort)
+            )
+            wrong_cohort = client.post(
+                f"/evidence/{evidence}/related-forks/start",
+                base_url=base,
+                headers=headers | {"Origin": base},
+                data=form,
+            )
+        assert wrong_cohort.status_code == 400
+        ordinary = client.post(
+            f"/evidence/{evidence}/related-forks/start",
+            base_url=base,
+            headers=headers | {"Origin": base},
+            data={key: value for key, value in stripped.items() if key != "assessment"},
+        )
+        assert ordinary.status_code == 400
+        assert db.connection.execute("SELECT COUNT(*) FROM unified_sessions").fetchone()[0] == count
 
         original_context = fork_followup_admission.context
 

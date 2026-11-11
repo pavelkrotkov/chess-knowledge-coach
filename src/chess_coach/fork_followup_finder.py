@@ -3,6 +3,7 @@
 import time
 
 from .fork_followup_prior import prior
+from .fork_followup_reference import seal_result
 from .objective_fork_contract import GOAL
 from .opening_queue_budget import BrowserBudget
 from .recurrence_cursor import MAX_ID
@@ -14,6 +15,7 @@ def followup(db, subject, corpus, secret, attempt):
     version = db.connection.execute("PRAGMA data_version").fetchone()[0]
     evidence_id, expected = prior(db, subject, corpus, attempt)
     found = find(db, subject, evidence_id, corpus, secret, expected=expected)
+    found = seal_result(secret, found, attempt, expected)
     if db.connection.execute("PRAGMA data_version").fetchone()[0] != version:
         raise ValueError("fork comparison changed")
     return evidence_id, found
@@ -43,7 +45,7 @@ def first(db, subject, corpus, secret):
     started = time.monotonic()
     with BrowserBudget(db).scope(snapshot=False):
         sources, _ = evidence(db, subject, "fork", "execute", MAX_ID, failure_only=True, limit=20)
-    for source in sources[:3]:
+    for source in sources:
         if time.monotonic() - started >= SECONDS:
             break
         try:

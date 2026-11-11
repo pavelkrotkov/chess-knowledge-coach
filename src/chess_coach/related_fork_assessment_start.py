@@ -18,14 +18,20 @@ def start(db, *, attempt_id, subject, evidence_id, corpus_version, reference, se
     selected = selection(db, subject, evidence_id, corpus_version)
     if selected is None or selected[0]["outcome"] != "failure" or secret is None:
         raise ValueError("fork assessment unavailable")
-    resolved = admit(selected, _reference(selected, reference, secret), VERSION, "fork")
+    from .fork_followup_admission import attach
+    from .fork_followup_admission import reference as matched_reference
+
+    selected_reference, expected = (
+        (_reference(selected, reference, secret), None)
+        if prior is None
+        else matched_reference(db, selected, subject, corpus_version, secret, reference, prior)
+    )
+    resolved = admit(selected, selected_reference, VERSION, "fork")
     source_type, version, key, binding, _ = resolved
     if source_type != "corpus":
         raise ValueError("fork assessment unavailable")
     binding["assessment"] = certificate(db, version, key)
-    from .fork_followup_admission import attach
-
-    attach(db, resolved, subject, corpus_version, prior)
+    attach(db, resolved, expected)
 
     def resolve():
         if db.connection.execute("PRAGMA data_version").fetchone()[0] != data_version:
