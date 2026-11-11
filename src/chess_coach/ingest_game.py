@@ -7,6 +7,7 @@ import sqlite3
 import chess.pgn
 
 from .ingest_identity import source_id
+from .ingest_lichess_replay import matches
 from .ingest_moves import store_positions
 from .style_time_projection import update_projection
 from .style_time_schema import ingest_projection_available
@@ -29,7 +30,7 @@ def insert_game(
         "SELECT id, pgn FROM games WHERE source = ? AND source_id = ?", (source, identity)
     ).fetchone()
     if existing is not None:
-        if existing["pgn"] != raw:
+        if not matches(existing["pgn"], raw, source):
             raise ValueError("conflicting PGN for an existing game ID")
         return {"games": 0, "positions": 0}
     cursor = connection.execute(
