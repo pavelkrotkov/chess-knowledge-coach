@@ -374,7 +374,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
             )
             return client.get("/plan", base_url="https://coach.invalid", headers=headers)
 
-    def focus_page(protection_games=2, *, unavailable=False):
+    def focus_page(protection_games=2, *, unavailable=False, capture_unavailable=False):
         from chess_coach.tactical_course_budget import PreviewUnavailable
 
         protection = {
@@ -408,12 +408,21 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
                         "evidence_id": evidence,
                         "games": 2,
                         "reviewed": False,
+                        "version": "material-own-v2",
+                        "key": f"1:material_capture:{evidence}",
                     },
                     "limited": True,
                     "scanned": 2,
                 },
             )
             patch.setattr("chess_coach.web_protection_plan.report", checked_protection)
+
+            def checked_capture(*_args, **_kwargs):
+                if capture_unavailable:
+                    raise ValueError("replay unavailable")
+                return {}
+
+            patch.setattr("chess_coach.plan_capture_action.resolve_source", checked_capture)
             return client.get("/plan/next-focus", base_url="https://coach.invalid", headers=headers)
 
     if mode == "correct":
@@ -423,6 +432,9 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         assert b"Some candidates were not checked" in initial_focus.data
         assert b"Additional markers were not inspected" in initial_focus.data
         assert b"Protection has more supporting games" in focus_page(3).data
+        unavailable_capture = focus_page(capture_unavailable=True)
+        assert b"Next focus: protect a piece" in unavailable_capture.data
+        assert b"capture check was unavailable" in unavailable_capture.data
     if mode == "assisted":
         for endpoint in ("/unified/hint", "/unified/reveal"):
             clue = client.post(
@@ -1287,6 +1299,38 @@ def test_capture_plan_uses_independent_current_sources_and_is_lazy(tmp_path, mon
         in first_focus.data
     )
     assert b"protection check was unavailable" in first_focus.data
+    assert b"Replay the prepared capture from this game" in first_focus.data
+    assert b"separate from a verified unfamiliar assessment" in first_focus.data
+    from tests.test_unified_sessions import token
+
+    replay_data = {
+        "csrf": token(first_focus, "csrf"),
+        "source_type": token(first_focus, "source_type"),
+        "version": token(first_focus, "version"),
+        "key": token(first_focus, "key"),
+    }
+    assert replay_data["key"] == repeated["source"]["key"]
+    assert replay_data["version"] == repeated["source"]["version"]
+    replay = client.post(
+        "/unified/start",
+        base_url="https://coach.invalid",
+        headers=headers | {"Origin": "https://coach.invalid"},
+        data=replay_data,
+    )
+    assert replay.status_code == 303
+    replay_page = client.get(
+        replay.headers["Location"], base_url="https://coach.invalid", headers=headers
+    )
+    assert b"one supplied continuation" in replay_page.data
+    replay_row = db.connection.execute(
+        "SELECT source_key, objective, provenance_json FROM unified_sessions"
+    ).fetchone()
+    assert replay_row["source_key"] == repeated["source"]["key"]
+    assert replay_row["objective"] == "material_capture"
+    assert (
+        json.loads(replay_row["provenance_json"])["evidence_id"]
+        == repeated["source"]["evidence_id"]
+    )
     with monkeypatch.context() as patch:
         patch.setattr(
             "chess_coach.web_views.daily_plan",
@@ -1344,4 +1388,12 @@ def test_capture_plan_uses_independent_current_sources_and_is_lazy(tmp_path, mon
     assert report(db, LEARNER, "legacy")["source"]["games"] == 1
     review_evidence(db, first, decision="reject", actor="reviewer")
     assert report(db, LEARNER, "legacy")["source"] is None
+    stale_replay = client.post(
+        "/unified/start",
+        base_url="https://coach.invalid",
+        headers=headers | {"Origin": "https://coach.invalid"},
+        data=replay_data,
+    )
+    assert stale_replay.status_code == 400
+    assert db.connection.execute("SELECT count(*) FROM unified_sessions").fetchone()[0] == 1
     db.close()

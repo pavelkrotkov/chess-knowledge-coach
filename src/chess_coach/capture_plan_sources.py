@@ -9,6 +9,8 @@ from .recurrence_cursor import MAX_ID
 from .recurrence_selection import consider
 from .recurrence_sources import evidence
 from .related_capture_source import source_for_position
+from .unified_own_game import VERSION
+from .unified_own_game_snapshot import key_for
 
 SCAN = 20
 SOURCE_CHECKS = 3
@@ -78,6 +80,14 @@ def witnesses(db, learner, groups, *, stop=lambda: False, check=None):
                     "games": len({x["game_key"] for x in items}),
                     "observations": len(items),
                     "reviewed": source["provenance"]["review_status"] == "accepted",
+                    "version": VERSION,
+                    "key": key_for(
+                        {
+                            "position_id": item["position_id"],
+                            "objective": {"kind": source["objective"]},
+                        },
+                        item["id"],
+                    ),
                 }
             except (ValueError, TypeError, KeyError, IndexError):
                 continue

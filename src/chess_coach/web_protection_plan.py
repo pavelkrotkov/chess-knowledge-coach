@@ -4,7 +4,7 @@ import sqlite3
 
 from flask import Blueprint, current_app, render_template
 
-from .plan_capture_action import recommendation
+from .plan_capture_action import admissible
 from .protection_plan import report
 from .tactical_course_budget import PreviewUnavailable
 from .web_db import database
@@ -25,7 +25,7 @@ def show():
 def next_focus():
     db = database()
     subject = current_app.config["SUBJECT"]
-    capture = recommendation(db, subject, current_app.config["CORPUS"])
+    capture = admissible(db, subject, current_app.config["CORPUS"])
     try:
         protection = report(db, subject)
     except (sqlite3.Error, ValueError, TypeError, KeyError, IndexError, PreviewUnavailable):

@@ -14,6 +14,14 @@
 <h3>Next focus: find captures</h3>
 <p>{% if protection and protection.source %}Capture has at least as many supporting games in this check; ties favor capture.{% else %}Capture is the available recurring source in this check.{% endif %} Before moving, look for a capture of the named hanging piece.</p>
 <p><a href="{{ url_for('views.evidence_detail', evidence_id=capture.source.evidence_id) }}">Review the current source evidence</a> · <a href="{{ url_for('related_capture.show', position=capture.source.position_id) }}">Open related capture practice</a>.</p>
+<form method="post" action="{{ url_for('unified_practice.begin') }}">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<input type="hidden" name="source_type" value="own-game">
+<input type="hidden" name="version" value="{{ capture.source.version }}">
+<input type="hidden" name="key" value="{{ capture.source.key }}">
+<button>Replay the prepared capture from this game</button>
+</form>
+<p>This is a supplied-line rehearsal, separate from a verified unfamiliar assessment. The source is checked again on start; other legal moves may need checking. This replay does not change scheduled reviews or mastery.</p>
 {% set focus_bound = true %}{% include "plan_capture_action.html" %}
 {% elif selected == "protection" %}
 <h3>Next focus: protect a piece</h3>
