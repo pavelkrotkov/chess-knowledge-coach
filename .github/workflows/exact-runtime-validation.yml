@@ -66,15 +66,14 @@ jobs:
           uv run --frozen --no-sync --python "$python" python -c 'import hashlib, pathlib, sys, chess_coach; p = pathlib.Path(sys.executable).resolve(); assert sys.version_info[:3] == (3, 12, 13); assert hashlib.sha256(p.read_bytes()).hexdigest() == "1e4461092175d186c4bcdb19ee2849a45d6e4d8d1f6a871e45f63418d52a4e35"; assert pathlib.Path(chess_coach.__file__).resolve().is_relative_to(pathlib.Path.cwd() / "src"); print("Verified Python:", p, sys.version)'
       - name: Install and identify Stockfish
         run: |
-          package="$GITHUB_WORKSPACE/.venv/stockfish_16-1build1_amd64.deb"
-          curl --fail --location --silent --show-error --proto =https --proto-redir =https --connect-timeout 10 --max-time 120 -o "$package" https://archive.ubuntu.com/ubuntu/pool/universe/s/stockfish/stockfish_16-1build1_amd64.deb
-          # https://packages.ubuntu.com/noble/amd64/stockfish/download
-          echo "909bfd433b049497f06ec3f63517deaf4e821acc138c974bb2a8af2bd58b073f  $package" | sha256sum --check
-          sudo dpkg --install "$package"
-          dpkg-query -W stockfish
+          archive="$GITHUB_WORKSPACE/.venv/stockfish-16.tar"
+          curl --fail --location --silent --show-error --proto =https --proto-redir =https --connect-timeout 10 --max-time 120 -o "$archive" https://github.com/official-stockfish/Stockfish/releases/download/sf_16/stockfish-ubuntu-x86-64.tar
+          echo "efca1c60ec11fd9628425f3ee40644ad1618535ddf881c16385a86f7fc9e0983  $archive" | sha256sum --check
+          tar -xOf "$archive" stockfish/stockfish-ubuntu-x86-64 > "$GITHUB_WORKSPACE/.venv/stockfish-16"
+          sudo install -D -m 0755 "$GITHUB_WORKSPACE/.venv/stockfish-16" /usr/games/stockfish
           test -x /usr/games/stockfish
           sha256sum /usr/games/stockfish
-          printf 'quit\n' | /usr/games/stockfish
+          printf "uci\nquit\n" | /usr/games/stockfish | grep -Fx "id name Stockfish 16"
           echo /usr/games >> "$GITHUB_PATH"
       - name: Install locked JavaScript dependencies and check quality
         run: |
