@@ -14,7 +14,7 @@ def latest(db, session):
         WHERE q.attempt_id=? AND q.subject=? ORDER BY q.rowid DESC LIMIT 1""",
         (session["attempt_id"], normalize_identity(session["subject"])),
     ).fetchone()
-    return _view(row) if row else None
+    return _checked_view(db, session, row) if row else None
 
 
 def inspect(db, subject, attempt, event):
@@ -31,7 +31,21 @@ def inspect(db, subject, attempt, event):
         require_current(db, session)
     except (ValueError, TypeError, KeyError):
         return {"status": "unresolved", "reason": "source_unavailable"}
-    return _view(row)
+    return _checked_view(db, session, row)
+
+
+def _checked_view(db, session, row):
+    view = _view(row)
+    if session["objective"] != "execute_named_fork" or view.get("status") != "incorrect":
+        return view
+    from .fork_history_result import result
+
+    try:
+        if result(db, session, check=None) == "incorrect":
+            return view
+    except (ValueError, TypeError, KeyError, IndexError, AttributeError):
+        pass
+    return {"status": "unresolved", "reason": "source_unavailable"}
 
 
 def _view(row):
