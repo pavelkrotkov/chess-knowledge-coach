@@ -24,7 +24,7 @@ from .pin_explanation import explain as explain_pin
 from .rook_plan_current import currentness as rook_currentness
 
 
-def inspect_evidence(db: Database, evidence_id: int, *, _history=None) -> dict:
+def inspect_evidence(db: Database, evidence_id: int, *, _history=None, _fork_check=None) -> dict:
     row = evidence_row(db, evidence_id)
     result = _summary(row)
     result["context"] = decode(row["context_json"])
@@ -33,7 +33,7 @@ def inspect_evidence(db: Database, evidence_id: int, *, _history=None) -> dict:
     result["mapping_created_at"] = row["mapping_created_at"]
     result["facts"] = facts_for_evidence(db, evidence_id)
     result["material_source_currentness"] = evidence_currentness(db, result)
-    fact, currentness, fen = current_fork(db, result, _history=_history)
+    fact, currentness, fen = current_fork(db, result, _history=_history, _check=_fork_check)
     result["fork_explanation"] = explain_fork(fact, fen)
     result["fork_source_currentness"] = currentness
     if currentness == "current":

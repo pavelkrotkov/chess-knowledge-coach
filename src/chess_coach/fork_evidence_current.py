@@ -7,7 +7,14 @@ from .material_opportunity_links import valid_link
 
 
 def current_fork(
-    db, evidence, *, mapper=MAPPER, validator=valid_fact, verify=verified_fen, _history=None
+    db,
+    evidence,
+    *,
+    mapper=MAPPER,
+    validator=valid_fact,
+    verify=verified_fen,
+    _history=None,
+    _check=None,
 ):
     if evidence["mapping_producer"] != mapper:
         return None, None, None
@@ -19,9 +26,8 @@ def current_fork(
     ):
         return {}, "stale", None
     fact = facts[0]
-    fen = (
-        verify(db, evidence, fact)
-        if _history is None
-        else verify(db, evidence, fact, _history=_history)
-    )
+    options = {} if _history is None else {"_history": _history}
+    if _check is not None:
+        options["_check"] = _check
+    fen = verify(db, evidence, fact, **options)
     return fact["payload"], "current" if fen else "stale", fen

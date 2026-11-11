@@ -24,4 +24,4 @@ def result(db, row, *, check):
     if record is None:
         return "pending"
     stored = json.loads(record["result_json"])
-    return stored["status"] if valid(stored, request, events, board, move, row) else "stale"
+    return stored["status"] if valid(stored, request, events, board, move) else "stale"

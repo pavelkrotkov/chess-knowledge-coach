@@ -1,10 +1,11 @@
 """Validate recorded fork result provenance without running another proof."""
 
-from .fork_history_witness import correct
+from .capture_plan_result import _move
+from .objective_events import assistance
 from .objective_fork_contract import VERIFIER
 
 
-def valid(result, request, events, board, move, row):
+def _bound(result, request):
     keys = (
         "objective_version",
         "history_mode",
@@ -12,13 +13,21 @@ def valid(result, request, events, board, move, row):
         "source_hash",
         "event_prefix_hash",
     )
-    if (
-        not isinstance(result, dict)
-        or any(result.get(key) != request[key] for key in keys)
-        or result.get("verifier") != VERIFIER
-        or result.get("learning_eligible") is not False
-    ):
+    return (
+        isinstance(result, dict)
+        and all(result.get(key) == request[key] for key in keys)
+        and result.get("verifier") == VERIFIER
+        and result.get("learning_eligible") is False
+    )
+
+
+def valid(result, request, events, board, move):
+    if not _bound(result, request):
         return False
     if result.get("status") == "unresolved":
         return True
-    return correct(result, events, board, move, row)
+    return (
+        result.get("status") == "correct"
+        and result.get("assistance") == assistance(events[:-1])
+        and _move(result, board, move)
+    )
