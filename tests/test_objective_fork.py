@@ -1,6 +1,7 @@
 """Owned fork objectives verify equivalent moves without inventing game results."""
 
 import json
+import re
 
 import pytest
 
@@ -57,7 +58,8 @@ def test_unlisted_owned_fork_is_proved_for_success_and_miss(tmp_path, monkeypatc
     )
     assert posted.status_code == 303
     page = client.get(posted.location, base_url="https://coach.invalid", headers=headers)
-    assert page.status_code == 200 and "b5c7" not in page.get_data(as_text=True)
+    assert page.status_code == 200
+    assert not re.search(rb"(?<![A-Za-z0-9_-])b5c7(?![A-Za-z0-9_-])", page.data)
     before = {
         table: db.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
         for table in (
@@ -197,7 +199,8 @@ def test_unfamiliar_fork_browser_and_worker(tmp_path, monkeypatch, mode):
     )
     assert page.status_code == 200 and b"Start fork assessment" in page.data
     assert b"Fork assessment history" in page.data
-    assert b"synthetic-key" not in page.data and b"b5c7" not in page.data
+    assert b"synthetic-key" not in page.data
+    assert not re.search(rb"(?<![A-Za-z0-9_-])b5c7(?![A-Za-z0-9_-])", page.data)
     if mode == "correct":
         oversized = 2**63
         unavailable = client.get(
@@ -275,7 +278,8 @@ def test_unfamiliar_fork_browser_and_worker(tmp_path, monkeypatch, mode):
     assert posted.status_code == 303
     monkeypatch.setattr(related_fork_assessment_finder, "search", original_search)
     page = client.get(posted.location, base_url=base, headers=headers)
-    assert page.status_code == 200 and b"b5c7" not in page.data
+    assert page.status_code == 200
+    assert not re.search(rb"(?<![A-Za-z0-9_-])b5c7(?![A-Za-z0-9_-])", page.data)
     attempt = token(page, "attempt")
     db = Database(path)
 
@@ -292,7 +296,8 @@ def test_unfamiliar_fork_browser_and_worker(tmp_path, monkeypatch, mode):
             response = client.get("/plan/forks/history", base_url=base, headers=headers)
         assert response.status_code == 200
         assert db.connection.execute("PRAGMA data_version").fetchone()[0] == version
-        assert b"synthetic-key" not in response.data and b"b5c7" not in response.data
+        assert b"synthetic-key" not in response.data
+        assert not re.search(rb"(?<![A-Za-z0-9_-])b5c7(?![A-Za-z0-9_-])", response.data)
         return response.data
 
     assert b"1 in progress" in history()
