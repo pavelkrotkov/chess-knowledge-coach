@@ -45,7 +45,9 @@ def load_game(db, learner, game_id):
     return {"row": game, "color": color, "decisions": decisions, "key": identity}
 
 
-def evidence(db, learner, skill, operation, before, *, failure_only=False, limit=None):
+def evidence(
+    db, learner, skill, operation, before, *, failure_only=False, outcome=None, limit=None
+):
     # Callers may narrow the existing bound, but cannot expand the shared scan.
     scan_limit = MAX_EVIDENCE if limit is None else limit
     if type(scan_limit) is not int or not 1 <= scan_limit <= MAX_EVIDENCE:
@@ -63,8 +65,9 @@ def evidence(db, learner, skill, operation, before, *, failure_only=False, limit
         LEFT JOIN evidence_review_events v ON v.id=(SELECT id FROM evidence_review_events
             WHERE evidence_id=e.id ORDER BY id DESC LIMIT 1)
         WHERE e.subject=? AND e.skill=? AND e.operation=? AND e.id < ?
-        AND (?=0 OR e.outcome='failure') ORDER BY e.id DESC LIMIT ?""",
-        (subject, skill, operation, before, int(failure_only), scan_limit + 1),
+        AND (?=0 OR e.outcome='failure')
+        AND (? IS NULL OR e.outcome=?) ORDER BY e.id DESC LIMIT ?""",
+        (subject, skill, operation, before, int(failure_only), outcome, outcome, scan_limit + 1),
     ).fetchall()
     return rows[:scan_limit], len(rows) > scan_limit
 

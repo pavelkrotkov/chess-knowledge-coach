@@ -144,8 +144,44 @@ def test_bounded_worker_publishes_relative_prevention_and_browser_explanation(
         run_analysis(db, 1, game_input(db, 1), config, engine_identity(sys.executable))["status"]
         == "complete"
     )
+    from chess_coach.pin_plan import report as pin_report
+
+    assert process_pins(db, config, "prevent")["outcomes"]["failure"] == 1
+    assert pin_report(db, "fixture_learner")["source"] is None
+
+    # Same geometry in separate dated games: one further miss and one defense.
+    for date, first, reply in (
+        ("2026.01.02", "e2f2", "e3e1"),
+        ("2026.01.03", "e2e3", "h8g8"),
+    ):
+        other = chess.pgn.Game()
+        other_board = chess.Board("7k/5p2/8/8/8/4r3/4R2K/4Q3 w - - 0 1")
+        other.setup(other_board)
+        other.headers.update(
+            {
+                "White": "fixture_learner",
+                "Black": "fixture_opponent",
+                "Result": "*",
+                "UTCDate": date,
+                "UTCTime": "12:00:00",
+            }
+        )
+        node = other.add_variation(other_board.parse_uci(first))
+        other_board.push_uci(first)
+        node.add_variation(other_board.parse_uci(reply))
+        ingest_pgn(db, str(other))
+        game_id = db.connection.execute("SELECT max(id) FROM games").fetchone()[0]
+        assert (
+            run_analysis(
+                db, game_id, game_input(db, game_id), config, engine_identity(sys.executable)
+            )["status"]
+            == "complete"
+        )
     report = process_pins(db, config, "prevent")
     assert report["outcomes"]["failure"] == 1
+    assert report["outcomes"]["success"] == 1
+    selected = pin_report(db, "fixture_learner")["source"]
+    assert selected and selected["repeated_miss"] and selected["games"] == 2
     row = db.connection.execute(
         "SELECT id FROM evidence_mappings WHERE skill=? AND operation=?",
         ("relative_pin", "prevent"),
@@ -174,3 +210,136 @@ def test_bounded_worker_publishes_relative_prevention_and_browser_explanation(
     )
     assert page.status_code == 200
     assert b"Pin source: current" in page.data and b"Rxe1" in page.data and b"Rxe3" in page.data
+
+    from chess_coach.objective_worker import process
+    from tests.test_unified_sessions import token
+
+    client = app.test_client()
+    headers = {"Tailscale-User-Login": "fixture-login"}
+    base = "https://coach.invalid"
+    plan = client.get("/plan", base_url=base, headers=headers)
+    assert b"/plan/pin-defense" in plan.data
+    choice = client.get("/plan/pin-defense", base_url=base, headers=headers)
+    assert b"matching missed defense" in choice.data and b"pins your piece" in choice.data
+    assert client.get("/plan/pin-defense", base_url=base).status_code == 403
+    start = client.post(
+        "/unified/start",
+        base_url=base,
+        headers=headers | {"Origin": base},
+        data={
+            "csrf": token(choice, "csrf"),
+            "source_type": "own-game",
+            "version": token(choice, "version"),
+            "key": token(choice, "key"),
+        },
+    )
+    assert start.status_code == 303
+    practice = client.get(start.headers["Location"], base_url=base, headers=headers)
+    assert b"Remove the named pinner" in practice.data
+    move = client.post(
+        "/unified/move",
+        base_url=base,
+        headers=headers | {"Origin": base},
+        data={
+            "csrf": token(practice, "csrf"),
+            "attempt": token(practice, "attempt"),
+            "event": token(practice, "event"),
+            "move": "e2e3",
+        },
+    )
+    assert move.status_code == 303
+    assert process(db, "fixture_learner")["outcomes"] == {"correct": 1}
+    result = client.get(move.headers["Location"], base_url=base, headers=headers)
+    assert b"stated bounded pin defense is verified" in result.data
+
+    # A rejected miss cannot support a repeated-miss claim; the success is a rehearsal.
+    review_evidence(db, selected["evidence_id"], decision="reject", actor="fixture_reviewer")
+    fallback = pin_report(db, "fixture_learner")["source"]
+    assert fallback and not fallback["repeated_miss"]
+    assert (
+        b"Diagnostic rehearsal"
+        in client.get("/plan/pin-defense", base_url=base, headers=headers).data
+    )
+
+    # Reimports of the same game do not create recurrence, and pin policies stay distinct.
+    from copy import deepcopy
+
+    from chess_coach.objective_pin_prevent_contract import VERSION
+    from chess_coach.objective_pin_prevent_source import resolve
+    from chess_coach.pin_plan_pattern import pattern
+    from chess_coach.pin_plan_select import select
+
+    snapshot = resolve(db, VERSION, fallback["key"], "fixture_learner")
+    item = {
+        "id": fallback["evidence_id"],
+        "game_key": "same-game",
+        "outcome": "success",
+        "version": snapshot["provenance"]["mapper_version"],
+    }
+    assert select({"pattern": [(item, snapshot), (item, snapshot)]}) is None
+    other = deepcopy(snapshot)
+    other["provenance"]["pin_prevention"]["kind"] = "absolute_pin"
+    assert pattern(snapshot, item) != pattern(other, item)
+    other = deepcopy(snapshot)
+    other["provenance"]["pin_witness"]["mode"] = "pinned_capture"
+    assert pattern(snapshot, item) != pattern(other, item)
+
+    # A source that goes stale cannot sustain a recurrence or erase the prior attempt.
+    before = db.connection.execute("SELECT count(*) FROM unified_sessions").fetchone()[0]
+    db.connection.execute(
+        "UPDATE mapping_runs SET mapper_version='stale' WHERE id="
+        "(SELECT mapping_run_id FROM evidence_mappings WHERE id=?)",
+        (fallback["evidence_id"],),
+    )
+    db.connection.commit()
+    assert pin_report(db, "fixture_learner")["source"] is None
+    assert db.connection.execute("SELECT count(*) FROM unified_sessions").fetchone()[0] == before
+
+    # A crowded absolute-miss bucket cannot starve relative misses or rehearsals.
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+
+    import chess_coach.pin_plan_candidates as pin_candidates
+
+    buckets = {}
+    next_id = 1000
+    for outcome in ("failure", "success"):
+        for skill in ("absolute_pin", "relative_pin"):
+            count = 25 if (outcome, skill) == ("failure", "absolute_pin") else 2
+            rows = []
+            for _ in range(count):
+                next_id += 1
+                rows.append(
+                    {
+                        "id": next_id,
+                        "game_key": str(next_id),
+                        "outcome": outcome,
+                        "skill": skill,
+                        "family": "pin-prevent-mapper",
+                    }
+                )
+            buckets[(outcome, skill)] = rows
+
+    def fake_evidence(_db, _learner, skill, _operation, _before, *, outcome, limit):
+        return buckets[(outcome, skill)][:limit], False
+
+    def fake_consider(_db, _learner, row, _sources, cache, _parts, excluded, *_dates):
+        if len(cache) >= 20:
+            excluded["game replay limit"] += 1
+            return None
+        cache[row["id"]] = True
+        return row
+
+    monkeypatch.setattr(pin_candidates, "evidence", fake_evidence)
+    monkeypatch.setattr(pin_candidates, "consider", fake_consider)
+    budget = SimpleNamespace(scope=lambda **_kwargs: nullcontext())
+    ranked, limited, _ = pin_candidates.candidates(None, "fixture_learner", budget)
+    first = ranked[:12]
+    assert limited and len(ranked) == 20
+    assert {(x["outcome"], x["skill"]) for x in first} == set(buckets)
+    relative = [x for x in first if x["skill"] == "relative_pin"]
+    selection = select({"matching": [(x, snapshot) for x in relative]})
+    assert selection and selection["repeated_miss"]
+    successes = [x for x in relative if x["outcome"] == "success"]
+    selection = select({"matching": [(x, snapshot) for x in successes]})
+    assert selection and not selection["repeated_miss"]
