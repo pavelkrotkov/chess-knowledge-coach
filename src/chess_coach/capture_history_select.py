@@ -10,7 +10,11 @@ from .related_capture_position import prompt_key
 MAX_ASSESSMENTS = 8
 
 
-def select(db, subject):
+def select(db, subject, *, predicate=None):
+    return _select(db, subject, predicate or is_source)
+
+
+def _select(db, subject, predicate):
     selected, limited = rows(db, subject)
     seen, found, uncertain = set(), deque(maxlen=MAX_ASSESSMENTS), False
     for row in selected:
@@ -20,7 +24,7 @@ def select(db, subject):
             key = prompt_key(row["prompt_fen"])
             duplicate = key in seen
             seen.add(key)
-            if duplicate or not is_source(row):
+            if duplicate or not predicate(row):
                 continue
             if len(found) >= MAX_ASSESSMENTS:
                 limited = True

@@ -7,18 +7,18 @@ from .material_source import prepare
 from .material_source_marker import source_marker
 
 
-def verified_fen(db, evidence, fact, *, observer=observe, _history=None):
+def verified_fen(db, evidence, fact, *, observer=observe, _history=None, _check=None):
+    tick = _check or (lambda: None)
     try:
+        tick()
         prepared = prepare(db, evidence["position_id"], evidence["subject"], history=_history)
+        tick()
         source = load_source(db, fact["detector_run_id"])
         if {k: v for k, v in source.items() if k != "reactivation"} != source_inputs(prepared):
             return None
-        fresh = observer(
-            prepared["board"],
-            prepared["context"]["played_move"],
-            prepared["best"],
-            prepared["played"],
-        )
+        tick()
+        fresh = _observe(observer, prepared, _check)
+        tick()
         if fresh != fact["payload"]:
             return None
         if (
@@ -29,3 +29,14 @@ def verified_fen(db, evidence, fact, *, observer=observe, _history=None):
     except (ValueError, TypeError, KeyError):
         return None
     return prepared["context"]["pre_move_fen"]
+
+
+def _observe(observer, prepared, check):
+    options = {} if check is None else {"check": check}
+    return observer(
+        prepared["board"],
+        prepared["context"]["played_move"],
+        prepared["best"],
+        prepared["played"],
+        **options,
+    )

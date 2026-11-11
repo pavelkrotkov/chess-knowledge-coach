@@ -7,24 +7,29 @@ from .related_fork_source import source_for_evidence
 from .unified_sources import resolve_source
 
 
-def require_current(db, row, snapshot_hash):
+def require_current(db, row, snapshot_hash, *, check=None):
     binding = json.loads(row["provenance_json"]).get("related_fork")
     if binding is None:
         return
+    tick = check or (lambda: None)
     try:
-        source = source_for_evidence(db, row["subject"], binding["evidence_id"])
+        tick()
+        source = source_for_evidence(db, row["subject"], binding["evidence_id"], check=check)
         if snapshot_hash(source) != binding["source_snapshot_hash"]:
             raise ValueError
         candidate = resolve_source(
             db, row["source_type"], row["source_version"], row["source_key"], subject=row["subject"]
         )
+        tick()
         select_lines(candidate, binding)
+        tick()
         if binding.get("assessment"):
             from .related_fork_assessment_current import current
 
             if source["outcome"] != "failure":
                 raise ValueError
             current(db, row, binding, candidate)
+        tick()
         candidate["provenance"]["related_fork"] = binding
         if snapshot_hash(candidate) != row["snapshot_hash"]:
             raise ValueError

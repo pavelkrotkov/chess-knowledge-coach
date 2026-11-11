@@ -127,10 +127,14 @@ def test_unfamiliar_fork_browser_and_worker(tmp_path, monkeypatch, mode):
     client = app.test_client()
     headers = {"Tailscale-User-Login": "fixture-login"}
     base = "https://coach.invalid"
+    assert client.get("/plan/forks/history", base_url=base).status_code == 403
+    plan = client.get("/plan", base_url=base, headers=headers)
+    assert b"First-encounter fork assessment history" in plan.data
     page = client.get(
         f"/evidence/{evidence}/related-forks/find-verified", base_url=base, headers=headers
     )
     assert page.status_code == 200 and b"Start fork assessment" in page.data
+    assert b"Fork assessment history" in page.data
     assert b"synthetic-key" not in page.data and b"b5c7" not in page.data
     if mode == "correct":
         oversized = 2**63
@@ -211,6 +215,24 @@ def test_unfamiliar_fork_browser_and_worker(tmp_path, monkeypatch, mode):
     assert page.status_code == 200 and b"b5c7" not in page.data
     attempt = token(page, "attempt")
     db = Database(path)
+
+    def history():
+        import chess.engine
+
+        version = db.connection.execute("PRAGMA data_version").fetchone()[0]
+        with monkeypatch.context() as patch:
+
+            def no_engine(*args, **kwargs):
+                raise AssertionError("history must not start an engine")
+
+            patch.setattr(chess.engine.SimpleEngine, "popen_uci", no_engine)
+            response = client.get("/plan/forks/history", base_url=base, headers=headers)
+        assert response.status_code == 200
+        assert db.connection.execute("PRAGMA data_version").fetchone()[0] == version
+        assert b"synthetic-key" not in response.data and b"b5c7" not in response.data
+        return response.data
+
+    assert b"1 in progress" in history()
     if mode == "assisted":
         from chess_coach.unified_session_events import reveal
 
@@ -218,6 +240,7 @@ def test_unfamiliar_fork_browser_and_worker(tmp_path, monkeypatch, mode):
     move = "b5a3" if mode == "unresolved" else "b5c7"
     result = submit(db, attempt, SUBJECT, event_id="answer", move=move)
     assert result["status"] == "needs_verification"
+    assert b"1 pending" in history()
     expected = "unresolved" if mode == "unresolved" else "correct"
     assert process(db, SUBJECT)["outcomes"] == {expected: 1}
     assert inspect(db, SUBJECT, attempt, "answer")["status"] == expected
@@ -228,7 +251,70 @@ def test_unfamiliar_fork_browser_and_worker(tmp_path, monkeypatch, mode):
     )
     assert not output["learning_eligible"]
     assert output["assistance"] == ("revealed" if mode == "assisted" else "unassisted")
+    page_data = history()
+    assert (b"1 unresolved" if mode == "unresolved" else b"1 verified correct") in page_data
+    assert (b"1 assisted" if mode == "assisted" else b"0 assisted") in page_data
+    assert attempt.encode() in page_data
+    assert b"Comparisons are unavailable" in page_data
+    assert b"<title>Fork assessment history - Chess coach</title>" in page_data
+    if mode == "correct":
+        from chess_coach import fork_history
+
+        with monkeypatch.context() as patch:
+            patch.setattr(fork_history, "select", lambda *_args, **_kwargs: ([], True))
+            assert b"bounded session window or source checks were incomplete" in history()
+
+        from chess_coach import fork_branch
+        from chess_coach.opening_queue_budget import BrowserBudget
+        from chess_coach.tactical_course_budget import PreviewUnavailable
+
+        real_capture, real_check = fork_branch.capture, BrowserBudget.check
+        calls = []
+
+        def expire_in_capture(*args, **kwargs):
+            value = real_capture(*args, **kwargs)
+            calls.append(1)
+            return value
+
+        def check_deadline(budget):
+            if calls:
+                raise PreviewUnavailable("synthetic deadline")
+            return real_check(budget)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(fork_branch, "capture", expire_in_capture)
+            patch.setattr(BrowserBudget, "check", check_deadline)
+            assert b"bounded session window or source checks were incomplete" in history()
+        assert len(calls) == 1
+
+        from chess_coach import capture_history_select
+        from chess_coach.related_fork_assessment_scope import is_source
+
+        row = db.connection.execute(
+            "SELECT * FROM unified_sessions WHERE attempt_id=?", (attempt,)
+        ).fetchone()
+        earlier = dict(row)
+        earlier.update(
+            attempt_id="earlier", started_at="2000-01-01T00:00:00+00:00", source_type="public"
+        )
+        with monkeypatch.context() as patch:
+            patch.setattr(capture_history_select, "rows", lambda *_: ([earlier, row], False))
+            assert capture_history_select.select(db, SUBJECT, predicate=is_source)[0] == []
+        from chess_coach.fork_history_proof import valid
+        from chess_coach.objective_current import current
+        from chess_coach.objective_history_dispatch import replay
+
+        request = db.connection.execute(
+            "SELECT * FROM objective_requests WHERE attempt_id=?", (attempt,)
+        ).fetchone()
+        session, events = current(db, request)
+        board, first_move = replay(db, session, events, request)
+        assert not valid({**output, "move": "b5a3"}, request, events, board, first_move)
+        assert not valid({**output, "status": "incorrect"}, request, events, board, first_move)
     review_evidence(db, evidence, decision="reject", actor="fixture_reviewer")
+    stale_history = history()
+    assert b"1 unavailable or stale" in stale_history
+    assert (b"1 assisted" if mode == "assisted" else b"0 assisted") in stale_history
     with pytest.raises(ValueError):
         show(db, attempt, SUBJECT)
     db.close()

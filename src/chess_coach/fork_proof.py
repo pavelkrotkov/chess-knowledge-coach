@@ -9,19 +9,23 @@ from .material_lines import material
 MAX_REPLIES = 64
 
 
-def fork_proof(board, move):
+def fork_proof(board, move, *, check=None):
+    tick = check or (lambda: None)
+    tick()
     candidate = targets(board, move)
     if candidate is None:
         return None
     after, squares = candidate
+    tick()
     replies = _replies(after)
     if replies is None:
         return None
     initial = material(board, board.turn)
     witnesses = [
-        defense_witness(after, reply, move.to_square, squares, board.turn, initial)
+        defense_witness(after, reply, move.to_square, squares, board.turn, initial, check=check)
         for reply in replies
     ]
+    tick()
     if any(witness is None for witness in witnesses):
         return None
     return {

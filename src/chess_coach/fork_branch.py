@@ -6,7 +6,9 @@ from .fork_capture import capture
 from .material_exchange_rules import unclear
 
 
-def defense_witness(board, reply, attacker, targets, color, initial):
+def defense_witness(board, reply, attacker, targets, color, initial, *, check=None):
+    tick = check or (lambda: None)
+    tick()
     if _unsupported(board, reply):
         return None
     after = board.copy()
@@ -14,7 +16,9 @@ def defense_witness(board, reply, attacker, targets, color, initial):
     if unclear(after) or not after.piece_at(attacker):
         return None
     for square in targets:
+        tick()
         witness = capture(after, attacker, square, color, initial)
+        tick()
         if witness:
             return {
                 "reply": reply.uci(),

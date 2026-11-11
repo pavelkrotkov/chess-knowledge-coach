@@ -10,27 +10,31 @@ from .related_fork_source_policy import identity_matches
 from .related_fork_witness import witness
 
 
-def source_for_evidence(db, subject, evidence_id):
+def source_for_evidence(db, subject, evidence_id, *, check=None):
     try:
-        return _load(db, subject, evidence_id)
+        return _load(db, subject, evidence_id, check)
     except (TypeError, KeyError, IndexError, AttributeError):
         raise ValueError("fork source unavailable or stale") from None
 
 
-def _load(db, subject, evidence_id):
+def _load(db, subject, evidence_id, check):
+    tick = check or (lambda: None)
+    tick()
     row = evidence_row(db, evidence_id)
     evidence = _summary(row)
     if not identity_matches(db, evidence, subject):
         raise ValueError("fork source unavailable")
-    evidence = inspect_evidence(db, evidence_id)
+    evidence = inspect_evidence(db, evidence_id, _fork_check=check)
+    tick()
     if evidence["fork_source_currentness"] != "current":
         raise ValueError("fork source unavailable or stale")
     fact = evidence["facts"][0]
     payload = fact["payload"]
     if not supported_root(evidence["decision_fen"], payload):
         raise ValueError("unsupported fork source")
-    line = witness(evidence["decision_fen"], payload["proof"])
+    line = witness(evidence["decision_fen"], payload["proof"], check=check)
     source = load_source(db, fact["detector_run_id"])
+    tick()
     reviews = evidence["reviews"]
     return {
         "prompt_fen": evidence["decision_fen"],

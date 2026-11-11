@@ -10,28 +10,28 @@ from .material_lines import continuation
 from .material_observation_fallback import _best_move
 
 
-def observe(board, played, best_line, played_line):
+def observe(board, played, best_line, played_line, *, check=None):
     try:
         actual = chess.Move.from_uci(played)
     except ValueError:
         return ambiguous("invalid_played_move")
     if actual not in board.legal_moves:
         return ambiguous("invalid_played_move")
-    played_proof = fork_proof(board, actual)
+    played_proof = fork_proof(board, actual, check=check)
     if played_proof:
         return _success(board, actual, played_line, played_proof)
     if unsupported_shape(board, actual):
         return ambiguous("unsupported_fork_move")
-    return _alternative(board, actual, best_line, played_line)
+    return _alternative(board, actual, best_line, played_line, check=check)
 
 
-def _alternative(board, actual, best_line, played_line):
+def _alternative(board, actual, best_line, played_line, *, check=None):
     best = _best_move(board, best_line)
     if not isinstance(best, chess.Move):
         return ambiguous("current_best_unavailable")
     if unsupported_shape(board, best):
         return ambiguous("unsupported_fork_move")
-    best_proof = fork_proof(board, best)
+    best_proof = fork_proof(board, best, check=check)
     if best_proof is None:
         return (
             ambiguous("fork_unresolved") if targets(board, best) or targets(board, actual) else None
