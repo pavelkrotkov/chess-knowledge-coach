@@ -18,6 +18,7 @@ def select(
     all_lines=False,
     include_objective=False,
     familiar_data=None,
+    per_band=100,
     **matching,
 ):
     rating = baseline(db, source)
@@ -33,6 +34,7 @@ def select(
         theme=theme,
         all_lines=all_lines,
         include_objective=include_objective,
+        per_band=per_band,
     )
     if corpus is None:
         return None
