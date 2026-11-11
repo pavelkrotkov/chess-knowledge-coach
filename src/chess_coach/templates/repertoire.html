@@ -2,6 +2,7 @@
 {% block title %}Repertoire — Chess coach{% endblock %}
 {% block content %}
 <h2>Repertoire</h2>
+<p><a href="{{ url_for('repertoire_views.opening_unfamiliar') }}">Explore unfamiliar first moves for both colors</a></p>
 <p><a href="{{ url_for('repertoire_views.opening_explore') }}">Explore a repeated opening branch</a></p>
 {% if report %}
 <p>Attributable games examined: {{ report.games|length }}. Unclassified: {{ report.unclassified }}; classified without a named match: {{ report.unknown }}; stale classifications awaiting reprocessing: {{ report.stale }}. Stale classifications are excluded from position aggregates. Results and frequencies describe this sample, not skill. Small samples are unreliable.</p>

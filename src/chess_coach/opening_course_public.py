@@ -14,14 +14,14 @@ def _identity(path):
     return info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns
 
 
-def continuation(root, subject, parent, move, owned):
+def continuation(root, subject, parent, move, owned, *, expires=None):
     try:
         directory, _ = planning(root, subject)
         path = directory / INDEX_NAME
         if not _private_file(path, directory):
             raise ValueError("public index unavailable")
         before = _identity(path)
-        result = lookup(path, parent, move, owned)
+        result = lookup(path, parent, move, owned, expires=expires)
         if not _private_file(path, directory) or _identity(path) != before:
             raise ValueError("public index changed")
         return result, "available" if result else "no distinct continuation"

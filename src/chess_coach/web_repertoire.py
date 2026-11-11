@@ -9,6 +9,7 @@ from .opening_explore_enrich import enrich
 from .opening_queue_request import admit
 from .opening_queue_view import statuses
 from .opening_reference_read import matches
+from .opening_unfamiliar import explore_unfamiliar
 from .repertoire import game_detail, repertoire_report
 from .tactical_course_deadline import PreviewDeadline
 from .web_board import board_rows
@@ -38,6 +39,19 @@ def opening_explore():
             "error.html", message="This opening sample could not be checked now. Please try again."
         ), 503
     return render_template("opening_explore.html", report=report)
+
+
+@repertoire_views.get("/repertoire/unfamiliar")
+def opening_unfamiliar():
+    try:
+        report = explore_unfamiliar(
+            database(), current_app.config["PROJECT_ROOT"], current_app.config["SUBJECT"]
+        )
+    except (Exception, PreviewDeadline):
+        return render_template(
+            "error.html", message="This opening sample could not be checked now. Please try again."
+        ), 503
+    return render_template("opening_unfamiliar.html", report=report)
 
 
 @repertoire_views.get("/repertoire/games/<int:game_id>")

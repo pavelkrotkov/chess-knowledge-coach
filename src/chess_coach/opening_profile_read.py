@@ -10,7 +10,7 @@ from .opening_profile_lookup import lookup
 from .tactical_study_path import planning
 
 
-def profile(root, subject, parent, move):
+def profile(root, subject, parent, move, *, expires=None):
     if root is None:
         return None
     try:
@@ -18,7 +18,7 @@ def profile(root, subject, parent, move):
         path = directory / INDEX_NAME
         if not _private_file(path, directory):
             return None
-        return lookup(path, parent, move)
+        return lookup(path, parent, move, expires=expires)
     except (
         OSError,
         ValueError,
