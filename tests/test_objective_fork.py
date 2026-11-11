@@ -85,13 +85,17 @@ def test_unlisted_owned_fork_is_proved_for_success_and_miss(tmp_path, monkeypatc
     assert result["proof"]["targets"] == ["f5", "e8"]
     assert show(db, "fork", SUBJECT)["verification"]["status"] == "correct"
     assert submit(db, "fork", SUBJECT, event_id="answer", move="b5d6") == original
+    begin(db, evidence, attempt="owned-unsupported")
+    submit(db, "owned-unsupported", SUBJECT, event_id="answer", move="f6g5")
+    assert process(db, SUBJECT)["outcomes"] == {"unresolved": 1}
+    assert inspect(db, SUBJECT, "owned-unsupported", "answer")["status"] == "unresolved"
     assert {
         table: db.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
         for table in before
     } == before
 
 
-@pytest.mark.parametrize("mode", ["correct", "assisted", "unresolved"])
+@pytest.mark.parametrize("mode", ["correct", "assisted", "unresolved", "miss_piece", "miss_target"])
 def test_unfamiliar_fork_browser_and_worker(tmp_path, monkeypatch, mode):
 
     from chess_coach.db import Database
@@ -296,12 +300,23 @@ def test_unfamiliar_fork_browser_and_worker(tmp_path, monkeypatch, mode):
         from chess_coach.unified_session_events import reveal
 
         reveal(db, attempt, SUBJECT, event_id="reveal")
-    move = "b5a3" if mode == "unresolved" else "b5c7"
+    move = {"miss_piece": "e7f8", "miss_target": "b5a3"}.get(mode, "b5c7")
     result = submit(db, attempt, SUBJECT, event_id="answer", move=move)
     assert result["status"] == "needs_verification"
     assert b"1 pending" in history()
-    expected = "unresolved" if mode == "unresolved" else "correct"
-    assert process(db, SUBJECT)["outcomes"] == {expected: 1}
+    expected = (
+        "unresolved"
+        if mode == "unresolved"
+        else "incorrect"
+        if mode.startswith("miss_")
+        else "correct"
+    )
+    with monkeypatch.context() as patch:
+        if mode == "unresolved":
+            from chess_coach import objective_fork_judge
+
+            patch.setattr(objective_fork_judge, "fork_proof", lambda *_args: None)
+        assert process(db, SUBJECT)["outcomes"] == {expected: 1}
     assert inspect(db, SUBJECT, attempt, "answer")["status"] == expected
     state = show(db, attempt, SUBJECT)
     assert state["verification"]["status"] == expected
@@ -311,7 +326,60 @@ def test_unfamiliar_fork_browser_and_worker(tmp_path, monkeypatch, mode):
     assert not output["learning_eligible"]
     assert output["assistance"] == ("revealed" if mode == "assisted" else "unassisted")
     page_data = history()
-    assert (b"1 unresolved" if mode == "unresolved" else b"1 verified correct") in page_data
+    label = {
+        "correct": b"1 verified correct",
+        "assisted": b"1 verified correct",
+        "unresolved": b"1 unresolved",
+        "miss_piece": b"1 verified misses",
+        "miss_target": b"1 verified misses",
+    }[mode]
+    assert label in page_data
+    if mode.startswith("miss_"):
+        reason = "named_attacker_not_moved" if mode == "miss_piece" else "named_target_not_attacked"
+        assert output["reason"] == reason and output["miss_rule"] == "certified-fork-miss-v1"
+        page = client.get(posted.location, base_url=base, headers=headers)
+        feedback = (
+            b"The named knight was not moved"
+            if mode == "miss_piece"
+            else b"does not attack the named target"
+        )
+        assert feedback in page.data
+        from chess_coach import fork_history_result
+        from chess_coach.objective_current import current
+        from chess_coach.objective_history_dispatch import replay
+
+        request = db.connection.execute(
+            "SELECT * FROM objective_requests WHERE attempt_id=?", (attempt,)
+        ).fetchone()
+        session, events = current(db, request)
+        board, first_move = replay(db, session, events, request)
+        real_valid = fork_history_result.valid
+        assert real_valid(output, request, events, board, first_move, session)
+        assert not real_valid(
+            {**output, "miss_rule": "changed"}, request, events, board, first_move, session
+        )
+        assert not real_valid(
+            {**output, "event_prefix_hash": "changed"}, request, events, board, first_move, session
+        )
+        assert not real_valid(
+            {**output, "assistance": "revealed"}, request, events, board, first_move, session
+        )
+        assert not real_valid(
+            {**output, "move": "b5c7"}, request, events, board, first_move, session
+        )
+
+        def forged_reason(value, *args):
+            wrong = (
+                "named_target_not_attacked" if mode == "miss_piece" else "named_attacker_not_moved"
+            )
+            return real_valid({**value, "reason": wrong}, *args)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(fork_history_result, "valid", forged_reason)
+            assert inspect(db, SUBJECT, attempt, "answer")["status"] == "unresolved"
+            assert show(db, attempt, SUBJECT)["verification"]["status"] == "unresolved"
+            assert b"1 unavailable or stale" in history()
+        assert inspect(db, SUBJECT, attempt, "answer")["status"] == "incorrect"
     assert (b"1 assisted" if mode == "assisted" else b"0 assisted") in page_data
     assert attempt.encode() in page_data
     assert b"Comparisons are unavailable" in page_data

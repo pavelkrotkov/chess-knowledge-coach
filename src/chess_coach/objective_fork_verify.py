@@ -2,6 +2,7 @@
 
 import chess
 
+from .fork_assessment_miss_result import verdict
 from .objective_capture_proof import unknown
 from .objective_fork_judge import judge
 from .objective_judge import _scope_reason
@@ -20,4 +21,8 @@ def verify(board, move, request, events, clock, start, seconds, base, data):
             raise ValueError
     except (ValueError, KeyError, TypeError):
         return unknown(base, "objective_binding_unavailable")
+    if clock() - start <= seconds:
+        miss = verdict(board, move, attacker, anchor, request, data, base)
+        if miss:
+            return miss
     return judge(board, move, attacker, anchor, clock, start, seconds, base)
