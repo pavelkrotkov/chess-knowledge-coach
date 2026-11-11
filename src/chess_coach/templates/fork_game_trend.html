@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Knight forks in your games - Chess coach{% endblock %}
+{% block content %}
+<h2>Knight forks in your games</h2>
+<p>A background scan checks legal noncapturing knight moves in independent finished games. Practice attempts are separate. When another move was played, the proved fork awaits comparison.</p>
+{% if not report %}
+<p>The scan is pending or its sources changed. This page will update after the worker checks the games.</p>
+{% else %}
+{% if not report.selection_complete %}<p>The bounded game selection is incomplete.</p>{% endif %}
+{% for label, sample in (("More recent", report.newer), ("Earlier", report.earlier)) %}
+<section><h3>{{ label }} games</h3>
+<p>{{ sample.games }} independent games{% if sample.newest %}, {{ sample.oldest }} to {{ sample.newest }} UTC{% endif %}.</p>
+<p>{{ sample.scanned }} of {{ sample.eligible }} learner turns attempted. {{ sample.unchecked }} pending. {{ sample.unknown }} unavailable or timed out. {{ sample.no_candidate }} had no geometric candidate within this scope.</p>
+<p>{{ sample.opportunities }} turns had a proved fork. {{ sample.played }} played a proved root. {{ sample.awaiting }} await comparison. {{ sample.unresolved_roots }} turns had at least one unproved geometric candidate. These can overlap the proved totals.</p>
+<p>Private decisions. {% for example in sample.examples %}<a href="{{ url_for('views.decision_detail', position_id=example.position_id) }}">{{ example.outcome | replace('_', ' ') | capitalize }}</a>{% if not loop.last %} · {% endif %}{% else %}none{% endfor %}.</p>
+</section>
+{% endfor %}
+<p>Rate comparisons need enough resolved opportunities and matching analysis in both samples. Unproved geometric candidates remain unresolved.</p>
+<details><summary>Coverage</summary><p>The scan selects up to 100 dated records, 40 independent games and a boundary game. {{ report.duplicates }} duplicates. {{ report.unavailable }} unavailable games. At least {{ report.coverage.unknown_time_lower_bound }} unknown dates. At least {{ report.coverage.unknown_ownership_global_lower_bound }} uncertain ownership or projections. {{ report.coverage.candidate_recheck_failed }} candidate rechecks failed. Positions with unknown history, check, en passant, or expired proof budgets are unavailable.</p></details>
+{% endif %}
+<p><a href="{{ url_for('views.plan') }}">Daily plan</a></p>
+{% endblock %}

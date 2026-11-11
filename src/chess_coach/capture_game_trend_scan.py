@@ -19,15 +19,15 @@ from .short_mate_trend_turns import inspect
 CYCLE_SECONDS = 10.0
 
 
-def _advance(db, learner, games, state, deadline):
+def _advance(db, learner, games, state, deadline, *, classifier=None, turn_seconds=TURN_SECONDS):
     select(db, learner, games, state, deadline)
     consumed = {str(row[0]) for row in state["checked"]}
     state["retained"] = {
         key: item for key, item in state["retained"].items() if key not in consumed
     }
     if state["selection_complete"]:
-        inspector = partial(inspect, classifier=classify, seconds=TURN_SECONDS)
-        _inspect(db, learner, state, deadline, inspector=inspector, turn_seconds=TURN_SECONDS)
+        inspector = partial(inspect, classifier=classifier or classify, seconds=turn_seconds)
+        _inspect(db, learner, state, deadline, inspector=inspector, turn_seconds=turn_seconds)
 
 
 def _resume(old, key, frontier, signatures, games):

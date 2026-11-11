@@ -9,6 +9,7 @@ from .short_mate_trend_cohort import fingerprint
 TURN_SECONDS = 0.5
 
 
+# Classifiers share this adapter: persist turn expiry, retry cycle expiry.
 def _reason(reason, local, deadline):
     if reason != "deadline":
         return reason

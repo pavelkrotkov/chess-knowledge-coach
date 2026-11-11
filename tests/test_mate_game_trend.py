@@ -213,6 +213,21 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
     assert db.connection.total_changes == before
     assert location(db, root).stat().st_mode & 0o777 == 0o600
 
+    # The fork scan uses its own bounded sidecar and dated cohorts.
+    from chess_coach.fork_game_trend_report import report as fork_report
+    from chess_coach.fork_game_trend_scan import run as run_forks
+
+    with monkeypatch.context() as patch:
+        patch.setattr(scan, "TURN_LIMIT", 40)
+        run_forks(db, "fixture_a", root)
+    fork_cohorts = fork_report(db, "fixture_a", root)
+    assert fork_cohorts and fork_cohorts["selection_complete"]
+    assert fork_cohorts["newer"]["games"] == fork_cohorts["earlier"]["games"] == 20
+    assert fork_cohorts["newer"]["oldest"] > fork_cohorts["earlier"]["newest"]
+    assert fork_cohorts["newer"]["opportunities"] == fork_cohorts["earlier"]["opportunities"] == 0
+    assert fork_cohorts["newer"]["no_candidate"] == fork_cohorts["earlier"]["no_candidate"] == 20
+    assert db.connection.total_changes == before
+
     # A separate capture scan resumes fairly without changing the mate cache.
     from chess_coach import capture_game_trend_paths as capture_paths
     from chess_coach import capture_game_trend_scan as capture_scan
@@ -347,6 +362,13 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
     assert page.status_code == 200 and b"20 missed" in page.data
     assert b"100.0% earlier and 100.0% more recent" in page.data
     assert b"fixture_a" not in page.data and b"/decisions/" in page.data
+    fork_empty = client.get(
+        "/game-samples/knight-forks",
+        base_url="https://coach.invalid",
+        headers={"Tailscale-User-Login": "fixture"},
+    )
+    assert fork_empty.status_code == 200 and b"0 turns had a proved fork" in fork_empty.data
+    assert b"Rate comparisons need" in fork_empty.data and b"0.0%" not in fork_empty.data
     assert client.get("/game-samples/captures", base_url="https://coach.invalid").status_code == 403
     capture_page = client.get(
         "/game-samples/captures",
@@ -448,3 +470,122 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
     cache.write_text("{invalid")
     assert cached_report(db, "fixture_a", root) is None
     db.close()
+
+    # Real worker-to-browser readiness: proved played, proved alternative,
+    # and a geometric fork whose bounded proof cannot qualify it.
+    import chess.engine
+
+    from chess_coach import fork_game_proof, fork_game_trend_paths
+
+    fork_path = data / "fork-games.sqlite"
+    fork_db = Database(fork_path)
+    fork_db.initialize()
+    supported = "b3k3/4B3/5K1p/1N3b2/8/8/8/8 w - - 0 2"
+    unproved = "b3k3/4B3/5K1p/1N3b2/8/8/8/r7 w - - 0 2"
+    for index, (fen, move) in enumerate(
+        ((supported, "Nc7+"), (supported, "Kg7"), (unproved, "Kg7")), 1
+    ):
+        ingest_pgn(fork_db, pgn(index, move).replace(FEN, fen))
+    changes = fork_db.connection.total_changes
+    with monkeypatch.context() as patch:
+        patch.setattr(scan, "TURN_LIMIT", 1)
+        run_forks(fork_db, "fixture_a", root)
+        pending = fork_report(fork_db, "fixture_a", root)
+        assert pending and pending["newer"]["scanned"] == 1
+        assert pending["newer"]["unchecked"] == 2
+        assert pending["newer"]["opportunities"] == 0 and pending["newer"]["unresolved"] == 1
+        for _ in range(2):
+            run_forks(fork_db, "fixture_a", root)
+    fork_result = fork_report(fork_db, "fixture_a", root)
+    assert fork_result and fork_result["selection_complete"]
+    newer, earlier = fork_result["newer"], fork_result["earlier"]
+    assert (newer["games"], newer["eligible"], newer["scanned"]) == (3, 3, 3)
+    assert (newer["opportunities"], newer["played"], newer["awaiting"]) == (2, 1, 1)
+    assert newer["unresolved"] == newer["unresolved_roots"] == 1
+    assert earlier["games"] == 0 and newer["unchecked"] == 0
+    assert newer["examples"][0]["outcome"] in {"played", "awaiting"}
+    assert fork_game_trend_paths.location(fork_db, root).stat().st_mode & 0o777 == 0o600
+    assert fork_db.connection.total_changes == changes
+
+    fork_app = create_app(
+        db_path=fork_path,
+        subject="fixture_a",
+        actor="operator",
+        corpus="test",
+        login="fixture",
+        origin="https://coach.invalid",
+        project_root=root,
+    )
+    fork_client = fork_app.test_client()
+    fork_headers = {"Tailscale-User-Login": "fixture"}
+    fork_url = "/game-samples/knight-forks"
+    assert fork_client.get(fork_url, base_url="https://coach.invalid").status_code == 403
+    version = fork_db.connection.execute("PRAGMA data_version").fetchone()[0]
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            fork_game_proof, "fork_proof", lambda *_args, **_kwargs: pytest.fail("browser proof")
+        )
+        patch.setattr(
+            chess.engine.SimpleEngine, "popen_uci", lambda *_args, **_kwargs: pytest.fail("engine")
+        )
+        page = fork_client.get(fork_url, base_url="https://coach.invalid", headers=fork_headers)
+        plan = fork_client.get("/plan", base_url="https://coach.invalid", headers=fork_headers)
+    assert page.status_code == 200 and b"3 of 3 learner turns attempted" in page.data
+    assert b"2 turns had a proved fork" in page.data and b"1 await comparison" in page.data
+    assert b"1 turns had at least one unproved" in page.data
+    assert b"/decisions/" in page.data and b"Rate comparisons need" in page.data
+    assert b"fixture_a" not in page.data and b"fixture_b" not in page.data
+    assert b"/game-samples/knight-forks" in plan.data
+    assert fork_db.connection.execute("PRAGMA data_version").fetchone()[0] == version
+    assert fork_db.connection.total_changes == changes
+
+    from chess_coach.fork_game_trend_validate import validate as fork_validate
+
+    fork_cache = fork_game_trend_paths.location(fork_db, root)
+    fork_binding = fork_game_trend_paths.binding(fork_db, "fixture_a")
+    fork_state = read(fork_cache, fork_binding, validator=fork_validate)
+    assert fork_state and read(fork_cache, fork_binding) is None
+    malformed = deepcopy(fork_state)
+    unresolved = next(
+        row for game in malformed["games"] for row in game["results"] if row[1] == "unresolved"
+    )
+    unresolved[2] = None
+    write(fork_cache, malformed)
+    assert fork_report(fork_db, "fixture_a", root) is None
+    write(fork_cache, fork_state)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(fork_game_trend_paths, "PROOF_VERSION", "changed-proof")
+        assert fork_report(fork_db, "fixture_a", root) is None
+    with monkeypatch.context() as patch:
+        patch.setattr(fork_game_trend_paths, "VALUES", {1: 2})
+        assert fork_report(fork_db, "fixture_a", root) is None
+
+    # Exercise the real classifier deadline through the shared worker and sidecar.
+    from chess_coach import fork_game_trend_scan
+
+    with monkeypatch.context() as patch:
+        patch.setattr(fork_game_trend_paths, "PROOF_VERSION", "deadline-fixture")
+        patch.setattr(scan, "TURN_LIMIT", 1)
+        patch.setattr(
+            fork_game_trend_scan,
+            "classify",
+            lambda board, played, deadline, clock: fork_game_proof.classify(
+                board, played, deadline, lambda: deadline
+            ),
+        )
+        run_forks(fork_db, "fixture_a", root)
+        deadline_state = read(
+            fork_cache, fork_game_trend_paths.binding(fork_db, "fixture_a"), validator=fork_validate
+        )
+        assert deadline_state
+        assert [row[1:] for game in deadline_state["games"] for row in game["results"]] == [
+            ["unknown", "turn_deadline"]
+        ]
+    write(fork_cache, fork_state)
+    fork_db.connection.execute("UPDATE games SET result='0-1' WHERE id=1")
+    fork_db.connection.commit()
+    assert fork_report(fork_db, "fixture_a", root) is None
+    stale = fork_client.get(fork_url, base_url="https://coach.invalid", headers=fork_headers)
+    assert b"scan is pending or its sources changed" in stale.data
+    fork_db.close()

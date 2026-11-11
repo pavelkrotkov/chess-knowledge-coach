@@ -4,6 +4,7 @@ import time
 
 from .capture_game_trend_scan import after_pipeline as capture_after_pipeline
 from .db import Database
+from .fork_game_trend_scan import after_pipeline as fork_after_pipeline
 from .opening_queue_worker import after_pipeline as opening_after_pipeline
 from .pipeline_config import PipelineConfig
 from .pipeline_cooldown import utc_now
@@ -34,4 +35,5 @@ def process_pipeline(
             after_pipeline(db, config.learner, started)
             capture_after_pipeline(db, config.learner, started)
             opening_after_pipeline(db, config, started)
+            fork_after_pipeline(db, config.learner, started)
         return result

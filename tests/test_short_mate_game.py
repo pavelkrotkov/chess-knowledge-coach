@@ -194,7 +194,7 @@ def test_proved_opportunity_with_unresolved_play_does_not_get_rate(monkeypatch):
     assert not result["complete"]
 
 
-def test_deadline_interrupts_inside_root_proof():
+def test_deadline_interrupts_inside_root_proof(monkeypatch):
     calls = 0
 
     def clock():
@@ -205,3 +205,57 @@ def test_deadline_interrupts_inside_root_proof():
     board = chess.Board(SHORT)
     assert classify(board, "a1b1", 1, clock) == ("unknown", "deadline")
     assert calls > 80 and board.fen() == SHORT
+
+    # Every supported knight root is examined before the recorded choice.
+    from chess_coach import fork_game_counts, fork_game_proof
+
+    fork = chess.Board("b3k3/4B3/5K1p/1N3b2/8/8/8/8 w - - 0 2")
+    unknown = chess.Board("b3k3/4B3/5K1p/1N3b2/8/8/8/r7 w - - 0 2")
+    visited = []
+    original_proof = fork_game_proof.fork_proof
+
+    def record_proof(board, move, *, check):
+        visited.append(move.uci())
+        return original_proof(board, move, check=check)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(fork_game_proof, "fork_proof", record_proof)
+        assert fork_game_proof.classify(fork, "b5c7", 1, lambda: 0) == ("played", None)
+        first = visited[:]
+        visited.clear()
+        assert fork_game_proof.classify(fork, "f6g7", 1, lambda: 0) == ("awaiting", None)
+        assert visited == first and {"b5c7", "b5d6"} <= set(first)
+    assert fork_game_proof.classify(fork, "b5d6", 1, lambda: 0) == ("played", None)
+    with monkeypatch.context() as patch:
+
+        def one_unproved(board, move, *, check):
+            return None if move.uci() == "b5d6" else original_proof(board, move, check=check)
+
+        patch.setattr(fork_game_proof, "fork_proof", one_unproved)
+        assert fork_game_proof.classify(fork, "b5c7", 1, lambda: 0) == (
+            "played",
+            "unresolved_roots",
+        )
+        assert fork_game_proof.classify(fork, "f6g7", 1, lambda: 0) == (
+            "awaiting",
+            "unresolved_roots",
+        )
+    assert fork_game_proof.classify(unknown, "f6g7", 1, lambda: 0) == (
+        "unresolved",
+        "unresolved_roots",
+    )
+    assert fork_game_proof.classify(chess.Board(), "e2e4", 1, lambda: 0) == ("no_candidate", None)
+    ticks = iter([0] * 12 + [2])
+    assert fork_game_proof.classify(fork, "b5c7", 1, lambda: next(ticks, 2)) == (
+        "unknown",
+        "deadline",
+    )
+    assert fork.fen() == "b3k3/4B3/5K1p/1N3b2/8/8/8/8 w - - 0 2"
+
+    counts = fork_game_counts.empty(22)
+    for position in range(1, 22):
+        fork_game_counts.add(counts, position, "unresolved", "unresolved_roots")
+    fork_game_counts.add(counts, 22, "played", None)
+    counts = fork_game_counts.finish(counts)
+    assert len(counts["examples"]) == 20 and counts["examples"][0]["position_id"] == 22
+    assert counts["unresolved_roots"] == 21 and counts["opportunities"] == 1
