@@ -101,6 +101,20 @@ def history():
     return render_template("fork_history.html", report=result)
 
 
+@related_fork.get("/plan/forks/progress")
+def progress():
+    from .fork_progress_view import show
+
+    return show()
+
+
+@related_fork.get("/plan/forks/attempts")
+def attempts():
+    from .fork_attempt_view import show
+
+    return show()
+
+
 @related_fork.get("/plan/forks/find-verified")
 def find_first():
     from .fork_followup_page import page

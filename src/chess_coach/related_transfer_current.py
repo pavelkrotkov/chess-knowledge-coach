@@ -1,7 +1,7 @@
 """Recheck each source-bound transfer family when a session resumes."""
 
 
-def require_current(db, row, snapshot_hash, *, fork_check=None):
+def require_current(db, row, snapshot_hash, *, fork_check=None, fork_cache=None):
     from .related_backrank_current import require_current as require_backrank
     from .related_fork_avoidance_current import require_current as require_avoidance
     from .related_fork_current import require_current as require_fork
@@ -10,7 +10,7 @@ def require_current(db, row, snapshot_hash, *, fork_check=None):
     from .related_pin_current import require_current as require_pin
     from .related_protection_current import require_current as require_protection
 
-    require_fork(db, row, snapshot_hash, check=fork_check)
+    require_fork(db, row, snapshot_hash, check=fork_check, cache=fork_cache)
     require_protection(db, row, snapshot_hash)
     require_prevention(db, row, snapshot_hash)
     require_avoidance(db, row, snapshot_hash)
