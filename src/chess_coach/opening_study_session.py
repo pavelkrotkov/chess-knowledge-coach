@@ -15,7 +15,7 @@ from .tactical_study_path import planning as private_planning
 from .web_paths import inside
 
 
-def publish_locked(root, game, position, move, version):
+def _paths(root, version):
     if not re.fullmatch(r"[0-9a-f]{64}", version):
         raise ValueError("opening preview version differs")
     root = Path(root).resolve(strict=True)
@@ -25,6 +25,11 @@ def publish_locked(root, game, position, move, version):
     if not data.is_relative_to(root):
         raise ValueError("database outside project")
     database = inside(data, os.environ["CHESS_DB"], existing=True)
+    return root, learner, planning, database
+
+
+def publish_locked(root, game, position, move, version):
+    root, learner, planning, database = _paths(root, version)
     with (
         locked(database, planning),
         opening_lock(planning),

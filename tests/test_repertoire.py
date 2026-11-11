@@ -1191,6 +1191,73 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         intent = planning_dir / f"opening-study-{course_version}-intent.json"
         assert frozen.is_file() and frozen.stat().st_mode & 0o777 == 0o400
         assert intent.is_file() and provider.created == 1
+
+        # A changed source cannot admit the old preview, but its uncertain create
+        # can still be resolved without publishing any stale chapters.
+        from chess_coach.opening_study_reconcile import reconcile_locked
+        from chess_coach.tactical_study_intents import require_clear
+
+        db.connection.execute(
+            "UPDATE positions SET fen=? WHERE id=?", (original_fen + " ", first_move)
+        )
+        db.connection.commit()
+        with pytest.raises(ValueError):
+            opening_study_session.publish_locked(tmp_path, 1, first_move, "g1f3", course_version)
+        other = planning_dir / ("tactical-study-" + "a" * 64 + "-intent.json")
+        with pytest.raises(StudyError, match="unresolved"):
+            require_clear(planning_dir, other)
+        pending = intent.read_bytes()
+        original_request = provider.request
+
+        def read_only_request(method, url, **kwargs):
+            assert method == "GET" or (method == "POST" and url.endswith("/api/token/test"))
+            return original_request(method, url, **kwargs)
+
+        patch.setattr(provider, "request", read_only_request)
+        provider.scopes = "study:read"
+        with pytest.raises(StudyError, match="scopes"):
+            reconcile_locked(tmp_path, course_version)
+        assert intent.read_bytes() == pending
+        provider.scopes = "study:read,study:write"
+        with monkeypatch.context() as cooldown:
+            cooldown.setattr(study_session, "active_deadline", lambda *_args: "later")
+            with pytest.raises(StudyError, match="retry delay"):
+                reconcile_locked(tmp_path, course_version)
+        for count in (0, 2):
+            provider.inventory_count = count
+            with pytest.raises(StudyError, match="unresolved"):
+                reconcile_locked(tmp_path, course_version)
+            assert intent.read_bytes() == pending
+        provider.inventory_count = 1
+        provider.private = False
+        with pytest.raises(StudyError, match="privacy"):
+            reconcile_locked(tmp_path, course_version)
+        assert intent.read_bytes() == pending
+        provider.private = True
+        import sys
+
+        from chess_coach import ops_opening_study_publish
+
+        with monkeypatch.context() as cli:
+            cli.setattr(
+                sys,
+                "argv",
+                [
+                    "publish",
+                    "--project-root",
+                    str(tmp_path),
+                    "--preview-version",
+                    course_version,
+                    "--reconcile-only",
+                ],
+            )
+            ops_opening_study_publish.main()
+        assert json.loads(intent.read_text())["study"] == "abcd1234"
+        assert provider.created == 1 and not provider.uploaded
+        assert frozen.is_file() and require_clear(planning_dir, other)
+        patch.setattr(provider, "request", original_request)
+        db.connection.execute("UPDATE positions SET fen=? WHERE id=?", (original_fen, first_move))
+        db.connection.commit()
         with pytest.raises(StudyError, match="unknown"):
             opening_study_session.publish_locked(tmp_path, 1, first_move, "g1f3", course_version)
         assert len(provider.uploaded) == 1

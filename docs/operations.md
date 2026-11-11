@@ -491,3 +491,17 @@ refuses to overwrite an existing ordered index. The profile page uses exact
 parent-and-move matches from the first 40 plies, at most ten deduplicated public
 games, and up to twelve post-move positions per game, starting with the matching move. Named geometry is descriptive
 of this convenience sample; no private game data enters the index.
+
+If an opening Study create has an uncertain outcome and the reviewed preview is
+no longer current, set `original_preview_version` to the original reviewed preview
+hash and reconcile its destination without publishing chapters:
+
+```bash
+"$release" -I -B -m chess_coach.ops_opening_study_publish --project-root "$PWD" \
+  --preview-version "$original_preview_version" --reconcile-only
+```
+
+This checks the retained intent and frozen course, then finds and verifies the
+uniquely marked private Study. If the marker is missing or ambiguous, the create
+remains unresolved; retain the intent and investigate before trying again. The
+command does not create a Study or upload the stale course.
