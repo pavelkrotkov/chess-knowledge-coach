@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   validate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       UV_PYTHON_DOWNLOADS: never
     steps:
@@ -66,8 +66,11 @@ jobs:
           uv run --frozen --no-sync --python "$python" python -c 'import hashlib, pathlib, sys, chess_coach; p = pathlib.Path(sys.executable).resolve(); assert sys.version_info[:3] == (3, 12, 13); assert hashlib.sha256(p.read_bytes()).hexdigest() == "1e4461092175d186c4bcdb19ee2849a45d6e4d8d1f6a871e45f63418d52a4e35"; assert pathlib.Path(chess_coach.__file__).resolve().is_relative_to(pathlib.Path.cwd() / "src"); print("Verified Python:", p, sys.version)'
       - name: Install and identify Stockfish
         run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y stockfish
+          package="$GITHUB_WORKSPACE/.venv/stockfish_16-1build1_amd64.deb"
+          curl --fail --location --silent --show-error --proto =https --proto-redir =https --connect-timeout 10 --max-time 120 -o "$package" https://archive.ubuntu.com/ubuntu/pool/universe/s/stockfish/stockfish_16-1build1_amd64.deb
+          # https://packages.ubuntu.com/noble/amd64/stockfish/download
+          echo "909bfd433b049497f06ec3f63517deaf4e821acc138c974bb2a8af2bd58b073f  $package" | sha256sum --check
+          sudo dpkg --install "$package"
           dpkg-query -W stockfish
           test -x /usr/games/stockfish
           sha256sum /usr/games/stockfish
