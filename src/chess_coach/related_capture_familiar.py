@@ -13,7 +13,7 @@ from .related_capture_probe import position_probe
 LIMIT = 200000
 
 
-def familiarity(db, subject):
+def familiarity(db, subject, *, check=lambda: None):
     identity = normalize_identity(subject)
     if not identity:
         raise ValueError("practice subject unavailable")
@@ -23,8 +23,10 @@ def familiarity(db, subject):
     ).fetchall()
     if len(games) > LIMIT:
         raise ValueError("familiarity scan limit exceeded")
-    prompts = _legacy_sessions(db)
-    prompts.update(_initial_prompt(row["pgn"]) for row in games)
+    prompts = _legacy_sessions(db, check=check)
+    for row in games:
+        check()
+        prompts.add(_initial_prompt(row["pgn"]))
     ids = {row["source_id"] for row in games if row["source_id"]}
     return prompts, ids, position_probe(db, identity, subject)
 
@@ -39,10 +41,14 @@ def _initial_prompt(pgn):
         raise ValueError("familiarity source unavailable") from None
 
 
-def _legacy_sessions(db):
+def _legacy_sessions(db, *, check=lambda: None):
     legacy = db.connection.execute(
         "SELECT initial_fen,solution FROM puzzle_sessions LIMIT 200001"
     ).fetchall()
     if len(legacy) > LIMIT:
         raise ValueError("familiarity scan limit exceeded")
-    return {prompt_key(validate_line(row["initial_fen"], row["solution"])) for row in legacy}
+    prompts = set()
+    for row in legacy:
+        check()
+        prompts.add(prompt_key(validate_line(row["initial_fen"], row["solution"])))
+    return prompts

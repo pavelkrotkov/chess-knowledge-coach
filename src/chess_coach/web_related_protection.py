@@ -4,12 +4,33 @@ import secrets
 
 from flask import Blueprint, current_app, redirect, render_template, request, session, url_for
 
+from .protection_finder import find
 from .related_protection import preview
 from .related_protection_start import start_related
 from .web_board import board_rows
 from .web_db import database
 
 related_protection = Blueprint("related_protection", __name__)
+
+
+@related_protection.get("/plan/protection/finder")
+def finder():
+    try:
+        page = find(
+            database(),
+            current_app.config["SUBJECT"],
+            current_app.config["CORPUS"],
+            current_app.secret_key,
+            request.args.get("cursor"),
+        )
+        for item in page["result"]["items"]:
+            item["board"] = board_rows(item["fen"])
+    except ValueError:
+        return render_template(
+            "error.html",
+            message="The finder is unavailable or its continuation changed. Restart the check.",
+        ), 400
+    return render_template("protection_finder.html", page=page)
 
 
 @related_protection.get("/evidence/<int:evidence_id>/related-protections")

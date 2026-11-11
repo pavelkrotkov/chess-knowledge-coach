@@ -104,6 +104,169 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
         )
         db.close()
 
+        if color == "white":
+            # Keyset continuation reaches a late match even after a newer import.
+            import chess_coach.protection_finder_scan as scan
+            import chess_coach.protection_finder_window as window
+            from chess_coach.protection_finder_cursor import state_for
+            from chess_coach.protection_finder_scan import Finder
+
+            records = list(range(100, 40, -1))
+            visited = []
+
+            class Checks:
+                def __init__(self, visited=visited):
+                    self.checked = 0
+                    self.result = {"items": []}
+                    self.visited = visited
+
+                def check(self):
+                    pass
+
+                def source(self, identity):
+                    self.visited.append(identity)
+                    if identity == 56:
+                        self.result = {"items": [identity]}
+
+            with monkeypatch.context() as patch:
+                patch.setattr(
+                    window,
+                    "rows",
+                    lambda db, who, phase, before, lower, records=records: [
+                        {"id": identity} for identity in records if lower <= identity < before
+                    ][:32],
+                )
+                patch.setattr(scan, "preferred", lambda page, row, phase: True)
+                signer, state = state_for(b"secret", LEARNER, "test", None)
+                state[1] = 1
+                for _ in range(3):
+                    checks = Checks()
+                    search = Finder(None, LEARNER, state, checks)
+                    search.run()
+                    if checks.result["items"]:
+                        break
+                    records.insert(0, 101)
+                    token = signer.dumps(search.state)
+                    _, state = state_for(b"secret", LEARNER, "test", token)
+                assert checks.result["items"] == [56]
+                assert visited == list(range(100, 55, -1))
+
+            # A resumed failure keeps the companion already checked in this window.
+            from chess_coach.material_contract import SCOPE, VERSION
+            from chess_coach.material_policy import MAPPER
+
+            markers = [
+                {
+                    "id": identity,
+                    "outcome": "failure",
+                    "mapper_version": VERSION,
+                    "game_id": 1 if identity == 100 else 2,
+                    "producer": MAPPER,
+                    "run_version": VERSION,
+                    "scope_key": SCOPE,
+                    "status": "active",
+                    "review": None,
+                }
+                for identity in range(100, 96, -1)
+            ]
+            checked = []
+
+            class SourceChecks:
+                def __init__(self, checked=checked):
+                    self.checked = 0
+                    self.result = {"items": []}
+                    self.visited = checked
+
+                def check(self):
+                    pass
+
+                def source(self, identity):
+                    self.checked += 1
+                    self.visited.append(identity)
+                    if identity == 97:
+                        self.result = {"items": [identity]}
+
+            with monkeypatch.context() as patch:
+                patch.setattr(
+                    window,
+                    "rows",
+                    lambda db, who, phase, before, lower, markers=markers: (
+                        [row for row in markers if lower <= row["id"] < before]
+                        if phase == 0
+                        else []
+                    ),
+                )
+                signer, state = state_for(b"secret", LEARNER, "test", None)
+                first = Finder(None, LEARNER, state, SourceChecks())
+                first.run()
+                assert checked == [100, 99, 98]
+                _, resumed = state_for(b"secret", LEARNER, "test", signer.dumps(first.state))
+                second = Finder(None, LEARNER, resumed, SourceChecks())
+                second.run()
+                assert checked == [100, 99, 98, 97]
+                assert second.checks.result["items"] == [97]
+
+                # A timed-out source is skipped, but remains recurrence context.
+                class Timed(SourceChecks):
+                    def source(self, identity):
+                        self.visited.append(identity)
+                        raise TimeoutError
+
+                checked.clear()
+                _, state = state_for(b"secret", LEARNER, "test", None)
+                timed = Finder(None, LEARNER, state, Timed())
+                with pytest.raises(TimeoutError):
+                    timed.run()
+                _, resumed = state_for(b"secret", LEARNER, "test", signer.dumps(timed.state))
+                after_timeout = Finder(None, LEARNER, resumed, SourceChecks())
+                after_timeout.run()
+                assert checked == [100, 99, 98, 97]
+                assert after_timeout.checks.result["items"] == [97]
+
+            # The deadline applies while validating old puzzle-session lines too.
+            from types import SimpleNamespace
+
+            from chess_coach.related_capture_familiar import _legacy_sessions
+
+            legacy = SimpleNamespace(
+                connection=SimpleNamespace(
+                    execute=lambda *args: SimpleNamespace(fetchall=lambda: [{}])
+                )
+            )
+
+            def expired():
+                raise TimeoutError
+
+            with pytest.raises(TimeoutError):
+                _legacy_sessions(legacy, check=expired)
+
+            # One familiarity snapshot serves every strict source check in a request.
+            import chess_coach.protection_finder_work as work
+
+            loads = []
+            selections = []
+            familiar = (set(), set(), lambda key: False)
+            with monkeypatch.context() as patch:
+                patch.setattr(work, "source_for_evidence", lambda *args: None)
+                patch.setattr(
+                    work,
+                    "familiarity",
+                    lambda *args, loads=loads, familiar=familiar, **kwargs: (
+                        loads.append(1) or familiar
+                    ),
+                )
+                patch.setattr(
+                    work,
+                    "selection",
+                    lambda *args, selections=selections, **kwargs: (
+                        selections.append(kwargs["familiar_data"]) or None
+                    ),
+                )
+                checks = work.SourceChecks(None, LEARNER, "test", float("inf"))
+                checks.source(1)
+                checks.source(2)
+            assert loads == [1] and selections == [familiar, familiar]
+
         monkeypatch.setattr(
             sys,
             "argv",
@@ -145,6 +308,28 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
             f"/evidence/{evidence}", base_url="https://coach.invalid", headers=headers
         )
         assert b"Find related protection practice" in source.data
+        # The opt-in finder uses the same proof and creates no attempt on GET.
+        observer = sqlite3.connect(path)
+        before = observer.execute("PRAGMA data_version").fetchone()[0]
+        finder = client.get(
+            "/plan/protection/finder", base_url="https://coach.invalid", headers=headers
+        )
+        assert observer.execute("PRAGMA data_version").fetchone()[0] == before
+        observer.close()
+        assert finder.status_code == 200
+        assert b"successful defense for rehearsal" in finder.data
+        assert b"Start this example" in finder.data
+        assert reference.encode() in finder.data
+        assert moves[1].encode() not in finder.data
+        assert (
+            client.get(
+                "/plan/protection/finder?cursor=tampered",
+                base_url="https://coach.invalid",
+                headers=headers,
+            ).status_code
+            == 400
+        )
+
         page = client.get(
             f"/evidence/{evidence}/related-protections",
             base_url="https://coach.invalid",
