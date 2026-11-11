@@ -51,4 +51,9 @@ def current(db, row, binding, snapshot):
         raise ValueError("fork assessment changed")
     if board.fen() != row["prompt_fen"] or not _proof(board, moves, assessment):
         raise ValueError("fork assessment changed")
+    if assessment.get("context") is not None:
+        from .fork_comparison_context import context
+
+        if assessment["context"] != context(db, row["source_version"], row["source_key"]):
+            raise ValueError("fork comparison context changed")
     apply(snapshot, assessment)

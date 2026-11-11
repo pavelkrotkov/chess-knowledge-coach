@@ -49,6 +49,7 @@ def begin(evidence_id):
                 corpus_version=current_app.config["CORPUS"],
                 reference=request.form.get("reference", ""),
                 secret=current_app.secret_key,
+                prior=request.form.get("prior") or None,
             )
         else:
             start_related(
@@ -98,3 +99,17 @@ def history():
     except (sqlite3.Error, ValueError, TypeError, KeyError, IndexError):
         return render_template("error.html", message="Fork history is unavailable or changed."), 400
     return render_template("fork_history.html", report=result)
+
+
+@related_fork.get("/plan/forks/find-verified")
+def find_first():
+    from .fork_followup_page import page
+
+    return page(matched=False)
+
+
+@related_fork.get("/plan/forks/next")
+def find_next():
+    from .fork_followup_page import page
+
+    return page(matched=True)

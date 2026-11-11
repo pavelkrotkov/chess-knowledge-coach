@@ -8,5 +8,9 @@ from .related_fork_assessment_scope import is_source
 
 def add(result, row):
     if is_source(row):
+        provenance = json.loads(row["provenance_json"])
         result["fork_assessment"] = True
-        add_fields(result, json.loads(row["provenance_json"]))
+        result["fork_comparison_context"] = bool(
+            provenance["related_fork"]["assessment"].get("context")
+        )
+        add_fields(result, provenance)

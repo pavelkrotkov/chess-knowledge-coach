@@ -112,9 +112,47 @@ def test_unfamiliar_fork_browser_and_worker(tmp_path, monkeypatch, mode):
     db.connection.execute(
         "INSERT INTO puzzle_themes VALUES(?,?,'fork',1200)", (corpus, "synthetic-key")
     )
+    if mode == "correct":
+        # Two additional proof-capable forks share the theme and roles; only one
+        # is in the recorded difficulty cohort. The first prompt is now familiar.
+        for key, fen, solution, rating in (
+            ("match", "3k3b/p2B4/2K5/2b3N1/8/8/8/8 b - - 0 1", "a7a6 g5f7 d8e7 f7h8", 1250),
+            (
+                "different-band",
+                "8/8/8/8/1n3B2/5k2/4b2P/B3K3 w - - 0 1",
+                "h2h3 b4c2 e1d2 c2a1",
+                1600,
+            ),
+        ):
+            db.connection.execute(
+                """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,
+                    rating_deviation,themes_json,objective) VALUES(?,?,?,'https://example.invalid',?,?,80,'["fork"]','unknown')""",
+                (key, corpus, fen, solution, rating),
+            )
+            db.connection.execute(
+                "INSERT INTO puzzle_themes VALUES(?,?,'fork',?)", (corpus, key, rating)
+            )
     db.connection.execute("UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus,))
     db.connection.commit()
     assert certificate(db, "fork-fixture", "synthetic-key")["proof"]["move"] == "b5c7"
+    if mode == "correct":
+        from chess_coach import fork_followup_finder
+
+        checked = []
+
+        def later_source(_db, _subject, evidence_id, *_args, **_kwargs):
+            checked.append(evidence_id)
+            return {"items": []} if evidence_id == 4 else None
+
+        with monkeypatch.context() as patch:
+            patch.setattr(
+                fork_followup_finder,
+                "evidence",
+                lambda *_a, **_k: ([{"id": n} for n in range(1, 5)], False),
+            )
+            patch.setattr(fork_followup_finder, "find", later_source)
+            assert fork_followup_finder.first(db, SUBJECT, "fork-fixture", b"secret")[0] == 4
+        assert checked == [1, 2, 3, 4]
     db.close()
     app = create_app(
         db_path=path,
@@ -128,8 +166,28 @@ def test_unfamiliar_fork_browser_and_worker(tmp_path, monkeypatch, mode):
     headers = {"Tailscale-User-Login": "fixture-login"}
     base = "https://coach.invalid"
     assert client.get("/plan/forks/history", base_url=base).status_code == 403
-    plan = client.get("/plan", base_url=base, headers=headers)
+    from chess_coach import related_fork_assessment_finder
+
+    original_search = related_fork_assessment_finder.search
+    if mode == "correct":
+
+        def initial_search(db, ordered, started, seconds, **options):
+            selected = [item for item in ordered if item["key"] == "synthetic-key"]
+            return original_search(db, selected, started, seconds, **options)
+
+        monkeypatch.setattr(related_fork_assessment_finder, "search", initial_search)
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            related_fork_assessment_finder,
+            "selection",
+            lambda *_args: pytest.fail("daily plan must not search the fork corpus"),
+        )
+        plan = client.get("/plan", base_url=base, headers=headers)
     assert b"First-encounter fork assessment history" in plan.data
+    assert b"Find a comparable next fork assessment" in plan.data
+    if mode == "correct":
+        initial = client.get("/plan/forks/find-verified", base_url=base, headers=headers)
+        assert initial.status_code == 200 and b"Start fork assessment" in initial.data
     page = client.get(
         f"/evidence/{evidence}/related-forks/find-verified", base_url=base, headers=headers
     )
@@ -211,6 +269,7 @@ def test_unfamiliar_fork_browser_and_worker(tmp_path, monkeypatch, mode):
         },
     )
     assert posted.status_code == 303
+    monkeypatch.setattr(related_fork_assessment_finder, "search", original_search)
     page = client.get(posted.location, base_url=base, headers=headers)
     assert page.status_code == 200 and b"b5c7" not in page.data
     attempt = token(page, "attempt")
@@ -257,7 +316,159 @@ def test_unfamiliar_fork_browser_and_worker(tmp_path, monkeypatch, mode):
     assert attempt.encode() in page_data
     assert b"Comparisons are unavailable" in page_data
     assert b"<title>Fork assessment history - Chess coach</title>" in page_data
+    if mode != "correct":
+        unmatched = client.get(
+            "/plan/forks/next?attempt=" + attempt, base_url=base, headers=headers
+        )
+        assert b"No comparable certified unfamiliar fork" in unmatched.data
     if mode == "correct":
+        assessment_page = client.get(posted.location, base_url=base, headers=headers)
+        assert b"Find a comparable next fork assessment" in assessment_page.data
+        from chess_coach import fork_followup_search
+
+        with monkeypatch.context() as patch:
+            patch.setattr(fork_followup_search, "matches", lambda *_args: False)
+            empty = client.get(
+                "/plan/forks/next?attempt=" + attempt, base_url=base, headers=headers
+            )
+        assert b"No comparable certified unfamiliar fork" in empty.data
+        assert b"Ordinary fork practice" in empty.data
+
+        original_row = dict(
+            db.connection.execute(
+                "SELECT * FROM unified_sessions WHERE attempt_id=?", (attempt,)
+            ).fetchone()
+        )
+        columns = list(original_row)
+        unrelated = {
+            **original_row,
+            "prompt_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "objective": "legal_line",
+        }
+        db.connection.executemany(
+            "INSERT INTO unified_sessions ("
+            + ",".join(columns)
+            + ") VALUES ("
+            + ",".join("?" for _ in columns)
+            + ")",
+            [
+                tuple(
+                    ({**unrelated, "attempt_id": f"unrelated-{index}"})[column]
+                    for column in columns
+                )
+                for index in range(205)
+            ],
+        )
+        db.connection.commit()
+        from chess_coach import related_fork_assessment_search
+        from chess_coach.fork_followup_prior import prior
+
+        assert prior(db, SUBJECT, "fork-fixture", attempt)[0] == evidence
+        real_certify = related_fork_assessment_search.certify
+        proved = []
+
+        def record_proof(board, moves, fingerprint):
+            proved.append(moves[1])
+            return real_certify(board, moves, fingerprint)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(related_fork_assessment_search, "certify", record_proof)
+            next_page = client.get("/plan/forks/next", base_url=base, headers=headers)
+        assert b"same fork pattern and similar difficulty" in next_page.data
+        assert proved == ["g5f7"]
+        assert b"g5f7" not in next_page.data and b"different-band" not in next_page.data
+        form = {
+            "csrf": token(next_page, "csrf"),
+            "reference": token(next_page, "reference"),
+            "assessment": "1",
+            "prior": attempt,
+        }
+        from chess_coach import fork_followup_admission
+
+        count = db.connection.execute("SELECT COUNT(*) FROM unified_sessions").fetchone()[0]
+        stripped = {key: value for key, value in form.items() if key != "prior"}
+        response = client.post(
+            f"/evidence/{evidence}/related-forks/start",
+            base_url=base,
+            headers=headers | {"Origin": base},
+            data=stripped,
+        )
+        assert response.status_code == 400
+        # Even a different eligible prior with the same cohort cannot reuse this reference.
+        expected_context = prior(db, SUBJECT, "fork-fixture", attempt)[1]
+        with monkeypatch.context() as patch:
+            patch.setattr(
+                fork_followup_admission, "previous", lambda *_args: (evidence, expected_context)
+            )
+            swapped = client.post(
+                f"/evidence/{evidence}/related-forks/start",
+                base_url=base,
+                headers=headers | {"Origin": base},
+                data={**form, "prior": "another-prior"},
+            )
+        assert swapped.status_code == 400
+        with monkeypatch.context() as patch:
+            altered_cohort = {
+                **expected_context,
+                "rating_band": expected_context["rating_band"] + 1,
+            }
+            patch.setattr(
+                fork_followup_admission, "previous", lambda *_args: (evidence, altered_cohort)
+            )
+            wrong_cohort = client.post(
+                f"/evidence/{evidence}/related-forks/start",
+                base_url=base,
+                headers=headers | {"Origin": base},
+                data=form,
+            )
+        assert wrong_cohort.status_code == 400
+        ordinary = client.post(
+            f"/evidence/{evidence}/related-forks/start",
+            base_url=base,
+            headers=headers | {"Origin": base},
+            data={key: value for key, value in stripped.items() if key != "assessment"},
+        )
+        assert ordinary.status_code == 400
+        assert db.connection.execute("SELECT COUNT(*) FROM unified_sessions").fetchone()[0] == count
+
+        original_context = fork_followup_admission.context
+
+        def changed_context(current_db, version, key):
+            value = original_context(current_db, version, key)
+            return {**value, "rating_band": value["rating_band"] + 1} if key == "match" else value
+
+        with monkeypatch.context() as patch:
+            patch.setattr(fork_followup_admission, "context", changed_context)
+            stale_match = client.post(
+                f"/evidence/{evidence}/related-forks/start",
+                base_url=base,
+                headers=headers | {"Origin": base},
+                data=form,
+            )
+        assert stale_match.status_code == 400
+        next_page = client.get(
+            "/plan/forks/next?attempt=" + attempt, base_url=base, headers=headers
+        )
+        form["csrf"], form["reference"] = token(next_page, "csrf"), token(next_page, "reference")
+        second = client.post(
+            f"/evidence/{evidence}/related-forks/start",
+            base_url=base,
+            headers=headers | {"Origin": base},
+            data=form,
+        )
+        assert second.status_code == 303
+        second_page = client.get(second.location, base_url=base, headers=headers)
+        second_attempt = token(second_page, "attempt")
+        second_row = db.connection.execute(
+            "SELECT source_key,provenance_json FROM unified_sessions WHERE attempt_id=?",
+            (second_attempt,),
+        ).fetchone()
+        assert second_row["source_key"] == "match"
+        assert (
+            json.loads(second_row["provenance_json"])["related_fork"]["assessment"]["context"]
+            == json.loads(original_row["provenance_json"])["related_fork"]["assessment"]["context"]
+        )
+
         from chess_coach import fork_history
 
         with monkeypatch.context() as patch:
@@ -313,7 +524,9 @@ def test_unfamiliar_fork_browser_and_worker(tmp_path, monkeypatch, mode):
         assert not valid({**output, "status": "incorrect"}, request, events, board, first_move)
     review_evidence(db, evidence, decision="reject", actor="fixture_reviewer")
     stale_history = history()
-    assert b"1 unavailable or stale" in stale_history
+    assert (
+        b"2 unavailable or stale" if mode == "correct" else b"1 unavailable or stale"
+    ) in stale_history
     assert (b"1 assisted" if mode == "assisted" else b"0 assisted") in stale_history
     with pytest.raises(ValueError):
         show(db, attempt, SUBJECT)
