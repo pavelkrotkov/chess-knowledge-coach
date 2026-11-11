@@ -7,7 +7,7 @@ from .objective_current import current
 from .objective_history_dispatch import replay
 
 
-def result(db, row, *, check):
+def result(db, row, *, check, cache=None):
     requests = db.connection.execute(
         "SELECT * FROM objective_requests WHERE attempt_id=? ORDER BY rowid LIMIT 2",
         (row["attempt_id"],),
@@ -15,7 +15,7 @@ def result(db, row, *, check):
     if len(requests) != 1:
         return "stale"
     request = requests[0]
-    session, events = current(db, request, related_check=check)
+    session, events = current(db, request, related_check=check, related_cache=cache)
     board, move = replay(db, session, events, request)
     record = db.connection.execute(
         "SELECT result_json FROM objective_results WHERE attempt_id=? AND event_id=?",

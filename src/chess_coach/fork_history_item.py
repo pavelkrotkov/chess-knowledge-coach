@@ -5,7 +5,7 @@ from .mate_assessment_events import replay
 from .unified_source_current import require_current
 
 
-def item(db, row, corpus, check):
+def item(db, row, corpus, check, *, cache=None):
     entry = {"attempt_id": row["attempt_id"], "started_at": row["started_at"]}
     try:
         observed = replay(db, row)
@@ -13,10 +13,10 @@ def item(db, row, corpus, check):
         if row["source_version"] != corpus:
             return {**entry, "status": "stale"}
         if row["status"] == "active":
-            require_current(db, row, related_check=check)
+            require_current(db, row, related_check=check, related_cache=cache)
             status = "incomplete"
         else:
-            status = result(db, row, check=check)
+            status = result(db, row, check=check, cache=cache)
         return {**entry, "status": status}
     except (ValueError, TypeError, KeyError, IndexError, AttributeError):
         return {**entry, "status": "stale"}

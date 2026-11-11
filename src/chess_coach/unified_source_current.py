@@ -18,7 +18,9 @@ def require_current(db, row, *, related_cache=None, related_check=None):
     _require_related_current(db, row, related_cache, related_check)
     from .related_transfer_current import require_current as require_transfers_current
 
-    require_transfers_current(db, row, snapshot_hash, fork_check=related_check)
+    require_transfers_current(
+        db, row, snapshot_hash, fork_check=related_check, fork_cache=related_cache
+    )
     public = row["source_type"] == "public" and row["objective"] in PROMOTION_OBJECTIVES
     if row["source_type"] != "own-game" and not public:
         return

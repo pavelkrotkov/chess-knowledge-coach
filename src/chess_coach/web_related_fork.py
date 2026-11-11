@@ -101,6 +101,19 @@ def history():
     return render_template("fork_history.html", report=result)
 
 
+@related_fork.get("/plan/forks/progress")
+def progress():
+    from .fork_progress_report import report
+
+    try:
+        result = report(database(), current_app.config["SUBJECT"], current_app.config["CORPUS"])
+    except (sqlite3.Error, ValueError, TypeError, KeyError, IndexError):
+        return render_template(
+            "error.html", message="Fork progress is unavailable or changed."
+        ), 400
+    return render_template("fork_progress.html", report=result)
+
+
 @related_fork.get("/plan/forks/find-verified")
 def find_first():
     from .fork_followup_page import page
