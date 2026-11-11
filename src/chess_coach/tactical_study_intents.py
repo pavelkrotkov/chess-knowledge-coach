@@ -1,6 +1,6 @@
 """Keep tactical version intents separate and unresolved creates exclusive."""
 
-from itertools import islice
+from itertools import chain, islice
 
 from .study_remote import StudyError
 from .tactical_study_intent_status import pending
@@ -9,7 +9,15 @@ MAX_INTENTS = 100
 
 
 def require_clear(planning, current):
-    paths = list(islice(planning.glob("tactical-study-*-intent.json"), MAX_INTENTS + 1))
+    paths = list(
+        islice(
+            chain(
+                planning.glob("tactical-study-*-intent.json"),
+                planning.glob("opening-study-*-intent.json"),
+            ),
+            MAX_INTENTS + 1,
+        )
+    )
     if len(paths) > MAX_INTENTS:
         raise StudyError("too many tactical Study intents")
     previous = planning / "poc-study-336-intent.json"
@@ -18,7 +26,9 @@ def require_clear(planning, current):
     for other in paths:
         is_pending = pending(other)
         if other != current and is_pending:
-            raise StudyError("another tactical Study creation outcome remains unresolved")
+            raise StudyError(
+                "another tactical or opening Study creation outcome remains unresolved"
+            )
     return paths
 
 
