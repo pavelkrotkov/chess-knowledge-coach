@@ -10,7 +10,9 @@ def _valid(board, move, attacker, anchor):
     return bool(
         move
         and move in board.legal_moves
-        and piece == chess.Piece(chess.KNIGHT, board.turn)
+        and piece is not None
+        and piece.color == board.turn
+        and piece.piece_type in {chess.PAWN, chess.KNIGHT}
         and target is not None
         and target.color != board.turn
     )

@@ -344,7 +344,7 @@ def test_unfamiliar_fork_browser_and_worker(tmp_path, monkeypatch, mode):
         assert output["reason"] == reason and output["miss_rule"] == "certified-fork-miss-v1"
         page = client.get(posted.location, base_url=base, headers=headers)
         feedback = (
-            b"The named knight was not moved"
+            b"The named piece was not moved"
             if mode == "miss_piece"
             else b"does not attack the named target"
         )
@@ -604,3 +604,51 @@ def test_unfamiliar_fork_browser_and_worker(tmp_path, monkeypatch, mode):
     with pytest.raises(ValueError):
         show(db, attempt, SUBJECT)
     db.close()
+
+
+def test_certified_pawn_fork_miss_control():
+    import chess
+
+    from chess_coach.fork_assessment_miss_result import valid, verdict
+    from chess_coach.related_capture_assessment import HISTORY
+    from chess_coach.related_fork_assessment import certify
+    from chess_coach.related_fork_features import corpus_fork_features
+
+    fen = "8/7p/8/3k1n2/8/8/4P3/K3RR2 b - - 0 1"
+    solution = "h7h6 e2e4 d5c6 e4f5"
+    prompt, features = corpus_fork_features(fen, solution)
+    board = chess.Board(prompt)
+    certificate = certify(board, solution.split(), "synthetic")
+    assert features and features["mover"] == chess.PAWN
+    assert certificate["attacker"] == "e2" and certificate["anchor"] == "d5"
+
+    data = {"related_fork": {"assessment": certificate}, "fork_attacker": "e2", "fork_anchor": "d5"}
+    request = {"history_mode": HISTORY}
+    session = {
+        "source_type": "corpus",
+        "objective": "execute_named_fork",
+        "provenance_json": json.dumps(data),
+    }
+    for move, expected in (
+        ("e1d1", "named_attacker_not_moved"),
+        ("e2e3", "named_target_not_attacked"),
+    ):
+        move = chess.Move.from_uci(move)
+        result = verdict(board, move, chess.E2, chess.D5, request, data, {})
+        assert result and result["status"] == "incorrect" and result["reason"] == expected
+        assert valid(result, board, move, session)
+    assert (
+        verdict(board, chess.Move.from_uci("e2e4"), chess.E2, chess.D5, request, data, {}) is None
+    )
+    assert (
+        verdict(
+            board,
+            chess.Move.from_uci("e2e3"),
+            chess.E2,
+            chess.D5,
+            {"history_mode": "owned"},
+            data,
+            {},
+        )
+        is None
+    )
