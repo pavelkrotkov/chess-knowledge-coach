@@ -7,12 +7,12 @@ from .opening_unfamiliar_options import available
 from .opening_unfamiliar_selection import _board, _valid
 
 
-def selected(db, root, learner, selection, *, measured=False):
+def selected(db, root, learner, selection, *, measured=False, deadline=None):
     if not _valid(selection):
         raise ValueError("opening selection unavailable")
     subject = normalize_identity(learner)
     guard = start(db, root, subject)
-    budget, subject, dataset, report, white, black = prepare(db, learner)
+    budget, subject, dataset, report, white, black = prepare(db, learner, deadline=deadline)
     color = selection["color"]
     board = _board(selection, report, white, black)
     found = available(db, root, subject, dataset, board, color, budget, selection["move"])

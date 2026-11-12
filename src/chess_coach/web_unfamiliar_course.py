@@ -3,7 +3,7 @@
 from flask import abort, current_app, render_template, request, url_for
 
 from .opening_study_view import status
-from .opening_unfamiliar_course import preview
+from .opening_unfamiliar_course import legacy_from, preview
 from .tactical_course_deadline import PreviewDeadline
 from .web_board import board_rows
 from .web_db import database
@@ -16,7 +16,7 @@ def _load(selection, expected=None):
         args = (database(), current_app.config["PROJECT_ROOT"], current_app.config["SUBJECT"])
         value = preview(*args, selection) if selection else preview(*args)
         if expected and selection and value.get("legacy_version") == expected:
-            value = preview(*args, selection, legacy=True)
+            value = legacy_from(value)
             value["historical"] = True
         return value
     except ValueError:

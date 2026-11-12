@@ -1,7 +1,7 @@
 """Recognize a retained exact unmeasured Study intent."""
 
 from .opening_queue_files import read
-from .opening_unfamiliar_course import preview
+from .opening_unfamiliar_course import legacy_from, preview
 from .opening_unfamiliar_study_course import build
 from .tactical_study_ledger import validate
 
@@ -19,10 +19,14 @@ def retained(directory, course):
         return False
 
 
-def resolve(db, root, learner, selection, version, directory):
-    value = preview(db, root, learner, selection) if selection else preview(db, root, learner)
+def resolve(db, root, learner, selection, version, directory, *, deadline=None):
+    value = (
+        preview(db, root, learner, selection, deadline=deadline)
+        if selection
+        else preview(db, root, learner)
+    )
     if selection and value["version"] != version and value.get("legacy_version") == version:
-        value = preview(db, root, learner, selection, legacy=True)
+        value = legacy_from(value)
         if not retained(directory, value):
             raise ValueError("previous opening intent unavailable")
     return value

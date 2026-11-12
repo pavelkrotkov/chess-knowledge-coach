@@ -1561,6 +1561,17 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
             )
             with pytest.raises(ValueError, match="measurement differs"):
                 build_unfamiliar_study(forged, forged["version"])
+
+            import chess_coach.opening_unfamiliar_selected as selected_source
+
+            original_selected = selected_source.selected
+            selected_deadlines = []
+
+            def counted_selected(*args, **kwargs):
+                selected_deadlines.append(kwargs.get("deadline"))
+                return original_selected(*args, **kwargs)
+
+            measured.setattr(selected_source, "selected", counted_selected)
             with admitted(
                 experiment_path,
                 planning_dir,
@@ -1570,10 +1581,15 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
                 selected,
             ):
                 pass
+            assert len(selected_deadlines) == 2
+            assert selected_deadlines[0] is not None and len(set(selected_deadlines)) == 1
+            selected_deadlines.clear()
             with admitted(
                 experiment_path, planning_dir, tmp_path, "learner", selected_version, selected
             ):
                 pass
+            assert len(selected_deadlines) == 2
+            assert selected_deadlines[0] is not None and len(set(selected_deadlines)) == 1
             import chess_coach.opening_unfamiliar_legacy as legacy_admission
 
             with monkeypatch.context() as missing_intent:
@@ -1605,6 +1621,7 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
             )
             assert measured_pgn.status_code == 200 and b"licensed public game" in measured_pgn.data
             assert b'[White "Learner"]' not in measured_pgn.data
+            selected_deadlines.clear()
             legacy_page = client_first.get(
                 course_path,
                 query_string={**selected, "version": selected_version},
@@ -1612,6 +1629,7 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
                 headers=headers,
             )
             assert b"Open verified private Study" in legacy_page.data
+            assert selected_deadlines == [None]
 
             def changed_scores(*args, **kwargs):
                 values = short_states(*args, **kwargs)
