@@ -15,6 +15,8 @@ def assess(board, actual, best, best_line, played_line, proof, started, check):
     check()
     if not lines:
         return ambiguous("discovery_material_defense", reason)
+    if any(len(lines[role]["uci"]) != 4 for role in ("played", "best")):
+        return ambiguous("discovery_material_defense", "comparison_horizon_unsupported")
     if not prevents(board, actual, best, proof):
         return ambiguous("discovery_material_defense", "named_discovery_not_prevented")
     safe = judge(board.copy(), best, time.monotonic, started, 1.0, {})

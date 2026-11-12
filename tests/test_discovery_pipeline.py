@@ -349,6 +349,24 @@ def test_source_worker_lesson_practice_and_review(tmp_path, monkeypatch):
     )
     assert material["outcome"] == "failure" and material["target_origin"] == "a7"
     assert material["threat"]["target"] == "a8" and material["threat"]["minimum_gain"] >= 3
+    from chess_coach.fork_defense_comparison import failed as compare_defenses
+
+    extended_best = ["a7c5", "a4b6", "d7e7", "b6c8", "e7f8", "c8e7"]
+    compared, reason = compare_defenses(
+        material_board,
+        chess.Move.from_uci(played_moves[0]),
+        chess.Move.from_uci(best_moves[0]),
+        scored(played_moves, 0),
+        scored(extended_best, 200),
+        material["threat"],
+    )
+    assert reason is None and len(compared["played"]["uci"]) == 4
+    assert len(compared["best"]["uci"]) == 6
+    extended = observe_material(
+        material_board, played_moves[0], scored(extended_best, 200), scored(played_moves, 0)
+    )
+    assert extended["outcome"] == "ambiguous"
+    assert extended["reason"] == "comparison_horizon_unsupported"
     uncertain = observe_material(
         material_board, played_moves[0], scored(best_moves, 0), scored(played_moves, 0)
     )
