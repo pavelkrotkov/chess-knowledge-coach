@@ -5,7 +5,7 @@ from .related_protection_match import scorer
 from .related_protection_source import source_for_evidence
 from .related_transfer_select import select
 
-VERSION = "protection-prevent-transfer-v1"
+VERSION = "protection-prevent-transfer-v2"
 MAX_PROOFS = 32
 
 
@@ -20,6 +20,7 @@ def selection(db, subject, evidence_id, corpus_version):
         VERSION,
         theme="defensiveMove",
         all_lines=True,
+        per_band=2000,
         feature=lambda prompt, line: dict(source["features"]),
         score=scorer(budget),
     )
@@ -34,4 +35,5 @@ def preview(db, subject, evidence_id, corpus_version, cursor=None):
     if chosen is not None:
         result["source_outcome"] = chosen[0]["outcome"]
         result["protection_scan"] = chosen[2]["protection_scan"]
+        result["corpus_limited"] = chosen[2]["limited"]
     return result

@@ -1,10 +1,11 @@
 """Match only legal supplied defenses against the same material role."""
 
-from .puzzle_session_validate import validate_line
-from .related_capture_match import _scored
+import chess
+
+from .puzzle_session_validate import legal_move, solution_moves
 from .related_capture_position import prompt_key
 from .related_fork_lines import bind_lines
-from .related_protection_features import protection_features, same_mechanism
+from .related_protection_proofs import matches
 
 
 def scorer(budget):
@@ -22,28 +23,20 @@ def _candidate(item, source, seen, baseline, budget):
     key = prompt_key(prompt)
     if key in seen:
         return None
-    matches = []
-    for index, line in enumerate(lines):
-        if budget["checked"] >= budget["limit"]:
-            budget["truncated"] = True
-            break
-        budget["checked"] += 1
-        features = protection_features(prompt, line.split())
-        if same_mechanism(source, features):
-            match = _scored(item, source, features, prompt, key, baseline)
-            match["objective_target"] = features["target_square"]
-            match["protection_mechanism"] = features["mechanism"]
-            matches.append((match, index))
-    if not matches:
+    matched = matches(item, source, baseline, budget, prompt, key, lines)
+    if not matched:
         return None
-    best = min(matches, key=lambda entry: entry[0]["order"])[0]
-    bind_lines(best, lines, [index for _, index in matches])
+    best = min(matched, key=lambda entry: entry[0]["order"])[0]
+    bind_lines(best, lines, [index for _, index in matched])
     return best
 
 
 def _prompt(item):
     if item["type"] == "corpus":
-        return validate_line(item["fen"], item["solution"]), [
-            " ".join(item["solution"].split()[1:])
-        ]
+        board = chess.Board(item["fen"])
+        if not board.is_valid():
+            raise ValueError("invalid setup")
+        moves = solution_moves(item["solution"])
+        board.push(legal_move(board, moves[0]))
+        return board.fen(), [" ".join(moves[1:])]
     return item["fen"], item["lines"]
