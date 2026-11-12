@@ -309,6 +309,12 @@ def test_unfamiliar_fork_browser_and_worker(tmp_path, monkeypatch, mode):
     result = submit(db, attempt, SUBJECT, event_id="answer", move=move)
     assert result["status"] == "needs_verification"
     assert b"1 pending" in history()
+    from chess_coach.fork_plan_history import report as fork_plan_history
+    from chess_coach.opening_queue_budget import BrowserBudget
+
+    assert fork_plan_history(db, SUBJECT, "fork-fixture", evidence, BrowserBudget(db)) == {
+        "status": "unknown"
+    }
     expected = (
         "unresolved"
         if mode == "unresolved"
@@ -330,6 +336,53 @@ def test_unfamiliar_fork_browser_and_worker(tmp_path, monkeypatch, mode):
     )
     assert not output["learning_eligible"]
     assert output["assistance"] == ("revealed" if mode == "assisted" else "unassisted")
+
+    # The advisory card consumes the same source-bound result without a finder,
+    # engine, session creation or learning write.
+    from chess_coach import fork_plan_action, fork_plan_history
+
+    action = {"kind": "fork", "version": VERSION, "key": str(evidence), "evidence_id": evidence}
+    preview = {"groups": [{"miss_games": 2}]}
+
+    def no_work(*_args, **_kwargs):
+        pytest.fail("next-focus must not search or run an engine")
+
+    def focus():
+        with monkeypatch.context() as patch:
+            patch.setattr(fork_plan_action, "preview", lambda *_args: (preview, [action]))
+            patch.setattr("chess_coach.web_protection_plan.admissible", lambda *_args: None)
+            patch.setattr("chess_coach.web_protection_plan.report", lambda *_args: None)
+            patch.setattr(related_fork_assessment_finder, "selection", no_work)
+            patch.setattr("chess.engine.SimpleEngine.popen_uci", no_work)
+            return client.get("/plan/next-focus", base_url=base, headers=headers)
+
+    counts = {
+        table: db.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        for table in ("unified_sessions", "evidence_mappings", "mastery_states", "training_items")
+    }
+    focus_page = focus()
+    assert b"Optional practice: finding forks" in focus_page.data
+    assert b"Rehearse this fork" in focus_page.data
+    if mode == "correct":
+        assert b"Find a comparable follow-up fork assessment" in focus_page.data
+        assert ("/plan/forks/next?attempt=" + attempt).encode() in focus_page.data
+    else:
+        assert b"Find a comparable follow-up fork assessment" not in focus_page.data
+        assert f"/evidence/{evidence}/related-forks/find-verified".encode() in focus_page.data
+        assert (b"verified miss" in focus_page.data) == mode.startswith("miss_")
+    assert {
+        table: db.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        for table in counts
+    } == counts
+    if mode == "correct":
+        with monkeypatch.context() as patch:
+            patch.setattr(
+                fork_plan_history, "first", lambda *_args: (_ for _ in ()).throw(ValueError())
+            )
+            assert b"Find a comparable follow-up" not in focus().data
+        action["evidence_id"] = evidence + 100
+        assert b"Find a comparable follow-up" not in focus().data
+        action["evidence_id"] = evidence
     page_data = history()
     label = {
         "correct": b"1 verified correct",
@@ -418,21 +471,15 @@ def test_unfamiliar_fork_browser_and_worker(tmp_path, monkeypatch, mode):
             "prompt_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
             "objective": "legal_line",
         }
-        db.connection.executemany(
-            "INSERT INTO unified_sessions ("
-            + ",".join(columns)
-            + ") VALUES ("
-            + ",".join("?" for _ in columns)
-            + ")",
-            [
-                tuple(
-                    ({**unrelated, "attempt_id": f"unrelated-{index}"})[column]
-                    for column in columns
-                )
-                for index in range(205)
-            ],
-        )
-        db.connection.commit()
+        with monkeypatch.context() as patch:
+            newer = {**unrelated, "started_at": "2099-01-01T00:00:00+00:00"}
+            patch.setattr(fork_plan_history, "_end", lambda *_args: [*[newer] * 100, original_row])
+            assert b"Find a comparable follow-up" not in focus().data
+            tied = {**newer, "started_at": original_row["started_at"]}
+            patch.setattr(
+                fork_plan_history, "_end", lambda *_args: [*[newer] * 99, original_row, tied]
+            )
+            assert b"Find a comparable follow-up" not in focus().data
         from chess_coach import related_fork_assessment_search
         from chess_coach.fork_followup_prior import prior
 
@@ -541,7 +588,27 @@ def test_unfamiliar_fork_browser_and_worker(tmp_path, monkeypatch, mode):
             json.loads(second_row["provenance_json"])["related_fork"]["assessment"]["context"]
             == json.loads(original_row["provenance_json"])["related_fork"]["assessment"]["context"]
         )
+        still_offered = focus()
+        assert ("/plan/forks/next?attempt=" + attempt).encode() in still_offered.data
 
+        db.connection.executemany(
+            "INSERT INTO unified_sessions ("
+            + ",".join(columns)
+            + ") VALUES ("
+            + ",".join("?" for _ in columns)
+            + ")",
+            [
+                tuple(
+                    ({**unrelated, "attempt_id": f"unrelated-{index}"})[column]
+                    for column in columns
+                )
+                for index in range(205)
+            ],
+        )
+        db.connection.commit()
+        from chess_coach.fork_followup_finder import latest
+
+        assert latest(db, SUBJECT, "fork-fixture") == attempt
         from chess_coach import fork_history
 
         with monkeypatch.context() as patch:
@@ -596,6 +663,9 @@ def test_unfamiliar_fork_browser_and_worker(tmp_path, monkeypatch, mode):
         assert not valid({**output, "move": "b5a3"}, request, events, board, first_move)
         assert not valid({**output, "status": "incorrect"}, request, events, board, first_move)
     review_evidence(db, evidence, decision="reject", actor="fixture_reviewer")
+    stale_focus = focus()
+    assert b"Find a comparable follow-up fork assessment" not in stale_focus.data
+    assert b"verified miss" not in stale_focus.data
     stale_history = history()
     assert (
         b"2 unavailable or stale" if mode == "correct" else b"1 unavailable or stale"

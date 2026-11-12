@@ -66,6 +66,8 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
     headers = {"Tailscale-User-Login": "fixture-login"}
     base = "https://coach.invalid"
     assert client.get("/coaching?pattern=fork.execute", base_url=base).status_code == 403
+    import pytest
+
     import chess_coach.coaching_practice_source as practice_source
     import chess_coach.related_fork_assessment_finder as finder
 
@@ -101,6 +103,16 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
     assessment = f"/evidence/{evidence_id}/related-forks/find-verified"
     assert assessment.encode() in page.data and b"bounded search may find no match" in page.data
     assert b"<h3>Finding forks</h3>" in full.data and assessment.encode() in full.data
+    with monkeypatch.context() as patch:
+        patch.setattr(practice_source, "resolve_source", skip_second)
+        patch.setattr("chess_coach.web_protection_plan.admissible", lambda *_args: None)
+        patch.setattr("chess_coach.web_protection_plan.report", lambda *_args: None)
+        patch.setattr(finder, "selection", lambda *_args: pytest.fail("unexpected corpus search"))
+        focus = client.get("/plan/next-focus", base_url=base, headers=headers)
+    assert focus.data.count(b"Optional practice: finding forks") == 1
+    assert b"<title>Next practice focus \xe2\x80\x94 Chess coach</title>" in focus.data
+    assert b"2 independent games" in focus.data and b"Rehearse this fork" in focus.data
+    assert assessment.encode() in focus.data
     assert db.connection.execute("PRAGMA data_version").fetchone()[0] == before
     assert {
         table: db.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
@@ -147,6 +159,11 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
     assert source(db, LEARNER, candidate) is None
     first_example = next(item for item in lesson["examples"] if item["evidence_id"] == evidence_id)
     assert resolve_example(db, LEARNER, lesson, first_example) is None
+    with monkeypatch.context() as patch:
+        patch.setattr("chess_coach.web_protection_plan.admissible", lambda *_args: None)
+        patch.setattr("chess_coach.web_protection_plan.report", lambda *_args: None)
+        stale_focus = client.get("/plan/next-focus", base_url=base, headers=headers)
+    assert b"Optional practice: finding forks" not in stale_focus.data
     db.close()
     _fork_prevention_coaching(tmp_path, monkeypatch)
 
