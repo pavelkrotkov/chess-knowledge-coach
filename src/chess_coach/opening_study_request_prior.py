@@ -12,6 +12,8 @@ def unchanged(old, item, database, learner, directory):
     if (old["version"], old["selection"]) == (item["version"], item["selection"]):
         return old["state"] in {"queued", "complete"}
     intent = directory / f"opening-study-{old['version']}-intent.json"
-    if intent.exists() and not read(intent).get("complete"):
-        raise ValueError("Earlier Study request remains incomplete")
+    if intent.exists():
+        state = read(intent)
+        if not isinstance(state, dict) or state.get("complete") is not True:
+            raise ValueError("Earlier Study request remains incomplete")
     return False

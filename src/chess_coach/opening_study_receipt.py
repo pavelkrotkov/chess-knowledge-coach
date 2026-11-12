@@ -1,11 +1,9 @@
 """Read only a matching strict private Study receipt."""
 
-from datetime import datetime
-
 from .deep_selection_source import learner_key
 from .opening_queue_files import read
 from .opening_unfamiliar_study_course import build
-from .tactical_study_receipt_binding import valid
+from .tactical_study_receipt_binding import timestamp, valid
 from .tactical_study_receipt_chapters import entry
 from .web_study_status import _link
 
@@ -25,7 +23,7 @@ def verified(directory, learner, version, body):
     if chapter is None:
         return None
     when = state.get("verified_at")
-    if datetime.fromisoformat(when).tzinfo is None:
+    if not timestamp(when):
         return None
     value = _link(state.get("study"), chapter, when)
     return value["url"] if value else None

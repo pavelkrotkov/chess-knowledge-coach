@@ -10,6 +10,7 @@ from .opening_study_freeze import freeze
 from .opening_study_paths import paths as _paths
 from .pipeline_network_deadline import network_deadline
 from .study_publisher import publish
+from .study_remote import StudyError
 from .study_session import _publish, locked
 from .tactical_study_intents import MAX_INTENTS, require_clear
 
@@ -38,10 +39,15 @@ def publish_course(database, planning, version, source, *, bounded=False):
         else nullcontext()
     )
     with timer:
-        return _publish(
-            database,
-            destination,
-            course,
-            action=partial(publish, check=check, strict=True),
-            check=check,
-        )
+        try:
+            return _publish(
+                database,
+                destination,
+                course,
+                action=partial(publish, check=check, strict=True),
+                check=check,
+            )
+        except ValueError:
+            if not bounded:
+                raise
+            raise StudyError("Study publication incomplete") from None

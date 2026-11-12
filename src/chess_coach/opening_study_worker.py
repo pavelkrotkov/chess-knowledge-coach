@@ -35,7 +35,7 @@ def run(db, learner, root):
 
 
 def after_pipeline(db, learner, started):
-    # The whole course has 60 seconds, including a hard provider deadline.
+    # Reserve the 60-second job and one minute of shutdown time within the 30-minute unit.
     if time.monotonic() - started > 28 * 60:
         return
     try:
