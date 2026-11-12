@@ -7,7 +7,8 @@ from tests.test_fork_pipeline import LEARNER, make_game
 
 
 def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
-    db, _ = make_game(tmp_path / "synthetic.sqlite", monkeypatch)
+    path = tmp_path / "synthetic.sqlite"
+    db, config = make_game(path, monkeypatch)
     result = process_decision(db, 1, LEARNER)
     evidence_id = result["evidence_ids"][0]
     candidate = {"id": evidence_id, "position_id": 1}
@@ -17,11 +18,135 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
     assert "Nc7+" in example["facts"][0]
     assert example["evidence_id"] == evidence_id
     assert source(db, "another", candidate) is None
+
+    # A recurring fork lesson admits the next usable shown source without
+    # searching the corpus until the learner opens the unfamiliar finder.
+    from chess_coach.coaching_practice_source import resolve_example
+    from chess_coach.coaching_report import report as coaching_report
+    from chess_coach.evidence_review import review_evidence
+    from chess_coach.ingest import ingest_pgn
+    from chess_coach.objective_fork_contract import VERSION as FORK_VERSION
+    from chess_coach.pipeline_inputs import engine_identity, game_input
+    from chess_coach.pipeline_work import run_analysis
+    from chess_coach.web import create_app
+
+    review_evidence(db, evidence_id, decision="accept", actor="fixture")
+    original_pgn = db.connection.execute("SELECT pgn FROM games WHERE id=1").fetchone()[0]
+    ingest_pgn(db, original_pgn.replace("2026.01.01", "2026.01.02"))
+    second_position = db.connection.execute(
+        "SELECT id FROM positions WHERE game_id=2 AND ply=1"
+    ).fetchone()[0]
+    assert (
+        run_analysis(db, 2, game_input(db, 2), config, engine_identity(config.engine_path))[
+            "status"
+        ]
+        == "complete"
+    )
+    second = process_decision(db, second_position, LEARNER)
+    second_id = second["evidence_ids"][0]
+    group = next(
+        item
+        for item in coaching_report(db, LEARNER)["groups"]
+        if item["lesson"]["skill"] == "fork" and item["lesson"]["operation"] == "execute"
+    )
+    lesson = group["lesson"]
+    assert group["miss_games"] == 2 and len(lesson["examples"]) == 2
+    assert all(resolve_example(db, LEARNER, lesson, item) for item in lesson["examples"])
+    assert resolve_example(db, "another", lesson, lesson["examples"][0]) is None
+
+    app = create_app(
+        db_path=path,
+        subject=LEARNER,
+        actor="fixture",
+        corpus="test",
+        login="fixture-login",
+        origin="https://coach.invalid",
+    )
+    client = app.test_client()
+    headers = {"Tailscale-User-Login": "fixture-login"}
+    base = "https://coach.invalid"
+    assert client.get("/coaching?pattern=fork.execute", base_url=base).status_code == 403
+    import chess_coach.coaching_practice_source as practice_source
+    import chess_coach.related_fork_assessment_finder as finder
+
+    original_resolve = practice_source.resolve_source
+
+    def skip_second(db, kind, version, key, *, subject=None):
+        if kind == "own-game" and version == FORK_VERSION and key == str(second_id):
+            raise ValueError("synthetic unsupported source")
+        return original_resolve(db, kind, version, key, subject=subject)
+
+    before = db.connection.execute("PRAGMA data_version").fetchone()[0]
+    counts = {
+        table: db.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        for table in ("unified_sessions", "evidence_mappings", "mastery_states", "training_items")
+    }
+    with monkeypatch.context() as patch:
+        patch.setattr(practice_source, "resolve_source", skip_second)
+        patch.setattr(
+            finder,
+            "selection",
+            lambda *_args: (_ for _ in ()).throw(
+                AssertionError("coaching GET searched the fork corpus")
+            ),
+        )
+        page = client.get("/coaching?pattern=fork.execute", base_url=base, headers=headers)
+        full = client.get("/coaching?full=1", base_url=base, headers=headers)
+    assert page.status_code == full.status_code == 200
+    assert b"<h3>Finding forks</h3>" in page.data and b"2 independent games" in page.data
+    assert b"Practice this source position" in page.data and b"practice is cued" in page.data
+    assert b"Rehearse this fork" in page.data
+    assert f'name="version" value="{FORK_VERSION}"'.encode() in page.data
+    assert f'name="key" value="{evidence_id}"'.encode() in page.data
+    assessment = f"/evidence/{evidence_id}/related-forks/find-verified"
+    assert assessment.encode() in page.data and b"bounded search may find no match" in page.data
+    assert b"<h3>Finding forks</h3>" in full.data and assessment.encode() in full.data
+    assert db.connection.execute("PRAGMA data_version").fetchone()[0] == before
+    assert {
+        table: db.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        for table in counts
+    } == counts
+
+    # Unsupported sources remain visible without practice or finder actions.
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            practice_source,
+            "resolve_source",
+            lambda *_a, **_k: (_ for _ in ()).throw(ValueError("synthetic unavailable")),
+        )
+        unavailable = client.get("/coaching?pattern=fork.execute", base_url=base, headers=headers)
+    assert b"Finding forks" in unavailable.data and b"Practice is unavailable" in unavailable.data
+    assert b"Find an unfamiliar fork assessment for this source" not in unavailable.data
+
+    with client.session_transaction(base_url=base) as browser:
+        csrf = browser["csrf"]
+    started = client.post(
+        "/unified/start",
+        base_url=base,
+        headers=headers | {"Origin": base},
+        data={
+            "csrf": csrf,
+            "source_type": "own-game",
+            "version": FORK_VERSION,
+            "key": str(evidence_id),
+        },
+    )
+    assert started.status_code == 303
+    practice = client.get(started.location, base_url=base, headers=headers)
+    assert b"Execute the named fork" in practice.data
+    empty = client.get(assessment, base_url=base, headers=headers)
+    assert empty.status_code == 200 and b"No certified unfamiliar fork" in empty.data
+    second_example = next(item for item in lesson["examples"] if item["evidence_id"] == second_id)
+    review_evidence(db, second_id, decision="reject", actor="fixture")
+    assert resolve_example(db, LEARNER, lesson, second_example) is None
+
     db.connection.execute(
         "UPDATE detector_runs SET status='superseded' WHERE id=?", (result["detector_run_id"],)
     )
     db.connection.commit()
     assert source(db, LEARNER, candidate) is None
+    first_example = next(item for item in lesson["examples"] if item["evidence_id"] == evidence_id)
+    assert resolve_example(db, LEARNER, lesson, first_example) is None
 
 
 def test_decision_and_saved_history_render_coaching(tmp_path, monkeypatch):
