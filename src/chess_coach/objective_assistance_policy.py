@@ -13,11 +13,13 @@ from .objective_protection_contract import VERSION as PROTECTION_VERSION
 from .objective_short_source import VERSION as SHORT_VERSION
 from .related_capture_objective import is_source as capture_assessment
 from .related_fork_assessment_scope import is_source as fork_assessment
+from .related_protection_objective import is_source as protection_assessment
 
 
 def objective_assistance(row):
     return (
         capture_assessment(row)
+        or protection_assessment(row)
         or _fork_family(row)
         or pawn_source(row)
         or _pin_family(row)

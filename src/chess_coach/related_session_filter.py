@@ -9,6 +9,7 @@ from . import (
 )
 from .related_fork_lines import select_lines
 from .related_protection_contract import FILTER_VERSION as PROTECTION_FILTER
+from .related_protection_objective import apply_filter as apply_protection
 from .related_session_fork_apply import apply as apply_fork
 
 
@@ -49,6 +50,7 @@ def _other(snapshot, provenance, provenance_key, line_filter):
         if snapshot["lines"] != line_filter:
             raise ValueError("practice line selection unavailable")
         apply_fork(snapshot, provenance, provenance_key)
+        apply_protection(snapshot, provenance, provenance_key)
         if provenance_key == "related_pin":
             snapshot["objective"] = "legal_line"
         if provenance_key in {"related_mate", "related_backrank_attack"}:

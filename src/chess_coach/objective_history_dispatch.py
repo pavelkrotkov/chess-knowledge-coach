@@ -8,13 +8,14 @@ from .objective_pawn_contract import OBJECTIVE as PAWN_OBJECTIVE
 from .objective_pawn_history import before_answer as pawn_before_answer
 from .objective_promotion_contract import VERSION as PROMOTION_VERSION
 from .objective_promotion_history import before_answer as promotion_before_answer
+from .objective_protection_contract import OBJECTIVE as PROTECTION_OBJECTIVE
 from .related_capture_assessment import HISTORY as CAPTURE_HISTORY
 
 
 def supported(request):
     return (
         (
-            request["objective_version"] in {TARGET_OBJECTIVE, FORK_OBJECTIVE}
+            request["objective_version"] in {TARGET_OBJECTIVE, FORK_OBJECTIVE, PROTECTION_OBJECTIVE}
             and request["history_mode"] == CAPTURE_HISTORY
         )
         or request["history_mode"] == OWNED_HISTORY
@@ -27,7 +28,7 @@ def supported(request):
 
 def replay(db, session, events, request):
     if (
-        request["objective_version"] in {TARGET_OBJECTIVE, FORK_OBJECTIVE}
+        request["objective_version"] in {TARGET_OBJECTIVE, FORK_OBJECTIVE, PROTECTION_OBJECTIVE}
         and request["history_mode"] == CAPTURE_HISTORY
     ):
         from .related_capture_objective import before_answer as capture_before_answer
