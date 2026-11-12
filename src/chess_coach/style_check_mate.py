@@ -4,6 +4,7 @@ from .mate_proof_moves import move_view
 from .style_check_budget import record, reserve
 from .style_check_evasions import MAX_MOVES
 from .style_history_lines import history_safe
+from .style_schedule_budget import consume
 
 
 def witness(board, budget=None):
@@ -30,6 +31,7 @@ def _inspect(board):
 def _mates(board, moves):
     mates = []
     for move in sorted(moves, key=lambda item: item.uci()):
+        consume()
         if not board.gives_check(move):
             continue
         board.push(move)

@@ -36,9 +36,9 @@ class LimitedBuilder(SilentGameBuilder):
 
 def consume():
     budget = CURRENT.get()
+    if reached():
+        raise BudgetExceeded("worker deadline")
     if budget is not None:
-        if reached():
-            raise BudgetExceeded("worker deadline")
         if budget["used"] >= budget["limit"]:
             raise BudgetExceeded("invocation history limit")
         budget["used"] += 1
