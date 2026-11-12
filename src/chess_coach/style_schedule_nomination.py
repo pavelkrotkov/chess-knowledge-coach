@@ -1,33 +1,22 @@
 """Prioritize at most one advisory check-evasion nominee per paired cycle."""
 
-from .style_schedule_budget import CURRENT
 from .style_schedule_clock import reached
+from .style_schedule_identity import reserve
 from .style_schedule_nomination_game import inspect
+from .style_schedule_priority import firsts as _firsts
 
 
-# Both parsing and exact replay spend one history unit per stored ply.
-def _fits(count):
-    budget = CURRENT.get()
-    return budget is None or count * 2 <= budget["limit"] - budget["used"]
-
-
-def _firsts(first, structural_first, index, checks, structural, count):
-    if _fits(count):
-        if first is None and checks:
-            first = index
-        if structural_first is None and structural:
-            structural_first = index
-    return first, structural_first
-
-
-def _collect(db, ordered, coverage):
+def _collect(db, ordered, coverage, reserved):
     first = structural_first = None
+    nominations = []
     for index, (game, color) in enumerate(ordered):
         if reached():
             coverage["nomination_unchecked_games"] = len(ordered) - index
             break
         try:
-            checks, structural, unknown, checked, count = inspect(db, game, color)
+            checks, structural, unknown, checked, count, early, identity = inspect(
+                db, game, color, center=reserved
+            )
         except (ValueError, TypeError, IndexError):
             if reached():
                 coverage["nomination_unchecked_games"] = len(ordered) - index
@@ -41,10 +30,13 @@ def _collect(db, ordered, coverage):
         coverage["structural_nomination_turns"] += structural
         coverage["structural_nomination_unknown_turns"] += unknown
         first, structural_first = _firsts(first, structural_first, index, checks, structural, count)
-    return first, structural_first
+        nominations.append((index, checks, early, count, identity))
+        coverage["early_center_nomination_games"] += bool(early)
+        coverage["early_center_nomination_turns"] += early
+    return first, structural_first, nominations
 
 
-def prioritize(db, games, sequence):
+def prioritize(db, games, sequence, *, identities=None):
     """Keep the full fallback order on alternate cycles and rotate paired starts."""
     # Reserved control cycles advance independently through every starting game.
     step = sequence // 4 if sequence % 4 == 1 else sequence // 2
@@ -61,9 +53,16 @@ def prioritize(db, games, sequence):
         "structural_nomination_turns": 0,
         "structural_nomination_unknown_turns": 0,
         "structural_nomination_prioritized": False,
+        "early_center_nomination_games": 0,
+        "early_center_nomination_turns": 0,
+        "early_center_nomination_prioritized": False,
     }
-    first, structural_first = _collect(db, ordered, coverage)
+    reserved = sequence % 4 == 1
+    first, structural_first, nominations = _collect(db, ordered, coverage, reserved)
     first = structural_first if structural_first is not None else first
+    ordered, coverage["early_center_nomination_prioritized"] = reserve(
+        ordered, nominations, identities, reserved
+    )
     # All other games keep their original relative order, including unknowns.
     if sequence % 2 == 0 and first is not None:
         ordered.insert(0, ordered.pop(first))
