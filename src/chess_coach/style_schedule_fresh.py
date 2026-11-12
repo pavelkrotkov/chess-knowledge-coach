@@ -15,10 +15,8 @@ def available(db, key, candidates, identities):
     if not candidates:
         return []
     positions = {item["position_id"] for item in candidates}
-    games = set(identities) | {item["game_id"] for item in candidates}
-    history = read(db, key, positions, games)
+    history = read(db, key, positions, identities)
     if history is None:
         return []
-    positions_used, games_used = history
-    used = {identity for game, identity in identities.items() if game in games_used}
+    positions_used, used = history
     return _unused(candidates, positions_used, used)

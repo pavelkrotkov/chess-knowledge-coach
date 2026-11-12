@@ -569,6 +569,73 @@ def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch):
     assert coverage["fallback"] == coverage["no_fresh"] == 1
     fresh_db.close()
 
+    # An older ordinary job may finish after allocation but before the targeted slot.
+    from chess_coach import style_schedule_standard_worker
+    from chess_coach.pipeline_config import PipelineConfig
+    from chess_coach.style_schedule_queue import pending as pending_style
+
+    dispatch_db = Database(":memory:")
+    dispatch_db.initialize()
+    ingest_pgn(dispatch_db, PGN)
+    position = dispatch_db.connection.execute(
+        "SELECT id FROM positions WHERE game_id=1 ORDER BY ply LIMIT 1"
+    ).fetchone()[0]
+    for sequence, coverage_json in (
+        (0, "{}"),
+        (1, '{"early_center_policy":"early-center-v1","early_center_targeted":true}'),
+    ):
+        cursor = dispatch_db.connection.execute(
+            "INSERT INTO style_schedule_cycles(learner_key,sequence,coverage_json) VALUES(?,?,?)",
+            (key, sequence, coverage_json),
+        )
+        dispatch_db.connection.execute(
+            """INSERT INTO style_schedule_slots(cycle_id,kind,game_id,position_id,status,detail)
+            VALUES(?,'control',1,?,'ready','eligible')""",
+            (cursor.lastrowid, position),
+        )
+    dispatch_db.connection.commit()
+    slots = pending_style(dispatch_db, LEARNER)
+    assert (
+        len(slots) == 2 and not slots[0]["early_center_target"] and slots[1]["early_center_target"]
+    )
+    from chess_coach.style_schedule_fresh import available as fresh_available
+
+    identity = {1: "a"}
+    assert not fresh_available(
+        dispatch_db,
+        key,
+        [{**chosen, "game_id": 1, "position_id": position, "_game_key": "a"}],
+        identity,
+    )
+
+    def finish_ordinary(db, request_id, *_args, **_kwargs):
+        db.connection.execute(
+            "UPDATE purpose_analysis_requests SET status='insufficient' WHERE id=?", (request_id,)
+        )
+        db.connection.commit()
+        return {"status": "insufficient", "detail": "fixture"}
+
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            "chess_coach.purpose_request.configuration",
+            lambda *_args: (None, {"fixture": "no-engine"}),
+        )
+        patch.setattr(style_schedule_standard_worker, "run", finish_ordinary)
+        config = PipelineConfig(learner=LEARNER)
+        ordinary = style_schedule_standard_worker.process_standard(
+            dispatch_db, config, slots[0], None
+        )
+        reused = style_schedule_standard_worker.process_standard(
+            dispatch_db, config, slots[1], None
+        )
+    assert ordinary["status"] == "insufficient"
+    assert reused["detail"] == "terminal_request_reused" and reused["status"] == "unknown"
+    row = dispatch_db.connection.execute(
+        "SELECT request_id,status FROM style_schedule_slots WHERE id=?", (slots[1]["id"],)
+    ).fetchone()
+    assert row["request_id"] is None and row["status"] == "unknown"
+    dispatch_db.close()
+
     played = line("e4d5 d8d5 b1c3 d5e5")
     alternative = line("g1f3 d5e4 f3g5 e4e3")
     context = {"game_id": 1, "position_id": 3, "ply": 3, "played_move": "e4d5"}
@@ -1081,6 +1148,44 @@ def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch):
     verified = decisions_for_game(duplicate_db, 1, LEARNER)
     assert verified and identities[1] == next(iter(verified.values()))["game_key"]
     assert identities[1] == identities[2] != identities[3]
+    # The original import can leave the recent ten while a cosmetic alias remains.
+    duplicate_key = learner_key(LEARNER)
+    duplicate_db.connection.execute(
+        """INSERT INTO style_schedule_cycles(learner_key,sequence,coverage_json)
+        VALUES(?,1,'{"early_center_policy":"early-center-v1","early_center_targeted":true}')""",
+        (duplicate_key,),
+    )
+    old_position = duplicate_db.connection.execute(
+        "SELECT id FROM positions WHERE game_id=1 ORDER BY ply LIMIT 1"
+    ).fetchone()[0]
+    duplicate_db.connection.execute(
+        """INSERT INTO style_schedule_slots(cycle_id,kind,game_id,position_id,status,detail)
+        VALUES(1,'control',1,?,'ready','eligible')""",
+        (old_position,),
+    )
+    alias_position = duplicate_db.connection.execute(
+        "SELECT id FROM positions WHERE game_id=2 ORDER BY ply LIMIT 1"
+    ).fetchone()[0]
+    independent_position = duplicate_db.connection.execute(
+        "SELECT id FROM positions WHERE game_id=3 ORDER BY ply LIMIT 1"
+    ).fetchone()[0]
+    from chess_coach.style_schedule_fresh import available as fresh_available
+
+    alias = {"game_id": 2, "position_id": alias_position, "_game_key": identities[2]}
+    independent = {"game_id": 3, "position_id": independent_position, "_game_key": identities[3]}
+    with history_budget() as budget:
+        budget["limit"] = 500
+        assert fresh_available(
+            duplicate_db, duplicate_key, [alias, independent], {2: identities[2], 3: identities[3]}
+        ) == [independent]
+        assert budget["used"] == 0
+    duplicate_db.connection.execute("SAVEPOINT invalid_prior")
+    duplicate_db.connection.execute("UPDATE positions SET uci='invalid' WHERE game_id=1 AND ply=1")
+    assert not fresh_available(
+        duplicate_db, duplicate_key, [alias, independent], {2: identities[2], 3: identities[3]}
+    )
+    duplicate_db.connection.execute("ROLLBACK TO invalid_prior")
+    duplicate_db.connection.execute("RELEASE invalid_prior")
     with monkeypatch.context() as patch:
         patch.setattr(
             style_schedule_candidates,
