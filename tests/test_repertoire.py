@@ -1534,10 +1534,83 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
             return values
 
         with monkeypatch.context() as measured:
+            import chess_coach.opening_unfamiliar_course_measure as course_measure
+
+            measured.setattr(
+                course_measure,
+                "hints",
+                lambda _db, _root, _learner, _parent, _item, _budget: {1, 2},
+            )
             measured.setattr(decision_budget, "VERSION", VERSION)
             measured.setattr(decision_budget, "SOURCE", SOURCE)
             measured.setattr(decision_budget, "GRAPH_SHA256", GRAPH_SHA256)
             measured.setattr(measure_state, "statuses", short_states)
+
+            # Artifact hints are bounded and cannot replace the current proof.
+            from contextlib import nullcontext
+            from types import SimpleNamespace
+
+            import chess_coach.opening_unfamiliar_course_hints as course_hints
+            from chess_coach.deep_selection_source import learner_key
+            from chess_coach.fact_fingerprint import canonical, digest
+            from chess_coach.opening_queue_binding import identity
+
+            database = ["fixture"]
+            item = {"uci": "e2e4", "child_key": "child"}
+            source = {
+                "game_id": 1,
+                "learner_key": learner_key("learner"),
+                "decision_fen": "parent",
+                "alternative": item["uci"],
+                "child": item["child_key"],
+            }
+            payload = {
+                "version": "opening-catalog-measurement-v1",
+                "source": source,
+                "configuration": {},
+                "result": {"status": "complete"},
+            }
+            name = f"opening-comparison-{identity(database, source, {})}-0.json"
+            envelope = {"measurement": payload, "sha256": digest(canonical(payload))}
+            other = {**source, "game_id": 2, "alternative": "d2d4"}
+            other_name = f"opening-comparison-{identity(database, other, {})}-0.json"
+            invalid_name = f"opening-comparison-{'f' * 64}-0.json"
+            entries = [SimpleNamespace(name=value) for value in (name, other_name, invalid_name)]
+            values = {
+                name: envelope,
+                other_name: {"measurement": {**payload, "source": other}, "sha256": "invalid"},
+                invalid_name: None,
+            }
+            with monkeypatch.context() as hint_test:
+                hint_test.setattr(course_hints, "location", lambda *_: (planning_dir, database))
+                hint_test.setattr(course_hints.os, "scandir", lambda *_: nullcontext(iter(entries)))
+                hint_test.setattr(course_hints, "read", lambda path: values[path.name])
+                fake_budget = SimpleNamespace(check=lambda: None)
+                assert course_hints.hints(
+                    experiment_db, tmp_path, "learner", "parent", item, fake_budget
+                ) == {1}
+                hint_test.setattr(course_hints, "MAX_ARTIFACTS", 2)
+                assert not course_hints.hints(
+                    experiment_db, tmp_path, "learner", "parent", item, fake_budget
+                )
+
+            with monkeypatch.context() as prefix:
+                import time
+
+                import chess_coach.opening_unfamiliar_measure_source as measure_source
+
+                fake_budget = SimpleNamespace(expires=time.monotonic() + 10)
+                board = chess.Board()
+                decision = {"game_id": 1}
+                prefix.setattr(measure_source, "find", lambda *_: (decision, {}))
+                assert not measure_source.earlier(
+                    experiment_db, "learner", [], "white", board, item, fake_budget, decision
+                )
+                prefix.setattr(measure_source, "find", lambda *_: ({"game_id": 2}, {}))
+                assert measure_source.earlier(
+                    experiment_db, "learner", [], "white", board, item, fake_budget, decision
+                )
+
             kind["status"] = "complete"
             measured_course = unfamiliar_course_preview(
                 experiment_db, tmp_path, "learner", selected
@@ -1739,6 +1812,13 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
             )
             assert measured_pgn.status_code == 200 and b"licensed public game" in measured_pgn.data
             assert b'[White "Learner"]' not in measured_pgn.data
+            repeated_pgn = client_first.get(
+                course_path,
+                query_string={**selected, "version": measured_course["version"], "download": "1"},
+                base_url="https://coach.invalid",
+                headers=headers,
+            )
+            assert repeated_pgn.status_code == 200 and repeated_pgn.data == measured_pgn.data
             selected_deadlines.clear()
             legacy_page = client_first.get(
                 course_path,
