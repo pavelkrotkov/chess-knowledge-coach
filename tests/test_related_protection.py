@@ -546,6 +546,39 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
                     f"/evidence/{evidence}/related-protections?followup=".encode() in rotated.data
                 )
                 assert b"verified correct without assistance" in rotated.data
+                explanation = rotated.data.split(b"Next focus: find captures", 1)[1].split(
+                    b"</p>", 1
+                )[0]
+                assert f'href="/evidence/{evidence}"'.encode() in explanation
+                assert b"separate from the selected protection rehearsal" in explanation
+                assert b"selected protection source" in rotated.data
+
+                same_origin = {**history, "evidence_id": evidence + 1}
+                patch.setattr(
+                    plan_web, "protection_history", lambda *_, same_origin=same_origin: same_origin
+                )
+                same_page = client.get(
+                    "/plan/next-focus", base_url="https://coach.invalid", headers=headers
+                )
+                same_explanation = same_page.data.split(b"Next focus: find captures", 1)[1].split(
+                    b"</p>", 1
+                )[0]
+                assert f'href="/evidence/{evidence + 1}"'.encode() in same_explanation
+                assert b"matches the selected protection rehearsal" in same_explanation
+                patch.setattr(plan_web, "protection_history", lambda *_, history=history: history)
+
+                patch.setattr(plan_web, "admissible", lambda *_: None)
+                patch.setattr(plan_web, "fork_recommendation", lambda *_, fork=fork: fork)
+                fork_rotation = client.get(
+                    "/plan/next-focus", base_url="https://coach.invalid", headers=headers
+                )
+                explanation = fork_rotation.data.split(b"Next focus: finding forks", 1)[1].split(
+                    b"</p>", 1
+                )[0]
+                assert f'href="/evidence/{evidence}"'.encode() in explanation
+                assert b"separate from the selected protection rehearsal" in explanation
+                patch.setattr(plan_web, "admissible", lambda *_, capture=capture: capture)
+                patch.setattr(plan_web, "fork_recommendation", lambda *_: None)
 
                 capture["history"] = {
                     "status": "correct",

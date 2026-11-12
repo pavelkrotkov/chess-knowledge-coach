@@ -834,6 +834,9 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
         page = fork_client.get(fork_url, base_url="https://coach.invalid", headers=fork_headers)
         plan = fork_client.get("/plan", base_url="https://coach.invalid", headers=fork_headers)
     assert page.status_code == 200 and b"4 of 4 learner turns attempted" in page.data
+    assert (
+        b"1 had no qualifying fork candidate within this scope after legal refutations" in page.data
+    )
     assert b"2 turns had a proved fork" in page.data and b"1 await comparison" in page.data
     assert b"1 turns had at least one unproved" in page.data
     assert b"/decisions/" in page.data and b"Rates require" in page.data
