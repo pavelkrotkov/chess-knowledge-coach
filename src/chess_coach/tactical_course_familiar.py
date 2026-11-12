@@ -6,7 +6,7 @@ from .related_capture_familiar import LIMIT
 from .related_capture_position import prompt_key
 from .related_capture_probe import position_probe
 from .tactical_course_deadline import PreviewDeadline
-from .tactical_course_familiar_games import _games, _pages
+from .tactical_course_familiar_games import FamiliarityLimit, _games, _pages
 
 
 def _legacy(db, budget):
@@ -15,7 +15,7 @@ def _legacy(db, budget):
         with budget.scope(snapshot=False):
             count += len(rows)
             if count > LIMIT:
-                raise ValueError("familiarity scan limit exceeded")
+                raise FamiliarityLimit("familiarity scan limit exceeded")
             prompts.update(
                 prompt_key(validate_line(row["initial_fen"], row["solution"])) for row in rows
             )
@@ -41,7 +41,11 @@ def familiarity(db, subject, budget):
         except PreviewDeadline:
             budget._familiar = False
             raise
+        except FamiliarityLimit as error:
+            budget._familiar = (subject, error)
     budget.check()
     if budget._familiar[0] != subject:
         raise ValueError("familiarity subject changed")
+    if isinstance(budget._familiar[1], FamiliarityLimit):
+        raise budget._familiar[1]
     return budget._familiar[1]

@@ -15,6 +15,7 @@ PAIRS = (
     ("mate_in_one", "execute"),
     ("calculation", "execute"),
 )
+CURRENT_PAIRS = (*PAIRS, ("fork", "execute"))
 PER_PAIR = 12
 BATCH_SIZE = 2
 
@@ -50,9 +51,9 @@ def _pair(db, subject, skill, operation, budget):
     }
 
 
-def candidates(db, subject, budget):
+def candidates(db, subject, budget, *, pairs=CURRENT_PAIRS):
     groups, coverage = [], []
-    for skill, operation in PAIRS:
+    for skill, operation in pairs:
         try:
             items, stats = _pair(db, subject, skill, operation, budget)
         except PreviewDeadline:

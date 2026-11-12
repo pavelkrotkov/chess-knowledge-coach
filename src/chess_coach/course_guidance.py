@@ -10,8 +10,12 @@ def objective(note, snapshot, kind):
         goal = f"Capture the {target} and win material."
     elif interactive:
         goal = "Checkmate in one move."
-    elif kind == "protection":
-        goal = "Replay the recorded defense; other defenses may also work."
+    elif kind in {"fork", "protection"}:
+        # These worked lines do not claim every alternative is graded.
+        goal = {
+            "fork": "Find a move that attacks two valuable targets, then check their forcing replies.",
+            "protection": "Replay the recorded defense; other defenses may also work.",
+        }[kind]
     elif kind == "capture":
         goal = "Follow the recorded material-gain line."
     else:

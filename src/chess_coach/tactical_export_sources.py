@@ -2,12 +2,13 @@
 
 from .coaching_practice_source import resolve_example
 from .lesson_cues import cues
+from .tactical_course_selection import PAIRS
 from .tactical_export_binding import example
 from .tactical_export_pattern import supports, versions
 
 
-def lesson(db, subject, pattern, budget):
-    saved = supports(pattern)
+def lesson(db, subject, pattern, budget, *, pairs=PAIRS):
+    saved = supports(pattern, pairs=pairs)
     items = [example(db, subject, pattern, binding, budget) for binding in saved]
     version = versions(pattern, items)
     question, habit, _ = cues(pattern["family"], pattern["operation"])
