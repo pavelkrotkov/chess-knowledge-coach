@@ -23,19 +23,26 @@ def _source(db, root, learner, selection, legacy, deadline):
 def preview(db, root, learner, selection=None, *, legacy=False, deadline=None):
     before = db.connection.execute("PRAGMA data_version").fetchone()[0]
     report, measurement = _source(db, root, learner, selection, legacy, deadline)
+    decision = None
     if measurement:
         from .opening_unfamiliar_course_proof import current_stamp
 
         if not current_stamp(db, root, learner, measurement):
             measurement = None
         else:
+            decision = measurement.get("_decision")
             measurement = {
-                key: value for key, value in measurement.items() if key != "source_stamp"
+                key: value
+                for key, value in measurement.items()
+                if key not in ("source_stamp", "_decision")
             }
     payload, legacy_version = _payload(report, selection, measurement)
     if db.connection.execute("PRAGMA data_version").fetchone()[0] != before:
         raise ValueError("opening course source changed")
-    return _result(payload, selection, legacy_version)
+    result = _result(payload, selection, legacy_version)
+    if decision is not None:
+        result["_decision"] = decision
+    return result
 
 
 def legacy_from(value):
