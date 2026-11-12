@@ -12,6 +12,7 @@
 {% if lesson %}<section><h3>Play {{ color|title }} · {{ lesson.name }} ({{ lesson.eco }})</h3>
 <p>{{ lesson.reason }}</p>
 {% if lesson.measurement %}<p>{{ lesson.measurement }}</p>{% endif %}
+{% if course.measurement and course.measurement.decision %}<p><a href="{{ url_for('repertoire_views.opening_decision', game_id=course.measurement.decision.game_id, position_id=course.measurement.decision.position_id, alternative=course.selection.move) }}">Inspect the measured decision</a>.</p>{% endif %}
 {% set board = lesson.board %}{% set board_label = 'Starting opening position; learner plays ' + lesson.color %}{% include 'board.html' %}
 <p>{{ lesson.instruction }}</p>
 <details><summary>Reveal the recorded continuation</summary><p>{{ lesson.san[2:]|join(' ') }}</p></details>

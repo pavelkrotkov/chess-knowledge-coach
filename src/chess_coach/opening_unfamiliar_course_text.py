@@ -10,8 +10,15 @@ def describe(value):
         if short
         else ""
     )
+    decision = value.get("decision")
+    source = (
+        f"The measured decision is from your game {decision['game_id']} at ply {decision['ply']}. "
+        if decision
+        else ""
+    )
     return (
-        f"Current same-search comparison at depth {played['depth']} with {value['nodes']} nodes, "
+        source
+        + f"Current same-search comparison at depth {played['depth']} with {value['nodes']} nodes, "
         "in centipawns from your "
         f"side: the played move {played['san'][0]} scored {played['score']} cp "
         f"({', '.join(played['san'])}); the selected move {other['san'][0]} scored "
