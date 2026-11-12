@@ -11,7 +11,7 @@
 {% for label, sample, comparison in (("More recent", report.newer, report.comparison.newer if report.comparison else none), ("Earlier", report.earlier, report.comparison.earlier if report.comparison else none)) %}
 <section><h3>{{ label }} games</h3>
 <p>{{ sample.games }} independent games{% if sample.newest %}, {{ sample.oldest }} to {{ sample.newest }} UTC{% endif %}.</p>
-<p>{{ sample.scanned }} of {{ sample.eligible }} learner turns attempted. {{ sample.unchecked }} pending. {{ sample.unknown }} unavailable or timed out. {{ sample.no_candidate }} had no geometric candidate within this scope.</p>
+<p>{{ sample.scanned }} of {{ sample.eligible }} learner turns attempted. {{ sample.unchecked }} pending. {{ sample.unknown }} unavailable or timed out. {{ sample.no_candidate }} had no qualifying fork candidate within this scope after legal refutations.</p>
 <p>{{ sample.opportunities }} turns had a proved fork. {{ sample.played }} played a proved root. {{ sample.awaiting }} await comparison. {{ sample.unresolved_roots }} turns had at least one unproved geometric candidate. These can overlap the proved totals.</p>
 {% if comparison %}
 <p>{{ comparison.miss }} verified misses. {{ comparison.played }} played a proved fork. {{ comparison.unresolved }} comparisons unresolved. {{ comparison.pending }} comparisons pending. {{ comparison.uncertain }} additional turns had unproved fork candidates.</p>

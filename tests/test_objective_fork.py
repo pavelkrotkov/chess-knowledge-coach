@@ -361,7 +361,7 @@ def test_unfamiliar_fork_browser_and_worker(tmp_path, monkeypatch, mode):
         for table in ("unified_sessions", "evidence_mappings", "mastery_states", "training_items")
     }
     focus_page = focus()
-    assert b"Optional practice: finding forks" in focus_page.data
+    assert b"Next focus: finding forks" in focus_page.data
     assert b"Rehearse this fork" in focus_page.data
     if mode == "correct":
         assert b"Find a comparable follow-up fork assessment" in focus_page.data
