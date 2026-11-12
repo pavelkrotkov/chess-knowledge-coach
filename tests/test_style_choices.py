@@ -116,9 +116,10 @@ def _check_retained_purpose_iterations():
     class Protocol:
         def __init__(self, loop):
             self.loop, self.events, self.stream = loop, [], None
+            self.expected = ["e2e4", "d2d4"]
 
         async def analysis(self, _board, _limit, *, multipv, root_moves):
-            assert multipv == 2 and [move.uci() for move in root_moves] == ["e2e4", "d2d4"]
+            assert multipv == 2 and [move.uci() for move in root_moves] == self.expected
             self.stream = Stream(self.events)
             return self.stream
 
@@ -167,6 +168,65 @@ def _check_retained_purpose_iterations():
             final(engine, board, position, "d2d4", time.monotonic() + 2)[1]
             == "no_complete_iteration"
         )
+
+        from chess_coach.opening_experiment import assess as assess_opening
+        from chess_coach.opening_measure_search import search as opening_search
+
+        def opening(events, root=board, decision=position):
+            protocol.events = events
+            return opening_search(engine, root, decision, "d2d4", time.monotonic() + 2)
+
+        protocol.expected = ["e2e4", "d2d4"]
+        protocol.events = [
+            info(1, 4, first),
+            info(2, 4, second),
+            info(1, 6, first),
+            info(2, 6, "d2d4 d7d5"),
+            {"nodes": 190000, "depth": 7, "time": 0.9},
+        ]
+        measured = opening_search(engine, board, position, "d2d4", time.monotonic() + 2)
+        assert measured["status"] == "complete" and measured["retained_depth"] == 4
+        assert measured["work"]["nodes"] == 190000 and measured["work"]["depth"] == 7
+
+        exact_three = [info(1, 4, "e2e4 e7e5 g1f3"), info(2, 4, "d2d4 d7d5 c1f4")]
+        oversized = info(1, 7, "e2e4 " + "a2a3 " * 100)
+        measured = opening([*exact_three, oversized, info(2, 7, second)])
+        decision = {"fen": board.fen(), "played_uci": "e2e4"}
+        assert measured["retained_depth"] == 4
+        assert assess_opening(decision, {"uci": "d2d4"}, measured)[0] is not None
+
+        short = [info(1, 5, "e2e4 e7e5"), info(2, 5, "d2d4 d7d5")]
+        measured = opening(short)
+        assert measured["status"] == "complete" and measured["retained_depth"] == 5
+        assert assess_opening(decision, {"uci": "d2d4"}, measured)[1] == "short_line"
+
+        gap = [
+            info(1, 4, first),
+            info(2, 4, second),
+            info(1, 6, first),
+            info(2, 6, second, score=-120),
+        ]
+        measured = opening(gap)
+        assert measured["retained_depth"] == 6
+        assert assess_opening(decision, {"uci": "d2d4"}, measured)[1] == "score_gap"
+        assert opening([*gap, {"nodes": 200001}])["reason"] == "node_limit_unverified"
+
+        history = chess.Board()
+        history.push_uci("g1f3")
+        history.push_uci("g8f6")
+        protocol.expected = ["f3g1", "d2d4"]
+        history_position = {"id": 1, "uci": "f3g1"}
+        history_events = [
+            info(1, 4, "f3g1 b8c6 b1c3"),
+            info(2, 4, "d2d4 d7d5 c1f4"),
+            info(1, 6, "f3g1 f6g8 b1c3"),
+            info(2, 6, "d2d4 d7d5 c1f4"),
+        ]
+        assert (
+            opening(history_events, history, history_position)["reason"]
+            == "incomparable_depth_or_history"
+        )
+        protocol.expected = ["e2e4", "d2d4"]
 
         protocol.events = [info(1, 4, first), info(2, 4, second), "failure"]
         assert final(engine, board, position, "d2d4", time.monotonic() + 2)[1] == "engine_failure"
