@@ -3,6 +3,7 @@
 from flask import current_app, render_template, request
 
 from .plan_capture_action import recommendation
+from .plan_promotion import recommendation as promotion_recommendation
 from .web_db import database
 
 
@@ -18,9 +19,12 @@ def render(daily_plan):
         return render_template(
             "plan.html", error="The plan changed. Restart planning.", plan=None
         ), 400
-    capture = None
+    capture = promotion = None
     if not request.args.get("cursor"):
         capture = recommendation(
             database(), current_app.config["SUBJECT"], current_app.config["CORPUS"]
         )
-    return render_template("plan.html", plan=result, error=None, capture=capture)
+        promotion = promotion_recommendation(database(), current_app.config["SUBJECT"])
+    return render_template(
+        "plan.html", plan=result, error=None, capture=capture, promotion=promotion
+    )
