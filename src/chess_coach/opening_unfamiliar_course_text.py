@@ -10,8 +10,12 @@ def describe(value):
         if short
         else ""
     )
+    source = (
+        "This comparison comes from an earlier game you played. " if value.get("decision") else ""
+    )
     return (
-        f"Current same-search comparison at depth {played['depth']} with {value['nodes']} nodes, "
+        source
+        + f"Current same-search comparison at depth {played['depth']} with {value['nodes']} nodes, "
         "in centipawns from your "
         f"side: the played move {played['san'][0]} scored {played['score']} cp "
         f"({', '.join(played['san'])}); the selected move {other['san'][0]} scored "
