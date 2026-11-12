@@ -329,3 +329,203 @@ def test_source_worker_lesson_practice_and_review(tmp_path, monkeypatch):
     assert inspect_evidence(defense_db, defense_id)["discovery_defense_currentness"] == "stale"
     with pytest.raises(ValueError):
         resolve_defense(defense_db, PRACTICE, str(defense_id), LEARNER)
+
+    # Material prevention uses the same bounded scan and a separate replay objective.
+    from chess_coach.discovery_material_contract import MAPPER as MATERIAL_MAPPER
+    from chess_coach.discovery_material_contract import PRACTICE as MATERIAL_PRACTICE
+    from chess_coach.discovery_material_observation import observe as observe_material
+    from chess_coach.discovery_material_practice import resolve as resolve_material
+    from chess_coach.unified_session_events import show as show_session
+
+    material_board = chess.Board("8/Q2K4/8/8/n7/7P/1P5k/r7 w - - 0 1")
+    played_moves = ["a7a8", "a4b6", "d7e7", "a1a8"]
+    best_moves = ["a7c5", "a4b6", "d7e7", "h2h1"]
+
+    def scored(moves, score):
+        return {**source_line(" ".join(moves)), "score_kind": "cp", "score_value": score}
+
+    material = observe_material(
+        material_board, played_moves[0], scored(best_moves, 200), scored(played_moves, 0)
+    )
+    assert material["outcome"] == "failure" and material["target_origin"] == "a7"
+    assert material["threat"]["target"] == "a8" and material["threat"]["minimum_gain"] >= 3
+    from chess_coach.fork_defense_comparison import failed as compare_defenses
+
+    extended_best = ["a7c5", "a4b6", "d7e7", "b6c8", "e7f8", "c8e7"]
+    compared, reason = compare_defenses(
+        material_board,
+        chess.Move.from_uci(played_moves[0]),
+        chess.Move.from_uci(best_moves[0]),
+        scored(played_moves, 0),
+        scored(extended_best, 200),
+        material["threat"],
+    )
+    assert reason is None and len(compared["played"]["uci"]) == 4
+    assert len(compared["best"]["uci"]) == 6
+    extended = observe_material(
+        material_board, played_moves[0], scored(extended_best, 200), scored(played_moves, 0)
+    )
+    assert extended["outcome"] == "ambiguous"
+    assert extended["reason"] == "comparison_horizon_unsupported"
+    uncertain = observe_material(
+        material_board, played_moves[0], scored(best_moves, 0), scored(played_moves, 0)
+    )
+    assert uncertain["outcome"] == "ambiguous"
+    assert uncertain["reason"] == "engine_disagreement_or_compensation"
+
+    material_path = tmp_path / "discovery-material.sqlite"
+    material_game = chess.pgn.Game()
+    material_game.setup(material_board)
+    material_game.headers.update(
+        {
+            "White": LEARNER,
+            "Black": "fixture_opponent",
+            "Result": "*",
+            "UTCDate": "2026.01.01",
+            "UTCTime": "12:02:00",
+        }
+    )
+    node = material_game
+    for text in played_moves:
+        move = material_board.parse_uci(text)
+        node = node.add_variation(move)
+        material_board.push(move)
+    material_db = Database(material_path)
+    material_db.initialize()
+    ingest_pgn(material_db, str(material_game))
+    monkeypatch.setattr(
+        chess.engine.SimpleEngine, "popen_uci", lambda _: DefenseEngine(best_moves, played_moves)
+    )
+    assert (
+        run_analysis(
+            material_db, 1, game_input(material_db, 1), config, engine_identity(sys.executable)
+        )["status"]
+        == "complete"
+    )
+    material_worker = process_defenses(material_db, config)
+    assert material_worker["limits"] == {"positions": 20, "decisions": 4}
+    material_id = material_db.connection.execute(
+        """SELECT e.id FROM evidence_mappings e JOIN mapping_runs r ON r.id=e.mapping_run_id
+           WHERE r.producer=? AND e.position_id=1""",
+        (MATERIAL_MAPPER,),
+    ).fetchone()[0]
+    material_evidence = inspect_evidence(material_db, material_id)
+    assert material_evidence["discovery_material_currentness"] == "current"
+    review_evidence(material_db, material_id, decision="accept", actor="fixture_reviewer")
+    current = report(
+        material_db,
+        LEARNER,
+        "2025-12-31T00:00:00+00:00",
+        "2026-02-01T00:00:00+00:00",
+        "2025-12-01T00:00:00+00:00",
+        skill="discovered_attack",
+        operation="prevent",
+    )
+    assert len(current["current"]) == 1 and current["current"][0]["family"] == MATERIAL_MAPPER
+    material_lesson = build(material_db, LEARNER, current["current"][0])
+    assert any(
+        "origin" in fact and "unknown" in fact for fact in material_lesson["examples"][0]["facts"]
+    )
+    snapshot = resolve_material(material_db, MATERIAL_PRACTICE, str(material_id), LEARNER)
+    assert snapshot["objective"] == "legal_line" and snapshot["lines"] == [best_moves[0]]
+    start(
+        material_db,
+        attempt_id="material-defense",
+        subject=LEARNER,
+        source_type="own-game",
+        version=MATERIAL_PRACTICE,
+        key=str(material_id),
+    )
+    view = show_session(material_db, "material-defense", LEARNER)
+    assert view["learner_color"] == "white" and view["discovery_target"] == "a7"
+    assert (
+        submit(material_db, "material-defense", LEARNER, event_id="move", move=best_moves[0])[
+            "status"
+        ]
+        == "line_completed"
+    )
+    start(
+        material_db,
+        attempt_id="unlisted",
+        subject=LEARNER,
+        source_type="own-game",
+        version=MATERIAL_PRACTICE,
+        key=str(material_id),
+    )
+    assert (
+        submit(material_db, "unlisted", LEARNER, event_id="move", move="a7a6")["status"]
+        == "needs_verification"
+    )
+    assert (
+        material_db.connection.execute(
+            "SELECT COUNT(*) FROM objective_requests WHERE attempt_id=?", ("unlisted",)
+        ).fetchone()[0]
+        == 0
+    )
+    material_app = create_app(
+        db_path=material_path,
+        subject=LEARNER,
+        actor="fixture_reviewer",
+        corpus="test",
+        login="fixture-login",
+        origin="https://coach.invalid",
+    )
+    page = material_app.test_client().get(
+        f"/evidence/{material_id}",
+        base_url="https://coach.invalid",
+        headers={"Tailscale-User-Login": "fixture-login"},
+    )
+    assert b"Discovered-material defense source is current" in page.data
+    assert b"origin of the threat" in page.data
+    replay_page = material_app.test_client().get(
+        "/unified/unlisted",
+        base_url="https://coach.invalid",
+        headers={"Tailscale-User-Login": "fixture-login"},
+    )
+    assert b"Other legal defenses remain ungraded" in replay_page.data
+    assert b"This legal move is ungraded" in replay_page.data
+    assert b"Status: Ungraded" in replay_page.data
+    assert b"Replay a defense to the named discovered attack" in replay_page.data
+    review_evidence(material_db, material_id, decision="revoke", actor="fixture_reviewer")
+    with pytest.raises(ValueError):
+        resolve_material(material_db, MATERIAL_PRACTICE, str(material_id), LEARNER)
+    review_evidence(material_db, material_id, decision="accept", actor="fixture_reviewer")
+    material_db.connection.execute(
+        "UPDATE decision_analysis_lines SET score_value=0 WHERE position_id=1 AND role=?",
+        ("best",),
+    )
+    material_db.connection.commit()
+    assert inspect_evidence(material_db, material_id)["discovery_material_currentness"] == "stale"
+    with pytest.raises(ValueError):
+        resolve_material(material_db, MATERIAL_PRACTICE, str(material_id), LEARNER)
+    unresolved_worker = process_defenses(material_db, config)
+    assert unresolved_worker["material_unresolved"]["engine_disagreement_or_compensation"] >= 1
+    from collections import Counter
+
+    from chess_coach.discovery_prevent_worker_item import combined
+
+    unresolved_counts = Counter()
+    rechecked = combined(material_db, 1, LEARNER, exclusions=unresolved_counts)
+    assert not rechecked["replayed"]
+    assert unresolved_counts["engine_disagreement_or_compensation"] == 1
+    import chess_coach.discovery_material_pipeline as material_pipeline
+    import chess_coach.discovery_prevent_worker_item as prevent_worker
+
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            prevent_worker,
+            "mate_source",
+            lambda *_args, **_kw: {
+                "outcome": "ambiguous",
+                "replayed": False,
+            },
+        )
+        patch.setattr(
+            material_pipeline,
+            "process_source",
+            lambda *_args: {
+                "outcome": "failure",
+                "replayed": True,
+            },
+        )
+        assert not combined(material_db, 1, LEARNER, exclusions=Counter())["replayed"]

@@ -2,6 +2,7 @@
 
 import json
 
+from .discovery_material_practice_view import add_fields as add_discovery_fields
 from .objective_fork_view import add_fields as add_fork_fields
 from .objective_pin_prevent_view import add_fields as add_pin_prevent_fields
 
@@ -12,6 +13,7 @@ def add_fields(result, row):
     result["evidence_id"] = provenance["evidence_id"]
     result["position_id"] = provenance["position_id"]
     add_pin_prevent_fields(result, row, provenance)
+    add_discovery_fields(result, row, provenance)
     if row["objective"] == "execute_named_pin":
         for key in ("pin_attacker", "pin_pinned", "pin_rear", "pin_type"):
             result[key] = provenance[key]

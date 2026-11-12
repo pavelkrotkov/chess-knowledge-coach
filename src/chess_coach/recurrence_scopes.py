@@ -8,6 +8,9 @@ from .discovery_contract import VERSION as DISCOVERY_VERSION
 from .discovery_defense_contract import MAPPER as DISCOVERY_DEFENSE
 from .discovery_defense_contract import SCOPE as DISCOVERY_DEFENSE_SCOPE
 from .discovery_defense_contract import VERSION as DISCOVERY_DEFENSE_VERSION
+from .discovery_material_contract import MAPPER as DISCOVERY_MATERIAL
+from .discovery_material_contract import SCOPE as DISCOVERY_MATERIAL_SCOPE
+from .discovery_material_contract import VERSION as DISCOVERY_MATERIAL_VERSION
 from .fork_contract import MAPPER as FORK
 from .fork_contract import SCOPE as FORK_SCOPE
 from .fork_contract import VERSION as FORK_VERSION
@@ -25,6 +28,7 @@ from .pawn_coach_contract import VERSION as PAWN_VERSION
 from .pin_pipeline import VERSION as PIN_VERSION
 
 SCOPES = {
+    DISCOVERY_MATERIAL: (DISCOVERY_MATERIAL_VERSION, DISCOVERY_MATERIAL_SCOPE),
     DISCOVERY_DEFENSE: (DISCOVERY_DEFENSE_VERSION, DISCOVERY_DEFENSE_SCOPE),
     DISCOVERY: (DISCOVERY_VERSION, DISCOVERY_SCOPE),
     "king-safety-lesson-mapper": ("1.0.0", "king-safety-lesson"),

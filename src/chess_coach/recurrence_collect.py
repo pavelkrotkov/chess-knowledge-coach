@@ -38,7 +38,10 @@ def collect(db, learner, sources, begin, finish, previous, pairs, before, *, _hi
 def deduplicate(found, excluded):
     selected, seen = [], set()
     for item in found:
-        key = (item["game_key"], item["ply"], item["skill"], item["operation"], item["family"])
+        family = item["family"]
+        if (item["skill"], item["operation"]) == ("discovered_attack", "prevent"):
+            family = "discovery-prevent"
+        key = (item["game_key"], item["ply"], item["skill"], item["operation"], family)
         if key in seen:
             excluded["duplicate decision"] += 1
         else:

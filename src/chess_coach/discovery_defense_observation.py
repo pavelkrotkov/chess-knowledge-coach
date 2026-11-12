@@ -9,8 +9,8 @@ from .discovery_geometry import discoveries
 from .material_ambiguity import ambiguous
 
 
-def observe(board, played, best_line, played_line):
-    started = time.monotonic()
+def observe(board, played, best_line, played_line, *, started=None):
+    started = time.monotonic() if started is None else started
     values = setup(board, played, best_line, played_line)
     if values is None:
         return None
