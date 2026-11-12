@@ -7,7 +7,7 @@ from .opening_queue_view import statuses
 
 def current(db, root, learner, game_id, position_id, move, *, with_identity=False):
     version = db.connection.execute("PRAGMA data_version").fetchone()[0]
-    decision = inspect(db, game_id, position_id, learner)
+    decision = inspect(db, game_id, position_id, learner, alternative=move)
     choice = next((item for item in decision["catalog"]["items"] if item["uci"] == move), None)
     if choice is None:
         raise ValueError("opening alternative unavailable")

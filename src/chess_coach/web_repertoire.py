@@ -9,12 +9,12 @@ from .opening_explore_enrich import enrich
 from .opening_queue_request import admit
 from .opening_queue_view import statuses
 from .opening_reference_read import matches
-from .opening_unfamiliar import explore_unfamiliar
 from .repertoire import game_detail, repertoire_report
 from .tactical_course_deadline import PreviewDeadline
 from .web_board import board_rows
 from .web_db import database
 from .web_unfamiliar_course import show as show_unfamiliar_course
+from .web_unfamiliar_measure import show as show_unfamiliar
 
 repertoire_views = Blueprint("repertoire_views", __name__)
 
@@ -44,15 +44,7 @@ def opening_explore():
 
 @repertoire_views.get("/repertoire/unfamiliar")
 def opening_unfamiliar():
-    try:
-        report = explore_unfamiliar(
-            database(), current_app.config["PROJECT_ROOT"], current_app.config["SUBJECT"]
-        )
-    except (Exception, PreviewDeadline):
-        return render_template(
-            "error.html", message="This opening sample could not be checked now. Please try again."
-        ), 503
-    return render_template("opening_unfamiliar.html", report=report)
+    return show_unfamiliar()
 
 
 @repertoire_views.get("/repertoire/unfamiliar/course")
@@ -72,7 +64,13 @@ def repertoire_game(game_id: int):
 @repertoire_views.get("/repertoire/games/<int:game_id>/openings/<int:position_id>")
 def opening_decision(game_id: int, position_id: int):
     try:
-        result = inspect(database(), game_id, position_id, current_app.config["SUBJECT"])
+        result = inspect(
+            database(),
+            game_id,
+            position_id,
+            current_app.config["SUBJECT"],
+            alternative=request.args.get("alternative"),
+        )
     except ValueError:
         return render_template(
             "error.html",
@@ -111,7 +109,12 @@ def opening_compare(game_id: int, position_id: int):
             message="This comparison cannot be queued now. Another request may be pending, or this source may have changed.",
         ), 409
     return redirect(
-        url_for("repertoire_views.opening_decision", game_id=game_id, position_id=position_id)
+        url_for(
+            "repertoire_views.opening_decision",
+            game_id=game_id,
+            position_id=position_id,
+            alternative=request.form.get("alternative", ""),
+        )
     )
 
 

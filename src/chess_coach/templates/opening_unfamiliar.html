@@ -1,10 +1,21 @@
 {% extends "base.html" %}
 {% block title %}Unfamiliar opening experiments — Chess coach{% endblock %}
-{% macro suggestion(label, item) %}
+{% macro suggestion(label, item, measurement) %}
 <section><h3>{{ label }}</h3>
 {% if item %}
 <p><strong>Exploratory: {{ item.name }} ({{ item.eco }}) — {{ item.san }}</strong>. This legal catalog move was not found among your indexed imported first-turn choices and has a checked public example. It is an invitation to explore, not a soundness or personal style-fit assessment.</p>
 <p>Try this four-ply public line: {{ item.line.san|join(' ') }}. {% if item.line.site %}<a href="{{ item.line.site }}">Broadcast game</a>{% else %}<a href="{{ item.profile.source }}">Broadcast archive</a>, record {{ item.line.record }}{% endif %}.</p>
+{% if measurement.status == "missing" %}<p>No current owned first-turn decision at this parent was found in the bounded sample.</p>
+{% elif measurement.status == "complete" %}
+<p>Current comparison at depth {{ measurement.played.depth }}, in centipawns from your perspective: played {{ measurement.played.score }} cp ({{ measurement.played.san|join(" ") }}); exploratory move {{ measurement.other.score }} cp ({{ measurement.other.san|join(" ") }}). These are bounded estimates for these measured roots.</p>
+{% if measurement.reason == "score_gap" %}<p>The exploratory move exceeds the existing 50 cp disadvantage limit for a worked experiment.</p>
+{% elif measurement.reason %}<p>The worked experiment is unavailable because the measured continuation is too short or cannot be verified.</p>{% endif %}
+{% elif measurement.status == "queued" %}<p>Comparison pending for a later worker run.</p>
+{% elif measurement.status == "stale" %}<p>The earlier comparison is stale; a current comparison can be requested.</p>
+{% elif measurement.status == "unavailable" %}<p>Comparison status is unavailable or could not be verified.</p>
+{% elif measurement.status == "none" %}<p>No current comparison has been requested.</p>
+{% else %}<p>Comparison status is unavailable or could not be checked.</p>{% endif %}
+{% if measurement.decision %}<p><a href="{{ url_for('repertoire_views.opening_decision', game_id=measurement.decision.game_id, position_id=measurement.decision.position_id, alternative=measurement.choice.uci) }}">Open the verified comparison</a>{% if measurement.status in ("none", "stale", "unavailable") %} to request a measurement{% endif %}.</p>{% endif %}
 <p>Public support: {{ item.profile.games }} matching games selected{% if item.profile.more_matches %}, with additional matches{% endif %}; up to ten games and twelve post-move positions per game. Of {{ item.profile.center.valid }} checked four-ply windows, {{ item.profile.center.capture }} included a central pawn capture and {{ item.profile.center.opened_any }} opened a d or e file. {{ item.profile.no_supported_match }} games had no supported named geometry; {{ item.profile.short_windows }} had shorter windows.</p>
 <ul>{% for shape in item.profile.families %}<li>{{ shape.name }} ({{ shape.color }}): {{ shape.count }} of {{ item.profile.games }} games. <a href="{{ shape.source }}">Pattern source</a>.</li>{% else %}<li>No supported named geometry detected.</li>{% endfor %}</ul>
 <p><a href="{{ item.profile.source }}">Lichess September 2026 broadcast archive</a>, <a href="{{ item.profile.license_url }}">{{ item.profile.license }}</a>; SHA-256 <code>{{ item.profile.source_sha256 }}</code>. Reference sample: {{ item.profile.coverage.accepted }} accepted from {{ item.profile.coverage.examined }} examined, {{ item.profile.coverage.excluded }} excluded, {{ item.profile.coverage.duplicates }} duplicates, {{ item.profile.coverage.unknown_context }} missing context. {% if item.profile.coverage.truncated %}The source scan was truncated.{% endif %}</p>
@@ -18,6 +29,6 @@
 <p>{% if report.coverage.game_limit_reached %}The sample reached its 100-game limit. {% endif %}{% if report.coverage.boundary_tie %}Games tied at the boundary may be omitted. {% endif %}At least {{ report.coverage.unknown_time_lower_bound }} attributable games have no verified start time; at least {{ report.coverage.unknown_ownership_global_lower_bound }} games have uncertain ownership. {{ report.coverage.candidate_recheck_failed }} selected candidates failed their ownership or time recheck, including {{ report.coverage.oversized_pgn }} oversized games.</p>
 <p>Opening names and branches come from the pinned <a href="{{ report.catalog_source }}">Lichess opening catalog</a> (<a href="https://creativecommons.org/publicdomain/zero/1.0/">CC0</a>).</p>
 <p>The history exclusion checks indexed imported first-turn positions, including games outside the recent sample; absent or incomplete imports may leave earlier choices unknown. The public archive is a convenience sample, not a measure of popularity. Style compatibility and engine soundness are unknown.</p>
-{{ suggestion('White', report.white) }}
-{{ suggestion('Black reply to ' ~ report.parent if report.parent else 'Black', report.black) }}
+{{ suggestion('White', report.white, measured.get('white', {})) }}
+{{ suggestion('Black reply to ' ~ report.parent if report.parent else 'Black', report.black, measured.get('black', {})) }}
 {% endblock %}

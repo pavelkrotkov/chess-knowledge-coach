@@ -7,7 +7,7 @@ from .recurrence_cursor import _valid_id
 from .style_history_lines import history_safe
 
 
-def inspect(db, game_id, position_id, learner):
+def inspect(db, game_id, position_id, learner, *, alternative=None):
     if not _valid_id(game_id) or not _valid_id(position_id):
         raise ValueError("opening decision unavailable")
     version = db.connection.execute("PRAGMA data_version").fetchone()[0]
@@ -15,7 +15,9 @@ def inspect(db, game_id, position_id, learner):
     if not history_safe(board):
         raise ValueError("opening history unavailable")
     played = board.parse_uci(context["played_move"])
-    result = catalog(db, opening["dataset_id"], board, context["played_move"])
+    result = catalog(
+        db, opening["dataset_id"], board, context["played_move"], alternative=alternative
+    )
     analysis = comparison(db, learner, context, board, result["items"])
     if db.connection.execute("PRAGMA data_version").fetchone()[0] != version:
         raise ValueError("opening source changed during inspection")
