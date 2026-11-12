@@ -11,7 +11,7 @@
 {% else %}<p>{{ result.status }}</p>{% endif %}
 {% for item in result['items'] %}
 <section><h3>Transfer example {{ loop.index }}</h3>
-<p>{% if result.operation == "prevent" %}Same pin kind and a proved pinner capture.{% else %}Matching pinner, pinned and rear roles and pin geometry.{% endif %} {% if item.same_material %}Same material counts{% else %}Different material counts{% endif %}{% if item.shared_phase %}; both {{ item.shared_phase }} positions{% endif %}.</p>
+<p>{% if result.pin_origin == "counterfactual" %}Same pin kind and a supported defensive contrast.{% elif result.operation == "prevent" %}Same pin kind and a proved pinner capture.{% else %}Matching pinner, pinned and rear roles and pin geometry.{% endif %} {% if item.same_material %}Same material counts{% else %}Different material counts{% endif %}{% if item.shared_phase %}; both {{ item.shared_phase }} positions{% endif %}.</p>
 <p>Source: {{ item.type }} · version {{ item.version }}{% if item.rating is not none %} · content rating {{ item.rating }}{% else %} · content rating unavailable{% endif %}</p>
 {% set board = item.board %}{% set board_label = "Transfer position; side to move at the bottom" %}{% include "board.html" %}
 <form method="post" action="{{ url_for('related_pin.begin', evidence_id=evidence_id) }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="reference" value="{{ item.reference }}"><button>Start this example</button></form></section>
