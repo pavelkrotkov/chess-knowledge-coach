@@ -7,6 +7,7 @@ from .style_purpose_evaluate import evaluate
 from .style_purpose_prepare import required_ids
 from .style_purpose_sources import sources
 from .style_report_history import boards as game_boards
+from .style_schedule_budget import consume
 from .style_selection import selection
 
 
@@ -35,6 +36,7 @@ def _collect(db, learner, game, selected, rows, boards, budget, state, history):
     seen = set(ordinary_by_id)
     contexts = state["contexts"][game_id]
     for row in rows:
+        consume()
         context = contexts[row["position_id"]]
         source = game_sources.get(row["position_id"])
         if row["kind"] == "protection":

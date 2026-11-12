@@ -9,15 +9,14 @@ from collections.abc import Iterator
 import chess
 import chess.pgn
 
-from .ingest_reader import SilentGameBuilder
-from .style_schedule_budget import CURRENT, LimitedBuilder, consume
+from .style_history_visitor import visitor
+from .style_schedule_budget import consume
 
 
 def decisions(
     connection: sqlite3.Connection, game: sqlite3.Row
 ) -> Iterator[tuple[sqlite3.Row, chess.Board]]:
-    visitor = LimitedBuilder if CURRENT.get() is not None else SilentGameBuilder
-    parsed = chess.pgn.read_game(io.StringIO(game["pgn"]), Visitor=visitor)
+    parsed = chess.pgn.read_game(io.StringIO(game["pgn"]), Visitor=visitor())
     if parsed is None or parsed.errors:
         raise ValueError("invalid or incomplete game PGN")
     if game["variant"] != "Standard":

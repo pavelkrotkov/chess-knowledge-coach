@@ -12,6 +12,7 @@ from .style_protection_budget import MAX_WORK as PROTECTION_WORK_LIMIT
 from .style_protection_budget import create as protection_budget
 from .style_purpose_collect import collect_game
 from .style_purpose_prepare import prepare
+from .style_schedule_budget import consume
 from .style_schedule_status import status as schedule_status
 from .style_sources import source_games
 from .style_summary import summarize
@@ -58,6 +59,7 @@ def _style_report(db, learner, *, max_games):
     }
     purpose = prepare(db, learner, source["games"])
     for game in source["games"]:
+        consume()
         game_counts, game_allocations, items = collect_game(db, learner, game, budget, purpose)
         counts.update(game_counts)
         allocations.update(game_allocations)

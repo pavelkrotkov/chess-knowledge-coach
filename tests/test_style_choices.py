@@ -932,6 +932,19 @@ def _opening_fit_route(monkeypatch):
             assert course_preview(owned, "/synthetic", "learner")["version"] == version
             assert (owned.connection.total_changes, public.total_changes) == before
 
+            # A cooperative expiry during actual PGN replay leaves the choices
+            # available and lets the final source guard complete.
+            import chess_coach.style_schedule_budget as schedule_budget
+
+            with patch.context() as expired:
+                expired.setattr(
+                    schedule_budget, "reached", lambda: schedule_budget.DEADLINE.get() is not None
+                )
+                timed = client.get(url, base_url="https://coach.invalid", headers=headers)
+            assert timed.status_code == 200 and b"All choices remain exploratory" in timed.data
+            assert b"Learning opportunity fit" not in timed.data
+            assert course_preview(owned, "/synthetic", "learner")["version"] == version
+
             # With no possible owned quorum, the costly style replay is skipped,
             # but checked public branch availability is still visible.
             import chess_coach.opening_fit_owned as fit_owned
@@ -986,6 +999,10 @@ def _opening_fit_route(monkeypatch):
             ]
             assert summarize(rows)["positive"]
             assert not summarize([{**row, "time_control": None} for row in rows])["positive"]
+            for malformed in ("UNKNOWN", "nonsense", "0+0", "0600+0", "600+-1", "600+00"):
+                assert not summarize([{**row, "time_control": malformed} for row in rows])[
+                    "positive"
+                ]
             assert not summarize([*rows, {**rows[0], "choice": "alternative_capture"}])["positive"]
             assert not summarize([{**row, "date": rows[0]["date"]} for row in rows])["positive"]
 

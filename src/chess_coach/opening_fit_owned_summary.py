@@ -1,6 +1,7 @@
 """Count one direction per game and reject mixed opening contexts."""
 
-from collections import defaultdict
+import re
+from collections import Counter, defaultdict
 
 MIN_GAMES = 3
 
@@ -10,7 +11,7 @@ def _unique(rows):
     for row in rows:
         grouped[row["id"]].append(row)
     good = [items[0] for items in grouped.values() if len({x["choice"] for x in items}) == 1]
-    return good, len(grouped) - len(good)
+    return good, len(grouped) - len(good), len(rows) - len(grouped)
 
 
 def _positive(unique, mixed, times, played, tied):
@@ -24,27 +25,33 @@ def _positive(unique, mixed, times, played, tied):
     )
 
 
+def _control(value):
+    return (
+        value
+        if isinstance(value, str) and re.fullmatch(r"[1-9][0-9]*\+(0|[1-9][0-9]*)", value)
+        else "unknown"
+    )
+
+
 def summarize(rows):
-    unique, mixed = _unique(rows)
-    times = {
-        row["time_control"] if row["time_control"] not in (None, "", "?", "-") else "unknown"
-        for row in unique
-    }
-    dates = sorted(row["date"] for row in unique)
-    played = sum(row["choice"] == "played_capture" for row in unique)
-    alternative = sum(row["choice"] == "alternative_capture" for row in unique)
+    unique, mixed, duplicates = _unique(rows)
+    times = {_control(row["time_control"]) for row in unique}
+    dates = sorted(row["date"] for row in unique) or [None]
+    counts = Counter(row["choice"] for row in unique)
+    played, alternative = counts["played_capture"], counts["alternative_capture"]
     tied = len(dates) != len(set(dates))
+    first, last = dates[0], dates[-1]
     positive = _positive(unique, mixed, times, played, tied)
     return {
         "games": len(unique),
         "decisions": len(rows),
         "mixed_games": mixed,
-        "duplicate_decisions": len(rows) - len({row["id"] for row in rows}),
+        "duplicate_decisions": duplicates,
         "played_capture": played,
         "alternative_capture": alternative,
         "time_control": next(iter(times)) if len(times) == 1 else "mixed",
-        "first_start": dates[0] if dates else None,
-        "last_start": dates[-1] if dates else None,
+        "first_start": first,
+        "last_start": last,
         "tied_starts": tied,
         "positive": positive,
     }

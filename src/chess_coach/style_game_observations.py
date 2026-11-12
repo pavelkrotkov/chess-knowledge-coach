@@ -4,6 +4,7 @@ from .style_defense_coverage import record as record_check_context
 from .style_history import selected_boards
 from .style_observation_detail import observation
 from .style_opening import current_opening
+from .style_schedule_budget import consume
 
 
 def collect(
@@ -13,6 +14,7 @@ def collect(
     if boards is None:
         boards = selected_boards(db, game["game_id"], by_id.keys())
     for context in game["contexts"]:
+        consume()
         item = by_id.get(context["position_id"])
         if item is None:
             continue

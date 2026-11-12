@@ -57,10 +57,15 @@ def group(db, root, learner, *, include_fit=False):
 
         black_parent = black.peek().uci() if black.move_stack else None
         report["fit"] = assess(db, subject, guard, budget, items, black_parent)
-        if report["fit"]["status"] != "deferred":
-            for color in ("white", "black"):
-                recommended = report["fit"]["colors"].get(color, {}).get("recommended")
-                if recommended:
-                    items[color].sort(key=lambda item: item["uci"] != recommended)
+        _rank_options(items, report["fit"])
     check(db, root, subject, guard, budget)
     return {**report, "public_index_identity": list(guard[2])}, items
+
+
+def _rank_options(items, fit):
+    if fit["status"] == "deferred":
+        return
+    for color in ("white", "black"):
+        recommended = fit["colors"].get(color, {}).get("recommended")
+        if recommended:
+            items[color].sort(key=lambda item: item["uci"] != recommended)

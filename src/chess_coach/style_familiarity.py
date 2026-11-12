@@ -5,6 +5,7 @@ from collections import defaultdict
 import chess
 
 from .opening_storage import position_key
+from .style_schedule_budget import consume
 
 
 def _key(context):
@@ -14,6 +15,7 @@ def _key(context):
 def _known_positions(contexts):
     known = defaultdict(set)
     for context in contexts:
+        consume()
         if context["observation_at"]:
             known[_key(context)].add((context["observation_at"], context["game_id"]))
     return known
@@ -23,6 +25,7 @@ def familiarity(contexts, incomplete):
     """Count earlier game starts only; those positions may have occurred later."""
     known = _known_positions(contexts)
     for context in contexts:
+        consume()
         when = context["observation_at"]
         earlier = {
             game
