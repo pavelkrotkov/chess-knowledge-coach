@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.77.0"
+REGISTRY_VERSION = "1.78.0"
 
 CAPABILITIES = (
     {
@@ -382,7 +382,7 @@ CAPABILITIES = (
         "area": "Training",
         "name": "Verified public-corpus mate practice",
         "status": "supported",
-        "details": "The daily plan schedules verified mate-in-one items with FSRS. A bounded capture recommendation is advisory and does not change scheduling.",
+        "details": "The daily plan schedules verified mate-in-one items with FSRS. Bounded capture and source-checked fork recommendations are advisory; current first-encounter fork assessment results may guide a rehearsal or comparable follow-up without changing scheduling or mastery.",
     },
     {
         "id": "own_game_practice",

@@ -4,6 +4,7 @@ import sqlite3
 
 from flask import Blueprint, current_app, render_template
 
+from .fork_plan_action import recommendation as fork_recommendation
 from .plan_capture_action import admissible
 from .protection_plan import report
 from .tactical_course_budget import PreviewUnavailable
@@ -31,8 +32,9 @@ def next_focus():
     except (sqlite3.Error, ValueError, TypeError, KeyError, IndexError, PreviewUnavailable):
         protection = None
     selected = _focus(capture, protection)
+    fork = fork_recommendation(db, subject, current_app.config["CORPUS"])
     return render_template(
-        "next_focus.html", capture=capture, protection=protection, selected=selected
+        "next_focus.html", capture=capture, protection=protection, selected=selected, fork=fork
     )
 
 
