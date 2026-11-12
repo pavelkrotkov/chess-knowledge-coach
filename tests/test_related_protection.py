@@ -494,6 +494,18 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
                 assert b"assessment source is separate" in view.data
                 assert f"/evidence/{evidence}/related-protections?followup=".encode() in view.data
                 assert b"general finder" in view.data
+                assert (
+                    b"<title>Piece-protection rehearsal \xe2\x80\x94 Chess coach</title>"
+                    in view.data
+                )
+                assert view.data.count(b"Find a comparable unfamiliar protection assessment") == 1
+                patch.setattr(plan_web, "admissible", lambda *_: None)
+                patch.setattr(plan_web, "fork_recommendation", lambda *_: None)
+                focus = client.get(
+                    "/plan/next-focus", base_url="https://coach.invalid", headers=headers
+                )
+                assert b"<title>Next practice focus \xe2\x80\x94 Chess coach</title>" in focus.data
+                assert focus.data.count(b"Find a comparable unfamiliar protection assessment") == 1
         else:
             assert history["status"] == "unknown"
 
