@@ -19,10 +19,12 @@ def _check(budget, until):
     return check
 
 
-def run_pair(db, learner, pair, budget):
+def run_pair(db, learner, pair, budget, *, separate_practice=False):
     check = _check(budget, min(budget.expires, time.monotonic() + PAIR_SECONDS))
     lessons, truncated, scanned = build(db, learner, pair, check)
     check()
+    if separate_practice:
+        check = _check(budget, min(budget.expires, time.monotonic() + PAIR_SECONDS))
     practice = []
     practice_limited = False
     for group in lessons:

@@ -15,6 +15,10 @@ from .tactical_course_budget import PreviewUnavailable
 TOTAL_SECONDS = 12.0
 
 
+def _single_fork(pairs):
+    return len(pairs) == 1 and pairs[0] == ("fork", "execute")
+
+
 def report(db, subject, pairs):
     learner = normalize_identity(subject)
     if not learner:
@@ -24,11 +28,18 @@ def report(db, subject, pairs):
     groups, practice, deferred, limits = [], [], [], []
     scanned = 0
     practice_limited = False
+    # Only this explicit scope gets a separate practice slice. Both stages
+    # still share the request deadline and database version guard.
+    separate_practice = _single_fork(pairs)
     for pair in pairs:
         label = pattern_label(pair)
         try:
             lessons, actions, truncated, count, practice_partial = run_pair(
-                db, learner, pair, budget
+                db,
+                learner,
+                pair,
+                budget,
+                separate_practice=separate_practice,
             )
         except (ValueError, TypeError, KeyError, IndexError, sqlite3.Error, PreviewUnavailable):
             deferred.append(label)
