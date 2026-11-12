@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.86.0"
+REGISTRY_VERSION = "1.87.0"
 
 CAPABILITIES = (
     {
@@ -452,7 +452,7 @@ CAPABILITIES = (
         "area": "Style",
         "name": "Material, simplification and transition choice observations",
         "status": "observation-only",
-        "details": "Current bounded MultiPV choices expose provisional four-ply material, piece-count, attack-map, queenless and low-material transition proxies with coverage and contextual strata. A separate current control candidate-set count covers d/e file-opening contrasts. Projections are conditional, not observed outcomes; narrow central pawn contacts, captures, exchanges, d/e file openings and one locked skeleton are also compared. Legal root and conditional continuation checks, evasions and conditional one-move mate witnesses are recorded where supported. Check evasions and narrowly verified responses to a named threatened piece are compared when supported; guard, broader initiative, defense and center choices remain planned. They do not establish personality, skill or playing strength.",
+        "details": "Current bounded MultiPV choices expose provisional four-ply material, piece-count, attack-map, queenless and low-material transition proxies with coverage and contextual strata. Separate current control candidate sets cover d/e file-opening contrasts and targeted early central-pawn root choices. Projections are conditional, not observed outcomes; narrow central pawn contacts, captures, exchanges, d/e file openings and one locked skeleton are also compared. Legal root and conditional continuation checks, evasions and conditional one-move mate witnesses are recorded where supported. Check evasions and narrowly verified responses to a named threatened piece are compared when supported; guard, broader initiative, defense and center choices remain planned. They do not establish personality, skill or playing strength.",
     },
     {
         "id": "repertoire_recommendations",

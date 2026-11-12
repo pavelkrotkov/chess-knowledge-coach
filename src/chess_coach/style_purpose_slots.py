@@ -22,7 +22,13 @@ def slots(db, learner):
     ids = [row["id"] for row in retained]
     placeholders = ",".join("?" for _ in ids)
     rows = db.connection.execute(
-        f"""SELECT s.*, c.sequence FROM style_schedule_slots s
+        f"""SELECT s.*, c.sequence,
+        (s.kind='control' AND json_extract(c.coverage_json,'$.early_center_policy')='early-center-v1'
+         AND c.sequence % 4=1) AS early_center_cycle,
+        (s.kind='control' AND json_extract(c.coverage_json,'$.early_center_policy')='early-center-v1'
+         AND c.sequence % 4=1
+         AND json_extract(c.coverage_json,'$.early_center_targeted')=1) AS early_center_target
+        FROM style_schedule_slots s
         JOIN style_schedule_cycles c ON c.id=s.cycle_id
         WHERE s.cycle_id IN ({placeholders}) ORDER BY c.sequence DESC,s.id DESC""",
         ids,
