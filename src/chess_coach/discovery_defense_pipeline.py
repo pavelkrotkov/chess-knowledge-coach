@@ -23,8 +23,10 @@ def process_decision(db, position_id, learner):
 
 def process_defenses(db, config):
     scanner = partial(scan, namespace="discovery-mate-defense-cursor-v1:", policy=POLICY)
-    exclusions = Counter()
-    processor = partial(process_item, detector=partial(combined, exclusions=exclusions))
+    exclusions, successes = Counter(), Counter()
+    processor = partial(
+        process_item, detector=partial(combined, exclusions=exclusions, successes=successes)
+    )
     limited = replace(
         config,
         material_max_scan=min(config.material_max_scan, 20),
@@ -32,4 +34,5 @@ def process_defenses(db, config):
     )
     result = process_forks(db, limited, scanner=scanner, processor=processor, policy=POLICY)
     result["material_unresolved"] = dict(sorted(exclusions.items()))
+    result["success_coverage"] = dict(sorted(successes.items()))
     return result

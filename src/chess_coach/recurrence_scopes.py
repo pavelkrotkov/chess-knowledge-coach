@@ -8,6 +8,9 @@ from .discovery_contract import VERSION as DISCOVERY_VERSION
 from .discovery_defense_contract import MAPPER as DISCOVERY_DEFENSE
 from .discovery_defense_contract import SCOPE as DISCOVERY_DEFENSE_SCOPE
 from .discovery_defense_contract import VERSION as DISCOVERY_DEFENSE_VERSION
+from .discovery_mate_success_contract import MAPPER as DISCOVERY_SUCCESS
+from .discovery_mate_success_contract import SCOPE as DISCOVERY_SUCCESS_SCOPE
+from .discovery_mate_success_contract import VERSION as DISCOVERY_SUCCESS_VERSION
 from .discovery_material_contract import MAPPER as DISCOVERY_MATERIAL
 from .discovery_material_contract import SCOPE as DISCOVERY_MATERIAL_SCOPE
 from .discovery_material_contract import VERSION as DISCOVERY_MATERIAL_VERSION
@@ -28,6 +31,7 @@ from .pawn_coach_contract import VERSION as PAWN_VERSION
 from .pin_pipeline import VERSION as PIN_VERSION
 
 SCOPES = {
+    DISCOVERY_SUCCESS: (DISCOVERY_SUCCESS_VERSION, DISCOVERY_SUCCESS_SCOPE),
     DISCOVERY_MATERIAL: (DISCOVERY_MATERIAL_VERSION, DISCOVERY_MATERIAL_SCOPE),
     DISCOVERY_DEFENSE: (DISCOVERY_DEFENSE_VERSION, DISCOVERY_DEFENSE_SCOPE),
     DISCOVERY: (DISCOVERY_VERSION, DISCOVERY_SCOPE),
