@@ -9,8 +9,8 @@ from .purpose_deadline import CLEANUP_RESERVE
 from .purpose_iteration import Iterations
 
 
-async def _consume(protocol, board, position, limit, roots):
-    state = Iterations(board, position, roots)
+async def _consume(protocol, board, position, limit, roots, bounds):
+    state = Iterations(board, position, roots, bounds)
     stream = await protocol.analysis(board, limit, multipv=2, root_moves=roots)
     with stream:
         async for info in stream:
@@ -18,11 +18,13 @@ async def _consume(protocol, board, position, limit, roots):
     return state
 
 
-async def _timed(protocol, board, position, limit, roots, timeout):
-    return await asyncio.wait_for(_consume(protocol, board, position, limit, roots), timeout)
+async def _timed(protocol, board, position, limit, roots, bounds, timeout):
+    return await asyncio.wait_for(
+        _consume(protocol, board, position, limit, roots, bounds), timeout
+    )
 
 
-def search(engine, board, position, limit, roots, deadline):
+def search(engine, board, position, limit, roots, deadline, *, bounds=None):
     remaining = deadline - time.monotonic() - CLEANUP_RESERVE
     if remaining <= 0:
         return None, "worker_deadline"
@@ -30,7 +32,7 @@ def search(engine, board, position, limit, roots, deadline):
     coroutine = None
     try:
         protocol = engine.protocol
-        coroutine = _timed(protocol, board, position, limit, roots, timeout)
+        coroutine = _timed(protocol, board, position, limit, roots, bounds, timeout)
         future = asyncio.run_coroutine_threadsafe(coroutine, protocol.loop)
     except Exception:
         if coroutine is not None:

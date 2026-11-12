@@ -150,7 +150,19 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     import chess_coach.opening_measure_prepare as opening_measure
     import chess_coach.opening_measure_search as opening_search
     import chess_coach.ops_opening_measure as opening_cli
+    from chess_coach.purpose_iteration import Iterations
 
+    def fake_retained(engine, board, position, limit, roots, _deadline, *, bounds):
+        try:
+            raw = engine.analyse(board, limit, multipv=2, root_moves=roots)
+        except TimeoutError:
+            return None, "engine_timeout"
+        state = Iterations(board, position, roots, bounds)
+        for rank, item in enumerate(raw, 1):
+            state.add({**item, "multipv": rank})
+        return state, None
+
+    monkeypatch.setattr(opening_search, "retained_search", fake_retained)
     db.connection.commit()
     monkeypatch.setenv("CHESS_SUBJECT", "learner")
     engine_calls = []
@@ -480,6 +492,7 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     assert len(engine_calls) == before + 1
     completed = client.get(route, base_url="https://coach.invalid", headers=headers)
     assert b"Selected comparison" in completed.data and b"120 cp" in completed.data
+    assert b"100000 nodes" in completed.data and b"requested cap of 200000" in completed.data
     assert len(engine_calls) == before + 1
     assert b"Rehearse this opening experiment" in completed.data
     experiment = client.get(experiment_url, base_url="https://coach.invalid", headers=headers)

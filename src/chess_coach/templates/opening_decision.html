@@ -15,7 +15,8 @@
 <p>Selected comparison (centipawns from your perspective, depth {{ comparison.lines[0].depth }}):
 {% for line in comparison.lines %}{% if line.root_move == item.uci %}alternative {{ line.score_value }} cp{% else %}played {{ line.score_value }} cp{% endif %}{% if not loop.last %}; {% endif %}{% endfor %}.
 These are estimates for the selected moves, not a recommendation or proof of opening fit.</p>
-{% if qualifies_experiment(decision, item, comparison) %}<p><a href="{{ url_for('opening_experiments.show', game_id=decision.game_id, position_id=decision.position_id, move=item.uci) }}">Rehearse this opening experiment</a></p>{% endif %}
+<p>The shared search reported {{ comparison.work.nodes }} nodes{% if comparison.work.requested_nodes is defined %} with a requested cap of {{ comparison.work.requested_nodes }}{% endif %}.</p>
+{% if qualifies_experiment(decision, item, comparison) %}<p><a href="{{ url_for('opening_experiments.show', game_id=decision.game_id, position_id=decision.position_id, move=item.uci) }}">Rehearse this opening experiment</a></p>{% else %}<p>Worked rehearsal is unavailable because the measured lines or score difference do not meet its checks.</p>{% endif %}
 {% elif comparison.status == "queued" %}<p>Comparison queued for a later worker run.</p>
 {% elif comparison.status == "unavailable" %}<p>Comparison unavailable.{% if comparison.retry_available %} You may retry.{% else %} The retry limit was reached.{% endif %}</p>
 {% elif comparison.status == "stale" %}<p>The earlier comparison is stale; request a current one.</p>{% endif %}
