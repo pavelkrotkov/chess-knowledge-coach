@@ -16,6 +16,8 @@ def validate(data, expected):
     if not capture_validate(data, expected, outcomes=OUTCOMES):
         return False
     games = [*data["games"], *data["retained"].values()]
+    if data.get("prior"):
+        games.extend(data["prior"]["games"])
     return all(
         reason in REASONS[outcome] for game in games for _, outcome, reason in game["results"]
     )

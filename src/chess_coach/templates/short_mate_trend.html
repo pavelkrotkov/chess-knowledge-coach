@@ -11,6 +11,7 @@
 {% else %}
 <p>The game samples or their boundaries are not yet fully verified. Do not compare these partial samples.</p>
 {% endif %}
+{% if report.historical %}<p>Historical sample through {{ report.through }}. Newer games are pending and are not included in these results.</p>{% endif %}
 {% for label, sample in (("More recent", report.newer), ("Earlier", report.earlier)) %}
 <section><h3>{{ label }} games</h3>
 <p>{{ sample.games }} games{% if sample.newest %}, from {{ sample.oldest }} to {{ sample.newest }} UTC{% endif %}.</p>
