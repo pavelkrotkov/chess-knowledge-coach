@@ -1,5 +1,6 @@
 """Bind supported owned objective versions to the session snapshot."""
 
+from .discovery_defense_contract import PRACTICE as DISCOVERY_DEFENSE_VERSION
 from .objective_binding_forks import BINDINGS as FORK_BINDINGS
 from .objective_binding_scope import owned_scope, owned_snapshot_scope
 from .objective_capture_contract import (
@@ -59,6 +60,7 @@ def _binding(session, data, request):
             (VERSION, OBJECTIVE),
             (SHORT_VERSION, SHORT_OBJECTIVE),
             (DEFENSE_VERSION, DEFENSE_OBJECTIVE),
+            (DISCOVERY_DEFENSE_VERSION, DEFENSE_OBJECTIVE),
         }
         and data.get("history_mode") == request["history_mode"]
         and data.get("source_fingerprint") == request["source_hash"]

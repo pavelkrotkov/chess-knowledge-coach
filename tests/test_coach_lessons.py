@@ -1323,7 +1323,7 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
         "/coaching?pattern=hanging_piece.execute", base_url="https://coach.invalid", headers=headers
     )
     assert focused.status_code == 200 and b"<h3>Finding captures</h3>" in focused.data
-    assert b"18 other supported patterns" in focused.data
+    assert b"19 other supported patterns" in focused.data
     assert (
         client.get(
             "/coaching?pattern=unsupported.execute",

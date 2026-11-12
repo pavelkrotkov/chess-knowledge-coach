@@ -145,7 +145,7 @@ def test_recurrence_review_boundaries_and_independence(tmp_path, monkeypatch):
     assert landing_work["evidence_reads"] == landing_work["game_replays"] == 0
     assert landing_work["history_rebuilds"] == landing_work["lesson_builds"] == 0
     assert broad["current"] == single["current"] and broad["previous"] == single["previous"]
-    assert broad_work["evidence_reads"] == 38 and single_work["evidence_reads"] == 2
+    assert broad_work["evidence_reads"] == 40 and single_work["evidence_reads"] == 2
     assert broad_work["game_replays"] == single_work["game_replays"] == 1
     assert broad_work["lesson_builds"] == single_work["lesson_builds"] == 1
     print(
