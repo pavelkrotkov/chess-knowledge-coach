@@ -25,7 +25,7 @@ def _selection(db, subject, evidence_id, corpus_version):
         source,
         corpus_version,
         version,
-        theme="defensiveMove" if version == contract.PREVENT_VERSION else "pin",
+        theme="defensiveMove" if contract.operation(version) == "prevent" else "pin",
         all_lines=True,
         include_objective=True,
         feature=lambda _prompt, _line: dict(source["features"]),
@@ -44,26 +44,14 @@ def preview(db, subject, evidence_id, corpus_version, cursor=None):
         chosen = selection(db, subject, evidence_id, corpus_version)
     except contract.UnsupportedPinTransfer:
         return {
-            "status": "This source has no supported capture of an existing pinner.",
+            "status": "This source has no supported capture or pin-prevention contrast.",
             "items": [],
         }
     result = present(chosen, cursor)
     for item in result["items"]:
         item.pop("candidate_certificates", None)
     if chosen is not None:
-        if contract.transfer_version(chosen[0]) == contract.PREVENT_VERSION:
-            result["operation"] = "prevent"
-            result["pin_kind"] = chosen[0]["features"]["pin_kind"]
-        result["pin_scan"] = chosen[2]["pin_scan"]
-        result["source_verification"] = (
-            "Source currentness uses up to two pin-root rechecks with at most eight pin "
-            "geometries each. History and material work are separate; limits are not a deadline."
-        )
-        if result.get("operation") == "prevent":
-            result["source_verification"] = (
-                "The owned source is rechecked with its recorded history and a legal pinner "
-                "capture proof. Candidate lines are independently replayed and checked."
-            )
-        if result["pin_scan"]["truncated"]:
-            result["status"] = "partial: candidate proof budget exhausted"
+        from .related_pin_preview import details
+
+        details(result, chosen)
     return result

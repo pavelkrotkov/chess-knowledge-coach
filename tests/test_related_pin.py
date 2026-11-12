@@ -309,6 +309,205 @@ def _prevention_transfer(monkeypatch, black):
     db.close()
 
 
+def _created_transfer(monkeypatch, black):
+    import sys
+
+    import chess.engine
+    import chess.pgn
+
+    from chess_coach import related_pin_created_proof
+    from chess_coach.db import Database
+    from chess_coach.evidence_review import inspect_evidence
+    from chess_coach.ingest import ingest_pgn
+    from chess_coach.pin_geometry import pins
+    from chess_coach.pin_pipeline import process_decision
+    from chess_coach.pipeline_config import PipelineConfig
+    from chess_coach.pipeline_inputs import engine_identity, game_input
+    from chess_coach.pipeline_work import run_analysis
+    from chess_coach.related_pin_created_line import candidate_line as created_line
+    from tests.test_pin_pipeline import Engine
+
+    root = chess.Board("4r3/b1p3k1/Bpnppppp/8/8/8/8/7K b - - 0 1")
+    external = chess.Board("4r3/b1p3k1/Bpnppppp/8/8/8/P7/7K w - - 0 1")
+    if not black:
+        root, external = root.mirror(), external.mirror()
+
+    def uci(text):
+        move = chess.Move.from_uci(text)
+        if not black:
+            move = chess.Move(
+                chess.square_mirror(move.from_square), chess.square_mirror(move.to_square)
+            )
+        return move.uci()
+
+    before = root.copy(stack=True)
+    before.turn = not before.turn
+    assert pins(before, before.parse_uci(uci("a6b5")))
+    game = chess.pgn.Game()
+    game.setup(root)
+    game.headers.update(
+        {
+            "White": "fixture_opponent" if black else SUBJECT,
+            "Black": SUBJECT if black else "fixture_opponent",
+            "Result": "*",
+            "UTCDate": "2026.01.01",
+            "UTCTime": "12:00:00",
+        }
+    )
+    node = game.add_variation(root.parse_uci(uci("g7h8")))
+    root.push_uci(uci("g7h8"))
+    node.add_variation(root.parse_uci(uci("a6b5")))
+
+    class Synthetic(Engine):
+        def analyse(self, board, limit, multipv, root_moves=None):
+            candidate = chess.Move.from_uci(uci("e8h8"))
+            move = (
+                root_moves[0]
+                if root_moves
+                else (
+                    candidate if candidate in board.legal_moves else next(iter(board.legal_moves))
+                )
+            )
+            after = board.copy()
+            after.push(move)
+            reply = chess.Move.from_uci(uci("a6c8") if move == candidate else uci("a6b5"))
+            line = [move, reply] if reply in after.legal_moves else [move]
+            return [
+                {
+                    "score": chess.engine.PovScore(chess.engine.Cp(0), board.turn),
+                    "pv": line,
+                    "nodes": 100,
+                    "depth": 5,
+                }
+            ]
+
+    db = Database(":memory:")
+    db.initialize()
+    ingest_pgn(db, str(game))
+    with monkeypatch.context() as patch:
+        patch.setattr(chess.engine.SimpleEngine, "popen_uci", lambda _: Synthetic())
+        config = PipelineConfig(
+            learner=SUBJECT, engine_path=sys.executable, nodes=100, deep_enabled=False
+        )
+        assert (
+            run_analysis(db, 1, game_input(db, 1), config, engine_identity(sys.executable))[
+                "status"
+            ]
+            == "complete"
+        )
+        evidence = process_decision(db, 1, SUBJECT, "prevent")["evidence_ids"][0]
+        detail = inspect_evidence(db, evidence)
+        assert detail["pin_related_created"] and not detail["pin_related_capture"]
+        source = source_for_evidence(db, SUBJECT, evidence)
+        assert source["features"]["origin"] == "counterfactual"
+
+        original = external.fen()
+        external.push_uci(uci("a2a3"))
+        good, reply = uci("e8h8"), uci("a6c8")
+        after = external.copy(stack=True)
+        after.push_uci(good)
+        after.push_uci(reply)
+        last = next(iter(after.legal_moves)).uci()
+        line = [good, reply, last]
+        assert created_line(external, line, source["features"], create())
+        assert not created_line(
+            external, line, {**source["features"], "pin_kind": "absolute_pin"}, create()
+        )
+        from chess_coach.related_pin_candidates import matches as pin_matches
+
+        assert not pin_matches(
+            external, [" ".join(line)], {**source["features"], "origin": "existing"}, create()
+        )
+
+        with monkeypatch.context() as unresolved:
+            unresolved.setattr(
+                related_pin_created_proof, "judge", lambda *_: ("unresolved", "fixture", None)
+            )
+            assert not created_line(external, line, source["features"], create())
+
+        db.connection.execute(
+            "INSERT INTO puzzle_corpora(version,source,checksum,state) VALUES('created','fixture','checksum','staging')"
+        )
+        corpus = db.connection.execute(
+            "SELECT id FROM puzzle_corpora WHERE version='created'"
+        ).fetchone()[0]
+        db.connection.execute(
+            """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,rating_deviation,themes_json,objective)
+            VALUES('fixture-created-pin',?,?,'https://example.invalid',?,1200,80,'[]','unknown')""",
+            (corpus, original, " ".join([uci("a2a3"), *line])),
+        )
+        db.connection.execute(
+            "INSERT INTO puzzle_themes VALUES(?,?,'defensiveMove',1200)",
+            (corpus, "fixture-created-pin"),
+        )
+        db.connection.execute("UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus,))
+        db.connection.commit()
+        result = preview(db, SUBJECT, evidence, "created")
+        assert result["pin_origin"] == "counterfactual" and len(result["items"]) == 1
+        from chess_coach import web_related_pin, web_views
+        from chess_coach.web import create_app
+
+        patch.setattr(web_related_pin, "database", lambda: db)
+        patch.setattr(web_views, "database", lambda: db)
+        app = create_app(
+            db_path=":memory:",
+            subject=SUBJECT,
+            actor="fixture",
+            corpus="created",
+            login="fixture",
+            origin="https://coach.invalid",
+        )
+        client = app.test_client()
+        url = f"/evidence/{evidence}/related-pins"
+        assert client.get(url, base_url="https://coach.invalid").status_code == 403
+        page = client.get(
+            url, base_url="https://coach.invalid", headers={"Tailscale-User-Login": "fixture"}
+        )
+        assert page.status_code == 200 and b"earlier consequence" in page.data
+        evidence_page = client.get(
+            f"/evidence/{evidence}",
+            base_url="https://coach.invalid",
+            headers={"Tailscale-User-Login": "fixture"},
+        )
+        assert b"Find related pin-prevention practice" in evidence_page.data
+        import re
+
+        assert good.encode() not in re.sub(rb"<input\b[^>]*>", b"", page.data)
+        reference = result["items"][0]["reference"]
+        state = start_related(
+            db,
+            attempt_id="created-pin",
+            subject=SUBJECT,
+            evidence_id=evidence,
+            corpus_version="created",
+            reference=reference,
+        )
+        assert (
+            state["objective"] == "legal_line"
+            and show(db, "created-pin", SUBJECT)["status"] == "active"
+        )
+        db.connection.execute(
+            "UPDATE decision_analysis_lines SET score_value=score_value+1 WHERE position_id=1"
+        )
+        db.connection.commit()
+        with pytest.raises(ValueError, match="stale"):
+            show(db, "created-pin", SUBJECT)
+        db.connection.execute(
+            "UPDATE decision_analysis_lines SET score_value=score_value-1 WHERE position_id=1"
+        )
+        db.connection.commit()
+        assert show(db, "created-pin", SUBJECT)["status"] == "active"
+        assert submit(db, "created-pin", SUBJECT, event_id="first", move=good)["status"] == "active"
+        assert (
+            submit(db, "created-pin", SUBJECT, event_id="last", move=last)["status"]
+            == "line_completed"
+        )
+        review_evidence(db, evidence, decision="reject", actor="fixture_reviewer")
+        with pytest.raises(ValueError, match="stale"):
+            show(db, "created-pin", SUBJECT)
+    db.close()
+
+
 @pytest.mark.parametrize("black", [False, True])
 def test_owned_pin_transfer_playable_concealed_and_review_bound(tmp_path, monkeypatch, black):
     relative = False
@@ -356,6 +555,7 @@ def test_owned_pin_transfer_playable_concealed_and_review_bound(tmp_path, monkey
     with pytest.raises(ValueError, match="stale"):
         show(db, "pin-transfer", SUBJECT)
     _prevention_transfer(monkeypatch, black)
+    _created_transfer(monkeypatch, black)
 
 
 def test_public_lines_filter_wrong_operation_and_keep_only_certified_branch(tmp_path, monkeypatch):

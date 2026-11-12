@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.96.0"
+REGISTRY_VERSION = "1.97.0"
 
 CAPABILITIES = (
     {
@@ -25,14 +25,14 @@ CAPABILITIES = (
         "area": "Training",
         "name": "Related pin practice",
         "status": "observation-only",
-        "details": "Current owned pin execution and pinner-capture prevention proofs retrieve bounded legal supplied examples of the same pin kind. Later safety and mastery remain unknown.",
+        "details": "Current owned pin execution, pinner-capture and counterfactual prevention proofs retrieve bounded legal supplied examples of the same pin kind. Earlier threat origin, later safety and mastery can remain unknown.",
     },
     {
         "id": "owned_pin_prevention",
         "area": "Training",
         "name": "Owned pin prevention",
         "status": "observation-only",
-        "details": "Verify supported existing-pin captures or prevention of bounded newly created pins without mastery inference.",
+        "details": "Verify supported existing-pin captures or prevention of a bounded pin consequence without inferring its earlier origin or mastery.",
     },
     {
         "id": "owned_anchored_fork_defense",

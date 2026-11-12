@@ -16,6 +16,10 @@ from .related_pin_prevent_shape import features
 def source_for_evidence(db, subject, evidence_id):
     source = resolve(db, VERSION, str(evidence_id), subject)
     bound = source["provenance"]["pin_prevention"]
+    if bound["origin"] == "created":
+        from .related_pin_created_source import enrich
+
+        return enrich(db, subject, source, bound)
     if bound["origin"] != "existing":
         raise UnsupportedPinTransfer("existing pin source unavailable")
     board = decision_board(db, position_row(db, source["provenance"]["position_id"]))

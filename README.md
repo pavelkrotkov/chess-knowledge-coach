@@ -849,7 +849,10 @@ or pinned piece and an independently verified legal capture of the pinner supply
 the compared consequences. Either of multiple qualifying captures can be observed. The result addresses those tested lines, not overall safety or
 the best move. The separate created-pin defense scan uses bounded alternatives;
 checks, unresolved exchanges, alternative compensation and unexamined branches
-remain ambiguous. Review displays the linked current source and proof; observations
+remain ambiguous. A counterfactual pin-transfer example rechecks its owned source,
+legal supplied line, and a distinct move that allows a proved same-kind pin
+consequence. It checks up to 16 counterfactual moves and shares the 64 pin-proof
+budget. A before-move consequence remains unknown without separate proof. Review displays the linked current source and proof; observations
 are provisional and all pin mastery remains closed pending independent held-out
 qualification. No general pin practice grading is implied.
 

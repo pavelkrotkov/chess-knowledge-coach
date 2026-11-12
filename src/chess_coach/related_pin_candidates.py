@@ -3,6 +3,7 @@
 import chess
 
 from .puzzle_session_validate import CORPUS_PLIES_LIMIT, legal_move, solution_moves
+from .related_pin_created_line import candidate_line as created_line
 from .related_pin_line import candidate_line
 from .related_pin_prevent_line import candidate_line as prevention_line
 from .related_pin_public import lines as public_lines
@@ -26,7 +27,10 @@ def prompt(item):
 def matches(board, lines, source, budget):
     found = []
     for index, text in enumerate(lines):
-        matcher = prevention_line if source.get("operation") == "prevent" else candidate_line
+        if source.get("origin") == "counterfactual":
+            matcher = created_line
+        else:
+            matcher = prevention_line if source.get("operation") == "prevent" else candidate_line
         result = matcher(board, text.split(), source, budget)
         if result is not None:
             found.append((index, result))
