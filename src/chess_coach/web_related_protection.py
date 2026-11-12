@@ -36,19 +36,34 @@ def finder():
 @related_protection.get("/evidence/<int:evidence_id>/related-protections")
 def show(evidence_id):
     try:
-        result = preview(
-            database(),
-            current_app.config["SUBJECT"],
-            evidence_id,
-            current_app.config["CORPUS"],
-            request.args.get("cursor"),
-        )
+        followup = request.args.get("followup")
+        if followup:
+            from .protection_followup import find
+
+            result = find(
+                database(),
+                current_app.config["SUBJECT"],
+                current_app.config["CORPUS"],
+                evidence_id,
+                followup,
+                request.args.get("cursor"),
+            )
+        else:
+            result = preview(
+                database(),
+                current_app.config["SUBJECT"],
+                evidence_id,
+                current_app.config["CORPUS"],
+                request.args.get("cursor"),
+            )
         for item in result["items"]:
             item["board"] = board_rows(item["fen"])
     except ValueError:
         return render_template(
             "error.html",
-            message="This protection source is unsupported, unavailable, or changed. Return to the evidence.",
+            message="This protection source is unsupported, unavailable, or changed.",
+            back_url=url_for("related_protection.finder"),
+            back_label="Search other protection sources",
         ), 400
     return render_template("related_protection.html", result=result, evidence_id=evidence_id)
 
@@ -65,6 +80,7 @@ def begin(evidence_id):
             corpus_version=current_app.config["CORPUS"],
             reference=request.form.get("reference", ""),
             assessment=request.form.get("assessment") == "1",
+            followup=request.form.get("followup") or None,
         )
     except ValueError:
         return render_template(

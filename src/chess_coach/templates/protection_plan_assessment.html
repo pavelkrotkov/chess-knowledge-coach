@@ -1,0 +1,18 @@
+{% if assessment.status in ("correct", "incorrect") %}
+<section>
+<h3>Unfamiliar protection assessment</h3>
+<p>A current first encounter was verified without assistance. {% if assessment.evidence_id != selected_evidence %}Its assessment source is separate from the selected rehearsal. {% endif %}<a href="{{ url_for('views.evidence_detail', evidence_id=assessment.evidence_id) }}">Review the assessment source</a>.</p>
+{% if assessment.status == "incorrect" %}
+<p>In your assessment, the threatened piece was on {{ assessment.target }}. Before moving, identify the threat and check the opponent's immediate captures.</p>
+<form method="post" action="{{ url_for('unified_practice.begin') }}">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<input type="hidden" name="source_type" value="own-game">
+<input type="hidden" name="version" value="{{ protection_version }}">
+<input type="hidden" name="key" value="{{ assessment.evidence_id }}">
+<button>Rehearse this assessment source</button>
+</form>
+{% else %}
+<p><a href="{{ url_for('related_protection.show', evidence_id=assessment.evidence_id, followup=assessment.attempt) }}">Find a comparable unfamiliar protection assessment</a>. The bounded search may find no match.</p>
+{% endif %}
+</section>
+{% endif %}

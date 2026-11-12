@@ -25,4 +25,7 @@
 {% else %}
 <p>Protection rehearsal is temporarily unavailable or source checks exceeded their budget. Your scheduled reviews are unchanged.</p>
 {% endif %}
+{% if report and report.source %}<p><a href="{{ url_for('related_protection.show', evidence_id=report.source.evidence_id) }}">Find unfamiliar practice for the selected source</a>. The <a href="{{ url_for('related_protection.finder') }}">general finder</a> checks other sources.</p>{% endif %}
+{% set selected_evidence = report.source.evidence_id if report and report.source else none %}
+{% include "protection_plan_assessment.html" %}
 {% endblock %}
