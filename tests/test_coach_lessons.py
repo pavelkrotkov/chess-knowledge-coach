@@ -147,6 +147,8 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
     assert source(db, LEARNER, candidate) is None
     first_example = next(item for item in lesson["examples"] if item["evidence_id"] == evidence_id)
     assert resolve_example(db, LEARNER, lesson, first_example) is None
+    db.close()
+    _fork_prevention_coaching(tmp_path, monkeypatch)
 
 
 def test_decision_and_saved_history_render_coaching(tmp_path, monkeypatch):
@@ -258,6 +260,135 @@ def test_material_and_mate_sources_generate_specific_legal_explanations(tmp_path
     example = describe(source(db, "fixture_a", {"id": row["id"], "position_id": 1}))
     assert "forced mating" in example["facts"][0]
     assert example["lines"]
+
+
+def _fork_prevention_coaching(tmp_path, monkeypatch):
+    import chess
+    import chess.engine
+    import chess.pgn
+
+    from chess_coach.coaching_fork_defense import actions
+    from chess_coach.coaching_practice import choices
+    from chess_coach.coaching_report import report
+    from chess_coach.evidence_review import review_evidence
+    from chess_coach.fork_defense_detector import process_decision as defense_decision
+    from chess_coach.ingest import ingest_pgn
+    from chess_coach.objective_fork_avoidance_contract import VERSION as AVOIDANCE
+    from chess_coach.objective_fork_defense_contract import VERSION as DEFENSE
+    from chess_coach.pipeline_inputs import engine_identity, game_input
+    from chess_coach.pipeline_work import run_analysis
+    from chess_coach.web import create_app
+    from tests.test_fork_defense_pipeline import LEARNER, Engine, make_game
+
+    path = tmp_path / "coaching-fork-defense.sqlite"
+    db, config = make_game(path, monkeypatch, failure=True)
+    anchored = defense_decision(db, 1, LEARNER)["evidence_ids"][0]
+    board = chess.Board("7k/6p1/8/8/1n6/8/7P/1R2K3 w - - 0 1")
+    game = chess.pgn.Game.from_board(board)
+    game.headers.update(
+        {
+            "White": LEARNER,
+            "Black": "fixture_opponent",
+            "Result": "*",
+            "UTCDate": "2026.01.02",
+            "UTCTime": "12:00:00",
+        }
+    )
+    node = game.add_variation(board.parse_uci("b1a1"))
+    board.push_uci("b1a1")
+    node.add_variation(board.parse_uci("b4c2"))
+    monkeypatch.setattr(
+        chess.engine.SimpleEngine,
+        "popen_uci",
+        lambda _: Engine(["b1b3", "h8g8", "e1f1", "g7g6"], ["b1a1", "b4c2", "e1f1", "c2a1"]),
+    )
+    ingest_pgn(db, str(game))
+    assert (
+        run_analysis(db, 2, game_input(db, 2), config, engine_identity(config.engine_path))[
+            "status"
+        ]
+        == "complete"
+    )
+    position = db.connection.execute(
+        "SELECT id FROM positions WHERE game_id=2 AND ply=1"
+    ).fetchone()[0]
+    avoidance = defense_decision(db, position, LEARNER)["evidence_ids"][0]
+
+    preview = report(db, LEARNER)
+    group = next(
+        group for group in preview["groups"] if group["lesson"]["family"] == "fork-defense-mapper"
+    )
+    assert group["miss_games"] == 2 and len(group["lesson"]["examples"]) == 2
+    assert choices(db, LEARNER, {"groups": [group]}) == [None]
+    admitted = actions(db, LEARNER, {"groups": [group]})[0]
+    assert {item["kind"] for item in admitted.values()} == {"fork_defense", "fork_avoidance"}
+    assert anchored in admitted
+    assert admitted[avoidance]["kind"] == "fork_avoidance"
+
+    app = create_app(
+        db_path=path,
+        subject=LEARNER,
+        actor="fixture",
+        corpus="missing",
+        login="fixture-login",
+        origin="https://coach.invalid",
+    )
+    client = app.test_client()
+    base, headers = "https://coach.invalid", {"Tailscale-User-Login": "fixture-login"}
+    assert client.get("/coaching?pattern=fork.prevent", base_url=base).status_code == 403
+    import chess_coach.web_related_fork_avoidance as avoidance_view
+    import chess_coach.web_related_fork_prevention as prevention_view
+
+    before = db.connection.execute("PRAGMA data_version").fetchone()[0]
+    with monkeypatch.context() as patch:
+
+        def no_search(*_args, **_kwargs):
+            raise AssertionError("coaching GET searched the corpus")
+
+        patch.setattr(avoidance_view, "preview", no_search)
+        patch.setattr(prevention_view, "preview", no_search)
+        quick = client.get("/coaching?pattern=fork.prevent", base_url=base, headers=headers)
+        full = client.get("/coaching?full=1", base_url=base, headers=headers)
+    assert quick.status_code == full.status_code == 200
+    for page in (quick, full):
+        assert b"Defending against forks" in page.data and b"2 independent games" in page.data
+        assert b"Rehearse defending an existing threat" in page.data
+        assert b"Rehearse avoiding a created threat" in page.data
+        assert b"exercise is cued" in page.data
+        assert f'name="version" value="{DEFENSE}"'.encode() in page.data
+        assert f'name="version" value="{AVOIDANCE}"'.encode() in page.data
+        assert f"/evidence/{anchored}/related-fork-preventions".encode() in page.data
+        assert f"/evidence/{avoidance}/related-fork-avoidances".encode() in page.data
+    assert db.connection.execute("PRAGMA data_version").fetchone()[0] == before
+    # Both existing routes admit their own source and keep an honest empty result.
+    with client.session_transaction(base_url=base) as browser:
+        csrf = browser["csrf"]
+    for eid, version, suffix, phrase in (
+        (anchored, DEFENSE, "related-fork-preventions", b"Defend against the anchored knight fork"),
+        (avoidance, AVOIDANCE, "related-fork-avoidances", b"Avoid the created knight fork"),
+    ):
+        empty = client.get(f"/evidence/{eid}/{suffix}", base_url=base, headers=headers)
+        assert empty.status_code == 200 and b"corpus unavailable" in empty.data
+        response = client.post(
+            "/unified/start",
+            base_url=base,
+            headers=headers | {"Origin": base},
+            data={"csrf": csrf, "source_type": "own-game", "version": version, "key": str(eid)},
+        )
+        assert response.status_code == 303
+        assert phrase in client.get(response.location, base_url=base, headers=headers).data
+
+    # A rejected source and a superseded source fail closed.
+    review_evidence(db, avoidance, decision="reject", actor="fixture")
+    assert set(actions(db, LEARNER, {"groups": [group]})[0]) == {anchored}
+    run = db.connection.execute(
+        "SELECT run_id FROM detector_facts WHERE id=(SELECT fact_id FROM evidence_fact_links WHERE evidence_id=? LIMIT 1)",
+        (anchored,),
+    ).fetchone()[0]
+    db.connection.execute("UPDATE detector_runs SET status='superseded' WHERE id=?", (run,))
+    db.connection.commit()
+    assert actions(db, LEARNER, {"groups": [group]}) == [{}]
+    db.close()
 
 
 def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, monkeypatch):
