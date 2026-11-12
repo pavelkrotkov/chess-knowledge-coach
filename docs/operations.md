@@ -66,8 +66,34 @@ cd .runtime
 cd ..
 ```
 
-The import path must be inside that release's `venv`; its `COMMIT` file
-must match the selected SHA.
+For a standalone release, the import path must be inside that release's
+`venv`; its `COMMIT` file must match the selected SHA.
+
+When the reviewed revision has the exact same `uv.lock` and `pyproject.toml`
+as a sealed standalone release, an operator may instead reuse that release's
+locked dependencies:
+
+```sh
+uv run --no-sync python -B -m chess_coach.ops_release --project-root "$PWD" \
+  --commit <reviewed-full-sha> --dependency-release <standalone-full-sha>
+```
+
+This opt-in path creates a small linked-interpreter venv without installing or
+building dependencies. A plain path file puts the candidate's archived
+`source/src` first and the standalone release's sealed site-packages second.
+The candidate's `DEPENDENCY_RELEASE` marker records the exact base SHA,
+configuration hashes, and Python version. Preparation verifies the sealed
+base, installed lock versions, interpreter identity, candidate imports,
+service modules and browser resources. It refuses changed configuration or a
+compact release as a base.
+
+For this compact path, the isolated import above must resolve under the
+candidate release's `source/src`, not under the base release. Preserve the
+named standalone base for the entire lifetime of every dependent release,
+including rollback. Verify its marker and sealed state before activation or
+rollback; if it is unavailable, prepare a standalone release instead. Budget
+space for the archived source and venv before staging; this command does not
+activate services or remove existing releases.
 
 For a new, absent database only, initialize and import the project-local
 puzzle corpus with that same reviewed release:
