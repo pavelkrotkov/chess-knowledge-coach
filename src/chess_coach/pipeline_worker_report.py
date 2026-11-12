@@ -1,5 +1,6 @@
 """Run bounded endgame workers and extend the existing pipeline report."""
 
+from .discovery_defense_pipeline import process_defenses as discovery_defenses
 from .discovery_pipeline import process_discoveries
 from .king_safety_worker import process_king_safety_lessons
 from .mate_worker import process_mates
@@ -34,6 +35,9 @@ def worker_report(db, config, sync, scan, games, deep, material, forks, defenses
         result[f"pin_{operation}"] = pins
     result["status"] = combined_status(result["status"], discoveries)
     result["discoveries"] = discoveries
+    defense = discovery_defenses(db, config)
+    result["status"] = combined_status(result["status"], defense)
+    result["discovery_defenses"] = defense
     result["status"] = combined_status(result["status"], objectives)
     result["objective_verification"] = objectives
     result["mate"] = mate

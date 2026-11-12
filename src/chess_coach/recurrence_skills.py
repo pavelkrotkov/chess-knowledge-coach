@@ -2,6 +2,7 @@
 
 PAIRS = (
     ("discovered_attack", "execute"),
+    ("discovered_attack", "prevent"),
     ("hanging_piece", "execute"),
     ("hanging_piece", "prevent"),
     ("fork", "execute"),

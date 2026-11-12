@@ -1,0 +1,10 @@
+{% if evidence.discovery_defense_currentness %}
+<p>Discovered-mate defense source is {{ evidence.discovery_defense_currentness }}. This is a provisional immediate-defense observation.</p>
+{% if evidence.discovery_defense_currentness == "current" %}{% set d = evidence.discovery_defense_observation %}
+{% if d.threat %}
+<p>After the recorded move {{ d.played.san[0] }}, the recorded analysis line shows {{ d.threat.san }}. It moves the piece from {{ d.threat.moved_from }}, reveals the slider on {{ d.threat.slider }} toward {{ d.threat.target }}, and checkmates.{% if d.threat.double_check %} The move is double check.{% endif %}</p>
+<p>The independently tested legal alternative {{ d.witness.san }} also permits {{ d.witness.proof.san }}. This is a positional witness.</p>
+<p>The legal defense {{ d.defense.san }} prevents every immediate opposing checkmate in the completed bounded scan. Later consequences remain unknown.</p>
+{% if evidence.review_status not in ["rejected", "revoked"] %}<form method="post" action="{{ url_for('unified_practice.begin') }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="source_type" value="own-game"><input type="hidden" name="version" value="discovery-mate-defense-own-v1"><input type="hidden" name="key" value="{{ evidence.id }}"><button>Practice this immediate defense</button></form>{% endif %}
+{% else %}<p>The discovered-mate defense remains unresolved ({{ d.reason | replace("_", " ") }}).</p>{% endif %}
+{% endif %}{% endif %}
