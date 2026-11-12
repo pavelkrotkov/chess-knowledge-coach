@@ -13,7 +13,7 @@ from .pipeline_report import pipeline_report
 from .rook_plan_worker import process_rook_plans
 
 
-def worker_report(db, config, sync, scan, games, deep, material, forks, defenses):
+def worker_report(db, config, sync, scan, games, deep, material, forks, defenses, engine_hash=None):
     discoveries = process_discoveries(db, config)
     objectives = process_objectives(db, config.learner, limit=4)
     structures = process_structure_lessons(db, config)
@@ -35,7 +35,7 @@ def worker_report(db, config, sync, scan, games, deep, material, forks, defenses
         result[f"pin_{operation}"] = pins
     result["status"] = combined_status(result["status"], discoveries)
     result["discoveries"] = discoveries
-    defense = discovery_defenses(db, config)
+    defense = discovery_defenses(db, config, engine_hash)
     result["status"] = combined_status(result["status"], defense)
     result["discovery_defenses"] = defense
     result["status"] = combined_status(result["status"], objectives)

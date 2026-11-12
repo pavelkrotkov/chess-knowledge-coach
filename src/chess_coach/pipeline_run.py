@@ -27,6 +27,8 @@ def run_pipeline(db, config, token, transport, clock, phase):
     phase["name"] = "fork_defenses"
     defenses = process_defenses(db, config)
     phase["name"] = "report"
-    report = worker_report(db, config, sync, scan, games, deep, material, forks, defenses)
+    report = worker_report(
+        db, config, sync, scan, games, deep, material, forks, defenses, engine_hash
+    )
     report["recent_analysis"] = recent
     return attach_status(report, purpose)
