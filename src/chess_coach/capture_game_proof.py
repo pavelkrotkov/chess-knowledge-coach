@@ -4,7 +4,7 @@ from .capture_game_roots import inspect
 from .pawn_scope import history_known
 
 # Bump when qualification or played-choice semantics change.
-VERSION = "direct-capture-v2"
+VERSION = "direct-capture-v3"
 MAX_CANDIDATES = 32
 
 
