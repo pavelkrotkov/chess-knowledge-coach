@@ -12,7 +12,11 @@ from .tactical_course_related import GENERAL_EMPTY, HISTORY_LIMIT, unfamiliar, w
 def own(db, subject, group, budget):
     try:
         bindings = None
-        if group["lesson"]["skill"] == "fork":
+        lesson = group["lesson"]
+        if lesson["skill"] == "fork" or (lesson["skill"], lesson["operation"]) == (
+            "hanging_piece",
+            "prevent",
+        ):
             # Keep both source checks within the shared versioned course budget.
             with budget.scope(snapshot=True):
                 bindings = independent(db, subject, group)
