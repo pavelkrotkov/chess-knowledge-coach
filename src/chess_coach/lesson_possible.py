@@ -1,6 +1,7 @@
 """Mechanisms to investigate, separated from observations and diagnosis."""
 
 MECHANISMS = {
+    "discovery-material-success-mapper": "An opposing piece can move to reveal a slider toward a valuable piece. The played move prevents the named discovery and an immediate capture of that target.",
     "discovery-mate-success-mapper": "A moving opposing piece can reveal a slider giving checkmate. The played move prevents every immediate opposing mate.",
     "discovery-material-defense-mapper": "A moving opposing piece can reveal a slider against another piece. The checked alternative prevents the named discovery.",
     "discovery-mate-defense-mapper": "A moving piece can reveal a slider's check. A tested defense prevents every immediate opposing checkmate.",
