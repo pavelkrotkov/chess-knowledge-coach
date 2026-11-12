@@ -19,7 +19,14 @@ def _materialproof(board, after, move, item, replies, check):
     if after.piece_type_at(item["target"]) == chess.KING:
         return None
     initial = material(board, board.turn)
-    witnesses = [witness(after, reply, item, board.turn, initial, check=check) for reply in replies]
-    if any(witness is None for witness in witnesses):
-        return None
+    witnesses = []
+    tick = check or (lambda: None)
+    for reply in replies:
+        tick()
+        if reply.from_square == item["target"] or reply.to_square == item["slider"]:
+            return None
+        branch = witness(after, reply, item, board.turn, initial, check=check)
+        if branch is None:
+            return None
+        witnesses.append(branch)
     return proof(board, move, item, witnesses, mate=False)

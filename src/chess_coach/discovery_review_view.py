@@ -4,6 +4,7 @@ from .discovery_defense_evidence import current as defense_current
 from .discovery_evidence import current
 from .discovery_mate_success_evidence import current as success_current
 from .discovery_material_evidence import current as material_current
+from .discovery_material_success_evidence import current as material_success_current
 
 
 def apply(db, evidence, *, _history=None):
@@ -27,3 +28,8 @@ def apply(db, evidence, *, _history=None):
     evidence["discovery_success_currentness"] = success_state
     if success_state == "current":
         evidence["decision_fen"] = success_fen
+    material_success, state, fen = material_success_current(db, evidence, _history=_history)
+    evidence["discovery_material_success_observation"] = material_success
+    evidence["discovery_material_success_currentness"] = state
+    if state == "current":
+        evidence["decision_fen"] = fen

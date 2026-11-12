@@ -1,0 +1,7 @@
+{% if evidence.discovery_material_success_currentness %}
+<p>Discovered-material success source is {{ evidence.discovery_material_success_currentness }}. This is a provisional bounded observation.</p>
+{% if evidence.discovery_material_success_currentness == "current" %}{% set d = evidence.discovery_material_success_observation %}
+<p>The played move {{ d.played.san }} stops the named discovery, leaves the same target without an immediate legal capture and prevents every immediate opposing checkmate.</p>
+<p>The distinct legal alternative {{ d.witness.san }} permits {{ d.threat.san }}, revealing the slider on {{ d.threat.slider }} toward {{ d.threat.target }}. The proof checked {{ d.threat.legal_replies }} legal replies.</p>
+<p>Other material threats, later play and intent remain unknown.</p>
+{% endif %}{% endif %}
