@@ -1,6 +1,7 @@
 """A successful defense leads to a source-bound, playable transfer."""
 
 import json
+import re
 import sqlite3
 import sys
 
@@ -377,7 +378,11 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
         assert b"Start this example" in finder.data
         assert b"Check my first move" in finder.data
         assert reference.encode() in finder.data
-        assert moves[1].encode() not in finder.data
+        move = re.escape(moves[1].encode())
+        move_token = rb"(?<![A-Za-z0-9_-])" + move + rb"(?![A-Za-z0-9_-])"
+        assert not re.search(move_token, finder.data)
+        assert re.search(move_token, b"<p>" + moves[1].encode() + b"</p>")
+        assert not re.search(move_token, b'csrf="opaque' + moves[1].encode() + b'opaque"')
         assert (
             client.get(
                 "/plan/protection/finder?cursor=tampered",
@@ -394,7 +399,8 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
         )
         assert b"successful defense rehearsal" in page.data
         assert b"Check my first move" in page.data
-        assert f"You play {color}".encode() in page.data and moves[1].encode() not in page.data
+        assert f"You play {color}".encode() in page.data
+        assert not re.search(move_token, page.data)
         with client.session_transaction(base_url="https://coach.invalid") as session:
             csrf = session["csrf"]
         url = f"/evidence/{evidence}/related-protections/start"
