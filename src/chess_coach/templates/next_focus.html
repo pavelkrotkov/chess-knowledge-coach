@@ -44,7 +44,7 @@
 {% if fork.assessment.status == "correct" %}
 <p>A current first-encounter assessment was verified without assistance. <a href="{{ url_for('related_fork.find_next', attempt=fork.assessment.attempt) }}">Find a comparable follow-up fork assessment</a>. The search may find no match.</p>
 {% elif fork.assessment.status == "incorrect" %}
-<p>A current first-encounter assessment found a verified miss without assistance. Revisit the cued habit of checking what the named knight attacks.</p>
+<p>A current first-encounter assessment found a verified miss without assistance. Before you commit to a move, name both targets.</p>
 {% else %}
 <p>Rehearse the shown source, or try a distinct unfamiliar assessment.</p>
 {% endif %}
