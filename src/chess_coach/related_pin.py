@@ -40,7 +40,13 @@ def _selection(db, subject, evidence_id, corpus_version):
 
 
 def preview(db, subject, evidence_id, corpus_version, cursor=None):
-    chosen = selection(db, subject, evidence_id, corpus_version)
+    try:
+        chosen = selection(db, subject, evidence_id, corpus_version)
+    except contract.UnsupportedPinTransfer:
+        return {
+            "status": "This source has no supported capture of an existing pinner.",
+            "items": [],
+        }
     result = present(chosen, cursor)
     for item in result["items"]:
         item.pop("candidate_certificates", None)

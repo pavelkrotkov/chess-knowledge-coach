@@ -20,3 +20,15 @@ def transfer_version(source):
 
 def operation(version):
     return "prevent" if version == PREVENT_VERSION else "execute"
+
+
+class UnsupportedPinTransfer(ValueError):
+    """The current owned source is outside the pinner-capture slice."""
+
+
+def bound_filter(key, provenance, default):
+    if key != "related_pin":
+        return default
+    if not isinstance(provenance, dict):
+        raise ValueError("practice line selection unavailable")
+    return filter_version(provenance.get("rank_version"))

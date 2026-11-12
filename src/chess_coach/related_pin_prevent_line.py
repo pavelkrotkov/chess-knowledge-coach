@@ -2,7 +2,8 @@
 
 import chess
 
-from .pin_capture_defense import capture_defenses
+from .material_lines import material
+from .pin_capture import capture
 from .puzzle_session_validate import legal_move
 from .related_pin_budget import take
 from .related_pin_prevent_nominate import nominate
@@ -16,9 +17,7 @@ def candidate_line(board, line, source, budget):
             return None
         move, attacker, pin = candidate
         _replay(board, line)
-        if not any(
-            item["move"] == move.uci() for item in capture_defenses(board, [(attacker, pin)])
-        ):
+        if not capture(board, move.from_square, attacker, board.turn, material(board, board.turn)):
             return None
         shape = features(board, move, attacker, pin)
         proof = {

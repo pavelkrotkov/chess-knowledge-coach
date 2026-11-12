@@ -43,7 +43,7 @@ def _other(snapshot, provenance, provenance_key, line_filter):
             "related_fork_prevention": related_fork_prevention_contract.FILTER_VERSION,
             "related_fork_avoidance": related_fork_avoidance_contract.FILTER_VERSION,
             "related_mate": related_mate.FILTER_VERSION,
-            "related_pin": related_pin_contract.filter_version(provenance.get("rank_version")),
+            "related_pin": related_pin_contract.bound_filter(provenance_key, provenance, None),
             "related_backrank_attack": related_backrank_contract.FILTER_VERSION,
         }.get(provenance_key)
         select_lines(snapshot, provenance, expected_version=version)

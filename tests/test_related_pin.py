@@ -86,17 +86,21 @@ def fixture(path, monkeypatch, *, black=False, relative=False, public_only=False
 
 def _prevention_transfer(monkeypatch, black):
     import sys
+    from copy import deepcopy
 
     import chess.engine
     import chess.pgn
 
+    from chess_coach import related_pin_prevent_line as prevent_line
     from chess_coach.db import Database
+    from chess_coach.evidence_review import inspect_evidence
     from chess_coach.ingest import ingest_pgn
     from chess_coach.pin_pipeline import process_decision
     from chess_coach.pipeline_config import PipelineConfig
     from chess_coach.pipeline_inputs import engine_identity, game_input
     from chess_coach.pipeline_work import run_analysis
     from chess_coach.related_pin_candidates import matches, prompt
+    from chess_coach.related_pin_prevent_display import available as finder_available
     from chess_coach.related_pin_prevent_line import candidate_line as prevention_line
     from tests.test_pin_pipeline import Engine
 
@@ -139,6 +143,15 @@ def _prevention_transfer(monkeypatch, black):
     )
     evidence = process_decision(db, 1, SUBJECT, "prevent")["evidence_ids"][0]
     source = source_for_evidence(db, SUBJECT, evidence)
+    detail = inspect_evidence(db, evidence)
+    assert finder_available(detail)
+    for mode in ("created", "slide"):
+        other = deepcopy(detail)
+        if mode == "created":
+            other["pin_explanation"]["proof"]["mode"] = "created"
+        else:
+            other["pin_explanation"]["alternative"]["move"] = uci("e2f2")
+        assert not finder_available(other)
     candidate = chess.Board(source["prompt_fen"])
     candidate.turn = not candidate.turn
     setup = uci("f7f6")
@@ -146,6 +159,21 @@ def _prevention_transfer(monkeypatch, black):
     candidate.push_uci(setup)
     line = [uci("e2e3"), uci("h8g8"), uci("e3e8")]
     assert prevention_line(candidate, line, source["features"], create())
+    two_captures = candidate.copy(stack=True)
+    bishop = chess.parse_square("b3" if black else "b6")
+    two_captures.set_piece_at(bishop, chess.Piece(chess.BISHOP, two_captures.turn))
+    assert two_captures.parse_uci(uci("b6e3")) in two_captures.legal_moves
+    calls = []
+    original_capture = prevent_line.capture
+
+    def counted(*args):
+        calls.append(args[1:3])
+        return original_capture(*args)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(prevent_line, "capture", counted)
+        assert prevention_line(two_captures, line, source["features"], create())
+    assert len(calls) == 1
     public = {
         "type": "public",
         "fen": candidate.fen(),
@@ -187,10 +215,16 @@ def _prevention_transfer(monkeypatch, black):
     visible.pop("scope", None)
     assert line[0] not in json.dumps(visible)
 
-    from chess_coach import web_related_pin
+    from flask import render_template
+
+    from chess_coach import web_related_pin, web_views
+    from chess_coach.related_session_filter import apply_filter
     from chess_coach.web import create_app
 
     monkeypatch.setattr(web_related_pin, "database", lambda: db)
+    monkeypatch.setattr(web_views, "database", lambda: db)
+    with pytest.raises(ValueError, match="line selection unavailable"):
+        apply_filter({}, None, "related_pin", None)
     app = create_app(
         db_path=":memory:",
         subject=SUBJECT,
@@ -203,9 +237,44 @@ def _prevention_transfer(monkeypatch, black):
     base = "https://coach.invalid"
     headers = {"Tailscale-User-Login": "fixture"}
     url = f"/evidence/{evidence}/related-pins"
+    evidence_page = client.get(f"/evidence/{evidence}", base_url=base, headers=headers)
+    assert b"Find pinner-capture examples" in evidence_page.data
+    example = {
+        "evidence_id": evidence,
+        "game_id": 1,
+        "position_id": 1,
+        "ply": 1,
+        "operation": "prevent",
+        "pin_related_capture": True,
+        "facts": [],
+        "lines": [],
+    }
+    with app.test_request_context(base_url=base):
+        lesson = {"family": "pin-prevent-mapper", "examples": [example]}
+        assert "Find pinner-capture examples" in render_template("lesson_body.html", lesson=lesson)
+        example["pin_related_capture"] = False
+        rendered = render_template("lesson_body.html", lesson=lesson)
+        assert (
+            "Find pinner-capture examples" not in rendered and "Practice pin prevention" in rendered
+        )
+    unsupported_detail = deepcopy(detail)
+    unsupported_detail["pin_related_capture"] = False
+    with monkeypatch.context() as patch:
+        patch.setattr(web_views, "inspect_evidence", lambda *_: unsupported_detail)
+        evidence_page = client.get(f"/evidence/{evidence}", base_url=base, headers=headers)
+    assert b"Find pinner-capture examples" not in evidence_page.data
+    assert b"Practice pin prevention" in evidence_page.data
     assert client.get(url, base_url=base).status_code == 403
     page = client.get(url, base_url=base, headers=headers)
     assert page.status_code == 200 and b"own-game pin prevention" in page.data
+    from chess_coach import related_pin_prevent_source
+
+    unsupported = deepcopy(source)
+    unsupported["provenance"]["pin_prevention"]["origin"] = "created"
+    with monkeypatch.context() as patch:
+        patch.setattr(related_pin_prevent_source, "resolve", lambda *_: unsupported)
+        unavailable = client.get(url, base_url=base, headers=headers)
+    assert unavailable.status_code == 200 and b"no supported capture" in unavailable.data
     import re
 
     visible_page = re.sub(rb"<input\b[^>]*>", b"", page.data)
