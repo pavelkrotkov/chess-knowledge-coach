@@ -15,7 +15,8 @@ def prepare_jobs(db, selection_id, learner, config, retry_insufficient):
             )
             db.connection.execute(
                 """INSERT INTO deep_analysis_current(selection_id,position_id,job_id) VALUES(?,?,?)
-                ON CONFLICT(selection_id,position_id) DO UPDATE SET job_id=excluded.job_id""",
+                ON CONFLICT(selection_id,position_id) DO UPDATE SET job_id=excluded.job_id
+                WHERE deep_analysis_current.job_id<>excluded.job_id""",
                 (selection_id, item["position_id"], job_id),
             )
     return selection
@@ -43,12 +44,18 @@ def _job(db, selection_id, position_id, fingerprint, config, retry_insufficient)
         (selection_id, position_id, fingerprint, canonical(config)),
     )
     row = db.connection.execute(
-        "SELECT id,status,config_json FROM deep_analysis_jobs WHERE selection_id=? AND position_id=? AND config_fingerprint=?",
+        """SELECT id,status,config_json,
+        (SELECT detail FROM deep_analysis_attempts WHERE job_id=deep_analysis_jobs.id
+         ORDER BY attempt_number DESC LIMIT 1) AS last_detail
+        FROM deep_analysis_jobs WHERE selection_id=? AND position_id=? AND config_fingerprint=?""",
         (selection_id, position_id, fingerprint),
     ).fetchone()
     if row is None or row["config_json"] != canonical(config):
         raise ValueError("deep job configuration conflicts")
-    if row["status"] == "stale" or (retry_insufficient and row["status"] == "insufficient"):
+    if row["status"] == "stale" or (
+        row["status"] == "insufficient"
+        and (retry_insufficient or row["last_detail"] == "worker_deadline")
+    ):
         db.connection.execute(
             "UPDATE deep_analysis_jobs SET status='pending',updated_at=CURRENT_TIMESTAMP WHERE id=?",
             (row["id"],),

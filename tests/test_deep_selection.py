@@ -92,8 +92,10 @@ def test_bounded_replay_context_reasons_and_no_mastery(tmp_path, monkeypatch):
     )
     before = db.connection.execute("SELECT COUNT(*) FROM analysis_runs").fetchone()[0]
     first = select_deep(db, [1], learner=LEARNER, per_game=4, total=4)
+    changes = db.connection.total_changes
     again = select_deep(db, [1], learner=LEARNER, per_game=4, total=4)
     assert first == again
+    assert db.connection.total_changes == changes
     detail = show_selection(db, 1, LEARNER)
     assert detail["state"] == "current" and detail["coverage"]["eligible"] == 6
     assert detail["coverage"]["control_target"] == 1 and detail["coverage"]["selected"] == 4
