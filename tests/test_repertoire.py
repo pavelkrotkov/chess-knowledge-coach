@@ -1354,7 +1354,143 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
             opening_unfamiliar_study.publish_locked(tmp_path, course_version)
         assert unfamiliar_provider.created == 0
         assert not (planning_dir / f"opening-study-{course_version}-intent.json").exists()
+        # A browser request is exact, private, resumable, and never publishes on GET.
+        from chess_coach import opening_study_worker
+        from chess_coach.pipeline_lock import pipeline_lock
+
+        study_path = course_path + "/study"
+        with client_first.session_transaction(base_url="https://coach.invalid") as session:
+            study_csrf = session["csrf"]
+        form = {**selected, "version": selected_version, "csrf": study_csrf}
+        post_headers = {**headers, "Origin": "https://coach.invalid"}
+        assert (
+            client_first.post(
+                study_path, data=form, base_url="https://coach.invalid", headers=post_headers
+            ).status_code
+            == 409
+        )
+        assert not (planning_dir / "opening-study-request.json").exists()
+        assert (
+            client_first.post(
+                study_path,
+                data={**form, "csrf": "wrong"},
+                base_url="https://coach.invalid",
+                headers=post_headers,
+            ).status_code
+            == 403
+        )
         patch.setenv("LICHESS_STUDY_TOKEN", "fixture-token")
+        with monkeypatch.context() as browser:
+            provider = Provider()
+            provider.timeout_create = False
+            request = provider.request
+
+            def malformed_create(method, url, **kwargs):
+                response = request(method, url, **kwargs)
+                if method == "POST" and url.endswith("/api/study"):
+                    return study_session.httpx.Response(200, content=b"{", request=response.request)
+                return response
+
+            browser.setattr(provider, "request", malformed_create)
+            browser.setattr(study_session.httpx, "Client", lambda **_kwargs: nullcontext(provider))
+            browser.setattr(study_anonymous, "request", provider.anonymous)
+            assert (
+                client_first.post(
+                    study_path,
+                    data={**form, "version": "0" * 64},
+                    base_url="https://coach.invalid",
+                    headers=post_headers,
+                ).status_code
+                == 409
+            )
+            assert (
+                client_first.post(
+                    study_path, data=form, base_url="https://coach.invalid", headers=post_headers
+                ).status_code
+                == 302
+            )
+            slot = planning_dir / "opening-study-request.json"
+            queued = slot.read_bytes()
+            assert (
+                client_first.post(
+                    study_path, data=form, base_url="https://coach.invalid", headers=post_headers
+                ).status_code
+                == 302
+            )
+            assert slot.read_bytes() == queued and provider.created == 0
+            pending_page = client_first.get(
+                course_path,
+                query_string=selected,
+                base_url="https://coach.invalid",
+                headers=headers,
+            )
+            assert b"Publication is queued" in pending_page.data and slot.read_bytes() == queued
+            with monkeypatch.context() as unavailable:
+                unavailable.delenv("LICHESS_STUDY_TOKEN")
+                waiting = client_first.get(
+                    course_path,
+                    query_string=selected,
+                    base_url="https://coach.invalid",
+                    headers=headers,
+                )
+                assert b"Publication is queued" in waiting.data
+                assert b"credentials are unavailable" in waiting.data
+            with pipeline_lock(experiment_path, sync=True):
+                opening_study_worker.run(experiment_db, "learner", tmp_path)
+            assert provider.created == 0 and json.loads(slot.read_text())["state"] == "incomplete"
+            opening_study_worker.run(experiment_db, "learner", tmp_path)
+            assert provider.created == 1 and json.loads(slot.read_text())["state"] == "incomplete"
+            other = {**black_selection, "version": black_course["version"], "csrf": study_csrf}
+            assert (
+                client_first.post(
+                    study_path, data=other, base_url="https://coach.invalid", headers=post_headers
+                ).status_code
+                == 409
+            )
+            opening_study_worker.run(experiment_db, "learner", tmp_path)
+            assert json.loads(slot.read_text())["state"] == "incomplete"
+            opening_study_worker.run(experiment_db, "learner", tmp_path)
+            assert json.loads(slot.read_text())["state"] == "complete"
+            before_get = slot.read_bytes()
+            verified = client_first.get(
+                course_path,
+                query_string=selected,
+                base_url="https://coach.invalid",
+                headers=headers,
+            )
+            assert b"Open verified private Study" in verified.data and provider.created == 1
+            import chess_coach.opening_study_receipt as study_receipt
+            from chess_coach import opening_study_request_prior
+
+            receipt_path = planning_dir / f"opening-study-{selected_version}-intent.json"
+            receipt_state = json.loads(receipt_path.read_text())
+            with monkeypatch.context() as malformed:
+                for bad_time in (None, 5, "invalid", "2026-01-01"):
+                    malformed.setattr(
+                        study_receipt,
+                        "read",
+                        lambda _path, value=bad_time: {**receipt_state, "verified_at": value},
+                    )
+                    assert (
+                        study_receipt.verified(
+                            planning_dir, "learner", selected_version, selected_admission
+                        )
+                        is None
+                    )
+                malformed.setattr(opening_study_request_prior, "read", lambda _path: None)
+                previous = json.loads(slot.read_text())
+                with pytest.raises(ValueError, match="incomplete"):
+                    opening_study_request_prior.unchanged(
+                        previous,
+                        {**previous, "version": "a" * 64},
+                        previous["database"],
+                        "learner",
+                        planning_dir,
+                    )
+            assert slot.read_bytes() == before_get
+            opening_study_worker.run(experiment_db, "learner", tmp_path)
+            assert provider.created == 1 and slot.read_bytes() == before_get
+
         from chess_coach.opening_unfamiliar_study_current import admitted
 
         with admitted(

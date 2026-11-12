@@ -2,10 +2,12 @@
 
 from flask import Response, abort, current_app, render_template, request, url_for
 
+from .opening_study_view import status
 from .opening_unfamiliar_course import preview
 from .tactical_course_deadline import PreviewDeadline
 from .web_board import board_rows
 from .web_db import database
+from .web_opening_study import selection as _selection
 
 
 def _load(selection):
@@ -18,15 +20,6 @@ def _load(selection):
         abort(503, "The opening course could not be checked now. Please try again.")
     except (Exception, PreviewDeadline):
         abort(503, "The opening course could not be checked now. Please try again.")
-
-
-def _selection():
-    values = {key: request.args.get(key) for key in ("color", "parent", "move")}
-    if not any(values.values()):
-        return None
-    if not all(values.values()):
-        abort(400, "The opening selection is incomplete.")
-    return values
 
 
 def show():
@@ -46,6 +39,13 @@ def show():
                 "Cache-Control": "private, no-store",
             },
         )
+    study = (
+        status(
+            database(), current_app.config["PROJECT_ROOT"], current_app.config["SUBJECT"], course
+        )
+        if selection
+        else None
+    )
     for item in course["chapters"]:
         item["board"] = board_rows(item["fen"], item["color"])
     download = url_for(
@@ -54,4 +54,9 @@ def show():
         version=course["version"],
         **(selection or {}),
     )
-    return render_template("opening_unfamiliar_course.html", course=course, download_url=download)
+    return render_template(
+        "opening_unfamiliar_course.html",
+        course=course,
+        download_url=download,
+        study=study,
+    )
