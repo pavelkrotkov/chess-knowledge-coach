@@ -84,6 +84,7 @@ def test_long_server_cooldown_survives_reopen_and_allows_local_progress(tmp_path
         "status": "waiting",
         "detail": "server_backoff",
         "retry_until": expected,
+        "http_status": 429,
     }
     assert first["games"][0]["stages"][0]["status"] == "complete"
     assert len(calls) == 1
@@ -98,7 +99,11 @@ def test_long_server_cooldown_survives_reopen_and_allows_local_progress(tmp_path
         return httpx.Response(200, text="")
 
     second = process_pipeline(db, config, transport=httpx.MockTransport(success), clock=clock)
-    assert second["sync"]["retry_until"] == expected and second["sync"]["status"] == "waiting"
+    assert second["sync"] == {
+        "status": "waiting",
+        "detail": "server_backoff",
+        "retry_until": expected,
+    }
     assert len(calls) == 1
     assert second["games"][0]["game_id"] == 2
     health = pipeline_status(db)["health"]
@@ -108,6 +113,15 @@ def test_long_server_cooldown_survives_reopen_and_allows_local_progress(tmp_path
     assert third["sync"]["status"] in {"complete", "partial"}
     assert len(calls) > 1
     assert pipeline_status(db)["health"]["retry_until"] is None
+
+    busy = httpx.MockTransport(lambda request: httpx.Response(503, headers={"Retry-After": "60"}))
+    fourth = process_pipeline(db, config, transport=busy, clock=clock)
+    assert fourth["sync"] == {
+        "status": "waiting",
+        "detail": "server_backoff",
+        "retry_until": (clock() + timedelta(seconds=60)).isoformat(),
+        "http_status": 503,
+    }
 
 
 def test_interrupted_retry_wait_keeps_deadline_for_next_process(tmp_path, monkeypatch):

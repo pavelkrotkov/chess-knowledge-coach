@@ -1,5 +1,8 @@
 """Translate sync results to bounded, sanitized worker status."""
 
+import sqlite3
+
+from .lichess_http import LichessSourceError
 from .pipeline_cooldown import active_deadline, stored_deadline
 from .pipeline_cooldown_expiry import clear_expired
 from .pipeline_health import record_sync
@@ -32,8 +35,14 @@ def _sync_result(db, config, token, transport, clock):
         return {"status": "failed", "detail": "worker_process_required"}
     except BudgetExceeded:
         return _waiting(db, clock) or {"status": "partial", "detail": "network_budget_exhausted"}
+    # Only the export adapter can classify these expected source failures.
+    # Local database errors stay fatal even when a cooldown is active.
+    except LichessSourceError as error:
+        return _source_failure(db, clock, error)
+    except sqlite3.Error:
+        return {"status": "failed", "detail": "sync_database_error"}
     except Exception:
-        return _waiting(db, clock) or {"status": "failed", "detail": "sync_failed"}
+        return {"status": "failed", "detail": "sync_failed"}
 
 
 def _waiting(db, clock):
@@ -43,3 +52,10 @@ def _waiting(db, clock):
         if deadline
         else None
     )
+
+
+def _source_failure(db, clock, error):
+    result = _waiting(db, clock) or {"status": "failed", "detail": error.reason}
+    if error.status is not None:
+        result["http_status"] = error.status
+    return result
