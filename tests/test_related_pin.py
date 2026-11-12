@@ -267,6 +267,8 @@ def _prevention_transfer(monkeypatch, black):
     assert client.get(url, base_url=base).status_code == 403
     page = client.get(url, base_url=base, headers=headers)
     assert page.status_code == 200 and b"own-game pin prevention" in page.data
+    assert b"Same pin kind and a proved pinner capture." in page.data
+    assert b"Same pin kind and a supported defensive contrast." not in page.data
     from chess_coach import related_pin_prevent_source
 
     unsupported = deepcopy(source)
@@ -482,6 +484,8 @@ def _created_transfer(monkeypatch, black):
             url, base_url="https://coach.invalid", headers={"Tailscale-User-Login": "fixture"}
         )
         assert page.status_code == 200 and b"earlier consequence" in page.data
+        assert b"Same pin kind and a supported defensive contrast." in page.data
+        assert b"Same pin kind and a proved pinner capture." not in page.data
         evidence_page = client.get(
             f"/evidence/{evidence}",
             base_url="https://coach.invalid",
@@ -490,7 +494,8 @@ def _created_transfer(monkeypatch, black):
         assert b"Find related pin-prevention practice" in evidence_page.data
         import re
 
-        assert good.encode() not in re.sub(rb"<input\b[^>]*>", b"", page.data)
+        visible_page = re.sub(rb"<input\b[^>]*>", b"", page.data)
+        assert all(uci(move).encode() not in visible_page for move in ("e8h8", "g7h8", "a6b5"))
         reference = result["items"][0]["reference"]
         state = start_related(
             db,
