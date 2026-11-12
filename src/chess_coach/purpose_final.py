@@ -2,27 +2,43 @@
 
 import chess.engine
 
-from .deep_execution_uci import analyse
 from .purpose_config import FINAL_NODES, FINAL_SECONDS
-from .purpose_lines import native, roots, valid_pair, viewed, work
+from .purpose_iteration_search import search
+from .purpose_lines import viewed
 from .style_compare import candidates
 from .style_history_lines import lines_safe
 
 
-def final(engine, board, position, nominee):
+def final(engine, board, position, nominee, deadline):
     selected = [board.parse_uci(position["uci"]), board.parse_uci(nominee)]
-    raw, error = analyse(
-        engine, board, chess.engine.Limit(nodes=FINAL_NODES, time=FINAL_SECONDS), 2, selected
+    state, error = search(
+        engine,
+        board,
+        position,
+        chess.engine.Limit(nodes=FINAL_NODES, time=FINAL_SECONDS),
+        selected,
+        deadline,
     )
-    items, invalid = native(position, board, raw)
-    result = {
-        "lines": items,
-        "work": work(raw, FINAL_NODES),
-        "roots": [move.uci() for move in selected],
+    if state is None:
+        return {"lines": [], "roots": [move.uci() for move in selected]}, error
+    work = {
+        "nodes": state.work["nodes"],
+        "depth": state.work["depth"],
+        "time_seconds": state.work["time"],
+        "shared_search": True,
+        "requested_nodes": FINAL_NODES,
+        "node_limit_exceeded": state.work["nodes"] is not None
+        and state.work["nodes"] > FINAL_NODES,
     }
-    if error or invalid or not valid_pair(items) or set(roots(items)) != set(result["roots"]):
-        return result, error or "invalid_candidate_search"
-    return result, grade(board, position, items)
+    result = {
+        "lines": state.best,
+        "work": work,
+        "roots": [move.uci() for move in selected],
+        "retained_depth": state.depth,
+    }
+    if not state.best:
+        return result, "no_complete_iteration"
+    return result, grade(board, position, state.best)
 
 
 def grade(board, position, items):

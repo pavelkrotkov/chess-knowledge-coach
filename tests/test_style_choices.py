@@ -64,7 +64,124 @@ class FourPlyEngine(DeepEngine):
         return values
 
 
+def _check_retained_purpose_iterations():
+    import asyncio
+    import threading
+    import time
+    from types import SimpleNamespace
+
+    from chess_coach.purpose_final import final
+
+    board = chess.Board()
+    position = {"id": 1, "uci": "e2e4"}
+    first = "e2e4 e7e5 g1f3 b8c6"
+    second = "d2d4 d7d5 c1f4 g8f6"
+
+    def info(rank, depth, pv, score=0, nodes=100):
+        return {
+            "multipv": rank,
+            "depth": depth,
+            "pv": [chess.Move.from_uci(move) for move in pv.split()],
+            "score": chess.engine.PovScore(chess.engine.Cp(score), chess.WHITE),
+            "nodes": nodes,
+            "time": nodes / 100000,
+        }
+
+    class Stream:
+        def __init__(self, events):
+            self.events = iter(events)
+            self.stopped = threading.Event()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            self.stopped.set()
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            event = next(self.events, None)
+            if event is None:
+                raise StopAsyncIteration
+            if event == "stall":
+                await asyncio.sleep(10)
+            if event == "failure":
+                raise RuntimeError("synthetic engine failure")
+            return event
+
+    class Protocol:
+        def __init__(self, loop):
+            self.loop, self.events, self.stream = loop, [], None
+
+        async def analysis(self, _board, _limit, *, multipv, root_moves):
+            assert multipv == 2 and [move.uci() for move in root_moves] == ["e2e4", "d2d4"]
+            self.stream = Stream(self.events)
+            return self.stream
+
+    loop = asyncio.new_event_loop()
+    thread = threading.Thread(target=loop.run_forever, daemon=True)
+    thread.start()
+    protocol = Protocol(loop)
+    engine = SimpleNamespace(protocol=protocol, timeout=0.2)
+    try:
+        protocol.events = [
+            info(1, 4, first),
+            info(2, 4, second),
+            info(1, 5, second),
+            info(2, 5, first),
+            info(1, 6, first),
+            info(2, 6, "d2d4 d7d5"),
+            {"depth": 7, "nodes": 900, "time": 0.09},
+        ]
+        result, issue = final(engine, board, position, "d2d4", time.monotonic() + 2)
+        assert issue is None and result["retained_depth"] == 5
+        assert [item["line"]["root_move"] for item in result["lines"]] == ["d2d4", "e2e4"]
+        assert result["work"]["nodes"] == 900 and result["work"]["depth"] == 7
+
+        protocol.events = [
+            info(1, 4, first),
+            info(2, 4, second),
+            info(1, 6, first),
+            info(2, 6, second, score=200),
+        ]
+        result, issue = final(engine, board, position, "d2d4", time.monotonic() + 2)
+        assert result["retained_depth"] == 6 and issue == "no_similar_alternative"
+
+        protocol.events = [info(1, 4, first)]
+        assert (
+            final(engine, board, position, "d2d4", time.monotonic() + 2)[1]
+            == "no_complete_iteration"
+        )
+        protocol.events = [info(2, 4, second)]
+        assert (
+            final(engine, board, position, "d2d4", time.monotonic() + 2)[1]
+            == "no_complete_iteration"
+        )
+
+        protocol.events = [info(1, 4, first), info(1, 4, second), info(2, 4, second)]
+        assert (
+            final(engine, board, position, "d2d4", time.monotonic() + 2)[1]
+            == "no_complete_iteration"
+        )
+
+        protocol.events = [info(1, 4, first), info(2, 4, second), "failure"]
+        assert final(engine, board, position, "d2d4", time.monotonic() + 2)[1] == "engine_failure"
+
+        protocol.events = ["stall"]
+        assert (
+            final(engine, board, position, "d2d4", time.monotonic() + 0.2)[1] == "worker_deadline"
+        )
+        assert protocol.stream.stopped.wait(1)
+    finally:
+        loop.call_soon_threadsafe(loop.stop)
+        thread.join(timeout=2)
+        loop.close()
+
+
 def test_profile_uses_owned_current_deep_results_and_private_browser(tmp_path, monkeypatch, capsys):
+    _check_retained_purpose_iterations()
     path = tmp_path / "style.sqlite"
     db, selection_id = prepare_selected(path, monkeypatch, per_game=6)
     use_engine(monkeypatch, FourPlyEngine(db))
