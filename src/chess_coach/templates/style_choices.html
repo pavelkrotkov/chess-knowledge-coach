@@ -45,6 +45,15 @@ Allocation uses a deterministic recent-game check target and an independently ha
 <p>Representative source choices: {% for item in report.observations if item.choices[name] and (not item.eligible_dimensions or name in item.eligible_dimensions) %}<a href="#choice-{{ item.position_id }}-{{ item.provenance }}">game {{ item.game_id }}, ply {{ item.ply }} ({{ item.choices[name] }})</a>{% if not loop.last %}; {% endif %}{% else %}none in this sample{% endfor %}.</p>
 {% if dimension.trend %}<p>Games grouped by start time, split at {{ dimension.trend.game_start_boundary }}: {{ dimension.trend.earlier.choices }} / {{ dimension.trend.later.choices }}. Games can overlap, so decision order is unknown. This descriptive comparison is not a causal trend.</p>{% else %}<p>Trend: insufficient dated independent opportunities in both periods.</p>{% endif %}</section>
 {% endfor %}
+{% if report.center_control is defined %}
+<section><h3>Center-file choices from control comparisons</h3>
+<p>{{ report.center_control.scope }} Contrasting opportunities {{ report.center_control.opportunities }} across {{ report.center_control.games }} games; choices {{ report.center_control.choices }}. {% if report.center_control.sufficient %}Sample direction: {{ report.center_control.direction }}.{% else %}Insufficient data for a direction (requires five opportunities in three games).{% endif %}</p>
+<p>Non-check controls examined {{ report.center_control.coverage.examined|default(0) }}, no contrast {{ report.center_control.coverage.no_contrast|default(0) }}, ambiguous {{ report.center_control.coverage.ambiguous|default(0) }}, unavailable {{ report.center_control.coverage.unavailable|default(0) }}, ordinary overlap {{ report.center_control.coverage.overlap|default(0) }}, duplicate controls {{ report.center_control.coverage.duplicate|default(0) }}. Other unprocessed or stale sources remain unknown.</p>
+{% for item in report.center_control.observations %}
+<p><a href="{{ url_for('views.decision_detail', position_id=item.position_id) }}">Source decision</a> in game {{ item.game_id }}, ply {{ item.ply }}; <a href="{{ url_for('purpose_views.detail', request_id=item.request_id) }}">control diagnostic</a>, cycle {{ item.cycle }}, attempt {{ item.attempt_number }}. Played {{ item.played_line.san|join(' ') }}; alternative {{ item.pairs[0].alternative_line.san|join(' ') }}. Choice {{ item.choices.center_file_opening }}. These lines show conditional continuations. They describe control comparisons outside check.</p>
+{% else %}<p>No supported center-file contrasts in the available controls.</p>{% endfor %}
+</section>
+{% endif %}
 <h3>Source choices</h3>
 {% for item in report.observations %}
 {% if item.provenance == 'purpose_candidate_set' %}

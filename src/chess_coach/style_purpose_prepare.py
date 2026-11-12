@@ -40,6 +40,7 @@ def prepare(db, learner, games):
         "protection_requests": set(),
         "protection_sources": {},
         "observations": [],
+        "center_control": {"coverage": defaultdict(int), "seen": set(), "observations": []},
     }
 
 
