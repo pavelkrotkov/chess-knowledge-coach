@@ -6,7 +6,12 @@ import tomllib
 
 def distributions(lock, installed):
     packages = tomllib.loads(lock.read_text(encoding="utf-8"))["package"]
-    expected = {item["name"]: item["version"] for item in packages}
+    expected = {}
+    for item in packages:
+        name = re.sub(r"[-_.]+", "-", item["name"].lower())
+        if name in expected:
+            raise ValueError("duplicate dependency name in the lock")
+        expected[name] = item["version"]
     names = set()
     for name, version in installed:
         name = re.sub(r"[-_.]+", "-", name.lower())

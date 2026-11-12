@@ -13,7 +13,7 @@ def _git_file(root, commit, name):
 
 def configuration(root, base, base_commit, commit):
     hashes = {}
-    for name in ("uv.lock", "pyproject.toml"):
+    for name in ("uv.lock", "pyproject.toml", ".python-version"):
         path = base / "source" / name
         if path.is_symlink() or not path.is_file():
             raise ValueError("dependency source configuration unavailable")

@@ -3,7 +3,13 @@
 
 def marker(base, base_commit):
     marker = base / "COMMIT"
-    if marker.is_symlink() or marker.read_text(encoding="ascii").strip() != base_commit:
+    try:
+        valid = (
+            not marker.is_symlink() and marker.read_text(encoding="ascii").strip() == base_commit
+        )
+    except (OSError, UnicodeError):
+        raise ValueError("dependency release marker unavailable") from None
+    if not valid:
         raise ValueError("dependency release marker differs")
     chain = base / "DEPENDENCY_RELEASE"
     if chain.exists() or chain.is_symlink():

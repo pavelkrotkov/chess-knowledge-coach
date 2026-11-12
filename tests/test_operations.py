@@ -81,10 +81,11 @@ def _compact_memory_controls(monkeypatch):
     base.__truediv__.return_value.__truediv__.return_value = file
     with monkeypatch.context() as patch:
         patch.setattr(ops_compact_configuration, "_git_file", lambda *_args: b"same")
-        assert set(ops_compact_configuration.configuration(root, base, base_commit, commit)) == {
-            "uv.lock",
-            "pyproject.toml",
-        }
+        import hashlib
+
+        hashes = ops_compact_configuration.configuration(root, base, base_commit, commit)
+        digest = hashlib.sha256(b"same").hexdigest()
+        assert hashes == {name: digest for name in ("uv.lock", "pyproject.toml", ".python-version")}
         patch.setattr(ops_compact_configuration, "_git_file", lambda *_args: b"changed")
         with pytest.raises(ValueError, match="configuration changed"):
             ops_compact_configuration.configuration(root, base, base_commit, commit)
@@ -96,6 +97,9 @@ def _compact_memory_controls(monkeypatch):
     base.__truediv__.side_effect = lambda name: chain if name == "DEPENDENCY_RELEASE" else marker
     with pytest.raises(ValueError, match="standalone"):
         ops_compact_marker.marker(base, base_commit)
+    marker.read_text.side_effect = FileNotFoundError()
+    with pytest.raises(ValueError, match="marker unavailable"):
+        ops_compact_marker.marker(base, base_commit)
     config = MagicMock()
     config.read_text.return_value = "include-system-site-packages = true\n"
     base.__truediv__.side_effect = None
@@ -105,7 +109,7 @@ def _compact_memory_controls(monkeypatch):
     valid = {
         "version": "compact-frozen-v1",
         "commit": base_commit,
-        "hashes": {"uv.lock": "hash", "pyproject.toml": "hash"},
+        "hashes": hashes,
         "python": list(__import__("sys").version_info[:3]),
     }
     assert web_release_compact._valid_marker(valid)
@@ -143,11 +147,14 @@ def _compact_memory_controls(monkeypatch):
         patch.setattr(ops_compact_install.venv, "EnvBuilder", factory)
         patch.setattr(ops_compact_install, "site_path", lambda _venv: candidate_site)
         patch.setattr(ops_compact_install, "verify", verified)
-        ops_compact_install.install(source, release, runtime, base, base_commit, {}, site)
+        ops_compact_install.install(
+            source, release, runtime, base, base_commit, valid["hashes"], site
+        )
     factory.assert_called_once_with(with_pip=False, symlinks=True)
     builder.create.assert_called_once_with(environment)
     assert pth.write_text.call_args.args[0] == "/candidate/source/src\n/base/venv/site-packages\n"
-    assert json.loads(marker.write_text.call_args.args[0])["commit"] == base_commit
+    stored = json.loads(marker.write_text.call_args.args[0])
+    assert stored["commit"] == base_commit and stored["hashes"] == valid["hashes"]
     marker.chmod.assert_called_once_with(0o400)
     assert ' -I -B -m chess_coach.cli "$@"' in console.write_text.call_args.args[0]
     verified.assert_called_once_with(release, runtime, site)
@@ -159,6 +166,84 @@ def _compact_memory_controls(monkeypatch):
     distributions(lock, [["fixture_dep", "1.0"]])
     with pytest.raises(ValueError, match="differs"):
         distributions(lock, [["fixture_dep", "2.0"]])
+    lock.read_text.return_value = '[[package]]\nname="Fixture.Dep"\nversion="1.0"\n'
+    distributions(lock, [["fixture_dep", "1.0"]])
+
+    # The isolated probe must reject metadata whose recorded package file is missing.
+    import contextlib
+    import io
+    import sys
+
+    from chess_coach import ops_compact_dependency_check, ops_compact_interpreter
+    from chess_coach.ops_compact_probe import script as probe_script
+
+    item = MagicMock()
+    item.metadata = {"Name": "fixture-dep"}
+    item.version = "1.0"
+    item.files = ["missing.py"]
+    item.locate_file.return_value = str(Path(sys.prefix) / "missing.py")
+    with monkeypatch.context() as patch:
+        import importlib.metadata
+
+        patch.setattr(importlib.metadata, "distributions", lambda **_kwargs: [item])
+        patch.setattr(Path, "is_file", lambda _path: False)
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            exec(probe_script(), {})
+        assert json.loads(output.getvalue())[-1] is False
+        item.locate_file.return_value = "/outside-release/file.py"
+        patch.setattr(Path, "is_file", lambda _path: True)
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            exec(probe_script(), {})
+        assert json.loads(output.getvalue())[-1] is False
+
+    fake_run = MagicMock()
+    fake_run.return_value.returncode = 0
+    with monkeypatch.context() as patch:
+        patch.setattr(ops_compact_dependency_check, "private_directory", lambda path: path)
+        patch.setattr(ops_compact_dependency_check.subprocess, "run", fake_run)
+        ops_compact_dependency_check.check(Path("/project/base/python"), Path("/project/.runtime"))
+        command = fake_run.call_args.args[0]
+        assert all(flag in command for flag in ("--offline", "--no-cache", "--no-python-downloads"))
+        assert fake_run.call_args.kwargs["env"]["TMPDIR"] == "/project/.runtime/tmp"
+        fake_run.return_value.returncode = 1
+        with pytest.raises(ValueError, match="incomplete"):
+            ops_compact_dependency_check.check(
+                Path("/project/base/python"), Path("/project/.runtime")
+            )
+
+    base, environment, binary, python, site = (MagicMock() for _ in range(5))
+    base.__truediv__.return_value = environment
+    environment.__truediv__.return_value = binary
+    binary.__truediv__.return_value = python
+    python.resolve.return_value = Path(sys.executable).resolve()
+    site.is_symlink.return_value = False
+    site.resolve.return_value = site
+    metadata = [
+        list(sys.version_info[:3]),
+        sys.implementation.cache_tag,
+        sys.base_prefix,
+        str(environment),
+        str(site),
+        [["fixture-dep", "1.0"]],
+        False,
+    ]
+    with monkeypatch.context() as patch:
+        patch.setattr(ops_compact_interpreter, "site_path", lambda _path: site)
+        patch.setattr(ops_compact_interpreter, "distributions", MagicMock())
+        check = MagicMock()
+        patch.setattr(ops_compact_interpreter, "check", check)
+        runner = MagicMock()
+        runner.return_value.stdout = json.dumps(metadata)
+        patch.setattr(ops_compact_interpreter.subprocess, "run", runner)
+        with pytest.raises(ValueError, match="files are unavailable"):
+            ops_compact_interpreter.base_interpreter(base, runtime)
+        check.assert_not_called()
+        metadata[-1] = True
+        runner.return_value.stdout = json.dumps(metadata)
+        assert ops_compact_interpreter.base_interpreter(base, runtime) is site
+        check.assert_called_once_with(python, runtime)
 
 
 def test_stage_archives_exact_commit_and_renders_fixed_release_units(tmp_path, monkeypatch):

@@ -4,7 +4,7 @@ import json
 import sys
 import venv
 
-from .ops_compact_interpreter import site_path
+from .ops_compact_probe import site_path
 from .ops_compact_verify import verify
 
 

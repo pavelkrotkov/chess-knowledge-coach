@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 def hashes_match(release, base, hashes):
-    if set(hashes) != {"uv.lock", "pyproject.toml"}:
+    if set(hashes) != {"uv.lock", "pyproject.toml", ".python-version"}:
         return False
     for name in hashes:
         for root in (release, base):
@@ -26,4 +26,7 @@ def site_matches(environment, release, base):
     if site.is_symlink() or base_site.is_symlink() or base_site.resolve(strict=True) != base_site:
         return False
     pth = site / "chess-coach-paths.pth"
-    return not pth.is_symlink() and pth.read_text() == f"{release / 'source/src'}\n{base_site}\n"
+    return (
+        not pth.is_symlink()
+        and pth.read_text(encoding="utf-8") == f"{release / 'source/src'}\n{base_site}\n"
+    )

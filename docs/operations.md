@@ -69,8 +69,8 @@ cd ..
 For a standalone release, the import path must be inside that release's
 `venv`; its `COMMIT` file must match the selected SHA.
 
-When the reviewed revision has the exact same `uv.lock` and `pyproject.toml`
-as a sealed standalone release, an operator may instead reuse that release's
+When the reviewed revision has the exact same `uv.lock`, `pyproject.toml`,
+and `.python-version` as a sealed standalone release, an operator may instead reuse that release's
 locked dependencies:
 
 ```sh
@@ -83,8 +83,8 @@ building dependencies. A plain path file puts the candidate's archived
 `source/src` first and the standalone release's sealed site-packages second.
 The candidate's `DEPENDENCY_RELEASE` marker records the exact base SHA,
 configuration hashes, and Python version. Preparation verifies the sealed
-base, installed lock versions, interpreter identity, candidate imports,
-service modules and browser resources. It refuses changed configuration or a
+base, installed lock versions and RECORD files, offline dependency compatibility,
+interpreter identity, candidate imports, service modules and browser resources. It refuses changed configuration or a
 compact release as a base.
 
 For this compact path, the isolated import above must resolve under the
