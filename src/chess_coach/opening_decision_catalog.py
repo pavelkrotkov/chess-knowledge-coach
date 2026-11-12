@@ -23,7 +23,7 @@ def _edge(board, row):
         return None
 
 
-def catalog(db, dataset, board, played):
+def catalog(db, dataset, board, played, *, alternative=None):
     parent = position_key(board)
     rows = db.connection.execute(
         """SELECT uci,child_key FROM opening_edges WHERE dataset_id=? AND parent_key=?
@@ -35,8 +35,10 @@ def catalog(db, dataset, board, played):
         item = _edge(board, row)
         if item is not None:
             items.append(item)
+    shown = items[:SHOW]
+    shown.extend(item for item in items[SHOW:] if item["uci"] == alternative)
     return {
         "parent": parent,
-        "items": items[:SHOW],
+        "items": shown,
         "truncated": len(rows) > SCAN or len(items) > SHOW,
     }
