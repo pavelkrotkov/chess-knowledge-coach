@@ -410,9 +410,26 @@ def _created_transfer(monkeypatch, black):
         last = next(iter(after.legal_moves)).uci()
         line = [good, reply, last]
         assert created_line(external, line, source["features"], create())
-        assert not created_line(
-            external, line, {**source["features"], "pin_kind": "absolute_pin"}, create()
-        )
+        from chess_coach import related_pin_created_search
+
+        replayed = []
+        original_replay = related_pin_created_search._replay
+
+        def counted_replay(board, moves):
+            replayed.append(1)
+            return original_replay(board, moves)
+
+        with monkeypatch.context() as bounded:
+            bounded.setattr(related_pin_created_search, "_replay", counted_replay)
+            exhausted = create()
+            exhausted["line_limit"] = 0
+            assert not created_line(external, line, source["features"], exhausted)
+            assert exhausted["truncated"] and not replayed
+            wrong_kind = create()
+            assert not created_line(
+                external, line, {**source["features"], "pin_kind": "absolute_pin"}, wrong_kind
+            )
+            assert len(replayed) == wrong_kind["lines"]
         from chess_coach.related_pin_candidates import matches as pin_matches
 
         assert not pin_matches(
@@ -444,11 +461,12 @@ def _created_transfer(monkeypatch, black):
         db.connection.commit()
         result = preview(db, SUBJECT, evidence, "created")
         assert result["pin_origin"] == "counterfactual" and len(result["items"]) == 1
-        from chess_coach import web_related_pin, web_views
+        from chess_coach import web_related_pin, web_unified_practice, web_views
         from chess_coach.web import create_app
 
         patch.setattr(web_related_pin, "database", lambda: db)
         patch.setattr(web_views, "database", lambda: db)
+        patch.setattr(web_unified_practice, "database", lambda: db)
         app = create_app(
             db_path=":memory:",
             subject=SUBJECT,
@@ -482,10 +500,14 @@ def _created_transfer(monkeypatch, black):
             corpus_version="created",
             reference=reference,
         )
-        assert (
-            state["objective"] == "legal_line"
-            and show(db, "created-pin", SUBJECT)["status"] == "active"
+        assert state["objective"] == "legal_line" and "pin_contrast" not in state
+        assert "pin_contrast" not in show(db, "created-pin", SUBJECT)
+        active_page = client.get(
+            "/unified/created-pin",
+            base_url="https://coach.invalid",
+            headers={"Tailscale-User-Login": "fixture"},
         )
+        assert b"avoids the tested pin consequence" not in active_page.data
         db.connection.execute(
             "UPDATE decision_analysis_lines SET score_value=score_value+1 WHERE position_id=1"
         )
@@ -497,11 +519,30 @@ def _created_transfer(monkeypatch, black):
         )
         db.connection.commit()
         assert show(db, "created-pin", SUBJECT)["status"] == "active"
-        assert submit(db, "created-pin", SUBJECT, event_id="first", move=good)["status"] == "active"
-        assert (
-            submit(db, "created-pin", SUBJECT, event_id="last", move=last)["status"]
-            == "line_completed"
+        first = submit(db, "created-pin", SUBJECT, event_id="first", move=good)
+        assert first["status"] == "active" and "pin_contrast" not in first
+        completed = submit(db, "created-pin", SUBJECT, event_id="last", move=last)
+        assert completed["status"] == "line_completed"
+        binding = json.loads(
+            db.connection.execute(
+                "SELECT provenance_json FROM unified_sessions WHERE attempt_id='created-pin'"
+            ).fetchone()[0]
+        )["related_pin"]
+        proof = binding["candidate_certificates"][0]
+        contrast = completed["pin_contrast"]
+        assert contrast["good"] == external.san(chess.Move.from_uci(proof["branch"]["move"]))
+        assert contrast["bad"] == external.san(
+            chess.Move.from_uci(proof["branch"]["counterfactual"])
         )
+        assert contrast["kind"] == proof["proof"]["type"]
+        assert show(db, "created-pin", SUBJECT)["pin_contrast"] == contrast
+        complete_page = client.get(
+            "/unified/created-pin",
+            base_url="https://coach.invalid",
+            headers={"Tailscale-User-Login": "fixture"},
+        )
+        assert b"avoids the tested pin consequence" in complete_page.data
+        assert b"earlier consequence" in complete_page.data
         review_evidence(db, evidence, decision="reject", actor="fixture_reviewer")
         with pytest.raises(ValueError, match="stale"):
             show(db, "created-pin", SUBJECT)

@@ -1,0 +1,38 @@
+"""Show a completed supplied line's stored counterfactual pin witness."""
+
+import json
+
+import chess
+
+from .related_pin_contract import CREATED_VERSION
+from .related_pin_created_view_certificate import certificate
+
+
+def _describe(row, certificate):
+    board = chess.Board(row["prompt_fen"])
+    branch, proof = certificate["branch"], certificate["proof"]
+    good = board.parse_uci(branch["move"])
+    bad = board.parse_uci(branch["counterfactual"])
+    if good == bad or good not in board.legal_moves or bad not in board.legal_moves:
+        raise ValueError("pin contrast unavailable")
+    result = {"good": board.san(good), "bad": board.san(bad)}
+    board.push(bad)
+    threat = board.parse_uci(proof["move"])
+    if threat not in board.legal_moves:
+        raise ValueError("pin threat unavailable")
+    result.update(
+        threat=board.san(threat), kind=proof["type"], pinned=proof["pinned"], rear=proof["rear"]
+    )
+    return result
+
+
+def add_fields(result, row):
+    if row["status"] != "line_completed":
+        return
+    try:
+        binding = json.loads(row["provenance_json"]).get("related_pin") or {}
+        if binding.get("rank_version") != CREATED_VERSION:
+            return
+        result["pin_contrast"] = _describe(row, certificate(row, binding))
+    except (ValueError, TypeError, KeyError, IndexError, StopIteration):
+        return

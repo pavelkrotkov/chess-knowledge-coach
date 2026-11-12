@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from .related_backrank_view import add_fields as add_backrank_fields
 from .related_fork_assessment_view import add as add_fork_assessment
 from .related_fork_prevention_view import add_fields as add_prevention_fields
+from .related_pin_created_view import add_fields as add_pin_contrast
 from .related_protection_view import add_fields as add_protection_fields
 from .unified_owned_view import add_fields as add_owned_fields
 from .unified_public_outcome import direct as direct_public
@@ -67,4 +68,5 @@ def view(row):
     add_protection_fields(result, row)
     add_prevention_fields(result, row)
     add_backrank_fields(result, row)
+    add_pin_contrast(result, row)
     return result
