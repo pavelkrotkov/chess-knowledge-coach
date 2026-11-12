@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Choose an exploratory opening{% endblock %}
+{% block content %}
+<h2>Choose an exploratory opening</h2>
+<p><a href="{{ url_for('repertoire_views.opening_unfamiliar') }}">Back to unfamiliar experiments</a></p>
+<p>Up to three choices per side are listed in catalog move order. Each legal, named catalog move has a checked public example. The indexed imported first-turn history had zero matches for these choices. Each is exploratory. Style compatibility and soundness are still unknown. The bounded sample checked {{ report.white_count }} White and {{ report.black_count }} Black first turns.</p>
+{% for color in ('white', 'black') %}
+<section><h3>{% if color == 'black' and report.parent %}Black reply to {{ report.parent }}{% else %}{{ color|title }}{% endif %}</h3>
+<ul>{% for item in items[color] %}
+<li><a href="{{ url_for('repertoire_views.unfamiliar_course', **item.selection) }}">Exploratory: {{ item.name }} ({{ item.eco }}) - {{ item.san }}</a>. {{ item.profile.games }} checked public games. <a href="{{ item.profile.source }}">source</a>, <a href="{{ item.profile.license_url }}">{{ item.profile.license }}</a>.</li>
+{% else %}<li>No verified choice is available for this color.</li>{% endfor %}</ul></section>
+{% endfor %}
+{% endblock %}

@@ -8,13 +8,13 @@ from .opening_unfamiliar_study_current import admitted
 from .study_session import locked
 
 
-def publish_locked(root, version):
+def publish_locked(root, version, selection=None):
     root, learner, planning, database = _paths(root, version)
     if not os.environ.get("LICHESS_STUDY_TOKEN", "").strip():
         raise ValueError("Study credentials unavailable")
     with (
         locked(database, planning),
         opening_lock(planning),
-        admitted(database, planning, root, learner, version) as source,
+        admitted(database, planning, root, learner, version, selection) as source,
     ):
         return publish_course(database, planning, version, source)

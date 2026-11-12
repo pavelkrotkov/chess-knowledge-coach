@@ -1172,6 +1172,85 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     assert chess.pgn.read_game(stream) is None
     assert experiment_db.connection.execute("PRAGMA data_version").fetchone()[0] == version_before
 
+    # The group and a nondefault one-branch course share one checked source.
+    import os
+
+    from chess_coach.opening_unfamiliar_options import group as unfamiliar_options
+
+    group_report, options = unfamiliar_options(experiment_db, tmp_path, "learner")
+    assert len(options["white"]) >= 2 and options["black"]
+    selected = next(
+        item["selection"] for item in options["white"] if item["uci"] != result["white"]["uci"]
+    )
+    assert group_report["sample_identity"] == result["sample_identity"]
+    import chess_coach.opening_unfamiliar_guard as unfamiliar_guard
+
+    identity = unfamiliar_guard._identity
+    checked = []
+
+    def changed_group_index(path):
+        value = identity(path)
+        checked.append(value)
+        return value if len(checked) == 1 else (*value[:-1], value[-1] + 1)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(unfamiliar_guard, "_identity", changed_group_index)
+        with pytest.raises(ValueError, match="index changed"):
+            unfamiliar_options(experiment_db, tmp_path, "learner")
+    choice_page = client_first.get(
+        "/repertoire/unfamiliar?choices=1", base_url="https://coach.invalid", headers=headers
+    )
+    assert choice_page.status_code == 200 and b"Choose an exploratory opening" in choice_page.data
+    selected_page = client_first.get(
+        course_path, query_string=selected, base_url="https://coach.invalid", headers=headers
+    )
+    assert selected_page.status_code == 200 and b"Play White" in selected_page.data
+    assert b"CC BY-SA 4.0" in selected_page.data and b"Play Black" not in selected_page.data
+    selected_course = unfamiliar_course_preview(experiment_db, tmp_path, "learner", selected)
+    selected_version = selected_course["version"]
+    assert selected_course["selection"] == selected and len(selected_course["chapters"]) == 1
+    black_selection = options["black"][0]["selection"]
+    black_course = unfamiliar_course_preview(experiment_db, tmp_path, "learner", black_selection)
+    assert [chapter["orientation"] for chapter in black_course["chapters"]] == ["black"]
+    assert black_course["report"]["black"]["uci"] == black_selection["move"]
+    selected_download = client_first.get(
+        course_path,
+        query_string={**selected, "download": 1, "version": selected_version},
+        base_url="https://coach.invalid",
+        headers=headers,
+    )
+    assert selected_download.status_code == 200
+    selected_pgn = chess.pgn.read_game(io.StringIO(selected_download.get_data(as_text=True)))
+    assert selected_pgn and not selected_pgn.errors
+    assert [move.uci() for move in selected_pgn.mainline_moves()] == selected_course["report"][
+        "white"
+    ]["line"]["moves"]
+    assert "Exploratory" in selected_pgn.comment and "CC BY-SA 4.0" in selected_pgn.comment
+    bad_parent = {**selected, "parent": "changed"}
+    assert (
+        client_first.get(
+            course_path, query_string=bad_parent, base_url="https://coach.invalid", headers=headers
+        ).status_code
+        == 409
+    )
+    index_path = planning_dir / PROFILE_INDEX
+    info = index_path.stat()
+    os.utime(index_path, ns=(info.st_atime_ns, info.st_mtime_ns + 1))
+    assert (
+        client_first.get(
+            course_path,
+            query_string={**selected, "download": 1, "version": selected_version},
+            base_url="https://coach.invalid",
+            headers=headers,
+        ).status_code
+        == 409
+    )
+    selected_course = unfamiliar_course_preview(experiment_db, tmp_path, "learner", selected)
+    selected_version = selected_course["version"]
+    assert (
+        unfamiliar_course_preview(experiment_db, tmp_path, "learner")["version"] == course_version
+    )
+
     # Admission replays the line and source binding even if content is rehashed.
     from chess_coach.opening_unfamiliar_course import VERSION as UNFAMILIAR_VERSION
     from chess_coach.opening_unfamiliar_study_course import build as build_unfamiliar_study
@@ -1187,6 +1266,12 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
             )
         )
         return value["version"]
+
+    selected_admission = build_unfamiliar_study(selected_course, selected_version)
+    assert len(selected_admission["course"]["chapters"]) == 1
+    assert selected_admission["course"]["chapters"][0]["orientation"] == "white"
+    with pytest.raises(ValueError, match="version"):
+        build_unfamiliar_study(selected_course, course_version)
 
     altered_course = copy.deepcopy(course)
     altered_game = chess.pgn.read_game(io.StringIO(altered_course["chapters"][0]["pgn"]))
@@ -1217,6 +1302,31 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     from tests.test_private_study import Provider
 
     unfamiliar_provider = Provider()
+    with monkeypatch.context() as cli:
+        calls = []
+        cli.setattr(
+            ops_opening_study_publish, "publish_unfamiliar", lambda *args: calls.append(args)
+        )
+        cli.setattr(
+            sys,
+            "argv",
+            [
+                "publish",
+                "--project-root",
+                str(tmp_path),
+                "--unfamiliar",
+                "--color",
+                selected["color"],
+                "--parent",
+                selected["parent"],
+                "--move",
+                selected["move"],
+                "--preview-version",
+                selected_version,
+            ],
+        )
+        ops_opening_study_publish.main()
+        assert calls == [(tmp_path, selected_version, selected)]
 
     with monkeypatch.context() as patch:
         patch.setenv("CHESS_DB", str(experiment_path))
@@ -1230,6 +1340,18 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         assert unfamiliar_provider.created == 0
         assert not (planning_dir / f"opening-study-{course_version}-intent.json").exists()
         patch.setenv("LICHESS_STUDY_TOKEN", "fixture-token")
+        from chess_coach.opening_unfamiliar_study_current import admitted
+
+        with admitted(
+            experiment_path, planning_dir, tmp_path, "learner", selected_version, selected
+        ) as selected_source:
+            assert selected_source[0]["course_sha256"] == selected_admission["course_sha256"]
+        with (
+            pytest.raises(ValueError, match="version"),
+            admitted(experiment_path, planning_dir, tmp_path, "learner", course_version, selected),
+        ):
+            pass
+        assert unfamiliar_provider.created == 0
         with pytest.raises(ValueError, match="version"):
             opening_unfamiliar_study.publish_locked(tmp_path, "0" * 64)
         assert unfamiliar_provider.created == 0

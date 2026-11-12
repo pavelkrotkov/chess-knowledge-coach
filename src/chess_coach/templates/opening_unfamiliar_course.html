@@ -3,6 +3,7 @@
 {% block content %}
 <h2>Exploratory opening course preview</h2>
 <p><a href="{{ url_for('repertoire_views.opening_unfamiliar') }}">Back to unfamiliar experiments</a></p>
+{% if course.selection %}<p>Selected {{ course.selection.color|title }} move <code>{{ course.selection.move }}</code> from <code>{{ course.selection.parent }}</code>.</p>{% endif %}
 <p>Version: <code>{{ course.version }}</code>. {% if course.chapters %}<a href="{{ download_url }}">Download this version as PGN</a>.{% else %}No verified lesson is currently available, so no PGN can be downloaded.{% endif %}</p>
 {% for color in ('white', 'black') %}{% set lesson = course.chapters|selectattr('color', 'equalto', color)|first %}
 {% if lesson %}<section><h3>Play {{ color|title }} · {{ lesson.name }} ({{ lesson.eco }})</h3>
@@ -13,6 +14,6 @@
 <p>{{ lesson.revisit }}</p>
 <p>{{ lesson.scope }}</p><p>{{ lesson.geometry }}</p>
 <p><a href="{{ lesson.source_url }}">Public source</a>, record {{ lesson.source.record }}. <a href="{{ lesson.license_url }}">{{ lesson.license }}</a>. Archive SHA-256: <code>{{ lesson.source.archive_sha256 }}</code>. <a href="{{ lesson.source.catalog_source }}">Opening catalog</a> (<a href="https://creativecommons.org/publicdomain/zero/1.0/">CC0</a>).</p></section>
-{% else %}<p>No verified {{ color|title }} lesson is available.</p>{% endif %}
+{% elif not course.selection %}<p>No verified {{ color|title }} lesson is available.</p>{% endif %}
 {% endfor %}
 {% endblock %}

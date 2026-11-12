@@ -13,7 +13,7 @@ from .tactical_course_budget import Budget
 
 
 @contextmanager
-def admitted(database, directory, root, learner, version):
+def admitted(database, directory, root, learner, version, selection=None):
     connection = sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=1)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA query_only=ON")
@@ -23,8 +23,14 @@ def admitted(database, directory, root, learner, version):
         config = root / ".runtime" / "config.env"
         files = [directory / INDEX_NAME, config, config.resolve()]
         before = fingerprint(files)
-        course = build(preview(db, root, learner), version)
-        if canonical(build(preview(db, root, learner), version)) != canonical(course):
+
+        def current():
+            return (
+                preview(db, root, learner, selection) if selection else preview(db, root, learner)
+            )
+
+        course = build(current(), version)
+        if canonical(build(current(), version)) != canonical(course):
             raise ValueError("opening preview changed")
 
         def check():
