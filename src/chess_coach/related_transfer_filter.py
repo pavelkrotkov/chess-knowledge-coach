@@ -11,7 +11,7 @@ from . import (
 from .related_protection_contract import FILTER_VERSION as PROTECTION_FILTER
 
 
-def filter_version(motif):
+def filter_version(motif, version=None):
     if motif == "backrank_attack":
         return related_backrank_contract.FILTER_VERSION
     if motif == "protection":
@@ -21,7 +21,7 @@ def filter_version(motif):
     if motif == "fork_prevention":
         return related_fork_prevention_contract.FILTER_VERSION
     if motif == "pin":
-        return related_pin_contract.FILTER_VERSION
+        return related_pin_contract.filter_version(version)
     if motif == "mate":
         return related_mate.FILTER_VERSION
     return related_fork_lines.FILTER_VERSION

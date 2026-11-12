@@ -58,6 +58,7 @@ def describe(source):
         "operation": evidence["operation"],
         "anchored_fork_prevention": prevention_available(evidence),
         "created_fork_avoidance": avoidance_available(evidence),
+        "pin_related_capture": evidence.get("pin_related_capture", False),
         "fact_id": evidence["facts"][0]["id"],
         "detector_version": evidence["facts"][0]["detector_version"],
         "mapping_run_id": evidence["mapping_run_id"],

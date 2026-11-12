@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.93.0"
+REGISTRY_VERSION = "1.94.0"
 
 CAPABILITIES = (
     {
@@ -23,9 +23,9 @@ CAPABILITIES = (
     {
         "id": "related_pin_execution",
         "area": "Training",
-        "name": "Related pin execution",
+        "name": "Related pin practice",
         "status": "observation-only",
-        "details": "Current owned pin certificates retrieve bounded legal examples with matching pin roles and a certified supplied consequence.",
+        "details": "Current owned pin execution and pinner-capture prevention proofs retrieve bounded legal supplied examples of the same pin kind. Later safety and mastery remain unknown.",
     },
     {
         "id": "owned_pin_prevention",

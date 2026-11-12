@@ -30,6 +30,9 @@ def _candidate(item, source, seen, baseline, budget):
         return None
     shape, _, _ = selected[0][1]
     result = _scored(item, source, shape, prompt, prompt_key(prompt), baseline)
+    if source.get("operation") == "prevent":
+        roles = int(shape["mover"] == source["mover"]) + int(shape["target"] == source["target"])
+        result["order"] = (-roles, *result["order"])
     bind_lines(result, lines, [index for index, _ in selected])
     result["candidate_certificates"] = [
         {"line_index": index, "proof": found[1], "branch": found[2]} for index, found in selected
