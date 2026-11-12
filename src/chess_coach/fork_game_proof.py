@@ -1,11 +1,11 @@
 """Inspect all supported knight-fork roots before considering the played move."""
 
 from .fork_game_scope import roots, supported
-from .fork_proof import fork_proof
+from .fork_proof import _replies, fork_proof
 from .fork_targets import targets
 
 # Bump when candidate scope, proof semantics, or outcome policy changes.
-VERSION = "knight-fork-game-v1"
+VERSION = "knight-fork-game-v2"
 
 
 class Deadline(Exception):
@@ -20,6 +20,9 @@ def _scan(board, moves, check):
         check()
         if shape is None:
             continue
+        if _capture_refutation(shape[0], move.to_square):
+            check()
+            continue
         proof = fork_proof(board, move, check=check)
         check()
         if proof:
@@ -27,6 +30,16 @@ def _scan(board, moves, check):
         else:
             unresolved = True
     return proved, unresolved
+
+
+def _capture_refutation(after, square):
+    replies = _replies(after)
+    if replies is None:
+        return None
+    return next(
+        (reply.uci() for reply in replies if reply.to_square == square and after.is_capture(reply)),
+        None,
+    )
 
 
 def classify(board, played, deadline, clock):

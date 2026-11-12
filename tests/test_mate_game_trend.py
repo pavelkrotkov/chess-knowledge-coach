@@ -751,9 +751,33 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
 
     # Real worker-to-browser readiness: proved played, proved alternative,
     # and a geometric fork whose bounded proof cannot qualify it.
+    import time
+
+    import chess
     import chess.engine
 
     from chess_coach import fork_game_proof, fork_game_trend_paths
+    from chess_coach.fork_targets import targets
+
+    # An immediate legal capture refutes the same-knight fork, but a pinned
+    # attacker does not. The latter still requires the original universal proof.
+    refuted = "3k4/3bq3/8/8/1N6/8/8/7K w - - 0 1"
+    pinned = "3k4/3bq3/8/8/1N6/8/8/3R3K w - - 0 1"
+    for fen, expected in ((refuted, "d7c6"), (pinned, None)):
+        board = chess.Board(fen)
+        move = board.parse_uci("b4c6")
+        after, _ = targets(board, move)
+        capture = chess.Move.from_uci("d7c6")
+        assert capture in after.pseudo_legal_moves
+        assert (capture in after.legal_moves) == bool(expected)
+        assert fork_game_proof._capture_refutation(after, move.to_square) == expected
+        outcome, reason = fork_game_proof.classify(
+            board, move.uci(), time.monotonic() + 5, time.monotonic
+        )
+        assert (outcome, reason) == (
+            ("no_candidate", None) if expected else ("unresolved", "unresolved_roots")
+        )
+    assert fork_game_trend_paths.PROOF_VERSION == "knight-fork-game-v2"
 
     fork_path = data / "fork-games.sqlite"
     fork_db = Database(fork_path)
@@ -761,7 +785,7 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
     supported = "b3k3/4B3/5K1p/1N3b2/8/8/8/8 w - - 0 2"
     unproved = "b3k3/4B3/5K1p/1N3b2/8/8/8/r7 w - - 0 2"
     for index, (fen, move) in enumerate(
-        ((supported, "Nc7+"), (supported, "Kg7"), (unproved, "Kg7")), 1
+        ((supported, "Nc7+"), (supported, "Kg7"), (unproved, "Kg7"), (refuted, "Kg1")), 1
     ):
         ingest_pgn(fork_db, pgn(index, move).replace(FEN, fen))
     changes = fork_db.connection.total_changes
@@ -770,15 +794,16 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
         run_forks(fork_db, "fixture_a", root)
         pending = fork_report(fork_db, "fixture_a", root)
         assert pending and pending["newer"]["scanned"] == 1
-        assert pending["newer"]["unchecked"] == 2
-        assert pending["newer"]["opportunities"] == 0 and pending["newer"]["unresolved"] == 1
-        for _ in range(2):
+        assert pending["newer"]["unchecked"] == 3
+        assert pending["newer"]["opportunities"] == 0 and pending["newer"]["no_candidate"] == 1
+        for _ in range(3):
             run_forks(fork_db, "fixture_a", root)
     fork_result = fork_report(fork_db, "fixture_a", root)
     assert fork_result and fork_result["selection_complete"]
     newer, earlier = fork_result["newer"], fork_result["earlier"]
-    assert (newer["games"], newer["eligible"], newer["scanned"]) == (3, 3, 3)
+    assert (newer["games"], newer["eligible"], newer["scanned"]) == (4, 4, 4)
     assert (newer["opportunities"], newer["played"], newer["awaiting"]) == (2, 1, 1)
+    assert newer["no_candidate"] == 1
     assert newer["unresolved"] == newer["unresolved_roots"] == 1
     assert earlier["games"] == 0 and newer["unchecked"] == 0
     assert newer["examples"][0]["outcome"] in {"played", "awaiting"}
@@ -808,7 +833,7 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
         )
         page = fork_client.get(fork_url, base_url="https://coach.invalid", headers=fork_headers)
         plan = fork_client.get("/plan", base_url="https://coach.invalid", headers=fork_headers)
-    assert page.status_code == 200 and b"3 of 3 learner turns attempted" in page.data
+    assert page.status_code == 200 and b"4 of 4 learner turns attempted" in page.data
     assert b"2 turns had a proved fork" in page.data and b"1 await comparison" in page.data
     assert b"1 turns had at least one unproved" in page.data
     assert b"/decisions/" in page.data and b"Rates require" in page.data
