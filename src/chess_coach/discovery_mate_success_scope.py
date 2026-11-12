@@ -15,7 +15,7 @@ def unsupported(board):
     )
 
 
-def terminal_after(board, move):
+def unclear_after(board, move):
     after = board.copy()
     after.push(move)
-    return after.is_game_over(claim_draw=True)
+    return unclear(after)

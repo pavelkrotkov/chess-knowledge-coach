@@ -540,26 +540,33 @@ def test_source_worker_lesson_practice_and_review(tmp_path, monkeypatch):
 
     success_board = chess.Board("5n1k/p7/5K1N/8/8/8/8/6RR b - - 0 1")
     safe_move = "f8g6"
-    same_line = source_line("f8g6 h6f7")
-    success = observe_success(success_board, safe_move, same_line, same_line)
+    success = observe_success(success_board, safe_move)
     assert success["outcome"] == "success" and success["threat"]["double_check"]
     assert success["witness"]["move"] != safe_move
-    timed_out = observe_success(
-        success_board, safe_move, same_line, same_line, started=time.monotonic() - 2
-    )
+    timed_out = observe_success(success_board, safe_move, started=time.monotonic() - 2)
     assert timed_out["reason"] == "proof_deadline_exhausted"
     with monkeypatch.context() as patch:
         patch.setattr("chess_coach.discovery_mate_success_probe.MAX_CANDIDATES", 0)
-        limited = observe_success(success_board, safe_move, same_line, same_line)
+        limited = observe_success(success_board, safe_move)
         assert limited["reason"] == "nomination_limit_or_unavailable"
     assert all(
         success["witness"]["nomination"][key] == success["threat"][key]
         for key in ("move", "slider", "moved_from", "moved_to", "target")
     )
-    reverse = observe_success(success_board.mirror(), mirror(safe_move), same_line, same_line)
+    reverse = observe_success(success_board.mirror(), mirror(safe_move))
     assert reverse["outcome"] == "success"
+    repeated = chess.Board("7k/p3n3/5K1N/8/8/8/8/6RR b - - 0 1")
+    for move in ("e7g6", "g1f1", "g6f8", "f1g1"):
+        repeated.push_uci(move)
+    endpoint = repeated.copy()
+    endpoint.push_uci(safe_move)
+    assert not repeated.is_repetition(2)
+    assert endpoint.is_repetition(2) and not endpoint.is_game_over(claim_draw=True)
+    repeated_result = observe_success(repeated, safe_move)
+    assert repeated_result["outcome"] == "ambiguous"
+    assert repeated_result["reason"] == "played_repeated_or_terminal"
     unknown_board = chess.Board("5n1k/p7/5K1N/8/8/8/8/6RR b - - 8 1")
-    assert observe_success(unknown_board, safe_move, same_line, same_line)["reason"] == (
+    assert observe_success(unknown_board, safe_move)["reason"] == (
         "history_or_position_unavailable"
     )
 

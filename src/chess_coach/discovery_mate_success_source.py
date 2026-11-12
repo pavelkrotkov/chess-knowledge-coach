@@ -27,8 +27,6 @@ def process_source(db, source, started):
     fact = observe(
         source["board"],
         source["context"]["played_move"],
-        source["best"],
-        source["played"],
         started=started,
     )
     if not fact:

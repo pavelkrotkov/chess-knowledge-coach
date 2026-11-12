@@ -52,6 +52,10 @@ def current(db, evidence, *, _history=None):
         evidence,
         mapper=MAPPER,
         validator=_valid,
-        verify=partial(verified_fen, observer=observe),
+        verify=partial(verified_fen, observer=_observe),
         _history=_history,
     )
+
+
+def _observe(board, played, *_analysis):
+    return observe(board, played)

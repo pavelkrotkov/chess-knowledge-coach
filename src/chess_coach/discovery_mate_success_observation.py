@@ -3,7 +3,7 @@
 import time
 
 from .discovery_mate_success_probe import candidates
-from .discovery_mate_success_scope import terminal_after, unsupported
+from .discovery_mate_success_scope import unclear_after, unsupported
 from .discovery_mate_success_witness import witness
 from .material_ambiguity import ambiguous
 from .objective_defense_judge import judge
@@ -11,7 +11,7 @@ from .objective_defense_judge import judge
 SECONDS = 1.0
 
 
-def observe(board, played, best_line, played_line, *, started=None):
+def observe(board, played, *, started=None):
     started = time.monotonic() if started is None else started
 
     def check():
@@ -31,8 +31,8 @@ def _observe(board, played, started, check):
         actual = board.parse_uci(played)
     except (ValueError, TypeError):
         return ambiguous("discovery_mate_success", "played_move_unavailable")
-    if terminal_after(board, actual):
-        return ambiguous("discovery_mate_success", "played_terminal_or_claimable")
+    if unclear_after(board, actual):
+        return ambiguous("discovery_mate_success", "played_repeated_or_terminal")
     check()
     nominated = candidates(board, check)
     if nominated is None:
