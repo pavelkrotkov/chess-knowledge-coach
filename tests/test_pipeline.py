@@ -206,6 +206,20 @@ def test_end_to_end_replay_review_and_version_changes(tmp_path, monkeypatch):
         db.connection.execute("SELECT sync_status FROM pipeline_health").fetchone()[0] != "failed"
     )
 
+    refreshed = replace(config, structure_version="v4")
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            "chess_coach.pipeline_run.process_ordinary",
+            lambda *args: (_ for _ in ()).throw(RuntimeError("private local detail")),
+        )
+        failed = process_pipeline(db, refreshed, transport=network)
+    assert failed == {
+        "status": "failed",
+        "detail": "processing_failed",
+        "phase": "ordinary",
+        "error_category": "unexpected_error",
+    }
+
 
 def test_analysis_checkpoint_rolls_back_on_interruption(tmp_path, monkeypatch):
     from chess_coach import pipeline_work
