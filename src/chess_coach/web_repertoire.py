@@ -14,6 +14,7 @@ from .repertoire import game_detail, repertoire_report
 from .tactical_course_deadline import PreviewDeadline
 from .web_board import board_rows
 from .web_db import database
+from .web_unfamiliar_course import show as show_unfamiliar_course
 
 repertoire_views = Blueprint("repertoire_views", __name__)
 
@@ -52,6 +53,11 @@ def opening_unfamiliar():
             "error.html", message="This opening sample could not be checked now. Please try again."
         ), 503
     return render_template("opening_unfamiliar.html", report=report)
+
+
+@repertoire_views.get("/repertoire/unfamiliar/course")
+def unfamiliar_course():
+    return show_unfamiliar_course()
 
 
 @repertoire_views.get("/repertoire/games/<int:game_id>")

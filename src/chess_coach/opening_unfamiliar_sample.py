@@ -2,8 +2,11 @@
 
 import chess
 
+from .fact_fingerprint import canonical, digest
 from .learner_context import decision_context_boards
+from .learner_identity import normalize_identity
 from .opening_explore_guard import require_bounded
+from .pipeline_inputs import game_input
 
 
 def _first_turn(db, learner, game_id, color):
@@ -23,12 +26,16 @@ def _first_turn(db, learner, game_id, color):
 
 
 def sample(db, learner, games, budget):
-    white, black, failed = [], [], 0
+    white, black, failed, checked = [], [], 0, []
     for game, color in games:
         try:
             with budget.scope(snapshot=True):
                 turn = _first_turn(db, learner, game["id"], color)
+                source = game_input(db, game["id"])
             (white if color == "white" else black).append(turn)
+            checked.append((game, color, turn, source))
         except (ValueError, TypeError, StopIteration):
             failed += 1
-    return white, black, failed
+            checked.append((game, color, None))
+    identity = digest(canonical([normalize_identity(learner), checked]))
+    return white, black, failed, identity

@@ -41,7 +41,7 @@ def explore_unfamiliar(db, root, learner):
     )
     with budget.scope(snapshot=False):
         games, coverage = recent(db, learner)
-    white, black, failed = sample(db, learner, games, budget)
+    white, black, failed, sample_identity = sample(db, learner, games, budget)
     first, count = common_black(black)
     with budget.scope(snapshot=True):
         dataset = catalog_dataset(db)
@@ -54,6 +54,7 @@ def explore_unfamiliar(db, root, learner):
     budget.check()
     return {
         "catalog_source": CATALOG_SOURCE,
+        "sample_identity": sample_identity,
         "sample": len(games),
         "coverage": coverage,
         "failed": failed,
