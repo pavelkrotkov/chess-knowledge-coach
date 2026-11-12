@@ -43,7 +43,10 @@ def finish_run(db: Database, status: str) -> None:
 
 
 def run_status(db: Database, sync: dict, games: list, scan: dict) -> str:
-    if sync["status"] == "failed":
+    if sync["status"] == "failed" and sync.get("detail") not in {
+        "source_http_error",
+        "source_transport_error",
+    }:
         return "failed"
     pending = db.connection.execute(
         'SELECT 1 FROM pipeline_stages WHERE status != "complete" LIMIT 1'
