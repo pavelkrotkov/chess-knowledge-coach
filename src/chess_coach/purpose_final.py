@@ -4,7 +4,7 @@ import chess.engine
 
 from .purpose_config import FINAL_NODES, FINAL_SECONDS
 from .purpose_iteration_search import search
-from .purpose_lines import viewed
+from .purpose_lines import viewed, work
 from .style_compare import candidates
 from .style_history_lines import lines_safe
 
@@ -20,8 +20,12 @@ def final(engine, board, position, nominee, deadline):
         deadline,
     )
     if state is None:
-        return {"lines": [], "roots": [move.uci() for move in selected]}, error
-    work = {
+        return {
+            "lines": [],
+            "roots": [move.uci() for move in selected],
+            "work": work([], FINAL_NODES),
+        }, error
+    search_work = {
         "nodes": state.work["nodes"],
         "depth": state.work["depth"],
         "time_seconds": state.work["time"],
@@ -32,7 +36,7 @@ def final(engine, board, position, nominee, deadline):
     }
     result = {
         "lines": state.best,
-        "work": work,
+        "work": search_work,
         "roots": [move.uci() for move in selected],
         "retained_depth": state.depth,
     }

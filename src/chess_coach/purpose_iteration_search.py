@@ -11,10 +11,15 @@ from .purpose_iteration import Iterations
 
 async def _consume(protocol, board, position, limit, roots):
     state = Iterations(board, position, roots)
-    with await protocol.analysis(board, limit, multipv=2, root_moves=roots) as stream:
+    stream = await protocol.analysis(board, limit, multipv=2, root_moves=roots)
+    with stream:
         async for info in stream:
             state.add(info)
     return state
+
+
+async def _timed(protocol, board, position, limit, roots, timeout):
+    return await asyncio.wait_for(_consume(protocol, board, position, limit, roots), timeout)
 
 
 def search(engine, board, position, limit, roots, deadline):
@@ -22,8 +27,15 @@ def search(engine, board, position, limit, roots, deadline):
     if remaining <= 0:
         return None, "worker_deadline"
     timeout = min(remaining, engine.timeout + FINAL_SECONDS)
-    coroutine = asyncio.wait_for(_consume(engine.protocol, board, position, limit, roots), timeout)
-    future = asyncio.run_coroutine_threadsafe(coroutine, engine.protocol.loop)
+    coroutine = None
+    try:
+        protocol = engine.protocol
+        coroutine = _timed(protocol, board, position, limit, roots, timeout)
+        future = asyncio.run_coroutine_threadsafe(coroutine, protocol.loop)
+    except Exception:
+        if coroutine is not None:
+            coroutine.close()
+        return None, "engine_failure"
     try:
         return future.result(timeout=timeout), None
     except TimeoutError:

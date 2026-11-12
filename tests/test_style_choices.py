@@ -66,8 +66,10 @@ class FourPlyEngine(DeepEngine):
 
 def _check_retained_purpose_iterations():
     import asyncio
+    import gc
     import threading
     import time
+    import warnings
     from types import SimpleNamespace
 
     from chess_coach.purpose_final import final
@@ -170,14 +172,28 @@ def _check_retained_purpose_iterations():
         assert final(engine, board, position, "d2d4", time.monotonic() + 2)[1] == "engine_failure"
 
         protocol.events = ["stall"]
-        assert (
-            final(engine, board, position, "d2d4", time.monotonic() + 0.2)[1] == "worker_deadline"
-        )
+        result, issue = final(engine, board, position, "d2d4", time.monotonic() + 0.2)
+        assert issue == "worker_deadline"
+        assert result["work"] == {
+            "nodes": None,
+            "depth": None,
+            "time_seconds": None,
+            "shared_search": True,
+            "requested_nodes": 200000,
+            "node_limit_exceeded": False,
+        }
         assert protocol.stream.stopped.wait(1)
     finally:
         loop.call_soon_threadsafe(loop.stop)
         thread.join(timeout=2)
         loop.close()
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", RuntimeWarning)
+        engine.protocol = Protocol(loop)
+        assert final(engine, board, position, "d2d4", time.monotonic() + 2)[1] == "engine_failure"
+        gc.collect()
+    assert not any("was never awaited" in str(warning.message) for warning in caught)
 
 
 def test_profile_uses_owned_current_deep_results_and_private_browser(tmp_path, monkeypatch, capsys):
