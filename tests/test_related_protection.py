@@ -521,6 +521,35 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
                 )
                 assert b"<title>Next practice focus \xe2\x80\x94 Chess coach</title>" in focus.data
                 assert focus.data.count(b"Find a comparable unfamiliar protection assessment") == 1
+                due = {
+                    "objective": "Due review",
+                    "kind": "due",
+                    "reason": "",
+                    "due": None,
+                    "corpus_version": "test",
+                    "puzzle_id": "due",
+                }
+                new = {**due, "objective": "New puzzle", "kind": "new", "puzzle_id": "new"}
+                plan = {
+                    "items": [due, new],
+                    "scan": {"due_incomplete": False},
+                    "evidence": {"state": "fixture"},
+                    "corpus_status": "fixture",
+                    "diagnostic": None,
+                    "next_cursor": None,
+                }
+                patch.setattr("chess_coach.web_views.daily_plan", lambda *_, plan=plan, **_k: plan)
+                patch.setattr("chess_coach.plan_page.promotion_recommendation", lambda *_: None)
+                daily = client.get("/plan", base_url="https://coach.invalid", headers=headers)
+                assert (
+                    daily.data.index(b"Due review")
+                    < daily.data.index(b"Next focus: protect a piece")
+                    < daily.data.index(b"New puzzle")
+                )
+                assert b"Replay the prepared defensive line" in daily.data
+                assert b"prepared replay is provisional" in daily.data
+                assert b"independent candidate games" in daily.data
+                assert f'name="key" value="{source["key"]}"'.encode() in daily.data
 
                 capture = {
                     "source": {
@@ -583,6 +612,14 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
                 )[0]
                 assert f'href="/evidence/{evidence}"'.encode() in explanation
                 assert b"separate from the selected protection rehearsal" in explanation
+                daily_fork = client.get("/plan", base_url="https://coach.invalid", headers=headers)
+                assert (
+                    daily_fork.data.index(b"Due review")
+                    < daily_fork.data.index(b"Next focus: finding forks")
+                    < daily_fork.data.index(b"New puzzle")
+                )
+                assert b"Rehearse this fork" in daily_fork.data
+                assert f'href="/evidence/{evidence}"'.encode() in daily_fork.data
                 patch.setattr(plan_web, "admissible", lambda *_, capture=capture: capture)
                 patch.setattr(plan_web, "fork_recommendation", lambda *_: None)
 
@@ -653,6 +690,11 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
                 assert (
                     b"verified miss" in only_fork.data and b"Rehearse this fork" in only_fork.data
                 )
+                patch.setattr(plan_web, "fork_recommendation", lambda *_: None)
+                fallback = client.get("/plan", base_url="https://coach.invalid", headers=headers)
+                assert b"Due review" in fallback.data and b"New puzzle" in fallback.data
+                assert b"Next focus: finding forks" not in fallback.data
+                assert b"Next focus: protect a piece" not in fallback.data
             assert db.connection.execute("PRAGMA data_version").fetchone()[0] == version
         else:
             assert history["status"] == "unknown"

@@ -37,21 +37,29 @@ def show():
 def next_focus():
     db = database()
     subject = current_app.config["SUBJECT"]
-    capture = admissible(db, subject, current_app.config["CORPUS"])
+    context = current_focus(db, subject, current_app.config["CORPUS"])
+
+    return render_template(
+        "next_focus.html",
+        **context,
+        protection_version=PROTECTION_VERSION,
+    )
+
+
+def current_focus(db, subject, corpus):
+    capture = admissible(db, subject, corpus)
     try:
         protection = report(db, subject)
     except (sqlite3.Error, ValueError, TypeError, KeyError, IndexError, PreviewUnavailable):
         protection = None
-    fork = fork_recommendation(db, subject, current_app.config["CORPUS"])
-    assessment = protection_history(db, subject, current_app.config["CORPUS"], protection)
+    fork = fork_recommendation(db, subject, corpus)
+    assessment = protection_history(db, subject, corpus, protection)
     selected, rotated_from = choose(capture, protection, assessment, fork)
-    return render_template(
-        "next_focus.html",
-        capture=capture,
-        protection=protection,
-        selected=selected,
-        rotated_from=rotated_from,
-        fork=fork,
-        assessment=assessment,
-        protection_version=PROTECTION_VERSION,
-    )
+    return {
+        "capture": capture,
+        "protection": protection,
+        "fork": fork,
+        "assessment": assessment,
+        "selected": selected,
+        "rotated_from": rotated_from,
+    }
