@@ -46,8 +46,9 @@ def _collect(db, ordered, coverage):
 
 def prioritize(db, games, sequence):
     """Keep the full fallback order on alternate cycles and rotate paired starts."""
-    # Pair prioritized and fallback cycles so every start advances fairly.
-    offset = (sequence // 2) % len(games) if games else 0
+    # Reserved control cycles advance independently through every starting game.
+    step = sequence // 4 if sequence % 4 == 1 else sequence // 2
+    offset = step % len(games) if games else 0
     ordered = games[offset:] + games[:offset]
     coverage = {
         "nomination_games": 0,

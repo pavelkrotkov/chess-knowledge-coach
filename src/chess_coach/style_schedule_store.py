@@ -49,7 +49,8 @@ def create_cycle(db, learner):
         slot_ids = {}
         for kind, item in slots:
             slot_ids[kind] = insert_slot(db, cursor.lastrowid, kind, item)
-            advance_slot(db, key, kind, item, coverage.get("structural_target_selected", False))
+            if kind != "control" or not coverage.get("early_center_targeted", False):
+                advance_slot(db, key, kind, item, coverage.get("structural_target_selected", False))
         insert_protection(db, cursor.lastrowid, key, candidate, binding, reason, slot_ids, slots)
         db.connection.commit()
         return cursor.lastrowid
