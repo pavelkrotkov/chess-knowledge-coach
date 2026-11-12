@@ -254,11 +254,20 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
     assert old_capture_cache.read_bytes() == b"synthetic prior capture cache"
     capture_partial = capture_report(db, "fixture_a", root)
     assert capture_partial["comparable"] and not capture_partial["qualified"]
+    assert capture_partial["bounds"]["status"] == "pending"
     assert capture_partial["newer"]["checked"] == capture_partial["earlier"]["checked"] == 2
     for _ in range(9):
         capture_scan.run(db, "fixture_a", root)
     capture_complete = capture_report(db, "fixture_a", root)
     assert capture_complete["qualified"] and capture_complete["duplicates"] == 1
+    assert capture_complete["bounds"]["status"] == "available"
+    assert capture_complete["bounds"]["direction"] == "overlap"
+    assert capture_complete["bounds"]["earlier"] == {
+        "lower": 10,
+        "upper": 10,
+        "total": 20,
+        "unresolved": 0,
+    }
     assert (
         capture_complete["newer"]["opportunities"]
         == capture_complete["earlier"]["opportunities"]
@@ -343,6 +352,42 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
     )
     client = app.test_client()
     with monkeypatch.context() as patch:
+        patch.setattr(
+            "chess_coach.web_short_mate_game.capture_trend_report", lambda *_args: capture_partial
+        )
+        pending_page = client.get(
+            "/game-samples/captures",
+            base_url="https://coach.invalid",
+            headers={"Tailscale-User-Login": "fixture"},
+        )
+        assert b"pending turns to scan" in pending_page.data
+        assert b"Conservative other-move rate ranges" not in pending_page.data
+    for gate, explanation in (
+        ("selection_pending", b"still selecting independent games"),
+        ("source_unavailable", b"dates, ownership records or source checks could not be verified"),
+        ("too_few_games", b"each sample needs 20 independent games"),
+        ("between_tie", b"either side of the sample boundary share a start time"),
+        ("frontier_tie", b"older sample and its boundary game share a start time"),
+        ("frontier_limit", b"bounded search did not establish an older boundary game"),
+    ):
+        with monkeypatch.context() as patch:
+            patch.setattr(
+                "chess_coach.web_short_mate_game.capture_trend_report",
+                lambda *_args, _gate=gate: {
+                    **capture_complete,
+                    "qualified": False,
+                    "comparable": False,
+                    "comparable_reason": _gate,
+                    "bounds": {"status": "incomparable"},
+                },
+            )
+            incomparable_page = client.get(
+                "/game-samples/captures",
+                base_url="https://coach.invalid",
+                headers={"Tailscale-User-Login": "fixture"},
+            )
+            assert explanation in incomparable_page.data
+    with monkeypatch.context() as patch:
         patch.setattr("chess_coach.web_views.daily_plan", lambda *_args, **_kwargs: {})
         patch.setattr(
             "chess_coach.web_short_mate_game.capture_trend_report",
@@ -398,7 +443,12 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
         base_url="https://coach.invalid",
         headers={"Tailscale-User-Login": "fixture"},
     )
-    assert b"A rate comparison is unavailable" in capture_page.data
+    assert unresolved_capture["bounds"]["status"] == "available"
+    assert unresolved_capture["bounds"]["direction"] == "overlap"
+    assert unresolved_capture["newer"]["resolved_games"] == 19
+    assert b"Conservative other-move rate ranges" in capture_page.data
+    assert b"with unresolved opportunity status" in capture_page.data
+    assert b"ranges overlap or touch" in capture_page.data
     capture_state["games"][0]["results"][0] = original
     original_newer = [item["results"][0][:] for item in capture_state["games"][:20]]
     for item in capture_state["games"][:16]:
@@ -407,8 +457,128 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
     sparse_capture = capture_report(db, "fixture_a", root)
     assert sparse_capture["newer"]["complete"] and sparse_capture["newer"]["opportunities"] == 4
     assert not sparse_capture["qualified"]
+    assert sparse_capture["bounds"]["status"] == "sparse"
+    sparse_page = client.get(
+        "/game-samples/captures",
+        base_url="https://coach.invalid",
+        headers={"Tailscale-User-Login": "fixture"},
+    )
+    assert b"at least five resolved capture opportunities" in sparse_page.data
     for item, old in zip(capture_state["games"][:20], original_newer, strict=True):
         item["results"][0] = old
+    write(capture_cache, capture_state)
+
+    # Unknown opportunity status and unresolved played choices both widen the bounds.
+    scenario = deepcopy(capture_state)
+
+    def set_capture_outcomes(items, values):
+        for item, outcome in zip(items, values, strict=True):
+            reason = {
+                "unknown": "node_limit",
+                "opportunity_unresolved": "played_capture_unresolved",
+            }.get(outcome)
+            item["results"][0] = [item["results"][0][0], outcome, reason]
+
+    set_capture_outcomes(
+        scenario["games"][:20], ["other"] * 17 + ["unknown"] * 2 + ["opportunity_unresolved"]
+    )
+    set_capture_outcomes(scenario["games"][20:40], ["other"] * 2 + ["played"] * 18)
+    write(capture_cache, scenario)
+    higher = capture_report(db, "fixture_a", root)
+    assert higher["bounds"]["newer"] == {"lower": 17, "upper": 20, "total": 20, "unresolved": 3}
+    assert higher["newer"]["unknown"] == 2 and higher["newer"]["opportunity_unresolved"] == 1
+    assert higher["bounds"]["direction"] == "higher"
+    higher_page = client.get(
+        "/game-samples/captures",
+        base_url="https://coach.invalid",
+        headers={"Tailscale-User-Login": "fixture"},
+    )
+    assert (
+        b"17/20 to 20/20" in higher_page.data
+        and b"higher in the more recent sample" in higher_page.data
+    )
+    set_capture_outcomes(
+        scenario["games"][:20], ["played"] * 17 + ["unknown"] * 2 + ["opportunity_unresolved"]
+    )
+    set_capture_outcomes(scenario["games"][20:40], ["other"] * 20)
+    write(capture_cache, scenario)
+    lower = capture_report(db, "fixture_a", root)
+    assert lower["bounds"]["direction"] == "lower"
+    set_capture_outcomes(scenario["games"][:20], ["other"] * 3 + ["unknown"] * 2 + ["played"] * 15)
+    set_capture_outcomes(scenario["games"][20:40], ["other"] * 5 + ["played"] * 15)
+    write(capture_cache, scenario)
+    touching = capture_report(db, "fixture_a", root)
+    assert touching["bounds"]["newer"]["upper"] == touching["bounds"]["earlier"]["lower"]
+    assert touching["bounds"]["direction"] == "overlap"
+
+    # Five resolved turns from only two games do not meet the independence gate.
+    from chess_coach.capture_game_trend_bounds import bounds as capture_bounds
+    from chess_coach.capture_game_trend_report import _sample as capture_sample
+
+    few_games = capture_sample(
+        [
+            {
+                "date": "a",
+                "eligible": 3,
+                "results": [[101, "other", None], [102, "played", None], [103, "other", None]],
+            },
+            {"date": "b", "eligible": 2, "results": [[104, "played", None], [105, "other", None]]},
+            {
+                "date": "c",
+                "eligible": 1,
+                "results": [[106, "opportunity_unresolved", "played_capture_unresolved"]],
+            },
+        ]
+    )
+    assert few_games["opportunity_games"] == 3 and few_games["resolved_games"] == 2
+    assert capture_bounds(True, few_games, capture_complete["earlier"])["status"] == "sparse"
+    assert capture_bounds(False, few_games, capture_complete["earlier"])["status"] == "incomparable"
+    # The explanatory gate is the same one used by other game trends.
+    from chess_coach.mate_game_comparability import reason as cohort_reason
+    from chess_coach.mate_game_trend import _comparable as cohort_comparable
+
+    samples = [{"games": 20}, {"games": 20}]
+    dates = [str(i) for i in range(41)]
+    coverage = capture_complete["coverage"]
+    assert cohort_reason(samples, dates, coverage, 0) is None
+    assert cohort_comparable(samples, dates, coverage, 0)
+    assert (
+        cohort_reason(samples, dates, {**coverage, "unknown_time_lower_bound": 1}, 0)
+        == "source_unavailable"
+    )
+    assert cohort_reason(samples, dates, coverage, 1) == "source_unavailable"
+    assert cohort_reason([{"games": 19}, samples[1]], dates, coverage, 0) == "too_few_games"
+    middle_tie = dates.copy()
+    middle_tie[20] = middle_tie[19]
+    assert cohort_reason(samples, middle_tie, coverage, 0) == "between_tie"
+    end_tie = dates.copy()
+    end_tie[40] = end_tie[39]
+    assert cohort_reason(samples, end_tie, coverage, 0) == "frontier_tie"
+    assert (
+        cohort_reason(samples, dates[:40], {**coverage, "game_limit_reached": True}, 0)
+        == "frontier_limit"
+    )
+    assert not cohort_comparable(samples, middle_tie, coverage, 0)
+    earlier_ratio = {
+        "played": 4,
+        "other": 2,
+        "unknown": 0,
+        "opportunity_unresolved": 0,
+        "unchecked": 0,
+        "resolved_games": 3,
+    }
+    newer_ratio = {
+        "played": 6,
+        "other": 1,
+        "unknown": 2,
+        "opportunity_unresolved": 0,
+        "unchecked": 0,
+        "resolved_games": 3,
+    }
+    assert capture_bounds(True, earlier_ratio, newer_ratio)["direction"] == "overlap"
+    newer_ratio = {**newer_ratio, "played": 6666, "other": 3334, "unknown": 0, "resolved_games": 20}
+    assert round(100 * 2 / 6, 1) == round(100 * 3334 / 10000, 1)
+    assert capture_bounds(True, earlier_ratio, newer_ratio)["direction"] == "higher"
     write(capture_cache, capture_state)
     cache = location(db, root)
     cached = read(cache, binding(db, "fixture_a"))

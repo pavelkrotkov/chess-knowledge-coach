@@ -11,16 +11,31 @@
 {% for label, sample in (("More recent", report.newer), ("Earlier", report.earlier)) %}
 <section><h3>{{ label }} games</h3>
 <p>{{ sample.games }} games{% if sample.newest %}, from {{ sample.oldest }} to {{ sample.newest }} UTC{% endif %}.</p>
-<p>{{ sample.checked }} of {{ sample.eligible }} learner turns had the opportunity and played choice resolved; {{ sample.unchecked }} pending, {{ sample.unknown }} unresolved and {{ sample.opportunity_unresolved }} proved opportunities with the played choice unresolved.</p>
+<p>{{ sample.checked }} of {{ sample.eligible }} learner turns had the opportunity and played choice resolved; {{ sample.unchecked }} pending, {{ sample.unknown }} with unresolved opportunity status and {{ sample.opportunity_unresolved }} proved opportunities with the played choice unresolved.</p>
 <p>{{ sample.opportunities }} proved capture opportunities across {{ sample.opportunity_games }} games: {{ sample.played }} qualifying captures played and {{ sample.other }} other moves.</p>
 <p>Source decisions: {% for item in sample.examples %}<a href="{{ url_for('views.decision_detail', position_id=item.position_id) }}">{{ item.outcome | replace('_', ' ') | capitalize }}</a>{% if not loop.last %}; {% endif %}{% else %}none{% endfor %}.</p>
 </section>
 {% endfor %}
 {% if report.qualified %}
 <p>Other-move rates: {{ "%.1f" | format(100 * report.earlier.other / report.earlier.opportunities) }}% earlier and {{ "%.1f" | format(100 * report.newer.other / report.newer.opportunities) }}% more recent. This describes these games only.</p>
+{% elif report.bounds.status == "available" %}
+<p>Conservative other-move rate ranges, including every unresolved turn as a possible opportunity: earlier {{ report.bounds.earlier.lower }}/{{ report.bounds.earlier.total }} to {{ report.bounds.earlier.upper }}/{{ report.bounds.earlier.total }} ({{ "%.1f" | format(100 * report.bounds.earlier.lower / report.bounds.earlier.total) }}% to {{ "%.1f" | format(100 * report.bounds.earlier.upper / report.bounds.earlier.total) }}%); more recent {{ report.bounds.newer.lower }}/{{ report.bounds.newer.total }} to {{ report.bounds.newer.upper }}/{{ report.bounds.newer.total }} ({{ "%.1f" | format(100 * report.bounds.newer.lower / report.bounds.newer.total) }}% to {{ "%.1f" | format(100 * report.bounds.newer.upper / report.bounds.newer.total) }}%). These bounds describe these games only.</p>
+{% elif report.bounds.status == "pending" %}
+<p>A rate comparison is unavailable while either sample has pending turns to scan.</p>
+{% elif report.bounds.status == "sparse" %}
+<p>A rate comparison is unavailable: each sample needs at least five resolved capture opportunities across three independent games. Earlier has {{ report.earlier.played + report.earlier.other }} across {{ report.earlier.resolved_games }} games; more recent has {{ report.newer.played + report.newer.other }} across {{ report.newer.resolved_games }} games.</p>
 {% else %}
-<p>A rate comparison is unavailable until both verified samples have complete outcomes and at least five opportunities across three games each.</p>
+{% if report.comparable_reason == "selection_pending" %}<p>A rate comparison is unavailable while the worker is still selecting independent games.</p>
+{% elif report.comparable_reason == "source_unavailable" %}<p>A rate comparison is unavailable because some game dates, ownership records or source checks could not be verified.</p>
+{% elif report.comparable_reason == "too_few_games" %}<p>A rate comparison is unavailable because each sample needs 20 independent games. Earlier has {{ report.earlier.games }} and more recent has {{ report.newer.games }}.</p>
+{% elif report.comparable_reason == "between_tie" %}<p>A rate comparison is unavailable because games on either side of the sample boundary share a start time.</p>
+{% elif report.comparable_reason == "frontier_tie" %}<p>A rate comparison is unavailable because the older sample and its boundary game share a start time.</p>
+{% elif report.comparable_reason == "frontier_limit" %}<p>A rate comparison is unavailable because the bounded search did not establish an older boundary game.</p>
+{% else %}<p>A rate comparison is unavailable because the game samples or boundaries are not fully verified.</p>{% endif %}
 {% endif %}
+{% if report.bounds.status == "available" %}{% if report.bounds.direction == "overlap" %}
+{% if report.qualified %}<p>The exact rates are equal, so no direction is shown.</p>{% else %}<p>The ranges overlap or touch, so the direction is inconclusive.</p>{% endif %}
+{% else %}<p>The other-move rate was {{ report.bounds.direction }} in the more recent sample across these bounds.</p>{% endif %}{% endif %}
 <p>The proof covers non-checking direct captures of non-pawn pieces with no immediate recapture and at least three material units retained after every supported immediate reply. Checking captures, promotions, unsupported replies, uncertain history and limited proofs remain unresolved. A supported legal reply that leaves less than three material units disproves that narrow capture opportunity. Unsupported replies remain unresolved unless another supported reply disproves it. A different move can have compensating merits; an other move is not necessarily a mistake.</p>
 <p>Counts can be sparse, and several opportunities can occur in one game. Game context and overlapping game times limit comparisons. These observations do not establish improvement or cause.</p>
 <details><summary>Coverage details</summary>

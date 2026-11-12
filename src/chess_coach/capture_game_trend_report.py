@@ -3,13 +3,20 @@
 import sqlite3
 
 from .capture_game_counts import add, empty, finish
+from .capture_game_trend_bounds import bounds
 from .capture_game_trend_current import current, frontier_matches
 from .capture_game_trend_paths import binding, location
 from .capture_game_trend_validate import validate
-from .mate_game_trend import _comparable
+from .mate_game_comparability import reason as comparability_reason
 from .short_mate_trend_cohort import snapshot
 from .short_mate_trend_report import _qualified
 from .short_mate_trend_store import read
+
+
+def _game_counts(result, item):
+    outcomes = {row[1] for row in item["results"]}
+    result["opportunity_games"] += bool(outcomes & {"played", "other", "opportunity_unresolved"})
+    result["resolved_games"] += bool(outcomes & {"played", "other"})
 
 
 def _sample(games):
@@ -18,9 +25,9 @@ def _sample(games):
     result["newest"] = games[0]["date"] if games else None
     result["oldest"] = games[-1]["date"] if games else None
     result["opportunity_games"] = 0
+    result["resolved_games"] = 0
     for item in games:
-        if any(row[1] in {"played", "other", "opportunity_unresolved"} for row in item["results"]):
-            result["opportunity_games"] += 1
+        _game_counts(result, item)
         for position_id, outcome, reason in item["results"]:
             add(result, {"position_id": position_id}, outcome, reason)
     return finish(result)
@@ -42,14 +49,19 @@ def report(db, learner, root):
         if not current(db, state, candidates, (newer, earlier), before):
             return None
         dates = [item["date"] for item in games]
-        comparable = state["selection_complete"] and _comparable(
-            [newer, earlier], dates, coverage, state["unavailable"]
+        reason = (
+            comparability_reason([newer, earlier], dates, coverage, state["unavailable"])
+            if state["selection_complete"]
+            else "selection_pending"
         )
+        comparable = reason is None
         return {
             "qualified": _qualified(comparable, (newer, earlier)),
+            "bounds": bounds(comparable, earlier, newer),
             "newer": newer,
             "earlier": earlier,
             "comparable": comparable,
+            "comparable_reason": reason,
             "coverage": coverage,
             "duplicates": state["duplicates"],
             "unavailable": state["unavailable"],
