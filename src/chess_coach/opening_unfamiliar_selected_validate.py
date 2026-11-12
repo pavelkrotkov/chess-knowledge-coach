@@ -3,7 +3,8 @@
 import chess
 
 from .opening_storage import position_key
-from .opening_unfamiliar_selected import _valid
+from .opening_unfamiliar_lesson import lesson as public_lesson
+from .opening_unfamiliar_selection import _valid
 
 
 def validate_content(current):
@@ -22,3 +23,15 @@ def validate_content(current):
         )
     ):
         raise ValueError("opening selection differs")
+
+
+def validate_measurement(current):
+    selection = current.get("selection")
+    if not selection or len(current["chapters"]) != 1:
+        raise ValueError("opening measurement differs")
+    color = selection["color"]
+    expected = public_lesson(
+        current["report"], color, current["report"][color], current["measurement"]
+    )
+    if current["chapters"][0] != expected:
+        raise ValueError("opening measurement differs")

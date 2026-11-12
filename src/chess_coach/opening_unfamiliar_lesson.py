@@ -43,7 +43,7 @@ def _geometry(data):
     )
 
 
-def lesson(report, color, item):
+def lesson(report, color, item, measurement=None):
     line, data = item["line"], item["profile"]
     snapshot, provenance = binding(report, color, item)
     source = provenance["source_url"]
@@ -72,6 +72,10 @@ def lesson(report, color, item):
     note = (
         f"Play {color.title()}. {reason} {instruction} {revisit} {scope} {geometry} {attribution}"
     )
+    if measurement:
+        from .opening_unfamiliar_course_text import describe
+
+        note += " " + describe(measurement)
     result = chapter(item["name"], note, snapshot, provenance, guidance=note)
     return {
         **result,
@@ -89,4 +93,5 @@ def lesson(report, color, item):
         "source_url": source,
         "license": data["license"],
         "license_url": data["license_url"],
+        **({"measurement": describe(measurement)} if measurement else {}),
     }

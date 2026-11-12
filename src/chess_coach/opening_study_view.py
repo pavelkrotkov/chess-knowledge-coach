@@ -4,6 +4,7 @@ from .opening_queue_files import read
 from .opening_queue_location import location
 from .opening_study_receipt import link
 from .opening_study_request import SLOT, credentials, valid
+from .opening_unfamiliar_legacy import retained
 
 
 def status(db, root, learner, course):
@@ -29,6 +30,11 @@ def status(db, root, learner, course):
             message = "Add Study credentials to request publication."
         else:
             message = "This exact course has not been requested."
-        return {"credentials": available, "link": receipt, "message": message}
+        return {
+            "credentials": available,
+            "link": receipt,
+            "message": message,
+            "request_allowed": not course.get("historical") or retained(directory, course),
+        }
     except Exception:
         return {"credentials": False, "link": None, "message": "Study status is unavailable."}

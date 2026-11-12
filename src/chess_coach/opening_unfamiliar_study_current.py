@@ -6,8 +6,8 @@ from types import SimpleNamespace
 
 from .fact_fingerprint import canonical
 from .opening_profile_index import INDEX_NAME
-from .opening_study_source import fingerprint
-from .opening_unfamiliar_course import preview
+from .opening_study_source import fingerprint, pin_inputs
+from .opening_unfamiliar_legacy import resolve
 from .opening_unfamiliar_study_course import build
 from .tactical_course_budget import Budget
 
@@ -24,13 +24,18 @@ def admitted(database, directory, root, learner, version, selection=None):
         files = [directory / INDEX_NAME, config, config.resolve()]
         before = fingerprint(files)
 
-        def current():
-            return (
-                preview(db, root, learner, selection) if selection else preview(db, root, learner)
-            )
-
-        course = build(current(), version)
-        if canonical(build(current(), version)) != canonical(course):
+        budget.check()
+        first = resolve(db, root, learner, selection, version, directory, deadline=budget.expires)
+        course = build(first, version)
+        identity = first.get("_measurement_source") or first.get("measurement", {}).get(
+            "source_identity"
+        )
+        before = pin_inputs(directory, root, files, before, identity)
+        budget.check()
+        second = resolve(db, root, learner, selection, version, directory, deadline=budget.expires)
+        if first.get("_measurement_source") != second.get("_measurement_source") or canonical(
+            build(second, version)
+        ) != canonical(course):
             raise ValueError("opening preview changed")
 
         def check():

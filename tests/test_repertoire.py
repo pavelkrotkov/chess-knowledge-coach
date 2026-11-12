@@ -973,7 +973,11 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
             lines.append(
                 {"root_move": root, "score_value": score, "depth": 8, "pv": " ".join(moves)}
             )
-        value = {"status": "complete", "lines": lines}
+        value = {
+            "status": "complete",
+            "lines": lines,
+            "work": {"nodes": 100, "node_limit_exceeded": False},
+        }
         if with_identity:
             value["_identity"] = "a" * 64
         return {choice["uci"]: value}
@@ -1491,7 +1495,173 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
             opening_study_worker.run(experiment_db, "learner", tmp_path)
             assert provider.created == 1 and slot.read_bytes() == before_get
 
+        # The selected course adds only current bounded scores to the public line.
         from chess_coach.opening_unfamiliar_study_current import admitted
+
+        def short_states(*args, **kwargs):
+            from chess_coach.opening_queue_proof import complete
+
+            decision = args[3]
+            values = synthetic_states(*args, **kwargs)
+            for alternative, value in values.items():
+                if value["status"] == "complete":
+                    value["lines"][0]["pv"] = value["lines"][0]["root_move"]
+                    for line in value["lines"]:
+                        line.update(
+                            status="limited",
+                            score_kind="cp",
+                            score_bound="exact",
+                            score_pov=decision["color"],
+                            semantics="same-board-roots-v1",
+                            role="candidate",
+                            decision_fen=decision["fen"],
+                        )
+                    source = {"played": decision["played_uci"], "alternative": alternative}
+                    assert complete(value, source, chess.Board(decision["fen"]))
+            return values
+
+        with monkeypatch.context() as measured:
+            measured.setattr(decision_budget, "VERSION", VERSION)
+            measured.setattr(decision_budget, "SOURCE", SOURCE)
+            measured.setattr(decision_budget, "GRAPH_SHA256", GRAPH_SHA256)
+            measured.setattr(measure_state, "statuses", short_states)
+            kind["status"] = "complete"
+            measured_course = unfamiliar_course_preview(
+                experiment_db, tmp_path, "learner", selected
+            )
+            assert measured_course["legacy_version"] == selected_version
+            assert measured_course["version"] != selected_version
+            assert "source_stamp" not in measured_course["measurement"]
+            import chess_coach.opening_unfamiliar_course_proof as measure_proof
+
+            with monkeypatch.context() as changed_metadata:
+                changed_metadata.setattr(measure_proof, "fingerprint", lambda *_args: [["changed"]])
+                assert (
+                    unfamiliar_course_preview(experiment_db, tmp_path, "learner", selected)[
+                        "version"
+                    ]
+                    == measured_course["version"]
+                )
+            assert "shorter than three plies" in measured_course["chapters"][0]["note"]
+            assert build_unfamiliar_study(measured_course, measured_course["version"])
+            forged = copy.deepcopy(measured_course)
+            forged["measurement"]["other"]["score"] += 1
+            from chess_coach.opening_unfamiliar_course import MEASURED_VERSION
+
+            forged["version"] = digest(
+                canonical(
+                    {
+                        "schema": MEASURED_VERSION,
+                        "report": forged["report"],
+                        "chapters": forged["chapters"],
+                        "selection": forged["selection"],
+                        "measurement": forged["measurement"],
+                    }
+                )
+            )
+            with pytest.raises(ValueError, match="measurement differs"):
+                build_unfamiliar_study(forged, forged["version"])
+
+            import chess_coach.opening_unfamiliar_selected as selected_source
+
+            original_selected = selected_source.selected
+            selected_deadlines = []
+
+            def counted_selected(*args, **kwargs):
+                selected_deadlines.append(kwargs.get("deadline"))
+                return original_selected(*args, **kwargs)
+
+            measured.setattr(selected_source, "selected", counted_selected)
+            with admitted(
+                experiment_path,
+                planning_dir,
+                tmp_path,
+                "learner",
+                measured_course["version"],
+                selected,
+            ):
+                pass
+            assert len(selected_deadlines) == 2
+            assert selected_deadlines[0] is not None and len(set(selected_deadlines)) == 1
+            selected_deadlines.clear()
+            with admitted(
+                experiment_path, planning_dir, tmp_path, "learner", selected_version, selected
+            ):
+                pass
+            assert len(selected_deadlines) == 2
+            assert selected_deadlines[0] is not None and len(set(selected_deadlines)) == 1
+            import chess_coach.opening_unfamiliar_legacy as legacy_admission
+
+            with monkeypatch.context() as missing_intent:
+                missing_intent.setattr(legacy_admission, "retained", lambda *_args: False)
+                with (
+                    pytest.raises(ValueError, match="previous opening intent"),
+                    admitted(
+                        experiment_path,
+                        planning_dir,
+                        tmp_path,
+                        "learner",
+                        selected_version,
+                        selected,
+                    ),
+                ):
+                    pass
+            measured_page = client_first.get(
+                course_path,
+                query_string=selected,
+                base_url="https://coach.invalid",
+                headers=headers,
+            )
+            assert b"shorter than three plies" in measured_page.data
+            measured_pgn = client_first.get(
+                course_path,
+                query_string={**selected, "version": measured_course["version"], "download": "1"},
+                base_url="https://coach.invalid",
+                headers=headers,
+            )
+            assert measured_pgn.status_code == 200 and b"licensed public game" in measured_pgn.data
+            assert b'[White "Learner"]' not in measured_pgn.data
+            selected_deadlines.clear()
+            legacy_page = client_first.get(
+                course_path,
+                query_string={**selected, "version": selected_version},
+                base_url="https://coach.invalid",
+                headers=headers,
+            )
+            assert b"Open verified private Study" in legacy_page.data
+            assert selected_deadlines == [None]
+
+            def changed_scores(*args, **kwargs):
+                values = short_states(*args, **kwargs)
+                for value in values.values():
+                    if value["status"] == "complete":
+                        value["lines"][1]["score_value"] += 1
+                return values
+
+            measured.setattr(measure_state, "statuses", changed_scores)
+            assert (
+                unfamiliar_course_preview(experiment_db, tmp_path, "learner", selected)["version"]
+                != measured_course["version"]
+            )
+            measured.setattr(measure_state, "statuses", short_states)
+            kind["status"] = "stale"
+            assert (
+                unfamiliar_course_preview(experiment_db, tmp_path, "learner", selected)["version"]
+                == selected_version
+            )
+            assert (
+                client_first.get(
+                    course_path,
+                    query_string={
+                        **selected,
+                        "version": measured_course["version"],
+                        "download": "1",
+                    },
+                    base_url="https://coach.invalid",
+                    headers=headers,
+                ).status_code
+                == 409
+            )
 
         with admitted(
             experiment_path, planning_dir, tmp_path, "learner", selected_version, selected
