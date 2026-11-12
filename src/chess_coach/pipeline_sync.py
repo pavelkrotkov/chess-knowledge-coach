@@ -55,10 +55,7 @@ def _waiting(db, clock):
 
 
 def _source_failure(db, clock, error):
-    waiting = _waiting(db, clock)
-    if waiting is not None:
-        return waiting
-    result = {"status": "failed", "detail": error.reason}
+    result = _waiting(db, clock) or {"status": "failed", "detail": error.reason}
     if error.status is not None:
         result["http_status"] = error.status
     return result
