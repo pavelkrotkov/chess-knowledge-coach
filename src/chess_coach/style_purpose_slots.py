@@ -27,7 +27,8 @@ def slots(db, learner):
          AND c.sequence % 4=1) AS early_center_cycle,
         (s.kind='control' AND json_extract(c.coverage_json,'$.early_center_policy')='early-center-v1'
          AND c.sequence % 4=1
-         AND json_extract(c.coverage_json,'$.early_center_targeted')=1) AS early_center_target
+         AND json_extract(c.coverage_json,'$.early_center_targeted')=1) AS early_center_target,
+        COALESCE(json_extract(c.coverage_json,'$.early_center_no_fresh'),0) AS early_center_no_fresh
         FROM style_schedule_slots s
         JOIN style_schedule_cycles c ON c.id=s.cycle_id
         WHERE s.cycle_id IN ({placeholders}) ORDER BY c.sequence DESC,s.id DESC""",

@@ -12,9 +12,21 @@ def process_standard(db, config, slot, deadline):
     request_id = slot["request_id"]
     try:
         if request_id is None:
-            request_id = create(
+            request = create(
                 db, slot["position_id"], config.learner, engine_path=config.engine_path
-            )["request_id"]
+            )
+            if slot.get("early_center_target") and request["status"] in (
+                "complete",
+                "insufficient",
+                "stale",
+            ):
+                update_slot(db, slot["id"], "unknown", "terminal_request_reused")
+                return {
+                    "slot": slot["kind"],
+                    "status": "unknown",
+                    "detail": "terminal_request_reused",
+                }
+            request_id = request["request_id"]
             update_slot(db, slot["id"], "pending", "queued", request_id)
         update_slot(db, slot["id"], "running", "worker_claimed", request_id)
         before = attempt_count(db, request_id)

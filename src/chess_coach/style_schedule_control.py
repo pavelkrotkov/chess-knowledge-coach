@@ -1,19 +1,28 @@
 """Choose a verified early-center control or retain ordinary rotation."""
 
+from .style_schedule_fresh import available
 from .style_schedule_independent import controls
 from .style_schedule_priority import choose as choose_priority
 from .style_schedule_rotation import choose
 
 
-def select(db, key, sequence, candidates, target):
+def _targetable(candidates, ordinary, target):
+    if target:
+        return controls(candidates, target, True)
+    return [item for item in ordinary if item.get("_game_key")]
+
+
+def select(db, key, sequence, candidates, target, *, identities=None):
     ordinary = controls(candidates, target, False)
     targetable = None
+    nominated = sum(bool(item.get("early_center")) for item in ordinary)
     if sequence % 4 == 1:
-        if target:
-            targetable = controls(candidates, target, True)
-        else:
-            targetable = [item for item in ordinary if item.get("_game_key")]
-    return control(db, key, sequence, ordinary, targetable=targetable)
+        targetable = _targetable(candidates, ordinary, target)
+        early = [item for item in targetable if item.get("early_center")]
+        nominated = len(early)
+        targetable = available(db, key, early, identities or {})
+    selected, targeted, _ = control(db, key, sequence, ordinary, targetable=targetable)
+    return selected, targeted, nominated
 
 
 def control(db, key, sequence, ordinary, *, targetable=None):

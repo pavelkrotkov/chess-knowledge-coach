@@ -34,6 +34,7 @@ def summary(state):
     names = (
         "cycles",
         "fallback",
+        "no_fresh",
         "slots",
         "admitted",
         "no_contrast",
@@ -57,6 +58,8 @@ def slot_coverage(row, contexts, coverage):
     coverage["cycles"] += 1
     if not row.get("early_center_target"):
         coverage["fallback"] += 1
+        if row.get("early_center_no_fresh"):
+            coverage["no_fresh"] += 1
         coverage["unchecked"] += 1
         return
     coverage["slots"] += 1

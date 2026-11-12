@@ -22,10 +22,13 @@ def allocate(db, learner, key, sequence):
     coverage["structural_replayed_positions"] = structural
     coverage["structural_replayed_unknown"] = unknown
     coverage["structural_target_selected"] = bool(sequence % 2 == 0 and structural and target)
-    control, targeted, nominated = select_control(db, key, sequence, candidates, target)
+    control, targeted, nominated = select_control(
+        db, key, sequence, candidates, target, identities=identities
+    )
     coverage["early_center_policy"] = "early-center-v1"
     coverage["early_center_targeted"] = targeted
     coverage["early_center_nominated"] = nominated
+    coverage["early_center_no_fresh"] = bool(sequence % 4 == 1 and nominated and not targeted)
     coverage = summarize_coverage(
         db, games, coverage, skipped, duplicates, exhausted, reconstructed
     )
