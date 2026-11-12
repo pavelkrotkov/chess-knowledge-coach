@@ -2,6 +2,7 @@
 
 import json
 import sqlite3
+import time
 
 from .named_structures import VERSION as STRUCTURE_VERSION
 from .opening_profile_center import summarize as center_summary
@@ -20,9 +21,15 @@ from .opening_snapshot import GRAPH_SHA256, VERSION
 MAX_GAMES = 10
 
 
-def lookup(path, parent, move):
+def guard(db, expires):
+    if expires is not None:
+        db.set_progress_handler(lambda: int(time.monotonic() >= expires), 1000)
+
+
+def lookup(path, parent, move, *, expires=None):
     db = sqlite3.connect(path.as_uri() + "?mode=ro&immutable=1", uri=True, timeout=1)
     try:
+        guard(db, expires)
         metadata = {
             k: json.loads(v) for k, v in db.execute("SELECT key,value FROM metadata LIMIT 32")
         }

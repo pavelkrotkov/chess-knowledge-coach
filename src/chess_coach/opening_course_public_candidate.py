@@ -19,12 +19,13 @@ def candidate(db, game_id, first, parent, move, owned):
     if state != "valid" or result is None:
         return None
     original, _after, moves = result
-    if moves[: len(owned)] == owned:
+    if owned is not None and moves[: len(owned)] == owned:
         return None
     site = valid_site(game[0])
     reference = digest(canonical([SOURCE_SHA256, game_id, first, parent, move, moves, site]))
     return {
         "reference": reference,
+        "record": game_id,
         "fen": original.fen(),
         "color": "white" if original.turn else "black",
         "moves": moves,

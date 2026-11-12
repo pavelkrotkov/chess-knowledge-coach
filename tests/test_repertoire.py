@@ -895,6 +895,152 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         with pytest.raises(ValueError, match="already exists"):
             build_profile(tmp_path, "learner")
     assert hashlib.sha256(old_index.read_bytes()).hexdigest() == old_hash
+    # The first-turn page checks both colors against the ordered public index.
+    from chess_coach.opening_snapshot import import_snapshot
+    from chess_coach.opening_unfamiliar import explore_unfamiliar
+
+    experiment_path = data_dir / "first-turn.sqlite"
+    experiment_db = Database(experiment_path)
+    experiment_db.initialize()
+    import_snapshot(experiment_db)
+    ingest_pgn(experiment_db, game("Learner", "Other", "1. d4 d5 2. c4 e6", second=8))
+    ingest_pgn(experiment_db, game("Other", "Learner", "1. e4 e5 2. Nf3 Nc6", second=9))
+    experiment_db.connection.commit()
+    result = explore_unfamiliar(experiment_db, tmp_path, "learner")
+    assert result["white_count"] == result["black_count"] == 1
+    assert result["parent"] == "e4" and result["parent_count"] == 1
+    assert result["white"]["uci"] == "e2e3" and result["black"]["uci"] == "e7e6"
+    assert len(result["white"]["line"]["san"]) == 4
+    app_first = create_app(
+        db_path=experiment_path,
+        project_root=tmp_path,
+        subject="learner",
+        actor="reviewer",
+        corpus="test",
+        login="login",
+        origin="https://coach.invalid",
+    )
+    client_first = app_first.test_client()
+    assert (
+        client_first.get("/repertoire/unfamiliar", base_url="https://coach.invalid").status_code
+        == 403
+    )
+    page = client_first.get(
+        "/repertoire/unfamiliar", base_url="https://coach.invalid", headers=headers
+    )
+    assert (
+        page.status_code == 200
+        and b"Exploratory" in page.data
+        and b"Black reply to e4" in page.data
+    )
+    assert b"CC BY-SA 4.0" in page.data and b"Style compatibility" in page.data
+    empty = explore_unfamiliar(experiment_db, tmp_path / "missing", "learner")
+    assert empty["white"] is None and empty["black"] is None
+    # Unattributed-time history still excludes already imported exact first turns.
+    ingest_pgn(experiment_db, game("Learner", "Other", "1. e3 e5 2. d4 d5"))
+    ingest_pgn(experiment_db, game("Other", "Learner", "1. e4 e6 2. d4 d5"))
+    experiment_db.connection.commit()
+    later = explore_unfamiliar(experiment_db, tmp_path, "learner")
+    assert later["white"] is None or later["white"]["uci"] != "e2e3"
+    assert later["black"] is None or later["black"]["uci"] != "e7e6"
+    # A custom starting position can reach a standard child without playing its move.
+    from chess_coach.opening_unfamiliar_history import seen as history_seen
+
+    standard = chess.Board()
+    standard.push_uci("g1f3")
+    knight = {"uci": "g1f3", "child_key": position_key(standard)}
+    setup = chess.Board()
+    setup.remove_piece_at(chess.G1)
+    setup.set_piece_at(chess.H4, chess.Piece(chess.KNIGHT, chess.WHITE))
+    collision = chess.pgn.Game()
+    collision.setup(setup)
+    collision.headers["White"] = "Learner"
+    collision.headers["Black"] = "Other"
+    collision.add_variation(chess.Move.from_uci("h4f3"))
+    ingest_pgn(experiment_db, str(collision))
+    collision.headers["Variant"] = "Atomic"
+    ingest_pgn(experiment_db, str(collision))
+    setup = chess.Board()
+    setup.halfmove_clock = 7
+    collision = chess.pgn.Game()
+    collision.setup(setup)
+    collision.headers["White"] = "Learner"
+    collision.headers["Black"] = "Other"
+    collision.add_variation(chess.Move.from_uci("g1f3"))
+    ingest_pgn(experiment_db, str(collision))
+    experiment_db.connection.commit()
+    assert not history_seen(experiment_db, "learner", knight, "white", position_key(chess.Board()))
+    setup = chess.Board()
+    setup.remove_piece_at(chess.E2)
+    setup.set_piece_at(chess.E3, chess.Piece(chess.PAWN, chess.WHITE))
+    collision = chess.pgn.Game()
+    collision.setup(setup)
+    collision.headers["White"] = "Other"
+    collision.headers["Black"] = "Learner"
+    first_custom = collision.add_variation(chess.Move.from_uci("e3e4"))
+    first_custom.add_variation(chess.Move.from_uci("c7c5"))
+    ingest_pgn(experiment_db, str(collision))
+    experiment_db.connection.commit()
+    parent = chess.Board()
+    parent.push_uci("e2e4")
+    reply = parent.copy()
+    reply.push_uci("c7c5")
+    black_collision = {"uci": "c7c5", "child_key": position_key(reply)}
+    assert not history_seen(
+        experiment_db, "learner", black_collision, "black", position_key(parent)
+    )
+    # A corrupted matching source is unknown, never evidence of unfamiliarity.
+    ingest_pgn(experiment_db, game("Other", "Learner", "1. e4 c5 2. Nf3 d6"))
+    experiment_db.connection.execute(
+        "UPDATE positions SET uci=? WHERE game_id=(SELECT MAX(id) FROM games) AND ply=2",
+        ("e7e6",),
+    )
+    experiment_db.connection.commit()
+    assert history_seen(experiment_db, "learner", black_collision, "black", position_key(parent))
+
+    # Replacing an index between the two reads or expiring mid-read cannot publish a result.
+    import chess_coach.opening_unfamiliar_public as unfamiliar_public
+    from chess_coach.opening_queue_budget import BrowserBudget
+    from chess_coach.tactical_course_budget import PreviewUnavailable
+
+    budget = BrowserBudget(experiment_db)
+    identity = unfamiliar_public._identity
+    identities = iter((identity(ordered_path := reference_dir / PROFILE_INDEX), (0, 0, 0, 0, 0)))
+    with monkeypatch.context() as patch:
+        patch.setattr(unfamiliar_public, "_identity", lambda _path: next(identities))
+        assert (
+            unfamiliar_public.public(
+                tmp_path, "learner", position_key(chess.Board()), "e2e3", budget
+            )
+            is None
+        )
+    budget = BrowserBudget(experiment_db)
+    with monkeypatch.context() as patch:
+
+        def expire(*_args, **_kwargs):
+            budget.expires = 0
+            return None, "unavailable"
+
+        patch.setattr(unfamiliar_public, "continuation", expire)
+        with pytest.raises(PreviewUnavailable):
+            unfamiliar_public.public(
+                tmp_path, "learner", position_key(chess.Board()), "e2e3", budget
+            )
+    # The public index progress handler also interrupts SQLite execution.
+    import time
+
+    from chess_coach.opening_profile_lookup import guard as public_guard
+
+    with sqlite3.connect(":memory:") as guarded:
+        public_guard(guarded, time.monotonic() - 1)
+        with pytest.raises(sqlite3.OperationalError, match="interrupted"):
+            guarded.execute(
+                "WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<100000) "
+                "SELECT sum(x) FROM n"
+            ).fetchone()
+        guarded.set_progress_handler(None, 0)
+    experiment_db.close()
+
     start_key = position_key(chess.Board())
     white_profile = read_profile(tmp_path, "learner", start_key, "e2e4")
     assert white_profile["games"] == 1
