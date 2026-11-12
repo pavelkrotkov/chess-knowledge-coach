@@ -133,7 +133,9 @@ def test_private_card_rotates_only_after_complete_unassisted_rehearsal(tmp_path,
             groups, coverage = course_selection.candidates(db, SUBJECT, Budget(db))
         assert calls == 2
         assert not groups
-        assert coverage[-1]["status"] == "deferred: time budget"
+        assert next(row for row in coverage if row["skill"] == "calculation")["status"] == (
+            "deferred: time budget"
+        )
         assert not db.connection.in_transaction
 
     lesson = {

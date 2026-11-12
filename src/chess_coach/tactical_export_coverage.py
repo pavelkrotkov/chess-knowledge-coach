@@ -1,6 +1,6 @@
 """Validate the recorded scan coverage without inventing missing sources."""
 
-from .tactical_course_selection import PAIRS, PER_PAIR
+from .tactical_course_selection import PER_PAIR
 
 
 def _completed(row):
@@ -22,10 +22,10 @@ def _valid(row):
     )
 
 
-def coverage(rows):
-    if not isinstance(rows, list) or len(rows) != len(PAIRS):
+def coverage(rows, pairs):
+    if not isinstance(rows, list) or len(rows) != len(pairs):
         raise ValueError("invalid preview coverage")
-    for row, (skill, operation) in zip(rows, PAIRS, strict=True):
+    for row, (skill, operation) in zip(rows, pairs, strict=True):
         if (row["skill"], row["operation"]) != (skill, operation) or not _valid(row):
             raise ValueError("preview coverage differs")
 

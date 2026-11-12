@@ -7,10 +7,17 @@ from .tactical_course_evidence import independent
 from .unified_sources import resolve_source
 
 
-def owned(db, subject, group):
-    bindings = independent(db, subject, group)
+def owned(db, subject, group, *, bindings=None):
+    if bindings is None:
+        bindings = independent(db, subject, group)
     choice = choices(db, subject, {"groups": [group]})[0]
-    if choice is None or choice["kind"] not in {"capture", "protection", "mate", "short_mate"}:
+    if choice is None or choice["kind"] not in {
+        "capture",
+        "protection",
+        "mate",
+        "short_mate",
+        "fork",
+    }:
         return None
     return choice, owned_chapter(db, subject, group, choice, bindings), bindings
 
@@ -36,6 +43,8 @@ def owned_chapter(db, subject, group, choice, bindings):
 def challenge(choice):
     if choice["kind"] == "capture":
         return f"/decisions/{choice['position_id']}/related-captures"
+    if choice["kind"] == "fork":
+        return f"/evidence/{choice['evidence_id']}/related-forks/find-verified"
     if choice["kind"] in {"mate", "short_mate"}:
         return f"/evidence/{choice['evidence_id']}/related-mates"
     return None

@@ -5,6 +5,10 @@ from .related_capture_familiar import LIMIT, _initial_prompt
 PAGE = 32
 
 
+class FamiliarityLimit(ValueError):
+    """The bounded familiarity history cannot be completed."""
+
+
 def _pages(db, budget, table, fields, params=()):
     last = None
     while True:
@@ -34,7 +38,7 @@ def _games(db, identity, budget):
                     continue
                 count += 1
                 if count > LIMIT:
-                    raise ValueError("familiarity scan limit exceeded")
+                    raise FamiliarityLimit("familiarity scan limit exceeded")
                 prompts.add(_initial_prompt(row["pgn"]))
                 if row["source_id"]:
                     ids.add(row["source_id"])
