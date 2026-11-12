@@ -934,15 +934,155 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         and b"Black reply to e4" in page.data
     )
     assert b"CC BY-SA 4.0" in page.data and b"Style compatibility" in page.data
+    # The private course and its PGN contain the same checked two-color lessons.
+    from chess_coach.opening_unfamiliar_course import preview as unfamiliar_course_preview
+
+    course_path = "/repertoire/unfamiliar/course"
+    assert client_first.get(course_path, base_url="https://coach.invalid").status_code == 403
+    version_before = experiment_db.connection.execute("PRAGMA data_version").fetchone()[0]
+    page = client_first.get(course_path, base_url="https://coach.invalid", headers=headers)
+    assert page.status_code == 200 and b"Exploratory opening course preview" in page.data
+    assert b"Play White" in page.data and b"Play Black" in page.data
+    assert b"pause" in page.data and b"Revisit" in page.data and b"CC BY-SA 4.0" in page.data
+    assert page.data.count(b"pause and choose") == 2
+    assert b"True" not in page.data and b"False" not in page.data
+    match = re.search(r"Version: <code>([0-9a-f]{64})</code>", page.get_data(as_text=True))
+    assert match
+    course_version = match.group(1)
+    course = unfamiliar_course_preview(experiment_db, tmp_path, "learner")
+    assert course["version"] == course_version and len(course["chapters"]) == 2
+    assert all(
+        lesson["mode"] == "conceal"
+        and lesson["orientation"] == lesson["color"]
+        and lesson["source"]["selection_hash"]
+        and lesson["source"]["reference"]
+        and lesson["source_snapshot"]["prompt_fen"] == lesson["fen"]
+        for lesson in course["chapters"]
+    )
+    assert (
+        client_first.get(
+            course_path + "?download=1", base_url="https://coach.invalid", headers=headers
+        ).status_code
+        == 409
+    )
+    download_path = course_path + "?download=1&version=" + course_version
+    download = client_first.get(download_path, base_url="https://coach.invalid", headers=headers)
+    assert download.status_code == 200 and "no-store" in download.headers["Cache-Control"]
+    stream = io.StringIO(download.get_data(as_text=True))
+    for color, lesson in zip(("white", "black"), course["chapters"], strict=True):
+        parsed = chess.pgn.read_game(stream)
+        assert parsed is not None and not parsed.errors
+        assert parsed.board().fen() == result[color]["line"]["fen"]
+        assert [move.uci() for move in parsed.mainline_moves()] == result[color]["line"]["moves"]
+        assert parsed.comment == lesson["note"]
+        assert "Exploratory" in parsed.comment and "CC BY-SA 4.0" in parsed.comment
+    assert chess.pgn.read_game(stream) is None
+    assert experiment_db.connection.execute("PRAGMA data_version").fetchone()[0] == version_before
+
     empty = explore_unfamiliar(experiment_db, tmp_path / "missing", "learner")
     assert empty["white"] is None and empty["black"] is None
+    missing_app = create_app(
+        db_path=experiment_path,
+        project_root=tmp_path / "missing",
+        subject="learner",
+        actor="reviewer",
+        corpus="test",
+        login="login",
+        origin="https://coach.invalid",
+    )
+    missing_client = missing_app.test_client()
+    missing_page = missing_client.get(
+        course_path, base_url="https://coach.invalid", headers=headers
+    )
+    assert missing_page.status_code == 200 and b"no PGN can be downloaded" in missing_page.data
+    assert (
+        b"No verified White lesson" in missing_page.data
+        and b"No verified Black lesson" in missing_page.data
+    )
+    missing_match = re.search(
+        r"Version: <code>([0-9a-f]{64})</code>", missing_page.get_data(as_text=True)
+    )
+    assert missing_match
+    missing_version = missing_match.group(1)
+    assert (
+        missing_client.get(
+            course_path + "?download=1&version=" + missing_version,
+            base_url="https://coach.invalid",
+            headers=headers,
+        ).status_code
+        == 404
+    )
+    # One available color remains usable while the other is explicit and absent.
+    import chess_coach.opening_unfamiliar_course as unfamiliar_course
+
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            unfamiliar_course, "explore_unfamiliar", lambda *_args: {**result, "black": None}
+        )
+        partial = client_first.get(course_path, base_url="https://coach.invalid", headers=headers)
+        assert b"Play White" in partial.data and b"No verified Black lesson" in partial.data
+        partial_match = re.search(
+            r"Version: <code>([0-9a-f]{64})</code>", partial.get_data(as_text=True)
+        )
+        assert partial_match
+        partial_export = client_first.get(
+            course_path + "?download=1&version=" + partial_match.group(1),
+            base_url="https://coach.invalid",
+            headers=headers,
+        )
+        assert partial_export.status_code == 200
+        partial_stream = io.StringIO(partial_export.get_data(as_text=True))
+        assert chess.pgn.read_game(partial_stream) is not None
+        assert chess.pgn.read_game(partial_stream) is None
     # Unattributed-time history still excludes already imported exact first turns.
     ingest_pgn(experiment_db, game("Learner", "Other", "1. e3 e5 2. d4 d5"))
     ingest_pgn(experiment_db, game("Other", "Learner", "1. e4 e6 2. d4 d5"))
     experiment_db.connection.commit()
+    assert (
+        client_first.get(
+            download_path, base_url="https://coach.invalid", headers=headers
+        ).status_code
+        == 409
+    )
     later = explore_unfamiliar(experiment_db, tmp_path, "learner")
     assert later["white"] is None or later["white"]["uci"] != "e2e3"
     assert later["black"] is None or later["black"]["uci"] != "e7e6"
+    # A same-count sample replacement changes the opaque source identity and version.
+    ingest_pgn(experiment_db, game("Learner", "Other", "1. d4 d5 2. c4 e6", second=7))
+    with monkeypatch.context() as patch:
+        patch.setattr("chess_coach.opening_explore_recent.LIMIT", 2)
+        before_replacement = unfamiliar_course_preview(experiment_db, tmp_path, "learner")
+        ingest_pgn(experiment_db, game("Learner", "Other", "1. d4 d5 2. c4 e6", second=10))
+        after_replacement = unfamiliar_course_preview(experiment_db, tmp_path, "learner")
+        old_report, new_report = before_replacement["report"], after_replacement["report"]
+        assert {k: v for k, v in old_report.items() if k != "sample_identity"} == {
+            k: v for k, v in new_report.items() if k != "sample_identity"
+        }
+        assert old_report["sample_identity"] != new_report["sample_identity"]
+        assert before_replacement["version"] != after_replacement["version"]
+        assert (
+            client_first.get(
+                course_path + "?download=1&version=" + before_replacement["version"],
+                base_url="https://coach.invalid",
+                headers=headers,
+            ).status_code
+            == 409
+        )
+        experiment_db.connection.execute(
+            "UPDATE games SET pgn=replace(pgn, ?, ?) WHERE id=(SELECT MAX(id) FROM games)",
+            ('[Event "Fixture"]', '[Event "Changed fixture"]'),
+        )
+        experiment_db.connection.commit()
+        changed_source = unfamiliar_course_preview(experiment_db, tmp_path, "learner")
+        assert changed_source["version"] != after_replacement["version"]
+        assert (
+            client_first.get(
+                course_path + "?download=1&version=" + after_replacement["version"],
+                base_url="https://coach.invalid",
+                headers=headers,
+            ).status_code
+            == 409
+        )
     # A custom starting position can reach a standard child without playing its move.
     from chess_coach.opening_unfamiliar_history import seen as history_seen
 
