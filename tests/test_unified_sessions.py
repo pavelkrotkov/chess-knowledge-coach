@@ -470,6 +470,13 @@ def _check_recognition_progress(monkeypatch):
             for item in reversed(result["items"])
             if item["scope"] and item["scope"]["rating"] == 1200
         ]
+        for outcome, hints, reveals in (("uncertain", 0, 0), ("revealed", 1, 1)):
+            unresolved = deepcopy(entries)
+            unresolved[0].update(outcome=outcome, hints=hints, reveals=reveals)
+            blocked = groups(unresolved, False)[0]
+            assert not blocked["comparable"]
+            assert "10 current, resolved, unassisted first checks" in blocked["reason"]
+            assert blocked["baseline"]["outcomes"][outcome] == 1
         context = deepcopy(entries)
         for index, entry in enumerate(context):
             entry["opening"] = "first" if index < 10 else "second"

@@ -8,7 +8,7 @@
 {% if report.limited %}<p>Only the oldest and newest 100 checks were inspected, or a date was unavailable. Comparisons are withheld.</p>{% endif %}
 {% if not report["items"] %}<p>No recognition checks have been recorded yet.</p>{% endif %}
 <h3>Matched recognition samples</h3>
-<p>Groups share the current corpus and proof policy, motif, side to move, and puzzle rating and deviation bands. A comparison requires two disjoint samples of 10 current answered checks, with at least five unassisted in each. Opening tags may be incomplete, and other context can differ. Checks can share a source game and may be related.</p>
+<p>Groups share the current corpus and proof policy, motif, side to move, and puzzle rating and deviation bands. A comparison requires two disjoint, ordered samples of 10 current, resolved, unassisted first checks each. Unsure answers and reveals remain visible but do not count as resolved results. Opening tags may be incomplete, and other context can differ. Checks can share a source game and may be related.</p>
 {% for group in report.groups %}
 <section><h4>{{ "Direct capture" if group.kind == "capture" else "Mate in one" }} · {{ group.color | capitalize }} · difficulty {{ group.rating }}–{{ group.rating + 199 }} · deviation {{ group.deviation }}–{{ group.deviation + 99 }}</h4>
 <p>{{ group.count }} {{ "inspected checks" if report.limited else "matched first encounters" }}. Baseline of {{ group.baseline.size }}: {{ group.baseline.outcomes.get("verified", 0) }} correct, {{ group.baseline.outcomes.get("incorrect", 0) }} incorrect, {{ group.baseline.outcomes.get("uncertain", 0) }} unsure and {{ group.baseline.outcomes.get("revealed", 0) }} revealed. Opening context was recorded for {{ group.baseline_opening }} of these checks.</p>

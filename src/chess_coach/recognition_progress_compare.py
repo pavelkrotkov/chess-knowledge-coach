@@ -7,7 +7,7 @@ from .mate_assessment_compare import SAMPLE, comparable
 def check(values, limited):
     if not comparable(values, limited):
         return (
-            "Two ordered samples need 10 current answered checks each, with at least five unassisted.",
+            "Two ordered samples each need 10 current, resolved, unassisted first checks.",
             None,
         )
     first, last = values[:SAMPLE], values[-SAMPLE:]
