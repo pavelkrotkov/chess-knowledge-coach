@@ -6,6 +6,7 @@ import time
 from .fork_followup_first import first
 from .learner_identity import normalize_identity
 from .related_capture_position import prompt_key
+from .related_protection_later_exposure import require_unexposed
 
 SECONDS = 2.0
 
@@ -31,6 +32,8 @@ def _check(db, row, until):
     subject = row["subject"]
     first(db, subject, row)
     key = prompt_key(row["prompt_fen"])
+    if row["status"] == "active":
+        require_unexposed(db, row, key, check)
     prefix = key + " "
     identity = normalize_identity(subject)
     prior = db.connection.execute(

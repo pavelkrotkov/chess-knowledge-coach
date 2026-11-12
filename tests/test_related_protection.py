@@ -48,17 +48,22 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
         # The real match comes after the former 100-row per-band limit.
         records = [(f"a{i:03}", "bad", "bad") for i in range(120)]
         other = "a2a3" if color == "white" else "a7a6"
-        alternate = setup.copy()
-        pawn_from, pawn_to = ("a2", "b2") if color == "white" else ("a7", "b7")
-        pawn = alternate.remove_piece_at(chess.parse_square(pawn_from))
-        alternate.set_piece_at(chess.parse_square(pawn_to), pawn)
+        pawn_from = "a2" if color == "white" else "a7"
+        alternatives = []
+        for file in ("b", "c", "e"):
+            alternate = setup.copy()
+            pawn = alternate.remove_piece_at(chess.parse_square(pawn_from))
+            alternate.set_piece_at(chess.parse_square(file + pawn_from[1]), pawn)
+            alternatives.append(alternate)
         nonzero = "e8f8" if color == "white" else "e1f1"
         records += [
             ("w-unknown-history", setup.fen(), f"{nonzero} {moves[1]}"),
             ("x-wrong-role", setup.fen(), f"{moves[0]} {other}"),
             ("y-malformed", setup.fen(), f"{moves[0]} {moves[1]} invalid invalid"),
             ("z-match", setup.fen(), " ".join(moves)),
-            ("z-second", alternate.fen(), " ".join(moves)),
+            ("z-second", alternatives[0].fen(), " ".join(moves)),
+            ("z-third", alternatives[1].fen(), " ".join(moves)),
+            ("z-fourth", alternatives[2].fen(), " ".join(moves)),
         ]
         db.connection.executemany(
             """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,rating_deviation,themes_json,objective)
@@ -73,8 +78,8 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
         db.connection.commit()
         result = preview(db, LEARNER, evidence, "test")
         assert result["source_outcome"] == "success"
-        assert len(result["items"]) == 2 and result["scanned"] == 125
-        assert result["protection_scan"]["checked"] == 3
+        assert len(result["items"]) == 4 and result["scanned"] == 127
+        assert result["protection_scan"]["checked"] == 5
         assert all(item["assessment_available"] for item in result["items"])
         from chess_coach.related_protection_assessment import certificate
 
@@ -421,7 +426,7 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
 
         # A different still-unfamiliar candidate supports an independently checked first move.
         fresh = preview(db, LEARNER, evidence, "test")
-        assert len(fresh["items"]) == 1 and fresh["items"][0]["assessment_available"]
+        assert len(fresh["items"]) == 3 and fresh["items"][0]["assessment_available"]
         assessment = client.post(
             url,
             base_url="https://coach.invalid",
@@ -445,6 +450,65 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
             "unassisted" if color == "white" else "hinted"
         )
         assert checked["protection_assessment"] and checked["protection_target"]
+
+        from chess_coach.puzzle_sessions import start_attempt as start_legacy
+        from chess_coach.unified_sessions import start as start_unified
+
+        answered = db.connection.execute(
+            "SELECT source_key FROM unified_sessions WHERE attempt_id=?", (assessment_attempt,)
+        ).fetchone()["source_key"]
+        start_unified(
+            db,
+            attempt_id="later-replay",
+            subject=LEARNER,
+            source_type="corpus",
+            version="test",
+            key=answered,
+        )
+        assert show(db, assessment_attempt, LEARNER)["verification"]["status"] == "correct"
+
+        for exposure in ("unified", "legacy"):
+            available = preview(db, LEARNER, evidence, "test")["items"]
+            token = available[0]["reference"]
+            active = f"active-{exposure}"
+            start_related(
+                db,
+                attempt_id=active,
+                subject=LEARNER,
+                evidence_id=evidence,
+                corpus_version="test",
+                reference=token,
+                assessment=True,
+            )
+            key = db.connection.execute(
+                "SELECT source_key FROM unified_sessions WHERE attempt_id=?", (active,)
+            ).fetchone()["source_key"]
+            if exposure == "unified":
+                start_unified(
+                    db,
+                    attempt_id="exposed-unified",
+                    subject=LEARNER,
+                    source_type="corpus",
+                    version="test",
+                    key=key,
+                )
+            else:
+                start_legacy(db, attempt_id="exposed-legacy", version="test", puzzle_id=key)
+            with pytest.raises(ValueError):
+                submit(db, active, LEARNER, event_id="answer", move=moves[1])
+            assert (
+                db.connection.execute(
+                    "SELECT COUNT(*) FROM unified_session_events WHERE attempt_id=?", (active,)
+                ).fetchone()[0]
+                == 0
+            )
+            assert (
+                db.connection.execute(
+                    "SELECT COUNT(*) FROM objective_requests WHERE attempt_id=?", (active,)
+                ).fetchone()[0]
+                == 0
+            )
+
         with pytest.raises(ValueError):
             start_related(
                 db,
