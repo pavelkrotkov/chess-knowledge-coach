@@ -2,6 +2,7 @@
 
 import chess
 
+from .capture_game_checking import inspect as inspect_checking
 from .capture_game_replies import inspect as inspect_replies
 from .material_capture_gain import capture_gain
 from .material_exchange_rules import has_legal_recapture
@@ -13,7 +14,7 @@ def _scope(board, move):
         return "unknown"
     if target is None or target.piece_type == chess.PAWN:
         return "outside"
-    if board.is_check() or board.gives_check(move) or board.ep_square is not None:
+    if board.is_check() or board.ep_square is not None:
         return "unknown"
     return "candidate"
 
@@ -22,6 +23,8 @@ def inspect(board, move):
     state = _scope(board, move)
     if state != "candidate":
         return state
+    if board.gives_check(move):
+        return inspect_checking(board, move)
     if has_legal_recapture(board, move):
         return "outside"
     gain, reason, _ = capture_gain(board, move, board.piece_at(move.to_square))

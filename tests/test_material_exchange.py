@@ -77,7 +77,24 @@ def test_recorded_capture_and_missed_capture_are_bounded_observations(monkeypatc
     defended = chess.Board("4k3/8/8/2p5/3q4/8/8/3RK3 w - - 0 1")
     assert classify(defended, "e1f1", 1, lambda: 0) == ("no_opportunity", None)
     checking = chess.Board("3k4/8/8/8/3q4/8/8/3RK3 w - - 0 1")
-    assert classify(checking, "e1f1", 1, lambda: 0) == ("unknown", "unresolved_capture")
+    from chess_coach.material_check_proof import checking_capture
+
+    proof = checking_capture(checking, capture)
+    assert proof == {"minimum_gain": 9, "legal_replies": 4}
+    roots, unresolved, reason = opportunities(checking, 1, lambda: 0)
+    assert roots == {"d1d4"} and not unresolved and reason is None
+    assert classify(checking, "d1d4", 1, lambda: 0) == ("played", None)
+    assert classify(checking, "e1f1", 1, lambda: 0) == ("other", None)
+    assert classify(checking.mirror(), "d8d5", 1, lambda: 0) == ("played", None)
+    with monkeypatch.context() as patch:
+        patch.setattr("chess_coach.material_check_proof.MAX_CHECK_REPLIES", 0)
+        assert inspect_root(checking, capture) == "unknown"
+    recaptured_check = chess.Board("3k4/8/8/2p5/3q4/8/8/3RK3 w - - 0 1")
+    assert inspect_root(recaptured_check, capture) == "outside"
+    assert classify(recaptured_check, "e1f1", 1, lambda: 0) == ("no_opportunity", None)
+    uncertain_check = chess.Board("3k4/4N3/8/8/3q4/8/8/3RK3 w - - 0 1")
+    assert inspect_root(uncertain_check, capture) == "unknown"
+    assert classify(uncertain_check, "e1f1", 1, lambda: 0) == ("unknown", "unresolved_capture")
     unknown_history = chess.Board("4k3/8/8/8/3q4/8/8/3RK3 w - - 8 1")
     assert classify(unknown_history, "e1f1", 1, lambda: 0) == ("unknown", "unsupported_history")
     ticks = iter([0, 2])

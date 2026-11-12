@@ -10,14 +10,14 @@ from .material_reply_guard import MIN_GAIN as MIN_REPLY_GAIN
 from .short_mate_trend_paths import location as game_location
 from .short_mate_trend_paths import source_identity
 
-VERSION = "capture-game-trend-v2"
+VERSION = "capture-game-trend-v3"
 TURN_SECONDS = 0.25
 
 
 def location(db, root):
     path = game_location(db, root)
     return (
-        path.with_name(path.name.removesuffix(".short-mate-trend.json") + ".capture-trend-v2.json")
+        path.with_name(path.name.removesuffix(".short-mate-trend.json") + ".capture-trend-v3.json")
         if path
         else None
     )
