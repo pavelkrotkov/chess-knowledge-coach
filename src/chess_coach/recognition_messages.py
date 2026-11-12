@@ -2,6 +2,8 @@
 
 
 def unavailable(error):
+    if "imported-game coverage" in str(error):
+        return "Too many newly imported games to verify this check. Start a new check."
     if "deadline" in str(error):
         return "The check timed out while verifying its source. Try again."
     if "changed" in str(error):

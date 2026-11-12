@@ -28,6 +28,7 @@ def _choose(db, subject, version, until):
     if not identity:
         raise ValueError("recognition subject unavailable")
     initial = db.connection.execute("PRAGMA data_version").fetchone()[0]
+    watermark = db.connection.execute("SELECT COALESCE(MAX(id), 0) FROM games").fetchone()[0]
 
     def check():
         if time.monotonic() >= until:
@@ -44,5 +45,6 @@ def _choose(db, subject, version, until):
     if db.connection.execute("PRAGMA data_version").fetchone()[0] != initial:
         raise ValueError("recognition sources changed")
     if candidate:
+        candidate["game_watermark"] = watermark
         return candidate, initial
     raise ValueError("no supported unfamiliar recognition prompt in the bounded sample")

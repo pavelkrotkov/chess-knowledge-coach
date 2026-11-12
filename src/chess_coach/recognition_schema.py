@@ -10,7 +10,8 @@ def add_recognition(connection: sqlite3.Connection) -> None:
         source_key TEXT NOT NULL, source_url TEXT NOT NULL, source_game TEXT,
         source_fingerprint TEXT NOT NULL, proof_json TEXT NOT NULL,
         content_rating INTEGER NOT NULL, content_deviation INTEGER NOT NULL,
-        content_opening TEXT, cue_status TEXT NOT NULL CHECK(cue_status='uncued'), started_at TEXT NOT NULL,
+        content_opening TEXT, game_watermark INTEGER NOT NULL CHECK(game_watermark>=0),
+        cue_status TEXT NOT NULL CHECK(cue_status='uncued'), started_at TEXT NOT NULL,
         UNIQUE(subject, prompt_key))""")
     connection.execute("""CREATE TABLE IF NOT EXISTS recognition_events (
         attempt_id TEXT PRIMARY KEY REFERENCES recognition_attempts(attempt_id),

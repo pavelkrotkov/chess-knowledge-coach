@@ -5,6 +5,7 @@ import time
 
 from .learner_identity import normalize_identity
 from .recognition_exposures import source_game
+from .recognition_game_frontier import new_initials
 from .related_capture_probe import position_probe
 from .related_protection_later_exposure import require_unexposed
 
@@ -31,6 +32,7 @@ def _novel(db, row, until):
 
     subject = row["subject"]
     source_game(db, row, check)
+    new_initials(db, row, check)
     probe = position_probe(
         db, normalize_identity(subject), subject, exclude_recognition=row["attempt_id"]
     )

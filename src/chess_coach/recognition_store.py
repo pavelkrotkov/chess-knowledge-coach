@@ -43,8 +43,8 @@ def start(db, subject, version, attempt):
         db.connection.execute(
             """INSERT INTO recognition_attempts
             (attempt_id,subject,prompt_key,prompt_fen,learner_color,source_version,source_key,
-             source_url,source_game,source_fingerprint,proof_json,content_rating,content_deviation,content_opening,cue_status,started_at)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+             source_url,source_game,source_fingerprint,proof_json,content_rating,content_deviation,content_opening,game_watermark,cue_status,started_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 attempt,
                 normalize_identity(subject),
@@ -60,6 +60,7 @@ def start(db, subject, version, attempt):
                 candidate["rating"],
                 candidate["deviation"],
                 candidate["opening"],
+                candidate["game_watermark"],
                 "uncued",
                 _now(),
             ),

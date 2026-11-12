@@ -87,6 +87,8 @@ def _check_neutral_recognition(monkeypatch):
     import sqlite3
     from urllib.parse import urlparse
 
+    import chess.pgn
+
     from chess_coach import recognition_current, recognition_scan, web_recognition
     from chess_coach.recognition_proof import prove
     from chess_coach.recognition_view import view
@@ -310,6 +312,37 @@ def _check_neutral_recognition(monkeypatch):
         patch.setattr(recognition_view, "novel", timeout)
         timed = client.get(f"/recognition/{raced}", base_url=base, headers=headers)
     assert b"timed out" in timed.data
+
+    # A different newly imported game can start at the prompt without indexing that initial board.
+    from chess_coach import recognition_game_frontier
+    from chess_coach.ingest import ingest_pgn
+
+    saved = db.connection.execute(
+        "SELECT prompt_fen,prompt_key,game_watermark FROM recognition_attempts WHERE attempt_id=?",
+        (raced,),
+    ).fetchone()
+    initial_board = chess.Board(saved["prompt_fen"])
+    custom = chess.pgn.Game()
+    custom.setup(initial_board)
+    custom.headers.update({"White": "Learner", "Black": "Opponent", "Result": "*"})
+    custom.add_variation(next(iter(initial_board.legal_moves)))
+    ingest_pgn(db, str(custom))
+    assert (
+        db.connection.execute("SELECT MAX(id) FROM games").fetchone()[0] > saved["game_watermark"]
+    )
+    assert not position_probe(db, "learner", "learner", exclude_recognition=raced)(
+        saved["prompt_key"]
+    )
+    with monkeypatch.context() as patch:
+        patch.setattr(recognition_game_frontier, "MAX_NEW_GAMES", 0)
+        bounded = client.get(f"/recognition/{raced}", base_url=base, headers=headers)
+    assert b"Too many newly imported games" in bounded.data
+    assert view(db, "learner", raced)["status"] == "unavailable"
+    stale = client.get(f"/recognition/{raced}", base_url=base, headers=headers)
+    assert b"first-encounter status is unavailable" in stale.data
+    assert b"Which opportunity is available" not in stale.data
+    assert respond(raced, "answer", "capture").status_code == 400
+    assert view(db, "learner", capture)["outcome"] == "incorrect"
 
     history = client.get("/recognition", base_url=base, headers=headers)
     assert b"View result" in history.data and b"Resume a check" in history.data
