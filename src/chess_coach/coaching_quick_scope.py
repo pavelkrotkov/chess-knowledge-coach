@@ -13,6 +13,7 @@ DEFAULT = (
 def label(pair):
     names = {
         ("fork", "execute"): "Finding forks",
+        ("fork", "prevent"): "Defending against forks",
         ("hanging_piece", "execute"): "Finding captures",
         ("hanging_piece", "prevent"): "Protecting pieces",
         ("mate_in_one", "execute"): "Mate in one",

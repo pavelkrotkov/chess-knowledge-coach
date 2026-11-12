@@ -2,6 +2,7 @@
 
 from flask import Blueprint, abort, current_app, redirect, render_template, request, url_for
 
+from .coaching_fork_defense import actions as defense_actions
 from .coaching_practice import choices
 from .coaching_quick_scope import patterns, selected
 from .coaching_quick_view import preview as quick_preview
@@ -36,6 +37,7 @@ def index():
         record=None,
         board_rows=board_rows,
         practice=practice,
+        defenses=defense_actions(db, current_app.config["SUBJECT"], preview),
         patterns=patterns(),
         study_status=study_status(current_app.config["PROJECT_ROOT"]),
         tactical_study_status=tactical_study_status(

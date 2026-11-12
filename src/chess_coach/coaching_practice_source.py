@@ -5,7 +5,7 @@ from .lesson_source import source
 from .unified_sources import resolve_source
 
 
-def resolve_example(db, subject, lesson, example):
+def resolve_example(db, subject, lesson, example, *, identity_for=None):
     evidence_id, position = example["evidence_id"], example["position_id"]
     inspected = source(db, subject, {"id": evidence_id, "position_id": position})
     if not inspected:
@@ -20,7 +20,7 @@ def resolve_example(db, subject, lesson, example):
         return None
     if evidence["facts"][0]["detector_version"] != lesson["source_version"]:
         return None
-    version, key, kind = identity(db, subject, evidence)
+    version, key, kind = (identity_for or identity)(db, subject, evidence)
     snapshot = resolve_source(db, "own-game", version, key, subject=subject)
     if (
         snapshot["prompt_fen"] != example["fen"]
