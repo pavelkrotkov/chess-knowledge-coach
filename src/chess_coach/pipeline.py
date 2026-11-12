@@ -26,25 +26,21 @@ def process_pipeline(
     if db.connection.in_transaction:
         raise RuntimeError("pipeline requires an idle database connection")
     with pipeline_lock(db.path):
-        start_run(db)
+        health_error = _health(start_run, db)
+        if health_error:
+            return _failure("start", health_error)
         phase = {"name": "initializing"}
         try:
             result = _run_pipeline(db, config, token, transport, clock, phase)
         except Exception as error:
-            _finish(db, "failed")
-            return {
-                "status": "failed",
-                "detail": "processing_failed",
-                "phase": phase["name"],
-                "error_category": _category(error),
-            }
-        if not _finish(db, result["status"]):
-            return {
-                "status": "failed",
-                "detail": "processing_failed",
-                "phase": "finish",
-                "error_category": "sqlite_busy",
-            }
+            failure = _failure(phase["name"], _category(error))
+            health_error = _health(finish_run, db, "failed")
+            if health_error:
+                failure["health_error_category"] = health_error
+            return failure
+        health_error = _health(finish_run, db, result["status"])
+        if health_error:
+            return _failure("finish", health_error)
         if result["status"] != "failed":
             after_pipeline(db, config.learner, started)
             capture_after_pipeline(db, config.learner, started)
@@ -63,13 +59,20 @@ def _category(error):
     return "unexpected_error"
 
 
-# A reader can also block the final health commit. The caller can still return
-# a safe failure while the next run repairs the unfinished health record.
-def _finish(db, status):
+def _failure(phase, category):
+    return {
+        "status": "failed",
+        "detail": "processing_failed",
+        "phase": phase,
+        "error_category": category,
+    }
+
+
+# Health writes are transactional. A SQLite failure is reported without
+# replacing an earlier processing diagnosis or exposing the exception text.
+def _health(action, *args):
     try:
-        finish_run(db, status)
-        return True
-    except sqlite3.OperationalError as error:
-        if _category(error) != "sqlite_busy":
-            raise
-        return False
+        action(*args)
+    except sqlite3.Error as error:
+        return _category(error)
+    return None

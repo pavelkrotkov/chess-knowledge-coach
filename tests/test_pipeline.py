@@ -220,6 +220,46 @@ def test_end_to_end_replay_review_and_version_changes(tmp_path, monkeypatch):
         "error_category": "unexpected_error",
     }
 
+    def broken_health(*args):
+        raise sqlite3.DatabaseError("private health detail")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            "chess_coach.pipeline_run.process_ordinary",
+            lambda *args: (_ for _ in ()).throw(RuntimeError("private local detail")),
+        )
+        patch.setattr("chess_coach.pipeline.finish_run", broken_health)
+        failed = process_pipeline(db, refreshed, transport=network)
+    assert failed == {
+        "status": "failed",
+        "detail": "processing_failed",
+        "phase": "ordinary",
+        "error_category": "unexpected_error",
+        "health_error_category": "sqlite_error",
+    }
+
+    with monkeypatch.context() as patch:
+        patch.setattr("chess_coach.pipeline._run_pipeline", lambda *args: {"status": "complete"})
+        patch.setattr("chess_coach.pipeline.finish_run", broken_health)
+        failed = process_pipeline(db, refreshed, transport=network)
+    assert failed == {
+        "status": "failed",
+        "detail": "processing_failed",
+        "phase": "finish",
+        "error_category": "sqlite_error",
+    }
+    prior_health = tuple(db.connection.execute("SELECT * FROM pipeline_health").fetchone())
+    with monkeypatch.context() as patch:
+        patch.setattr("chess_coach.pipeline.start_run", broken_health)
+        failed = process_pipeline(db, refreshed, transport=network)
+    assert failed == {
+        "status": "failed",
+        "detail": "processing_failed",
+        "phase": "start",
+        "error_category": "sqlite_error",
+    }
+    assert tuple(db.connection.execute("SELECT * FROM pipeline_health").fetchone()) == prior_health
+
 
 def test_analysis_checkpoint_rolls_back_on_interruption(tmp_path, monkeypatch):
     from chess_coach import pipeline_work
