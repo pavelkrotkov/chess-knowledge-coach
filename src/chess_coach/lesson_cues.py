@@ -1,6 +1,11 @@
 """Educational questions and practice habits for supported mechanisms."""
 
 CUES = {
+    "discovery-material-defense-mapper": (
+        "Can an opposing move uncover a slider toward a valuable piece?",
+        "Compare the recorded exposure with the named tested defensive alternative.",
+        "Replay the verified defense and inspect the tested discovered capture.",
+    ),
     "discovery-mate-defense-mapper": (
         "Can the opponent uncover a checkmate after this move?",
         "Compare legal defenses against every immediate opposing mate.",

@@ -8,6 +8,10 @@ from .discovery_defense_contract import FACT as DISCOVERY_DEFENSE_FACT
 from .discovery_defense_contract import MAPPER as DISCOVERY_DEFENSE_MAPPER
 from .discovery_defense_contract import PRODUCER as DISCOVERY_DEFENSE_PRODUCER
 from .discovery_defense_contract import VERSION as DISCOVERY_DEFENSE_VERSION
+from .discovery_material_contract import FACT as DISCOVERY_MATERIAL_FACT
+from .discovery_material_contract import MAPPER as DISCOVERY_MATERIAL_MAPPER
+from .discovery_material_contract import PRODUCER as DISCOVERY_MATERIAL_PRODUCER
+from .discovery_material_contract import VERSION as DISCOVERY_MATERIAL_VERSION
 from .fork_contract import MAPPER as FORK_MAPPER
 from .fork_contract import PRODUCER as FORK_PRODUCER
 from .fork_contract import VERSION as FORK_VERSION
@@ -15,7 +19,7 @@ from .fork_defense_contract import MAPPER as DEFENSE_MAPPER
 from .fork_defense_contract import PRODUCER as DEFENSE_PRODUCER
 from .fork_defense_contract import VERSION as DEFENSE_VERSION
 from .king_safety_recurrence import king_ok
-from .recurrence_discovery_policy import discovery_defense_ok, discovery_ok
+from .recurrence_discovery_policy import discovery_defense_ok, discovery_material_ok, discovery_ok
 from .recurrence_fork_policy import fork_family_ok
 from .recurrence_pin_policy import PIN_FAMILIES, pin_family_ok
 from .recurrence_proof_policy import backrank_ok, mate_ok, pawn_ok
@@ -23,6 +27,11 @@ from .recurrence_rook_policy import rook_ok
 
 FAMILIES = {
     DISCOVERY_MAPPER: (DISCOVERY_PRODUCER, DISCOVERY_VERSION, DISCOVERY_FACT),
+    DISCOVERY_MATERIAL_MAPPER: (
+        DISCOVERY_MATERIAL_PRODUCER,
+        DISCOVERY_MATERIAL_VERSION,
+        DISCOVERY_MATERIAL_FACT,
+    ),
     DISCOVERY_DEFENSE_MAPPER: (
         DISCOVERY_DEFENSE_PRODUCER,
         DISCOVERY_DEFENSE_VERSION,
@@ -51,6 +60,7 @@ def _structure_ok(row, fact):
 
 VALIDATORS = {
     DISCOVERY_MAPPER: discovery_ok,
+    DISCOVERY_MATERIAL_MAPPER: discovery_material_ok,
     DISCOVERY_DEFENSE_MAPPER: discovery_defense_ok,
     "king-safety-lesson-mapper": king_ok,
     "rook-plan-lesson-mapper": rook_ok,
