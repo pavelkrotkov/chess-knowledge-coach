@@ -22,6 +22,7 @@ from .purpose_schema import add_purpose_analysis
 from .puzzle_import_schema import add_corpus_staging
 from .puzzle_selection_schema import add_puzzle_selection
 from .puzzle_session_schema import add_puzzle_sessions
+from .recognition_schema import add_recognition
 from .style_protection_schedule_schema import add as add_protection_schedule
 from .style_schedule_schema import add_style_schedule
 from .style_time_schema import add_style_game_times
@@ -60,6 +61,7 @@ def upgrade_recent(connection: sqlite3.Connection, version: int) -> None:
         (29, add_purpose_analysis),
         (30, add_style_schedule),
         (31, add_protection_schedule),
+        (32, add_recognition),
     )
     for target, apply_upgrade in upgrades:
         if version < target:
