@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Recognition progress — Chess coach{% endblock %}
+{% block content %}
+<h2>Uncued recognition checks</h2>
+<p>These first encounters ask the same neutral question about unfamiliar positions. Pattern-cued exercises and game decisions are separate. The checked sources cannot establish whether a position was familiar outside recorded history.</p>
+{% if report is none %}<p>Recognition history is unavailable or changed during this bounded check. Try again.</p>
+{% else %}
+{% if report.limited %}<p>Only the oldest and newest 100 checks were inspected, or a date was unavailable. Comparisons are withheld.</p>{% endif %}
+{% if not report["items"] %}<p>No recognition checks have been recorded yet.</p>{% endif %}
+<h3>Matched recognition samples</h3>
+<p>Groups share the current corpus and proof policy, motif, side to move, and puzzle rating and deviation bands. A comparison requires two disjoint samples of 10 current answered checks, with at least five unassisted in each. Opening tags may be incomplete, and other context can differ. Checks can share a source game and may be related.</p>
+{% for group in report.groups %}
+<section><h4>{{ "Direct capture" if group.kind == "capture" else "Mate in one" }} · {{ group.color | capitalize }} · difficulty {{ group.rating }}–{{ group.rating + 199 }} · deviation {{ group.deviation }}–{{ group.deviation + 99 }}</h4>
+<p>{{ group.count }} {{ "inspected checks" if report.limited else "matched first encounters" }}. Baseline of {{ group.baseline.size }}: {{ group.baseline.outcomes.get("verified", 0) }} correct, {{ group.baseline.outcomes.get("incorrect", 0) }} incorrect, {{ group.baseline.outcomes.get("uncertain", 0) }} unsure and {{ group.baseline.outcomes.get("revealed", 0) }} revealed. Opening context was recorded for {{ group.baseline_opening }} of these checks.</p>
+{% if group.comparable %}
+{% for label, sample in (("Earlier", group.earlier), ("Later", group.later)) %}
+<p>{{ label }} checks started {{ sample.start }} to {{ sample.end }}: {{ sample.unassisted.get("verified", 0) }} correct and {{ sample.unassisted.get("incorrect", 0) }} incorrect, out of {{ sample.size }}. {{ sample.revealed }} were revealed.</p>
+{% endfor %}
+<p>{% if group.direction == "equal" %}The samples have equal correct counts.{% else %}The later sample has {{ group.direction }} correct answers in these checks.{% endif %} This does not establish improvement or a cause.</p>
+<p>The last answer in the later sample was recorded {{ group.recognition_end }}. Opening context was recorded for {{ group.opening.earlier_known }} earlier and {{ group.opening.later_known }} later checks out of 10 each. {% if group.opening.partial %}Some recorded opening tags overlap and others differ.{% elif not group.opening.earlier_known or not group.opening.later_known %}Missing tags leave opening context uncertain.{% endif %}</p>
+<p>{% if later(group, games) %}Both capture-game windows start after the last answer in this later recognition sample. The game counts remain independent observations.{% else %}The capture-game windows are not established as later than this recognition sample; no linked game comparison is shown.{% endif %}</p>
+{% else %}<p>Direction withheld. {{ group.reason }}</p>{% if group.opening %}<p>Opening context was recorded for {{ group.opening.earlier_known }} earlier and {{ group.opening.later_known }} later checks out of 10 each.</p>{% endif %}{% endif %}
+</section>
+{% else %}<p>No current checks have a comparable recorded context yet.</p>{% endfor %}
+<h3>Recorded checks</h3>
+<ul>{% for entry in report["items"] %}<li>{{ entry.started_at }} · {{ {"verified": "Correct", "incorrect": "Incorrect", "uncertain": "Unsure, ungraded", "revealed": "Revealed, assisted", "incomplete": "In progress", "repeated": "Repeated prompt", "unavailable": "Unavailable"}.get(entry.outcome, "Unavailable") }}{% if entry.reason %}: {{ entry.reason }}{% endif %}. <a href="{{ url_for('recognition_views.show', attempt=entry.attempt_id) }}">Open check</a></li>{% endfor %}</ul>
+{% endif %}
+<h3>Separate game observations</h3>
+<p>The game windows below are independent of practice. Their dates may overlap or precede the recognition checks, and they cannot show an effect of training.</p>
+{% if games %}
+{% if games.historical %}<p>Historical capture sample through {{ games.through }}; newer games are pending.</p>{% endif %}
+{% if not games.comparable %}<p>Capture-window comparison unavailable: {{ games.comparable_reason | replace("_", " ") }}.</p>{% endif %}
+{% for label, sample in (("Earlier", games.earlier), ("More recent", games.newer)) %}
+<p>{{ label }} capture games: {{ sample.games }} games, {{ sample.oldest or "date unavailable" }} to {{ sample.newest or "date unavailable" }}; {{ sample.opportunities }} proved opportunities, {{ sample.played }} qualifying captures and {{ sample.other }} other moves. {{ sample.opportunity_unresolved }} proved opportunities have unresolved choices; {{ sample.unknown }} turns have unresolved opportunity status and {{ sample.unchecked }} are pending.</p>
+{% endfor %}
+{% else %}<p>The cached capture-game windows are pending or unavailable.</p>{% endif %}
+<p><a href="{{ url_for('short_mate_game_views.capture_samples') }}">Open capture-game windows and coverage</a> · <a href="{{ url_for('recurrence_views.mate_game_samples') }}">Open mate-in-one game windows and missed opportunities</a>. The mate report checks up to 20 recent and 20 preceding independent games and reports unavailable games; its dates are not checked on this page.</p>
+<p><a href="{{ url_for('recognition_views.index') }}">Recognition checks</a> · <a href="{{ url_for('assessment_history_views.history') }}">Pattern-cued assessment history</a></p>
+{% endblock %}
