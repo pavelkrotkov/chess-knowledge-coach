@@ -6,6 +6,35 @@ from chess_coach.lesson_source import source
 from tests.test_fork_pipeline import LEARNER, make_game
 
 
+def _reject_between_course_slices(db, path, subject, group, monkeypatch):
+    import sqlite3
+    from contextlib import contextmanager
+
+    import pytest
+
+    from chess_coach import tactical_course_resolve
+    from chess_coach.tactical_course_budget import Budget, PreviewUnavailable
+
+    budget = Budget(db)
+    original_scope = budget.scope
+    slices = []
+
+    @contextmanager
+    def changed_scope(*, snapshot):
+        with original_scope(snapshot=snapshot):
+            yield
+        slices.append(1)
+        if len(slices) == 1:
+            with sqlite3.connect(path) as writer:
+                writer.execute("UPDATE games SET event=event WHERE id=1")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(budget, "scope", changed_scope)
+        with pytest.raises(PreviewUnavailable):
+            tactical_course_resolve.own(db, subject, group, budget)
+    assert len(slices) == 1
+
+
 def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
     path = tmp_path / "synthetic.sqlite"
     db, config = make_game(path, monkeypatch)
@@ -213,31 +242,11 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
     with revalidate(path, exported, exported["export_sha256"]) as check:
         check()
 
-    # A commit between the fork source and chapter slices invalidates the preview.
-    import sqlite3
-    from contextlib import contextmanager
-
+    # A commit between the source and chapter slices invalidates the preview.
     from chess_coach import tactical_course_resolve
     from chess_coach.tactical_course_budget import PreviewUnavailable
 
-    budget = Budget(db)
-    original_scope = budget.scope
-    slices = []
-
-    @contextmanager
-    def changed_scope(*, snapshot):
-        with original_scope(snapshot=snapshot):
-            yield
-        slices.append(1)
-        if len(slices) == 1:
-            with sqlite3.connect(path) as writer:
-                writer.execute("UPDATE games SET event=event WHERE id=1")
-
-    with monkeypatch.context() as patch:
-        patch.setattr(budget, "scope", changed_scope)
-        with pytest.raises(PreviewUnavailable):
-            tactical_course_resolve.own(db, LEARNER, group, budget)
-    assert len(slices) == 1
+    _reject_between_course_slices(db, path, LEARNER, group, monkeypatch)
     before_course = db.connection.total_changes
     with monkeypatch.context() as patch:
         patch.setattr("chess_coach.tactical_course_related.fork_selection", lambda *_a, **_k: None)
@@ -1476,6 +1485,57 @@ def test_protection_lesson_offers_only_a_current_bounded_line_replay(tmp_path, m
         == "complete"
     )
     material_decision(db, position, LEARNER)
+
+    # Protection uses the same two bounded source slices, with the same chapter.
+    import time
+
+    import chess.engine
+
+    from chess_coach import tactical_course_budget, tactical_course_resolve
+    from chess_coach.coaching_report import report as coaching_report
+    from chess_coach.tactical_course import build as tactical_preview
+    from chess_coach.tactical_course_budget import Budget as CourseBudget
+    from chess_coach.tactical_course_chapters import owned
+    from chess_coach.tactical_export import build as tactical_export
+
+    group = next(
+        item
+        for item in coaching_report(db, LEARNER)["groups"]
+        if (item["lesson"]["skill"], item["lesson"]["operation"]) == ("hanging_piece", "prevent")
+    )
+    expected = owned(db, LEARNER, group)
+    original_independent, original_owned = (
+        tactical_course_resolve.independent,
+        tactical_course_resolve.owned,
+    )
+
+    def delayed_independent(*args):
+        time.sleep(0.6)
+        return original_independent(*args)
+
+    def delayed_owned(*args, **kwargs):
+        time.sleep(0.6)
+        return original_owned(*args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(tactical_course_budget, "SLICE_SECONDS", 1.0)
+        patch.setattr(tactical_course_resolve, "independent", delayed_independent)
+        patch.setattr(tactical_course_resolve, "owned", delayed_owned)
+        assert tactical_course_resolve.own(db, LEARNER, group, CourseBudget(db)) == expected
+    _reject_between_course_slices(db, path, LEARNER, group, monkeypatch)
+    before_course = db.connection.total_changes
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            chess.engine.SimpleEngine,
+            "popen_uci",
+            lambda *_: (_ for _ in ()).throw(AssertionError("engine")),
+        )
+        course = tactical_preview(db, LEARNER, "test")
+        exported = tactical_export(db, LEARNER, "test", course, CourseBudget(db))
+    assert next(p for p in course["preview"]["patterns"] if p["kind"] == "protection")
+    assert expected[1] in course["preview"]["chapters"]
+    assert exported["export"]["chapters"] == course["preview"]["chapters"]
+    assert db.connection.total_changes == before_course
     db.close()
     app = create_app(
         db_path=path,
