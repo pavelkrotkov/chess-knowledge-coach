@@ -21,6 +21,7 @@ from .pawn_coach_explanation import explain as explain_pawn
 from .pawn_structure_current import currentness as structure_currentness
 from .pin_evidence import current_pin
 from .pin_explanation import explain as explain_pin
+from .related_pin_created_display import available as pin_created_available
 from .related_pin_prevent_display import available as pin_capture_available
 from .rook_plan_current import currentness as rook_currentness
 
@@ -63,6 +64,7 @@ def inspect_evidence(db: Database, evidence_id: int, *, _history=None, _fork_che
             if currentness == "current":
                 result["decision_fen"] = pin_fen
     result["pin_related_capture"] = pin_capture_available(result)
+    result["pin_related_created"] = pin_created_available(result)
     result["rook_plan_currentness"] = rook_currentness(db, result, _history=_history)
     result["reviews"] = _reviews(db, evidence_id)
     return result

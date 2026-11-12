@@ -25,7 +25,7 @@ def _recheck(db, row, snapshot_hash, binding):
     if snapshot_hash(source) != binding["source_snapshot_hash"]:
         raise ValueError
     version = contract.transfer_version(source)
-    operation = "prevent" if version == contract.PREVENT_VERSION else "execute"
+    operation = contract.operation(version)
     if (binding["rank_version"], binding["motif"], binding["operation"]) != (
         version,
         "pin",
