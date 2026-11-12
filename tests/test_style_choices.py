@@ -637,6 +637,7 @@ def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch):
             assert budget["used"] == 500
             assert any(item["early_center"] for item in nominated) == (expected == 2)
     rotation_db.close()
+    _opening_fit_route(monkeypatch)
 
 
 def test_report_engine_digest_reuse_and_freshness(tmp_path, monkeypatch):
@@ -731,3 +732,282 @@ def test_report_engine_digest_reuse_and_freshness(tmp_path, monkeypatch):
     configure()
     assert len(hashed) == 9
     db.close()
+
+
+def _opening_fit_route(monkeypatch):
+    """A normal choices request admits current owned evidence and public windows in memory."""
+    import html
+    import re
+    import sqlite3
+    from contextlib import nullcontext
+    from pathlib import Path
+
+    import pytest
+
+    import chess_coach.opening_course_public as coursepublic
+    import chess_coach.opening_profile_lookup as lookup
+    import chess_coach.opening_profile_read as profile_read
+    import chess_coach.opening_unfamiliar_guard as guard
+    import chess_coach.opening_unfamiliar_public as unpublic
+    import chess_coach.web_unfamiliar_course as course_web
+    import chess_coach.web_unfamiliar_measure as web
+    from chess_coach import purpose_worker
+    from chess_coach.deep_selection_source import learner_key
+    from chess_coach.opening_fit_owned import _game
+    from chess_coach.opening_fit_owned_summary import summarize
+    from chess_coach.opening_profile_index import INDEX_NAME
+    from chess_coach.opening_snapshot import import_snapshot
+    from chess_coach.opening_storage import position_key
+    from chess_coach.opening_unfamiliar_course import preview as course_preview
+    from chess_coach.purpose_lines import native
+    from chess_coach.purpose_request import create
+
+    owned = Database(":memory:")
+    owned.initialize()
+    import_snapshot(owned)
+    real_connect = sqlite3.connect
+    public = real_connect("file:opening-fit-test?mode=memory&cache=shared", uri=True)
+    public.executescript(
+        "CREATE TABLE metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);"
+        "CREATE TABLE games(id INTEGER PRIMARY KEY,context TEXT NOT NULL,site TEXT NOT NULL,"
+        "total_plies INTEGER NOT NULL);"
+        "CREATE TABLE moves(game_id INTEGER,ply INTEGER,parent TEXT,san TEXT,uci TEXT,"
+        "shapes TEXT,PRIMARY KEY(game_id,ply));"
+        "CREATE INDEX profile_edge ON moves(parent,uci,game_id,ply);"
+    )
+    metadata = {
+        "source_sha256": lookup.SOURCE_SHA256,
+        "source_url": lookup.SOURCE,
+        "source_archive": lookup.SOURCE_ARCHIVE,
+        "source_month": lookup.SOURCE_MONTH,
+        "license": lookup.LICENSE,
+        "license_url": lookup.LICENSE_URL,
+        "transform": lookup.TRANSFORM,
+        "opening_graph": lookup.GRAPH_SHA256,
+        "opening_version": lookup.VERSION,
+        "structure_version": lookup.STRUCTURE_VERSION,
+        "parent_plies": lookup.PARENT_PLIES,
+        "window_plies": lookup.WINDOW_PLIES,
+        "stored_plies": lookup.STORED_PLIES,
+        "coverage": {
+            "accepted": 20,
+            "examined": 20,
+            "excluded": 0,
+            "duplicates": 0,
+            "unknown_context": 0,
+            "truncated": False,
+        },
+    }
+    public.executemany(
+        "INSERT INTO metadata VALUES (?,?)",
+        [(key, json.dumps(value)) for key, value in metadata.items()],
+    )
+    low = "e3 e6 Nf3 Nf6 Be2 Be7 O-O O-O d3 d6 b3 b6 Bb2 Bb7 Nbd2 Nbd7 Re1 Re8 Bf1 Bf8"
+    high = "Nf3 d5 e4 Nf6 d3 e6 Be2 Be7 O-O O-O Nbd2 Nbd7 Re1 Re8 b3 b6 Bb2 Bb7 Bf1 Bf8"
+    for index in range(20):
+        board = chess.Board()
+        rows = []
+        for ply, text in enumerate((low if index < 10 else high).split(), 1):
+            move = board.parse_san(text)
+            rows.append((index + 1, ply, position_key(board), board.san(move), move.uci(), "[]"))
+            board.push(move)
+        context = {
+            "Date": "2026.09.01",
+            "White": str(index),
+            "Black": str(index + 20),
+            "Event": "fixture",
+            "Result": "1-0",
+        }
+        public.execute(
+            "INSERT INTO games VALUES (?,?,?,?)", (index + 1, json.dumps(context), "", 20)
+        )
+        public.executemany("INSERT INTO moves VALUES (?,?,?,?,?,?)", rows)
+    public.commit()
+
+    def execute(_db, snapshot, _config, _deadline):
+        board, position = snapshot["board"], snapshot["position"]
+        pvs = ("e4d5 d8d5 b1c3 d5e5", "g1f3 d5e4 f3g5 e4e3")
+        raw = [
+            {
+                "pv": [chess.Move.from_uci(move) for move in line.split()],
+                "score": chess.engine.PovScore(chess.engine.Cp(0), board.turn),
+                "nodes": 500,
+                "depth": 5,
+                "time": 0.05,
+            }
+            for line in pvs
+        ]
+        lines, invalid = native(position, board, raw)
+        assert not invalid
+        result = {
+            "scout": {"lines": lines},
+            "final": {"lines": lines, "roots": ["e4d5", "g1f3"]},
+            "engine": {},
+            "runtime_engine": {},
+        }
+        return "complete", "comparable", result
+
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(purpose_worker, "deep_lock", lambda *_: nullcontext())
+            patch.setattr(purpose_worker, "execute", execute)
+            for index in range(3):
+                pgn = (
+                    f'[Event "Fixture"]\n[White "learner"]\n[Black "opponent{index}"]\n'
+                    f'[UTCDate "2026.01.01"]\n[UTCTime "12:00:0{index}"]\n'
+                    '[TimeControl "600+0"]\n[Result "*"]\n\n'
+                    "1. e4 d5 2. exd5 Qxd5 3. Nc3 Qe5+ *\n"
+                )
+                ingest_pgn(owned, pgn)
+                position = owned.connection.execute(
+                    "SELECT id FROM positions WHERE game_id=? AND ply=3", (index + 1,)
+                ).fetchone()[0]
+                request_id = create(owned, position, "learner", engine_path=sys.executable)[
+                    "request_id"
+                ]
+                assert purpose_worker.run(owned, request_id, "learner")["status"] == "complete"
+                cycle = owned.connection.execute(
+                    "INSERT INTO style_schedule_cycles(learner_key,sequence,coverage_json) VALUES(?,?,?)",
+                    (
+                        learner_key("learner"),
+                        1 + 4 * index,
+                        json.dumps(
+                            {
+                                "early_center_policy": "early-center-v1",
+                                "early_center_targeted": True,
+                            }
+                        ),
+                    ),
+                ).lastrowid
+                owned.connection.execute(
+                    """INSERT INTO style_schedule_slots(cycle_id,kind,game_id,position_id,status,detail,request_id)
+                    VALUES(?,'control',?,?,'complete','fixture',?)""",
+                    (cycle, index + 1, position, request_id),
+                )
+                owned.connection.commit()
+
+            def connect(path, *args, **kwargs):
+                if INDEX_NAME in str(path):
+                    return real_connect("file:opening-fit-test?mode=memory&cache=shared", uri=True)
+                return real_connect(path, *args, **kwargs)
+
+            patch.setattr(sqlite3, "connect", connect)
+            fake_path, identity = Path("/synthetic") / INDEX_NAME, (1, 2, 3, 4, 5)
+            patch.setattr(guard, "_index", lambda *_: (fake_path, identity))
+            for module in (unpublic, coursepublic, profile_read):
+                patch.setattr(module, "planning", lambda *_: (fake_path.parent, None))
+                patch.setattr(module, "_private_file", lambda *_: True)
+            for module in (unpublic, coursepublic):
+                patch.setattr(module, "_identity", lambda *_: identity)
+            patch.setattr(web, "database", lambda: owned)
+            patch.setattr(course_web, "database", lambda: owned)
+            app = create_app(
+                db_path=":memory:",
+                subject="learner",
+                actor="fixture",
+                corpus="test",
+                login="fixture",
+                origin="https://coach.invalid",
+                project_root="/synthetic",
+            )
+            client = app.test_client()
+            headers = {"Tailscale-User-Login": "fixture"}
+            url = "/repertoire/unfamiliar?choices=1"
+            version = course_preview(owned, "/synthetic", "learner")["version"]
+            before = (owned.connection.total_changes, public.total_changes)
+            page = client.get(url, base_url="https://coach.invalid", headers=headers)
+            text = page.get_data(as_text=True)
+            assert page.status_code == 200 and text.count("Learning opportunity fit") == 1
+            assert "10 of 10 complete legal 20-ply games" in text
+            assert "0 of 10 complete legal 20-ply games" in text
+            assert "Public availability counts positions" in text and "time control" in text
+            assert "<summary>How the center-choice check works</summary>" in text
+            assert "Exploratory because a different covered branch" in text
+            match = re.search(r'<a href="([^"]+)">Learning opportunity fit:', text)
+            assert match and "move=g1f3" in html.unescape(match.group(1))
+            selected = client.get(
+                html.unescape(match.group(1)), base_url="https://coach.invalid", headers=headers
+            )
+            assert selected.status_code == 200 and b"Play White" in selected.data
+            assert course_preview(owned, "/synthetic", "learner")["version"] == version
+            assert (owned.connection.total_changes, public.total_changes) == before
+
+            # With no possible owned quorum, the costly style replay is skipped,
+            # but checked public branch availability is still visible.
+            import chess_coach.opening_fit_owned as fit_owned
+
+            with patch.context() as sparse:
+                sparse.setattr(
+                    fit_owned,
+                    "_relevant",
+                    lambda *_: (
+                        {"targeted": 0, "completed": 0, "unchecked": 0, "possible_games": 0},
+                        {},
+                    ),
+                )
+                sparse.setattr(
+                    fit_owned,
+                    "style_report",
+                    lambda *_, **_k: pytest.fail("unnecessary style scan"),
+                )
+                sparse_page = client.get(url, base_url="https://coach.invalid", headers=headers)
+            assert b"Learning opportunity fit" not in sparse_page.data
+            assert b"10 of 10 complete legal 20-ply games" in sparse_page.data
+
+            # Black first-turn context uses the opponent's exact UCI move.
+            black = (
+                '[Event "Black"]\n[White "opponent"]\n[Black "learner"]\n'
+                '[UTCDate "2026.01.01"]\n[UTCTime "12:00:04"]\n'
+                '[TimeControl "600+0"]\n[Result "*"]\n\n1. e4 e6 *\n'
+            )
+            ingest_pgn(owned, black)
+            black_id = owned.connection.execute("SELECT MAX(id) FROM games").fetchone()[0]
+            assert _game(owned, "learner", {"game_id": black_id}, "e2e4")[0] == "black"
+            assert _game(owned, "learner", {"game_id": black_id}, "d2d4") is None
+
+            # A changed original history removes that game from current owned evidence.
+            owned.connection.execute(
+                "UPDATE positions SET fen=fen || ' ' WHERE game_id=1 AND ply=3"
+            )
+            owned.connection.commit()
+            stale = client.get(url, base_url="https://coach.invalid", headers=headers)
+            assert stale.status_code == 200 and b"Learning opportunity fit" not in stale.data
+            assert b"complete legal 20-ply games" in stale.data
+            assert b"Exploratory because the owned choice evidence does not qualify" in stale.data
+
+            rows = [
+                {
+                    "id": index,
+                    "choice": "played_capture",
+                    "date": f"2026-01-01T00:00:0{index}+00:00",
+                    "time_control": "600+0",
+                }
+                for index in range(3)
+            ]
+            assert summarize(rows)["positive"]
+            assert not summarize([{**row, "time_control": None} for row in rows])["positive"]
+            assert not summarize([*rows, {**rows[0], "choice": "alternative_capture"}])["positive"]
+            assert not summarize([{**row, "date": rows[0]["date"]} for row in rows])["positive"]
+
+            from chess_coach.opening_fit_rank import rank
+
+            candidates = [
+                {"uci": move, "profile": {"center": {"valid": 10}}} for move in ("low", "high")
+            ]
+            counts = {
+                "low": {"sampled": 5, "valid": 5, "available": 2},
+                "high": {"sampled": 10, "valid": 10, "available": 10},
+            }
+            assert rank(candidates, counts, summarize(rows)) == "high"
+            assert rank(candidates, counts, summarize(rows[:2])) is None
+            assert (
+                rank(candidates, {**counts, "low": {**counts["low"], "valid": 4}}, summarize(rows))
+                is None
+            )
+            overlap = {**counts, "low": {"sampled": 10, "valid": 5, "available": 2}}
+            assert rank(candidates, overlap, summarize(rows)) is None
+            tied = {**counts, "low": {"sampled": 10, "valid": 10, "available": 10}}
+            assert rank(candidates, tied, summarize(rows)) is None
+    finally:
+        public.close()
+        owned.close()

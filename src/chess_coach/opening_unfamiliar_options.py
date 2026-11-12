@@ -32,7 +32,7 @@ def available(db, root, subject, dataset, board, color, budget, move=None):
     return result
 
 
-def group(db, root, learner):
+def group(db, root, learner, *, include_fit=False):
     from .learner_identity import normalize_identity
 
     subject = normalize_identity(learner)
@@ -51,5 +51,16 @@ def group(db, root, learner):
             }
             for item in values
         ]
+    # Fit is a choices-page annotation, not part of versioned course content.
+    if include_fit:
+        from .opening_fit import assess
+
+        black_parent = black.peek().uci() if black.move_stack else None
+        report["fit"] = assess(db, subject, guard, budget, items, black_parent)
+        if report["fit"]["status"] != "deferred":
+            for color in ("white", "black"):
+                recommended = report["fit"]["colors"].get(color, {}).get("recommended")
+                if recommended:
+                    items[color].sort(key=lambda item: item["uci"] != recommended)
     check(db, root, subject, guard, budget)
     return {**report, "public_index_identity": list(guard[2])}, items
