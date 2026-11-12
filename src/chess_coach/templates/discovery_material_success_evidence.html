@@ -3,5 +3,6 @@
 {% if evidence.discovery_material_success_currentness == "current" %}{% set d = evidence.discovery_material_success_observation %}
 <p>The played move {{ d.played.san }} stops the named discovery, leaves the same target without an immediate legal capture and prevents every immediate opposing checkmate.</p>
 <p>The distinct legal alternative {{ d.witness.san }} permits {{ d.threat.san }}, revealing the slider on {{ d.threat.slider }} toward {{ d.threat.target }}. The proof checked {{ d.threat.legal_replies }} legal replies.</p>
+{% set branch = d.threat.branches[0] %}<p>One example: {{ d.witness.san }} {{ d.threat.san }} {{ branch.reply_san }} {{ branch.capture_san }}. The checked capture and immediate replies retain a gain of at least {{ d.threat.minimum_gain }} pawn units relative to the position before the discovery.</p>
 <p>Other material threats, later play and intent remain unknown.</p>
 {% endif %}{% endif %}

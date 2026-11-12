@@ -21,10 +21,14 @@ def _materialproof(board, after, move, item, replies, check):
     initial = material(board, board.turn)
     witnesses = []
     tick = check or (lambda: None)
+    tick()
+    if any(
+        reply.from_square == item["target"] or reply.to_square == item["slider"]
+        for reply in replies
+    ):
+        return None
     for reply in replies:
         tick()
-        if reply.from_square == item["target"] or reply.to_square == item["slider"]:
-            return None
         branch = witness(after, reply, item, board.turn, initial, check=check)
         if branch is None:
             return None

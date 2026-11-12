@@ -598,6 +598,21 @@ def test_source_worker_lesson_practice_and_review(tmp_path, monkeypatch):
     assert any(
         "distinct legal alternative" in fact.lower() for fact in lesson["examples"][0]["facts"]
     )
+    branch = proved["threat"]["branches"][0]
+    expected_line = [
+        proved["witness"]["san"],
+        proved["threat"]["san"],
+        branch["reply_san"],
+        branch["capture_san"],
+    ]
+    assert any(line["moves"] == expected_line for line in lesson["examples"][0]["lines"])
+    page = material_app.test_client().get(
+        f"/evidence/{material_success_id}",
+        base_url="https://coach.invalid",
+        headers={"Tailscale-User-Login": "fixture-login"},
+    )
+    assert " ".join(expected_line).encode() in page.data
+    assert b"gain of at least 3 pawn units" in page.data
     material_db.connection.execute(
         "UPDATE decision_analysis_lines SET score_value=score_value+1 WHERE position_id=? AND role=?",
         (position_id, "best"),

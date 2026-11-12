@@ -39,7 +39,11 @@ def _observe(board, played, started, check):
         return None
     answer = judge(board.copy(), actual, time.monotonic, started, SECONDS, {})
     if answer["status"] != "correct":
-        return ambiguous("discovery_material_success", "immediate_mate_unresolved")
+        reason = answer.get("reason", "immediate_mate_unresolved")
+        return ambiguous(
+            "discovery_material_success",
+            "proof_deadline_exhausted" if reason == "timeout" else reason,
+        )
     anchor, reason = witness(board, actual, nominated, check)
     if not anchor:
         return ambiguous("discovery_material_success", reason)

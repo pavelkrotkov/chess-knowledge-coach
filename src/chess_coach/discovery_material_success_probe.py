@@ -44,7 +44,7 @@ def _moves(board, move):
     return [
         {"move": move.uci(), "slider": item["slider"], "target": item["target"]}
         for item in discoveries(board, move)
-        if board.piece_type_at(item["target"]) != chess.KING
+        if board.piece_type_at(item["target"]) not in (chess.KING, chess.PAWN)
     ]
 
 
