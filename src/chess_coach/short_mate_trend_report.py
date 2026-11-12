@@ -2,9 +2,10 @@
 
 import sqlite3
 
+from .capture_game_trend_current import current
+from .dated_game_trend import choose
 from .mate_game_trend import _comparable
 from .short_mate_game_counts import add, empty, finish
-from .short_mate_trend_cohort import snapshot
 from .short_mate_trend_paths import binding, location
 from .short_mate_trend_store import read
 
@@ -32,24 +33,35 @@ def _qualified(comparable, samples):
     )
 
 
+def _historical_links(db, state, candidates, samples, before, historical):
+    # Current short-mate reports retain their established checks. The historical
+    # view also verifies cached example ownership within the same read version.
+    return not historical or current(db, state, candidates, samples, before)
+
+
 def report(db, learner, root):
     try:
         path = location(db, root)
         state = read(path, binding(db, learner))
         if not state:
             return None
-        # No move replay happens here: signatures cover every examined source.
-        _, coverage, frontier, signatures = snapshot(db, learner, state["checked"])
-        if frontier != state["frontier"] or signatures != state["checked"]:
+        before = db.connection.execute("PRAGMA data_version").fetchone()[0]
+        selected = choose(db, learner, state, strict=False)
+        if not selected:
             return None
+        state, candidates, coverage, historical = selected
         games = state["games"]
         newer, earlier = _sample(games[:20]), _sample(games[20:40])
+        if not _historical_links(db, state, candidates, (newer, earlier), before, historical):
+            return None
         dates = [item["date"] for item in games]
         comparable = state["selection_complete"] and _comparable(
             [newer, earlier], dates, coverage, state["unavailable"]
         )
         qualified = _qualified(comparable, (newer, earlier))
         return {
+            "historical": historical,
+            "through": games[0]["date"] if historical else None,
             "qualified": qualified,
             "newer": newer,
             "earlier": earlier,

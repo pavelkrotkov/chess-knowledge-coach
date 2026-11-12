@@ -7,14 +7,25 @@ from .short_mate_trend_cohort import fingerprint
 from .short_mate_trend_cohort import signature as source_signature
 
 
+def _previous(previous):
+    if not previous:
+        return None
+    if not previous.get("selection_complete") or len(previous["games"]) != 41:
+        return previous.get("prior")
+    prior = {**previous, "retained": {}}
+    prior.pop("prior", None)
+    return prior
+
+
 def initial(key, frontier, previous):
     retained = {}
-    if previous:
+    prior = _previous(previous)
+    if previous and prior is None:
         # Preserve completed work across a newly arrived game without retaining old cohorts.
         retained = dict(previous.get("retained", {}))
         retained.update({str(item["id"]): item for item in previous.get("games", [])})
         retained = dict(list(retained.items())[-41:])
-    return {
+    state = {
         "binding": key,
         "frontier": frontier,
         "checked": [],
@@ -25,6 +36,9 @@ def initial(key, frontier, previous):
         "duplicates": 0,
         "selection_complete": False,
     }
+    if prior:
+        state["prior"] = prior
+    return state
 
 
 def _retained_results(old, signature, identity, turns):
@@ -64,7 +78,10 @@ def _add(db, learner, game, state, seen):
             state["duplicates"] += 1
         else:
             seen.add(source["identity"])
-            state["games"].append(_item(source, signature, state["retained"]))
+            retained = state["retained"]
+            if state.get("prior"):
+                retained = {str(item["id"]): item for item in state["prior"]["games"]}
+            state["games"].append(_item(source, signature, retained))
     except (ValueError, TypeError, IndexError):
         state["unavailable"] += 1
 
@@ -79,3 +96,4 @@ def select(db, learner, games, state, deadline):
         state["index"] += 1
     state["selection_complete"] = True
     state["retained"] = {}
+    state.pop("prior", None)

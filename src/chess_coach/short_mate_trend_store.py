@@ -40,6 +40,9 @@ def read(path, expected, *, validator=valid):
 def write(path, data):
     # Detect accidental edits and valid but incomplete JSON before resuming.
     raw = canonical({**data, "checksum": digest(canonical(data))}).encode("utf-8")
+    if len(raw) > MAX_BYTES and data.get("prior"):
+        data = {key: value for key, value in data.items() if key != "prior"}
+        raw = canonical({**data, "checksum": digest(canonical(data))}).encode("utf-8")
     if len(raw) > MAX_BYTES:
         raise ValueError("trend cache exceeds limit")
     # One writer holds the pipeline lock, so a fixed temporary name cannot accumulate.

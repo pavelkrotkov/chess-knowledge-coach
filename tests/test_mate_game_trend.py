@@ -281,6 +281,92 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
         capture_cache, capture_binding(db, "fixture_a"), validator=capture_validate
     )
     assert capture_state and capture_cache.stat().st_mode & 0o777 == 0o600
+
+    # A newer arrival preserves the exact dated cohort through a partial refresh.
+    from chess_coach.fork_game_trend_paths import location as fork_location
+    from chess_coach.ingest import ingest_in_transaction
+
+    caches = [location(db, root), capture_cache, fork_location(db, root)]
+    originals = [cache.read_bytes() for cache in caches]
+    reports = [cached_report, capture_report, fork_report]
+    db.connection.execute("BEGIN IMMEDIATE")
+    ingest_in_transaction(db, pgn(41, "Qg7#", event="Newer"))
+    unchanged = db.connection.total_changes
+    mutations = (
+        lambda state: state["games"].reverse(),
+        lambda state: state["games"][1].update(identity=state["games"][0]["identity"]),
+    )
+    for mutate in mutations:
+        invalid = deepcopy(mate_before)
+        mutate(invalid)
+        write(caches[0], invalid)
+        assert cached_report(db, "fixture_a", root) is None
+    invalid = deepcopy(mate_before)
+    invalid["games"][0]["results"][0][0] = 999999
+    write(caches[0], invalid)
+    assert cached_report(db, "fixture_a", root) is None
+    caches[0].write_bytes(originals[0])
+    historical_reports = [report_fn(db, "fixture_a", root) for report_fn in reports]
+    for dated in historical_reports:
+        assert dated and dated["historical"] and dated["through"] == completed["newer"]["newest"]
+    assert fork_report(db, "fixture_a", root)["comparison"] is None
+    assert db.connection.total_changes == unchanged
+    scan.run(db, "fixture_a", root, seconds=0)
+    capture_scan.run(db, "fixture_a", root, seconds=0)
+    run_forks(db, "fixture_a", root, seconds=0)
+    pending = [cache.read_bytes() for cache in caches]
+    # The size cap discards optional history rather than blocking worker progress.
+    from chess_coach import short_mate_trend_store as store
+
+    pending_state = read(caches[0], binding(db, "fixture_a"))
+    without_prior = {key: value for key, value in pending_state.items() if key != "prior"}
+    write(caches[0], without_prior)
+    with monkeypatch.context() as patch:
+        patch.setattr(store, "MAX_BYTES", (len(pending[0]) + caches[0].stat().st_size) // 2)
+        write(caches[0], pending_state)
+        assert read(caches[0], binding(db, "fixture_a")) == without_prior
+    caches[0].write_bytes(pending[0])
+    for mutate in mutations:
+        invalid = read(caches[0], binding(db, "fixture_a"))
+        mutate(invalid["prior"])
+        write(caches[0], invalid)
+        assert cached_report(db, "fixture_a", root) is None
+        caches[0].write_bytes(pending[0])
+    for report_fn in reports:
+        assert report_fn(db, "fixture_a", root)["historical"]
+    assert [cache.read_bytes() for cache in caches] == pending
+    assert db.connection.total_changes == unchanged
+
+    db.connection.execute("SAVEPOINT insertion")
+    ingest_in_transaction(db, pgn(25, "Qg7#", event="Inserted"))
+    assert all(report_fn(db, "fixture_a", root) is None for report_fn in reports)
+    db.connection.execute("ROLLBACK TO insertion")
+    db.connection.execute("RELEASE insertion")
+    db.connection.execute("SAVEPOINT changed")
+    db.connection.execute(
+        "UPDATE games SET result='0-1' WHERE id=?", (capture_state["games"][0]["id"],)
+    )
+    assert all(
+        not (result := report_fn(db, "fixture_a", root)) or not result["historical"]
+        for report_fn in reports
+    )
+    db.connection.execute("ROLLBACK TO changed")
+    db.connection.execute("RELEASE changed")
+    db.connection.execute("SAVEPOINT coverage")
+    ingest_in_transaction(db, pgn(42, "Qg7#", event="Undated", dated=False))
+    assert all(report_fn(db, "fixture_a", root) is None for report_fn in reports)
+    db.connection.execute("ROLLBACK TO coverage")
+    db.connection.execute("RELEASE coverage")
+    scan.run(db, "fixture_a", root)
+    capture_scan.run(db, "fixture_a", root)
+    run_forks(db, "fixture_a", root)
+    assert all(not report_fn(db, "fixture_a", root)["historical"] for report_fn in reports)
+    assert "prior" not in read(caches[0], binding(db, "fixture_a"))
+    db.connection.rollback()
+    for cache, original in zip(caches, originals, strict=True):
+        cache.write_bytes(original)
+    before = db.connection.total_changes
+
     assert read(capture_cache, capture_binding(db, "fixture_a")) is None
     assert read(capture_cache, capture_binding(db, "fixture_b"), validator=capture_validate) is None
     retained = capture_state["games"][0]
@@ -351,6 +437,25 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
         project_root=root,
     )
     client = app.test_client()
+    for name, endpoint, dated in zip(
+        ("trend_report", "capture_trend_report", "fork_trend_report"),
+        ("/game-samples/short-mate", "/game-samples/captures", "/game-samples/knight-forks"),
+        historical_reports,
+        strict=True,
+    ):
+        with monkeypatch.context() as patch:
+            patch.setattr(
+                f"chess_coach.web_short_mate_game.{name}", lambda *_args, dated=dated: dated
+            )
+            page = client.get(
+                endpoint,
+                base_url="https://coach.invalid",
+                headers={"Tailscale-User-Login": "fixture"},
+            )
+            assert (
+                b"Historical sample through" in page.data
+                and b"Newer games are pending" in page.data
+            )
     with monkeypatch.context() as patch:
         patch.setattr(
             "chess_coach.web_short_mate_game.capture_trend_report", lambda *_args: capture_partial
