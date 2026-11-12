@@ -732,6 +732,19 @@ def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch):
             rotation_db, "key", 1, [center, own_check, unknown_check]
         )
         assert target["game_id"] == 2
+        known_center = {**center, "_game_key": "a"}
+        second_center = {**center, "game_id": 3, "_game_key": "b"}
+        unknown_check = {**own_check, "game_id": 4, "_game_key": None}
+        known_check = {**own_check, "_game_key": "a"}
+        targets = [unknown_check, known_check, known_center, second_center]
+        target, _, _ = style_schedule_target.target(rotation_db, "key", 1, targets)
+        assert target["game_id"] == 2
+        target, _, _ = style_schedule_target.target(
+            rotation_db, "key", 1, [unknown_check, known_center, second_center]
+        )
+        assert target["game_id"] == 4
+        target, _, _ = style_schedule_target.target(rotation_db, "key", 3, targets)
+        assert target["game_id"] == 4
     rotation_db.close()
 
     # Cosmetic reimports are one game even when each contains both an early

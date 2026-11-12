@@ -4,10 +4,9 @@
 def independent(targets, candidates):
     center_games = {_identity(item) for item in candidates if item.get("early_center")}
     center_games.discard(None)
-    if len(center_games) != 1:
+    if not center_games:
         return targets
-    game = next(iter(center_games))
-    separate = [item for item in targets if _separate(item, game)]
+    separate = [item for item in targets if _separate(item, center_games)]
     return separate or targets
 
 
@@ -25,9 +24,9 @@ def _identity(item):
     return item.get("_game_key", item["game_id"])
 
 
-def _separate(item, game):
+def _separate(item, center_games):
     identity = _identity(item)
-    return identity is not None and identity != game and item["status"] == "ready"
+    return identity is not None and item["status"] == "ready" and bool(center_games - {identity})
 
 
 def _distinct(item, key):
