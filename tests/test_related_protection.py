@@ -485,8 +485,17 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
                 "limited": False,
                 "partial": False,
             }
+            version = db.connection.execute("PRAGMA data_version").fetchone()[0]
             with monkeypatch.context() as patch:
                 patch.setattr(plan_web, "report", lambda *_, group=group: group)
+                patch.setattr(
+                    "chess_coach.related_protection.selection",
+                    lambda *_args, **_kwargs: pytest.fail("plan searched the corpus"),
+                )
+                patch.setattr(
+                    "chess_coach.related_fork_assessment_finder.selection",
+                    lambda *_args, **_kwargs: pytest.fail("plan searched the corpus"),
+                )
                 view = client.get(
                     "/plan/protection", base_url="https://coach.invalid", headers=headers
                 )
@@ -506,6 +515,106 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
                 )
                 assert b"<title>Next practice focus \xe2\x80\x94 Chess coach</title>" in focus.data
                 assert focus.data.count(b"Find a comparable unfamiliar protection assessment") == 1
+
+                capture = {
+                    "source": {
+                        "games": 1,
+                        "position_id": 1,
+                        "evidence_id": evidence,
+                        "reviewed": False,
+                        "version": "fixture",
+                        "key": "fixture",
+                    },
+                    "history": {"status": "none"},
+                    "limited": False,
+                    "scanned": 2,
+                }
+                fork = {
+                    "source": {"evidence_id": evidence, "version": "fixture", "key": "fixture"},
+                    "games": 2,
+                    "assessment": {"status": "unknown"},
+                }
+                patch.setattr(plan_web, "admissible", lambda *_, capture=capture: capture)
+                # A success from a separate owned assessment can add variety while
+                # retaining its own source and follow-up.
+                rotated = client.get(
+                    "/plan/next-focus", base_url="https://coach.invalid", headers=headers
+                )
+                assert b"Next focus: find captures" in rotated.data
+                assert b"assessment source is separate" in rotated.data
+                assert (
+                    f"/evidence/{evidence}/related-protections?followup=".encode() in rotated.data
+                )
+                assert b"verified correct without assistance" in rotated.data
+
+                capture["history"] = {
+                    "status": "correct",
+                    "assistance": "unassisted",
+                    "attempt_id": "capture-result",
+                }
+                patch.setattr(plan_web, "protection_history", lambda *_: {"status": "unknown"})
+                higher_protection = client.get(
+                    "/plan/next-focus", base_url="https://coach.invalid", headers=headers
+                )
+                assert b"Next focus: protect a piece" in higher_protection.data
+                assert b"matching comparison context" in higher_protection.data
+                patch.setattr(plan_web, "protection_history", lambda *_, history=history: history)
+
+                capture["source"]["games"] = 3
+                capture["history"] = {
+                    "status": "correct",
+                    "assistance": "unassisted",
+                    "attempt_id": "capture-result",
+                }
+                patch.setattr(plan_web, "fork_recommendation", lambda *_, fork=fork: fork)
+                varied = client.get(
+                    "/plan/next-focus", base_url="https://coach.invalid", headers=headers
+                )
+                assert b"Next focus: finding forks" in varied.data
+                assert b"matching comparison context" in varied.data
+                assert b"Find a comparable unfamiliar protection assessment" in varied.data
+                assert b"Rehearse this fork" in varied.data
+
+                fork["assessment"] = {"status": "correct", "attempt": "fork-result"}
+                all_done = client.get(
+                    "/plan/next-focus", base_url="https://coach.invalid", headers=headers
+                )
+                assert b"Next focus: find captures" in all_done.data
+                assert b"matching comparison context" in all_done.data
+                assert b"Find a comparable follow-up fork assessment" in all_done.data
+
+                for status, assistance in (
+                    ("incorrect", "unassisted"),
+                    ("correct", "hinted"),
+                    ("pending", "unassisted"),
+                    ("unresolved", "unassisted"),
+                    ("unavailable", "unassisted"),
+                ):
+                    capture["history"] = {
+                        "status": status,
+                        "assistance": assistance,
+                        "attempt_id": "sample",
+                    }
+                    neutral = client.get(
+                        "/plan/next-focus", base_url="https://coach.invalid", headers=headers
+                    )
+                    assert b"Next focus: find captures" in neutral.data
+                    if status == "incorrect":
+                        assert b"missed the target" in neutral.data
+
+                # With no other source, fork is the primary action and its miss
+                # remains a cued rehearsal rather than a success.
+                fork["assessment"] = {"status": "incorrect"}
+                patch.setattr(plan_web, "admissible", lambda *_: None)
+                patch.setattr(plan_web, "report", lambda *_: None)
+                only_fork = client.get(
+                    "/plan/next-focus", base_url="https://coach.invalid", headers=headers
+                )
+                assert b"Next focus: finding forks" in only_fork.data
+                assert (
+                    b"verified miss" in only_fork.data and b"Rehearse this fork" in only_fork.data
+                )
+            assert db.connection.execute("PRAGMA data_version").fetchone()[0] == version
         else:
             assert history["status"] == "unknown"
 

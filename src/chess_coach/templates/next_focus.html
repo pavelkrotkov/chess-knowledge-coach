@@ -13,7 +13,7 @@
 {% else %}<p>The protection check was unavailable or exceeded its budget; other sources may exist.</p>{% endif %}
 {% if selected == "capture" %}
 <h3>Next focus: find captures</h3>
-<p>{% if protection and protection.source %}Capture has at least as many supporting games in this check; ties favor capture.{% else %}Capture is the available recurring source in this check.{% endif %} Before moving, look for a capture of the named hanging piece.</p>
+<p>{% if rotated_from %}A current protection assessment was verified correct without assistance. This available capture source adds variety.{% elif protection and protection.source %}Capture has at least as many supporting games in this check; ties favor capture.{% else %}Capture is the available recurring source in this check.{% endif %} Before moving, look for a capture of the named hanging piece.</p>
 <p><a href="{{ url_for('views.evidence_detail', evidence_id=capture.source.evidence_id) }}">Review the current source evidence</a> · <a href="{{ url_for('related_capture.show', position=capture.source.position_id) }}">Open related capture practice</a>.</p>
 <form method="post" action="{{ url_for('unified_practice.begin') }}">
 <input type="hidden" name="csrf" value="{{ csrf }}">
@@ -26,7 +26,7 @@
 {% set focus_bound = true %}{% include "plan_capture_action.html" %}
 {% elif selected == "protection" %}
 <h3>Next focus: protect a piece</h3>
-<p>{% if capture and capture.history.status == "correct" and capture.history.assistance == "unassisted" %}Your latest current capture assessment was verified correct without assistance, so this available alternative adds variety.{% elif capture %}Protection has more supporting games in this check.{% else %}Protection is the available recurring source in this check.{% endif %} Before moving, identify the threatened piece and how your move protects it.</p>
+<p>{% if rotated_from %}Your latest current capture assessment was verified correct without assistance, so this available alternative adds variety.{% elif capture %}Protection has more supporting games in this check.{% else %}Protection is the available recurring source in this check.{% endif %} Before moving, identify the threatened piece and how your move protects it.</p>
 <p>The selected source is {{ protection.source.review_status }} and was checked for a prepared replay. You play {{ protection.source.color }}. <a href="{{ url_for('views.evidence_detail', evidence_id=protection.source.evidence_id) }}">Review the exact source evidence</a> · <a href="{{ url_for('protection_plan.show') }}">Open the protection lesson</a>.</p>
 <form method="post" action="{{ url_for('unified_practice.begin') }}">
 <input type="hidden" name="csrf" value="{{ csrf }}">
@@ -39,7 +39,8 @@
 {% elif not fork %}<p>No current recurring practice action was available in the sources checked. This does not rule out other sources.</p>{% endif %}
 {% if fork %}
 <section>
-<h3>Optional practice: finding forks</h3>
+<h3>{% if selected == "fork" %}Next focus: finding forks{% else %}Optional practice: finding forks{% endif %}</h3>
+{% if selected == "fork" and rotated_from %}<p>A current {{ rotated_from }} assessment was verified correct without assistance. This available fork source adds variety.</p>{% endif %}
 <p>A current fork lesson has checked failures in {{ fork.games }} independent games. Review the <a href="{{ url_for('views.evidence_detail', evidence_id=fork.source.evidence_id) }}">source decision</a>. The rehearsal is cued and separate from your game results and mastery.</p>
 {% if fork.assessment.status == "correct" %}
 <p>A current first-encounter assessment was verified without assistance. <a href="{{ url_for('related_fork.find_next', attempt=fork.assessment.attempt) }}">Find a comparable follow-up fork assessment</a>. The search may find no match.</p>
@@ -58,6 +59,7 @@
 {% if fork.assessment.status != "correct" %}<p><a href="{{ url_for('related_fork.find_verified', evidence_id=fork.source.evidence_id) }}">Find an unfamiliar fork assessment for this source</a>. The search may find no match.</p>{% endif %}
 </section>
 {% endif %}
+{% if capture and selected != "capture" and capture.history.status == "correct" and capture.history.assistance == "unassisted" %}{% set focus_bound = true %}{% include "plan_capture_action.html" %}{% endif %}
 {% if protection and protection.source %}<p><a href="{{ url_for('related_protection.show', evidence_id=protection.source.evidence_id) }}">Find unfamiliar practice for the selected source</a>. The <a href="{{ url_for('related_protection.finder') }}">general finder</a> checks other sources.</p>{% endif %}
 {% set selected_evidence = protection.source.evidence_id if protection and protection.source else none %}
 {% include "protection_plan_assessment.html" %}

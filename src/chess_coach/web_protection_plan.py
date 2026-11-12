@@ -5,6 +5,7 @@ import sqlite3
 from flask import Blueprint, current_app, render_template
 
 from .fork_plan_action import recommendation as fork_recommendation
+from .next_focus_select import choose
 from .objective_protection_contract import VERSION as PROTECTION_VERSION
 from .plan_capture_action import admissible
 from .protection_plan import report
@@ -41,27 +42,16 @@ def next_focus():
         protection = report(db, subject)
     except (sqlite3.Error, ValueError, TypeError, KeyError, IndexError, PreviewUnavailable):
         protection = None
-    selected = _focus(capture, protection)
     fork = fork_recommendation(db, subject, current_app.config["CORPUS"])
     assessment = protection_history(db, subject, current_app.config["CORPUS"], protection)
+    selected, rotated_from = choose(capture, protection, assessment, fork)
     return render_template(
         "next_focus.html",
         capture=capture,
         protection=protection,
         selected=selected,
+        rotated_from=rotated_from,
         fork=fork,
         assessment=assessment,
         protection_version=PROTECTION_VERSION,
     )
-
-
-def _focus(capture, protection):
-    source = protection and protection["source"]
-    if not source:
-        return "capture" if capture else None
-    if not capture:
-        return "protection"
-    history = capture["history"]
-    if history["status"] == "correct" and history.get("assistance") == "unassisted":
-        return "protection"
-    return "protection" if source["games"] > capture["source"]["games"] else "capture"
