@@ -1,31 +1,38 @@
 """Derive a read-only opening course version from the checked report and chapters."""
 
-from .fact_fingerprint import canonical, digest
 from .opening_unfamiliar import explore_unfamiliar
-from .opening_unfamiliar_lesson import lesson
+from .opening_unfamiliar_course_payload import (
+    MEASURED_VERSION as MEASURED_VERSION,
+)
+from .opening_unfamiliar_course_payload import SELECTED_VERSION as SELECTED_VERSION
+from .opening_unfamiliar_course_payload import VERSION as VERSION
+from .opening_unfamiliar_course_payload import payload as _payload
+from .opening_unfamiliar_course_payload import result as _result
 
-VERSION = "unfamiliar-opening-course-v1"
-SELECTED_VERSION = "unfamiliar-opening-course-v2"
 
-
-def preview(db, root, learner, selection=None):
-    before = db.connection.execute("PRAGMA data_version").fetchone()[0]
+def _source(db, root, learner, selection, legacy):
     if selection is None:
-        report = explore_unfamiliar(db, root, learner)
-    else:
-        from .opening_unfamiliar_selected import selected
+        return explore_unfamiliar(db, root, learner), None
+    from .opening_unfamiliar_selected import selected
 
-        report = selected(db, root, learner, selection)
-    chapters = [
-        lesson(report, color, report[color]) for color in ("white", "black") if report[color]
-    ]
-    payload = {"schema": VERSION, "report": report, "chapters": chapters}
-    if selection is not None:
-        payload.update(schema=SELECTED_VERSION, selection=selection)
-    version = digest(canonical(payload))
+    if legacy:
+        return selected(db, root, learner, selection), None
+    return selected(db, root, learner, selection, measured=True)
+
+
+def preview(db, root, learner, selection=None, *, legacy=False):
+    before = db.connection.execute("PRAGMA data_version").fetchone()[0]
+    report, measurement = _source(db, root, learner, selection, legacy)
+    if measurement:
+        from .opening_unfamiliar_course_proof import current_stamp
+
+        if not current_stamp(db, root, learner, measurement):
+            measurement = None
+        else:
+            measurement = {
+                key: value for key, value in measurement.items() if key != "source_stamp"
+            }
+    payload, legacy_version = _payload(report, selection, measurement)
     if db.connection.execute("PRAGMA data_version").fetchone()[0] != before:
         raise ValueError("opening course source changed")
-    result = {"version": version, "report": report, "chapters": chapters}
-    if selection is not None:
-        result["selection"] = selection
-    return result
+    return _result(payload, selection, legacy_version)

@@ -4,11 +4,14 @@
 <h2>Exploratory opening course preview</h2>
 <p><a href="{{ url_for('repertoire_views.opening_unfamiliar') }}">Back to unfamiliar experiments</a></p>
 {% if course.selection %}<p>Selected {{ course.selection.color|title }} move <code>{{ course.selection.move }}</code> from <code>{{ course.selection.parent }}</code>.</p>{% endif %}
+{% if course.legacy_version %}<p><a href="{{ url_for('repertoire_views.unfamiliar_course', version=course.legacy_version, **course.selection) }}">View the earlier unmeasured version</a>.</p>{% endif %}
+{% if course.historical %}<p>This is the earlier unmeasured version. <a href="{{ url_for('repertoire_views.unfamiliar_course', **course.selection) }}">View the current version</a>.</p>{% endif %}
 <p>Version: <code>{{ course.version }}</code>. {% if course.chapters %}<a href="{{ download_url }}">Download this version as PGN</a>.{% else %}No verified lesson is currently available, so no PGN can be downloaded.{% endif %}</p>
 {% if study %}{% include 'opening_unfamiliar_study.html' %}{% endif %}
 {% for color in ('white', 'black') %}{% set lesson = course.chapters|selectattr('color', 'equalto', color)|first %}
 {% if lesson %}<section><h3>Play {{ color|title }} · {{ lesson.name }} ({{ lesson.eco }})</h3>
 <p>{{ lesson.reason }}</p>
+{% if lesson.measurement %}<p>{{ lesson.measurement }}</p>{% endif %}
 {% set board = lesson.board %}{% set board_label = 'Starting opening position; learner plays ' + lesson.color %}{% include 'board.html' %}
 <p>{{ lesson.instruction }}</p>
 <details><summary>Reveal the recorded continuation</summary><p>{{ lesson.san[2:]|join(' ') }}</p></details>
