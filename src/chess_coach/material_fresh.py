@@ -36,7 +36,7 @@ def _eligible(db, config, engine_hash, recent):
     return result
 
 
-def _select(db, config, engine_hash, recent, limit, state):
+def select_recent(db, config, engine_hash, recent, limit, state):
     games = _eligible(db, config, engine_hash, recent)
     ordered, state = order(games, state)
     progress = dict(state["positions"])
@@ -52,7 +52,7 @@ def _select(db, config, engine_hash, recent, limit, state):
 
 def work(db, config, engine_hash, report, outcomes, recent, scan_limit, decision_limit, state):
     recent["game_window"] = WINDOW
-    game_id, positions, state = _select(db, config, engine_hash, recent, scan_limit, state)
+    game_id, positions, state = select_recent(db, config, engine_hash, recent, scan_limit, state)
     save(db, config.learner, state)
     used = set()
     for row in positions[:scan_limit]:
