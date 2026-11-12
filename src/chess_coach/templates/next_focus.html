@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Next practice focus — Chess coach{% endblock %}
 {% block content %}
+<p><a href="{{ url_for('related_protection.finder') }}">Find an unfamiliar protection exercise</a> · A separate optional source check.</p>
 <h2>Next non-mate practice focus</h2>
 <p><a href="{{ url_for('views.plan') }}">Back to the daily plan</a>. Scheduled reviews come first.</p>
 <p>This check compares recurring capture and protection markers in a bounded recent sample. Counts describe the independent candidate games in this check. Rotation provides practice variety. Game progress and mastery are measured separately.</p>
