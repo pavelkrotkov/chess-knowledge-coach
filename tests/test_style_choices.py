@@ -182,6 +182,7 @@ def _check_retained_purpose_iterations():
             "requested_nodes": 200000,
             "node_limit_exceeded": False,
         }
+        assert protocol.stream is not None
         assert protocol.stream.stopped.wait(1)
     finally:
         loop.call_soon_threadsafe(loop.stop)

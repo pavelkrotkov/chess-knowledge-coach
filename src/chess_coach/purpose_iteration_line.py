@@ -18,12 +18,11 @@ def checked(position, board, info):
 
 
 def paired(first, second, roots):
-    return bool(
-        first
-        and second
-        and first["line"]["depth"] == second["line"]["depth"]
-        and {first["line"]["root_move"], second["line"]["root_move"]} == roots
-    )
+    if first is None or second is None:
+        return None
+    same_depth = first["line"]["depth"] == second["line"]["depth"]
+    moves = {first["line"]["root_move"], second["line"]["root_move"]}
+    return (first, second) if same_depth and moves == roots else None
 
 
 def _structural(item):

@@ -24,8 +24,10 @@ class Iterations:
             self.pending = item
             return
         first, self.pending = self.pending, None
-        if not paired(first, item, self.roots):
+        pair = paired(first, item, self.roots)
+        if pair is None:
             return
+        first, item = pair
         depth = item["line"]["depth"]
         if self.depth is None or depth >= self.depth:
             self.best = [{"rank": 1, "line": first["line"]}, {"rank": 2, "line": item["line"]}]
