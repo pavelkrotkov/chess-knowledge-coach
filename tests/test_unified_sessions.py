@@ -369,8 +369,217 @@ def _check_neutral_recognition(monkeypatch):
     db.close()
 
 
+def _check_recognition_progress(monkeypatch):
+    import itertools
+    from copy import deepcopy
+    from datetime import UTC, datetime, timedelta
+
+    from chess_coach import (
+        recognition_current,
+        recognition_progress_gather,
+        recognition_progress_rows,
+        recognition_response,
+        recognition_scan,
+        recognition_store,
+        web_recognition_progress,
+    )
+    from chess_coach.recognition_progress_game import later
+    from chess_coach.recognition_progress_groups import groups
+    from chess_coach.recognition_progress_history import report
+
+    db = Database(":memory:")
+    db.initialize()
+    assert report(db, "learner", "test") == {"items": [], "groups": [], "limited": False}
+    with monkeypatch.context() as empty:
+        empty.setattr(web_recognition_progress, "database", lambda: db)
+        app = create_app(
+            db_path=":memory:",
+            subject="learner",
+            actor="fixture",
+            corpus="test",
+            login="fixture",
+            origin="https://coach.invalid",
+        )
+        page = app.test_client().get(
+            "/recognition/progress",
+            base_url="https://coach.invalid",
+            headers={"Tailscale-User-Login": "fixture"},
+        )
+        assert (
+            page.status_code == 200 and b"No recognition checks have been recorded yet" in page.data
+        )
+    db.connection.execute(
+        "INSERT INTO puzzle_corpora(version,source,checksum,state) VALUES('test','fixture','hash','staging')"
+    )
+    corpus = db.connection.execute("SELECT id FROM puzzle_corpora").fetchone()[0]
+    for number in range(22):
+        board = chess.Board("4k3/p7/8/8/3q4/8/8/3RK3 b - - 0 1")
+        for bit, file in enumerate("bcfg"):
+            if number & (1 << bit):
+                board.set_piece_at(
+                    chess.parse_square(file + "7"), chess.Piece(chess.PAWN, chess.BLACK)
+                )
+        if number & 16:
+            board.set_piece_at(chess.H2, chess.Piece(chess.PAWN, chess.WHITE))
+        rating = 1200 if number < 20 else 1600 if number == 20 else 1800
+        key = f"candidate-{number:02}"
+        db.connection.execute(
+            """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,rating_deviation,themes_json,objective)
+            VALUES(?,?,?,'https://example.invalid','a7a6 d1d4',?,80,'[]','unknown')""",
+            (key, corpus, board.fen(), rating),
+        )
+        db.connection.execute(
+            "INSERT INTO puzzle_themes VALUES(?,?,'hangingPiece',?)", (corpus, key, rating)
+        )
+    db.connection.execute("UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus,))
+    db.connection.commit()
+
+    ticks = itertools.count()
+
+    def now():
+        return (datetime(2025, 1, 1, tzinfo=UTC) + timedelta(seconds=next(ticks))).isoformat()
+
+    with monkeypatch.context() as patch:
+        patch.setattr(recognition_scan.secrets, "randbelow", lambda _: 0)
+        patch.setattr(recognition_store, "_now", now)
+        patch.setattr(recognition_response, "_now", now)
+        for number in range(22):
+            attempt = f"attempt-{number:02}"
+            recognition_store.start(db, "learner", "test", attempt)
+            if number < 21:
+                choice = "capture" if number < 5 or number >= 10 else "mate"
+                recognition_response.respond(db, "learner", attempt, "answer", choice)
+
+        before = db.connection.total_changes
+        result = report(db, "learner", "test")
+        assert db.connection.total_changes == before
+        assert result is not None and len(result["items"]) == 22
+        matched = next(group for group in result["groups"] if group["rating"] == 1200)
+        assert matched["comparable"] and matched["direction"] == "more"
+        assert matched["earlier"]["size"] == matched["later"]["size"] == 10
+        assert matched["earlier"]["unassisted"]["verified"] == 5
+        assert matched["later"]["unassisted"]["verified"] == 10
+        assert any(
+            group["rating"] == 1600 and not group["comparable"] for group in result["groups"]
+        )
+        active = next(item for item in result["items"] if item["outcome"] == "incomplete")
+        assert active["scope"] is None and "kind" not in active
+
+        entries = [
+            item
+            for item in reversed(result["items"])
+            if item["scope"] and item["scope"]["rating"] == 1200
+        ]
+        for outcome, hints, reveals in (("uncertain", 0, 0), ("revealed", 1, 1)):
+            unresolved = deepcopy(entries)
+            unresolved[0].update(outcome=outcome, hints=hints, reveals=reveals)
+            blocked = groups(unresolved, False)[0]
+            assert not blocked["comparable"]
+            assert "10 current, resolved, unassisted first checks" in blocked["reason"]
+            assert blocked["baseline"]["outcomes"][outcome] == 1
+        context = deepcopy(entries)
+        for index, entry in enumerate(context):
+            entry["opening"] = "first" if index < 10 else "second"
+        assert not groups(context, False)[0]["comparable"]
+        assert "contexts differ" in groups(context, False)[0]["reason"]
+        for entry in context[10:]:
+            entry["opening"] = "first second"
+        overlapping = groups(context, False)[0]
+        assert overlapping["comparable"] and overlapping["opening"]["partial"]
+        intervals = deepcopy(entries)
+        intervals[9]["answered_at"] = intervals[10]["started_at"]
+        overlap = groups(intervals, False)[0]
+        assert not overlap["comparable"] and "intervals overlap" in overlap["reason"]
+        unrelated = {"comparable": True, "earlier": {"oldest": "2024-01-01T00:00:00+00:00"}}
+        assert not later(matched, unrelated)
+        unrelated["earlier"]["oldest"] = "2026-01-01T00:00:00+00:00"
+        assert later(matched, unrelated)
+
+        with patch.context() as partial:
+            partial.setattr(recognition_progress_rows, "LIMIT", 1)
+            bounded = report(db, "learner", "test")
+            assert bounded["limited"] and not any(
+                group["comparable"] for group in bounded["groups"]
+            )
+        original_rows, _ = recognition_progress_rows.rows(db, "learner")
+        with patch.context() as duplicate:
+            duplicate.setattr(
+                recognition_progress_gather, "rows", lambda *_: ([original_rows[0]] * 2, False)
+            )
+            repeated = report(db, "learner", "test")
+            assert any(item["outcome"] == "repeated" for item in repeated["items"])
+            assert repeated["groups"][0]["count"] == 1
+        with patch.context() as stale:
+            stale.setattr(recognition_current, "VERSION", "different-proof-version")
+            changed = report(db, "learner", "test")
+            assert not changed["groups"]
+            assert any(item["outcome"] == "unavailable" for item in changed["items"])
+
+        patch.setattr(web_recognition_progress, "database", lambda: db)
+        sample = {
+            "games": 20,
+            "oldest": "2024-01-01T00:00:00+00:00",
+            "newest": "2024-01-20T00:00:00+00:00",
+            "opportunities": 8,
+            "played": 5,
+            "other": 2,
+            "opportunity_unresolved": 1,
+            "unknown": 3,
+            "unchecked": 4,
+        }
+        game_report = {
+            "comparable": True,
+            "historical": False,
+            "earlier": sample,
+            "newer": dict(sample),
+        }
+        patch.setattr(web_recognition_progress, "capture", lambda *_: game_report)
+        app = create_app(
+            db_path=":memory:",
+            subject="learner",
+            actor="fixture",
+            corpus="test",
+            login="fixture",
+            origin="https://coach.invalid",
+        )
+        client = app.test_client()
+        assert (
+            client.get("/recognition/progress", base_url="https://coach.invalid").status_code == 403
+        )
+        page = client.get(
+            "/recognition/progress",
+            base_url="https://coach.invalid",
+            headers={"Tailscale-User-Login": "fixture"},
+        )
+        assert page.status_code == 200 and b"Uncued recognition checks" in page.data
+        assert (
+            b"20 matched first encounters" in page.data and b"not established as later" in page.data
+        )
+        assert b"8 proved opportunities" in page.data and b"3 turns have unresolved" in page.data
+        assert b"Open mate-in-one game windows" in page.data
+        active_row = next(row for row in original_rows if row["action"] is None)
+        with patch.context() as hidden:
+            hidden.setattr(recognition_progress_gather, "rows", lambda *_: ([active_row], False))
+            active_page = client.get(
+                "/recognition/progress",
+                base_url="https://coach.invalid",
+                headers={"Tailscale-User-Login": "fixture"},
+            )
+        assert b"<h4>Direct capture" not in active_page.data
+        assert b"candidate-21" not in active_page.data and b"Rxd4" not in active_page.data
+        game_report["earlier"]["oldest"] = "2026-01-01T00:00:00+00:00"
+        after = client.get(
+            "/recognition/progress",
+            base_url="https://coach.invalid",
+            headers={"Tailscale-User-Login": "fixture"},
+        )
+        assert b"Both capture-game windows start after" in after.data
+    db.close()
+
+
 def test_public_multiline_resume_hints_and_no_hidden_solution(tmp_path, monkeypatch):
     _check_neutral_recognition(monkeypatch)
+    _check_recognition_progress(monkeypatch)
     db = fixture_db(tmp_path / "coach.sqlite")
     initial = begin(db, "a1")
     assert initial["fen"] == chess.STARTING_FEN and initial["learner_color"] == "white"
