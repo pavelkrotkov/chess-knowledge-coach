@@ -1,5 +1,7 @@
 """Share material scan and decision budgets between recent and archive work."""
 
+from .material_fresh import work as fresh_work
+from .material_fresh_turn import claim as claim_fresh
 from .material_recent_cursor import claim, load
 from .material_recent_work import work as recent_work
 from .material_worker_archive import work as archive_work
@@ -14,6 +16,20 @@ def _recent(db, config, engine_hash, report, outcomes, state, single):
     )
     report["recent"]["scan_limit"] = scans
     report["recent"]["decision_limit"] = decisions
+    fresh, fresh_state = claim_fresh(db, config.learner)
+    if fresh:
+        used = fresh_work(
+            db,
+            config,
+            engine_hash,
+            report,
+            outcomes,
+            report["recent"],
+            scans,
+            decisions,
+            fresh_state,
+        )
+        return state, used
     return recent_work(
         db, config, engine_hash, state, report, outcomes, report["recent"], scans, decisions
     )
