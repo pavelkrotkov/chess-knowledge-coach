@@ -588,6 +588,22 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
                 assert b"separate from the selected protection rehearsal" in explanation
                 assert b"selected protection source" in rotated.data
 
+                fork_calls = []
+
+                def optional_fork(*_args, fork=fork, fork_calls=fork_calls):
+                    fork_calls.append(True)
+                    return fork
+
+                patch.setattr(plan_web, "fork_recommendation", optional_fork)
+                fast = client.get("/plan", base_url="https://coach.invalid", headers=headers)
+                assert b"Capture practice" in fast.data and not fork_calls
+                full = client.get(
+                    "/plan/next-focus", base_url="https://coach.invalid", headers=headers
+                )
+                assert b"Next focus: find captures" in full.data
+                assert b"Optional practice: finding forks" in full.data and fork_calls == [True]
+                patch.setattr(plan_web, "fork_recommendation", lambda *_: None)
+
                 same_origin = {**history, "evidence_id": evidence + 1}
                 patch.setattr(
                     plan_web, "protection_history", lambda *_, same_origin=same_origin: same_origin
@@ -696,6 +712,52 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
                 assert b"Next focus: finding forks" not in fallback.data
                 assert b"Next focus: protect a piece" not in fallback.data
             assert db.connection.execute("PRAGMA data_version").fetchone()[0] == version
+
+            # A write after one family's source check invalidates the entire
+            # shared selection in both the daily card and the full focus page.
+            counter = [10]
+
+            def changed_generation(*_args, path=path, counter=counter, fork=fork):
+                counter[0] += 1
+                with sqlite3.connect(path) as writer:
+                    writer.execute(f"PRAGMA user_version={counter[0]}")
+                return fork
+
+            capture["history"] = {
+                "status": "correct",
+                "assistance": "unassisted",
+                "attempt_id": "capture-result",
+            }
+            capture["source"]["games"] = 3
+            with monkeypatch.context() as patch:
+                patch.setattr(plan_web, "admissible", lambda *_, capture=capture: capture)
+                patch.setattr(plan_web, "report", lambda *_, group=group: group)
+                patch.setattr(plan_web, "protection_history", lambda *_, history=history: history)
+                patch.setattr(plan_web, "fork_recommendation", changed_generation)
+                patch.setattr("chess_coach.web_views.daily_plan", lambda *_, plan=plan, **_k: plan)
+                patch.setattr("chess_coach.plan_page.promotion_recommendation", lambda *_: None)
+                changed = client.get("/plan", base_url="https://coach.invalid", headers=headers)
+                assert b"Due review" in changed.data and b"New puzzle" in changed.data
+                assert b"Capture practice</h3>" not in changed.data
+                assert b"Next focus: finding forks" not in changed.data
+                full = client.get(
+                    "/plan/next-focus", base_url="https://coach.invalid", headers=headers
+                )
+                assert b"No current recurring practice action" in full.data
+                assert b"Optional practice: finding forks" not in full.data
+
+            class Unavailable:
+                def execute(self, *_args):
+                    raise sqlite3.OperationalError("synthetic unavailable database")
+
+            from types import SimpleNamespace
+
+            assert (
+                plan_web.current_focus(SimpleNamespace(connection=Unavailable()), LEARNER, "test")[
+                    "selected"
+                ]
+                is None
+            )
         else:
             assert history["status"] == "unknown"
 

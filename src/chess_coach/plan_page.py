@@ -23,7 +23,10 @@ def render(daily_plan):
     if not request.args.get("cursor"):
         if _room_after_due(result):
             focus = current_focus(
-                database(), current_app.config["SUBJECT"], current_app.config["CORPUS"]
+                database(),
+                current_app.config["SUBJECT"],
+                current_app.config["CORPUS"],
+                include_optional=False,
             )
         promotion = promotion_recommendation(database(), current_app.config["SUBJECT"])
     return render_template("plan.html", plan=result, error=None, focus=focus, promotion=promotion)
