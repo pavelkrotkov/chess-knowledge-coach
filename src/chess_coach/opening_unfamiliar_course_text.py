@@ -10,11 +10,8 @@ def describe(value):
         if short
         else ""
     )
-    decision = value.get("decision")
     source = (
-        f"The measured decision is from your game {decision['game_id']} at ply {decision['ply']}. "
-        if decision
-        else ""
+        "This comparison comes from an earlier game you played. " if value.get("decision") else ""
     )
     return (
         source

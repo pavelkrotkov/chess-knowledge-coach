@@ -1567,33 +1567,65 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
 
             with monkeypatch.context() as older:
                 older.setattr(measure_state, "statuses", older_only)
-                course = unfamiliar_course_preview(memory, tmp_path, "learner", selected)
-                assert course["measurement"]["decision"]["game_id"] == 1
-                assert "your game 1 at ply 1" in course["chapters"][0]["note"]
-                assert build_unfamiliar_study(course, course["version"])
+                older_course = unfamiliar_course_preview(memory, tmp_path, "learner", selected)
+                assert older_course["measurement"]["decision"]["game_id"] == 1
+                assert "an earlier game you played" in older_course["chapters"][0]["note"]
+                study_course = build_unfamiliar_study(older_course, older_course["version"])
+                pgn = study_course["course"]["chapters"][0]["pgn"]
+                assert "an earlier game you played" in pgn and "your game 1" not in pgn
+                from chess_coach.opening_unfamiliar_lesson import lesson as opening_lesson
+
+                sensitive = copy.deepcopy(older_course["measurement"])
+                sensitive["decision"]["game_id"] = 948271635
+                chapter = opening_lesson(
+                    older_course["report"],
+                    selected["color"],
+                    older_course["report"][selected["color"]],
+                    sensitive,
+                )
+                assert "948271635" not in chapter["pgn"]
                 import chess_coach.web_unfamiliar_course as course_view
 
                 with monkeypatch.context() as rendered:
-                    rendered.setattr(course_view, "preview", lambda *_args: copy.deepcopy(course))
+                    rendered.setattr(
+                        course_view, "preview", lambda *_args: copy.deepcopy(older_course)
+                    )
                     rendered.setattr(course_view, "status", lambda *_args: None)
                     page = client_first.get(
                         course_path,
-                        query_string={**selected, "version": course["version"]},
+                        query_string={**selected, "version": older_course["version"]},
                         base_url="https://coach.invalid",
                         headers=headers,
                     )
-                    assert page.status_code == 200 and b"Inspect the measured decision" in page.data
+                    from flask import url_for
+
+                    decision = older_course["measurement"]["decision"]
+                    with app_first.test_request_context():
+                        link = url_for(
+                            "repertoire_views.opening_decision",
+                            game_id=decision["game_id"],
+                            position_id=decision["position_id"],
+                            alternative=selected["move"],
+                        )
+                    assert page.status_code == 200 and link.encode() in page.data
+                    assert b"Inspect the measured decision" in page.data
                     download = client_first.get(
                         course_path,
-                        query_string={**selected, "version": course["version"], "download": "1"},
+                        query_string={
+                            **selected,
+                            "version": older_course["version"],
+                            "download": "1",
+                        },
                         base_url="https://coach.invalid",
                         headers=headers,
                     )
-                    assert download.status_code == 200 and b"your game 1 at ply 1" in download.data
+                    assert download.status_code == 200
+                    assert b"an earlier game you played" in download.data
+                    assert b"your game 1" not in download.data
 
                 from chess_coach.opening_unfamiliar_course import legacy_from
 
-                assert legacy_from(course)["version"] == course["legacy_version"]
+                assert legacy_from(older_course)["version"] == older_course["legacy_version"]
 
                 older.setattr(
                     measure_state,
@@ -1603,7 +1635,10 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
                     },
                 )
                 stale = unfamiliar_course_preview(memory, tmp_path, "learner", selected)
-                assert "measurement" not in stale and stale["version"] == course["legacy_version"]
+                assert (
+                    "measurement" not in stale
+                    and stale["version"] == older_course["legacy_version"]
+                )
 
                 from chess_coach.tactical_course_deadline import PreviewDeadline
 
