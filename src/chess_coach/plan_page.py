@@ -1,10 +1,10 @@
-"""Render the daily schedule and its optional advisory capture next step."""
+"""Render the daily schedule and one optional recurring practice action."""
 
 from flask import current_app, render_template, request
 
-from .plan_capture_action import recommendation
 from .plan_promotion import recommendation as promotion_recommendation
 from .web_db import database
+from .web_protection_plan import current_focus
 
 
 def render(daily_plan):
@@ -19,12 +19,20 @@ def render(daily_plan):
         return render_template(
             "plan.html", error="The plan changed. Restart planning.", plan=None
         ), 400
-    capture = promotion = None
+    focus = promotion = None
     if not request.args.get("cursor"):
-        capture = recommendation(
-            database(), current_app.config["SUBJECT"], current_app.config["CORPUS"]
-        )
+        if _room_after_due(result):
+            focus = current_focus(
+                database(),
+                current_app.config["SUBJECT"],
+                current_app.config["CORPUS"],
+                include_optional=False,
+            )
         promotion = promotion_recommendation(database(), current_app.config["SUBJECT"])
-    return render_template(
-        "plan.html", plan=result, error=None, capture=capture, promotion=promotion
-    )
+    return render_template("plan.html", plan=result, error=None, focus=focus, promotion=promotion)
+
+
+def _room_after_due(plan):
+    if plan.get("scan", {}).get("due_incomplete", True):
+        return False
+    return sum(item["kind"] != "new" for item in plan["items"]) < 10

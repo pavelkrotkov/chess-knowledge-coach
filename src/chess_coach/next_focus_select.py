@@ -41,3 +41,10 @@ def _available(family, capture, protection, fork):
     if family == "protection":
         return bool(protection and protection["source"])
     return bool(fork)
+
+
+def needs_fork(choice, capture, assessment):
+    selected, rotated_from = choice
+    return selected is None or (
+        rotated_from is None and _success(selected, capture, assessment, None)
+    )

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>Daily plan</h2><p><a href="{{ url_for('related_fork.find_next') }}">Find a comparable next fork assessment</a> · <a href="{{ url_for('related_fork.find_first') }}">Find a first unfamiliar fork assessment</a></p><p><a href="{{ url_for('short_mate_game_views.fork_samples') }}">Knight forks in your games</a></p><p><a href="{{ url_for('related_fork.history') }}">First-encounter fork assessment history</a> · <a href="{{ url_for('related_fork.progress') }}">Matched knight-fork practice over time</a></p><p><a href="{{ url_for('short_mate_game_views.capture_samples') }}">Capture choices in your games</a></p><p><a href="{{ url_for('related_capture.plan') }}">Practice finding captures</a></p><p><a href="{{ url_for('assessment_history_views.history') }}">Short-mate assessment history</a></p><p><a href="{{ url_for('recurrence_views.mate_game_samples') }}">Mate-in-one in your games</a></p><p><a href="{{ url_for('coaching_views.index') }}">Practice your recurring patterns</a> · Source-position rehearsal is separate from scheduled reviews.</p>{% if error %}<p role="alert">{{ error }}</p>
-<a href="{{ url_for('views.plan') }}">Restart plan</a>{% elif plan %}<p>Evidence: {{ plan.evidence.state }}. Corpus: {{ plan.corpus_status }}.</p>{% if plan["items"] %}<ul>{% for item in plan["items"] %}<li>
+<a href="{{ url_for('views.plan') }}">Restart plan</a>{% elif plan %}<p>Evidence: {{ plan.evidence.state }}. Corpus: {{ plan.corpus_status }}.</p>{% macro task(item) %}<li>
 <strong>{{ item.objective }}</strong> - {{ item.kind }}. {{ item.reason }}{% if item.due %} Due: {{ item.due }}.{% endif %}<form method="post" action="{{ url_for('practice.start') }}">
 <input type="hidden" name="csrf" value="{{ csrf }}">
 <input type="hidden" name="cursor" value="{{ request.args.get('cursor', '') }}">
@@ -9,9 +9,14 @@
 <input type="hidden" name="puzzle_id" value="{{ item.puzzle_id }}">
 <button>Start practice</button>
 </form>
-</li>{% endfor %}</ul>{% else %}<p>No practice items on this page.</p>{% endif %}
-{% if not request.args.get("cursor") %}<p>After scheduled reviews: <a href="{{ url_for('related_protection.finder') }}">Find an unfamiliar protection exercise</a> · An optional bounded source check.</p><p><a href="{{ url_for('protection_plan.next_focus') }}">Check your next non-mate practice focus</a> · A separate bounded source check opens on the next page.</p><p><a href="{{ url_for('pin_plan.show') }}">Practice pin defense</a> - A separate source check opens on the next page.</p><p><a href="{{ url_for('protection_plan.show') }}">Practice protecting a piece</a> · A separate source check opens on the next page.</p>{% endif %}
-{% if capture %}{% include "plan_capture_action.html" %}{% endif %}
+</li>{% endmacro %}
+{% set due_items = plan["items"] | rejectattr("kind", "equalto", "new") | list %}
+{% set new_items = plan["items"] | selectattr("kind", "equalto", "new") | list %}
+{% if due_items %}<ul>{% for item in due_items %}{{ task(item) }}{% endfor %}</ul>{% endif %}
+{% if focus and focus.selected %}{% include "plan_recurring_action.html" %}{% endif %}
+{% if new_items %}<ul>{% for item in new_items %}{{ task(item) }}{% endfor %}</ul>{% endif %}
+{% if not plan["items"] and not (focus and focus.selected) %}<p>No practice items on this page.</p>{% endif %}
+{% if not request.args.get("cursor") %}<p>After scheduled reviews: <a href="{{ url_for('related_protection.finder') }}">Find an unfamiliar protection exercise</a> · An optional bounded source check.</p>{% if not focus or not focus.selected %}<p><a href="{{ url_for('protection_plan.next_focus') }}">Check your next non-mate practice focus</a> · A separate bounded source check opens on the next page.</p>{% endif %}<p><a href="{{ url_for('pin_plan.show') }}">Practice pin defense</a> - A separate source check opens on the next page.</p><p><a href="{{ url_for('protection_plan.show') }}">Practice protecting a piece</a> · A separate source check opens on the next page.</p>{% endif %}
 {% if promotion %}{% include "plan_promotion.html" %}{% endif %}
 {% if plan.diagnostic %}<p role="alert">{{ plan.diagnostic }}</p>{% endif %}
 {% if plan.next_cursor %}<p>More checks are needed: {{ plan.continuation_reason }}. <a href="{{ url_for('views.plan', cursor=plan.next_cursor) }}">Continue plan</a>

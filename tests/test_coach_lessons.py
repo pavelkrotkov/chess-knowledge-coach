@@ -1639,8 +1639,8 @@ def test_protection_lesson_offers_only_a_current_bounded_line_replay(tmp_path, m
         raise AssertionError("unexpected source scan or engine work")
 
     with monkeypatch.context() as patch:
-        patch.setattr(protection_select, "resolve", forbidden)
-        patch.setattr("chess_coach.protection_plan._groups", forbidden)
+        patch.setattr("chess_coach.related_capture_familiar.familiarity", forbidden)
+        patch.setattr("chess_coach.deep_execution_engine.start_engine", forbidden)
         daily = client.get("/plan", base_url="https://coach.invalid", headers=headers)
     assert b"Practice protecting a piece" in daily.data
     assert client.get("/plan/protection", base_url="https://coach.invalid").status_code == 403
