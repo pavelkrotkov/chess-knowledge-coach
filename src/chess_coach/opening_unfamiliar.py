@@ -32,7 +32,7 @@ def _select(db, root, subject, dataset, board, color, budget):
     return None
 
 
-def explore_unfamiliar(db, root, learner):
+def prepare(db, learner):
     budget = BrowserBudget(db)
     budget.expires = min(budget.expires, time.monotonic() + 25)
     subject = normalize_identity(learner)
@@ -46,13 +46,8 @@ def explore_unfamiliar(db, root, learner):
     with budget.scope(snapshot=True):
         dataset = catalog_dataset(db)
     board = chess.Board()
-    white_choice = _select(db, root, subject, dataset, board, "white", budget) if white else None
     parent_san = board.san(board.parse_uci(first)) if first else None
-    if first:
-        board.push_uci(first)
-    black_choice = _select(db, root, subject, dataset, board, "black", budget) if first else None
-    budget.check()
-    return {
+    report = {
         "catalog_source": CATALOG_SOURCE,
         "sample_identity": sample_identity,
         "sample": len(games),
@@ -62,6 +57,24 @@ def explore_unfamiliar(db, root, learner):
         "black_count": len(black),
         "parent": parent_san,
         "parent_count": count,
-        "white": white_choice,
-        "black": black_choice,
     }
+    black_board = board.copy()
+    if first:
+        black_board.push_uci(first)
+    return budget, subject, dataset, report, board, black_board
+
+
+def explore_unfamiliar(db, root, learner):
+    budget, subject, dataset, report, board, black_board = prepare(db, learner)
+    white = (
+        _select(db, root, subject, dataset, board, "white", budget)
+        if report["white_count"]
+        else None
+    )
+    black = (
+        _select(db, root, subject, dataset, black_board, "black", budget)
+        if report["parent"]
+        else None
+    )
+    budget.check()
+    return {**report, "white": white, "black": black}

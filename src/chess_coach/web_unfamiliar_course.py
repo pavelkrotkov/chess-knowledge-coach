@@ -8,13 +8,30 @@ from .web_board import board_rows
 from .web_db import database
 
 
-def show():
+def _load(selection):
     try:
-        course = preview(
-            database(), current_app.config["PROJECT_ROOT"], current_app.config["SUBJECT"]
-        )
+        args = (database(), current_app.config["PROJECT_ROOT"], current_app.config["SUBJECT"])
+        return preview(*args, selection) if selection else preview(*args)
+    except ValueError:
+        if selection:
+            abort(409, "The opening selection or its source changed. Open a new preview.")
+        abort(503, "The opening course could not be checked now. Please try again.")
     except (Exception, PreviewDeadline):
         abort(503, "The opening course could not be checked now. Please try again.")
+
+
+def _selection():
+    values = {key: request.args.get(key) for key in ("color", "parent", "move")}
+    if not any(values.values()):
+        return None
+    if not all(values.values()):
+        abort(400, "The opening selection is incomplete.")
+    return values
+
+
+def show():
+    selection = _selection()
+    course = _load(selection)
     if request.args.get("download") == "1":
         if request.args.get("version") != course["version"]:
             abort(409, "The opening course changed. Open a new preview.")
@@ -31,5 +48,10 @@ def show():
         )
     for item in course["chapters"]:
         item["board"] = board_rows(item["fen"], item["color"])
-    download = url_for("repertoire_views.unfamiliar_course", download=1, version=course["version"])
+    download = url_for(
+        "repertoire_views.unfamiliar_course",
+        download=1,
+        version=course["version"],
+        **(selection or {}),
+    )
     return render_template("opening_unfamiliar_course.html", course=course, download_url=download)

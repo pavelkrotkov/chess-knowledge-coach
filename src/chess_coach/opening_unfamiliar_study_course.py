@@ -4,7 +4,8 @@ import re
 
 from .course_preview import preview_hash
 from .fact_fingerprint import canonical, digest
-from .opening_unfamiliar_course import VERSION
+from .opening_unfamiliar_course import SELECTED_VERSION, VERSION
+from .opening_unfamiliar_selected_validate import validate_content
 from .opening_unfamiliar_study_lesson import lesson
 from .study_inventory import named
 
@@ -13,6 +14,9 @@ KIND = "unfamiliar-opening-study-v1"
 
 def _version(current, expected):
     payload = {"schema": VERSION, "report": current["report"], "chapters": current["chapters"]}
+    if "selection" in current:
+        payload.update(schema=SELECTED_VERSION, selection=current["selection"])
+        validate_content(current)
     if any(
         (
             not re.fullmatch(r"[0-9a-f]{64}", expected),

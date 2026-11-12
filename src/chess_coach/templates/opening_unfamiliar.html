@@ -24,7 +24,7 @@
 {% endmacro %}
 {% block content %}
 <h2>Unfamiliar opening experiments</h2>
-<p><a href="{{ url_for('repertoire_views.repertoire') }}">Back to repertoire</a> · <a href="{{ url_for('repertoire_views.unfamiliar_course') }}">Preview an exploratory course</a></p>
+<p><a href="{{ url_for('repertoire_views.repertoire') }}">Back to repertoire</a> · <a href="{{ url_for('repertoire_views.unfamiliar_course') }}">Preview an exploratory course</a> · <a href="{{ url_for('repertoire_views.opening_unfamiliar', choices=1) }}">Choose another exploratory opening</a></p>
 <p>From the latest bounded sample of {{ report.sample }} verified game-start candidates: {{ report.white_count }} White first turns and {{ report.black_count }} Black first turns were replayed; {{ report.failed }} could not be checked. {% if report.parent %}The most common checked opponent first move was {{ report.parent }}, in {{ report.parent_count }} Black games; ties use move order.{% else %}No Black first move could be verified.{% endif %}</p>
 <p>{% if report.coverage.game_limit_reached %}The sample reached its 100-game limit. {% endif %}{% if report.coverage.boundary_tie %}Games tied at the boundary may be omitted. {% endif %}At least {{ report.coverage.unknown_time_lower_bound }} attributable games have no verified start time; at least {{ report.coverage.unknown_ownership_global_lower_bound }} games have uncertain ownership. {{ report.coverage.candidate_recheck_failed }} selected candidates failed their ownership or time recheck, including {{ report.coverage.oversized_pgn }} oversized games.</p>
 <p>Opening names and branches come from the pinned <a href="{{ report.catalog_source }}">Lichess opening catalog</a> (<a href="https://creativecommons.org/publicdomain/zero/1.0/">CC0</a>).</p>
