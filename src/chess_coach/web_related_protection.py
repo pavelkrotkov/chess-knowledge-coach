@@ -64,6 +64,7 @@ def begin(evidence_id):
             evidence_id=evidence_id,
             corpus_version=current_app.config["CORPUS"],
             reference=request.form.get("reference", ""),
+            assessment=request.form.get("assessment") == "1",
         )
     except ValueError:
         return render_template(

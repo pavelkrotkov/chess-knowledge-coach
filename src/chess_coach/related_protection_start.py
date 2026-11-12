@@ -4,7 +4,9 @@ from .related_protection_admission import admit
 from .related_session_start import start_selected
 
 
-def start_related(db, *, attempt_id, subject, evidence_id, corpus_version, reference):
+def start_related(
+    db, *, attempt_id, subject, evidence_id, corpus_version, reference, assessment=False
+):
     if not all(
         isinstance(value, str) and 0 < len(value) <= 256
         for value in (attempt_id, subject, corpus_version, reference)
@@ -14,6 +16,13 @@ def start_related(db, *, attempt_id, subject, evidence_id, corpus_version, refer
         raise RuntimeError("cannot start during an existing transaction")
     version = db.connection.execute("PRAGMA main.data_version").fetchone()[0]
     selected = admit(db, subject, evidence_id, corpus_version, reference)
+    if assessment:
+        source_type, corpus, key, binding, lines = selected
+        if source_type != "corpus":
+            raise ValueError("protection assessment unavailable")
+        from .related_protection_assessment import certificate
+
+        binding["assessment"] = certificate(db, corpus, key, binding["objective_target"], lines)
 
     def current_selection():
         if db.connection.execute("PRAGMA main.data_version").fetchone()[0] != version:

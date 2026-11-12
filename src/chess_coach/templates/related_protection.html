@@ -12,7 +12,7 @@
 <section><h3>Transfer example {{ loop.index }}</h3>
 <p>You play {{ "white" if item.fen.split(" ")[1] == "w" else "black" }}. Save the piece on {{ item.objective_target }} from an immediate supported profitable capture. Source: {{ item.type }} · version {{ item.version }}{% if item.rating is not none %} · content rating {{ item.rating }}{% else %} · content rating unavailable{% endif %}.</p>
 {% set board = item.board %}{% set board_label = "Transfer position; side to move at the bottom" %}{% include "board.html" %}
-<form method="post" action="{{ url_for('related_protection.begin', evidence_id=evidence_id) }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="reference" value="{{ item.reference }}"><button>Start this example</button></form></section>
+<form method="post" action="{{ url_for('related_protection.begin', evidence_id=evidence_id) }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="reference" value="{{ item.reference }}"><button>Start this example</button></form>{% if item.assessment_available %}<form method="post" action="{{ url_for('related_protection.begin', evidence_id=evidence_id) }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="reference" value="{{ item.reference }}"><input type="hidden" name="assessment" value="1"><button>Check my first move</button></form>{% endif %}</section>
 {% endfor %}
 {% if result.next_cursor %}<p><a href="{{ url_for('related_protection.show', evidence_id=evidence_id, cursor=result.next_cursor) }}">More examples</a></p>{% endif %}
 {% endblock %}

@@ -3,7 +3,7 @@
 import time
 from contextlib import suppress
 
-from .related_capture import present
+from .related_capture import _assessment_options, present
 from .related_capture_familiar import familiarity
 from .related_protection import selection
 from .related_protection_source import source_for_evidence
@@ -41,6 +41,9 @@ class SourceChecks:
         self.check()
         result = present(chosen, None)
         if chosen is not None:
+            self.check()
+            _assessment_options(self.db, result["items"], chosen[3], None, result["scope"])
+            self.check()
             result.update(
                 source_outcome=chosen[0]["outcome"],
                 protection_scan=chosen[2]["protection_scan"],

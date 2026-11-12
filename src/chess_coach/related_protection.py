@@ -1,6 +1,6 @@
 """Retrieve a bounded set of operation-matched protection examples."""
 
-from .related_capture import present
+from .related_capture import _assessment_options, present
 from .related_protection_match import scorer
 from .related_protection_source import source_for_evidence
 from .related_transfer_select import select
@@ -40,6 +40,7 @@ def preview(db, subject, evidence_id, corpus_version, cursor=None):
     chosen = selection(db, subject, evidence_id, corpus_version)
     result = present(chosen, cursor)
     if chosen is not None:
+        _assessment_options(db, result["items"], chosen[3], cursor, result["scope"])
         result["source_outcome"] = chosen[0]["outcome"]
         result["protection_scan"] = chosen[2]["protection_scan"]
         result["corpus_limited"] = chosen[2]["limited"]

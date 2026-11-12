@@ -20,6 +20,10 @@ def require_current(db, row, snapshot_hash):
             db, row["source_type"], row["source_version"], row["source_key"], subject=row["subject"]
         )
         select_lines(candidate, binding, expected_version=FILTER_VERSION)
+        if binding.get("assessment"):
+            from .related_protection_objective import current
+
+            current(db, row, binding, candidate)
         candidate["provenance"]["related_protection"] = binding
         if snapshot_hash(candidate) != row["snapshot_hash"]:
             raise ValueError
