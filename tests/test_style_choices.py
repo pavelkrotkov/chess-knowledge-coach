@@ -636,6 +636,82 @@ def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch):
             assert ordered[0][0]["id"] == expected and replayed == 1 and exhausted
             assert budget["used"] == 500
             assert any(item["early_center"] for item in nominated) == (expected == 2)
+
+    # The bounded advisory pass can put a feasible check/center pair ahead of a
+    # long unrelated game. Full replay remains the source of both slots.
+    game = chess.pgn.Game()
+    game.headers.update(
+        {
+            "Event": "independent check",
+            "White": LEARNER,
+            "Black": OPPONENT,
+            "Result": "*",
+            "UTCDate": "2026.01.01",
+            "UTCTime": "00:00:01",
+        }
+    )
+    board = game.board()
+    node = game
+    moves = ["d2d4", "c7c6", "e2e4", "d8a5", "e1e2"]
+    moves += ["g8f6", "g1f3", "f6g8", "f3g1"] * 14
+    for text in moves[:60]:
+        move = board.parse_uci(text)
+        node = node.add_variation(move)
+        board.push(move)
+    ingest_pgn(rotation_db, str(game))
+    check_game = rotation_db.connection.execute("SELECT * FROM games WHERE id=3").fetchone()
+    paired_games = [*rotation_games, (check_game, "white")]
+    for sequence in (1, 5):
+        with monkeypatch.context() as patch:
+            patch.setattr(
+                style_schedule_candidates,
+                "recent_games",
+                lambda *_args, **_kwargs: (paired_games, {"game_limit_reached": False}),
+            )
+            with history_budget() as budget:
+                budget["limit"] = 500
+                coverage, slots, replayed = allocate(rotation_db, LEARNER, "key", sequence)
+                assert coverage["early_center_nomination_prioritized"]
+                assert coverage["early_center_nomination_games"] >= 1
+                assert coverage["reconstructed_games"] == 2 and budget["used"] <= 500
+                target, control = slots[0][1], slots[1][1]
+                assert target["game_id"] == 3 and target["in_check"]
+                assert control["game_id"] == 2 and control["early_center"]
+                assert target["game_id"] != control["game_id"] and replayed
+    with history_budget() as budget:
+        budget["limit"] = 350
+        fallback, coverage = prioritize(rotation_db, paired_games, 1)
+        assert fallback[0][0]["id"] == 1
+        assert not coverage["early_center_nomination_prioritized"]
+    unchanged, coverage = prioritize(rotation_db, paired_games, 3)
+    assert unchanged[0][0]["id"] == 2
+    assert not coverage["early_center_nomination_prioritized"]
+
+    # When a center game also has a checked turn, a distinct checked target
+    # keeps the independently replayed center candidate available for control.
+    from chess_coach import style_schedule_target
+
+    center = {
+        "game_id": 2,
+        "position_id": 1,
+        "early_center": True,
+        "in_check": False,
+        "status": "ready",
+        "structural_defense": None,
+    }
+    own_check = {**center, "position_id": 2, "early_center": False, "in_check": True}
+    separate_check = {**own_check, "game_id": 3}
+    with monkeypatch.context() as patch:
+        patch.setattr(style_schedule_target, "choose", lambda _db, _key, _kind, rows: rows[0])
+        target, _, _ = style_schedule_target.target(
+            rotation_db, "key", 1, [center, own_check, separate_check]
+        )
+        assert target["game_id"] == 3
+        unknown_check = {**separate_check, "status": "unknown"}
+        target, _, _ = style_schedule_target.target(
+            rotation_db, "key", 1, [center, own_check, unknown_check]
+        )
+        assert target["game_id"] == 2
     rotation_db.close()
     _opening_fit_route(monkeypatch)
 

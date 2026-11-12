@@ -2,6 +2,7 @@
 
 from .style_schedule_budget import CURRENT
 from .style_schedule_clock import reached
+from .style_schedule_early_priority import pair
 from .style_schedule_nomination_game import inspect
 
 
@@ -20,14 +21,17 @@ def _firsts(first, structural_first, index, checks, structural, count):
     return first, structural_first
 
 
-def _collect(db, ordered, coverage):
+def _collect(db, ordered, coverage, reserved):
     first = structural_first = None
+    nominations = []
     for index, (game, color) in enumerate(ordered):
         if reached():
             coverage["nomination_unchecked_games"] = len(ordered) - index
             break
         try:
-            checks, structural, unknown, checked, count = inspect(db, game, color)
+            checks, structural, unknown, checked, count, early = inspect(
+                db, game, color, center=reserved
+            )
         except (ValueError, TypeError, IndexError):
             if reached():
                 coverage["nomination_unchecked_games"] = len(ordered) - index
@@ -41,7 +45,10 @@ def _collect(db, ordered, coverage):
         coverage["structural_nomination_turns"] += structural
         coverage["structural_nomination_unknown_turns"] += unknown
         first, structural_first = _firsts(first, structural_first, index, checks, structural, count)
-    return first, structural_first
+        nominations.append((index, checks, early, count))
+        coverage["early_center_nomination_games"] += bool(early)
+        coverage["early_center_nomination_turns"] += early
+    return first, structural_first, nominations
 
 
 def prioritize(db, games, sequence):
@@ -61,9 +68,18 @@ def prioritize(db, games, sequence):
         "structural_nomination_turns": 0,
         "structural_nomination_unknown_turns": 0,
         "structural_nomination_prioritized": False,
+        "early_center_nomination_games": 0,
+        "early_center_nomination_turns": 0,
+        "early_center_nomination_prioritized": False,
     }
-    first, structural_first = _collect(db, ordered, coverage)
+    reserved = sequence % 4 == 1
+    first, structural_first, nominations = _collect(db, ordered, coverage, reserved)
     first = structural_first if structural_first is not None else first
+    if reserved:
+        prioritized = pair(ordered, nominations)
+        if prioritized:
+            ordered = prioritized
+            coverage["early_center_nomination_prioritized"] = True
     # All other games keep their original relative order, including unknowns.
     if sequence % 2 == 0 and first is not None:
         ordered.insert(0, ordered.pop(first))
