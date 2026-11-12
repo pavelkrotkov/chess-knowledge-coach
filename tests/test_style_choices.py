@@ -597,6 +597,47 @@ def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch):
     assert coverage["nomination_unchecked_games"] == 2
     db.close()
 
+    # A 500-unit scan can replay only one 130-ply game. Reserved starts
+    # must nevertheless visit both games rather than only even offsets.
+    rotation_db = Database(":memory:")
+    rotation_db.initialize()
+    for label, prefix in (
+        ("ordinary", ["e2e4", "e7e5"]),
+        ("center", ["e2e4", "d7d5", "e4d5", "d8d5"]),
+    ):
+        game = chess.pgn.Game()
+        game.headers.update(
+            {
+                "Event": label,
+                "White": LEARNER,
+                "Black": OPPONENT,
+                "Result": "*",
+                "UTCDate": "2026.01.01",
+                "UTCTime": "00:00:00",
+            }
+        )
+        board = game.board()
+        node = game
+        moves = prefix + ["g1f3", "g8f6", "f3g1", "f6g8"] * 33
+        for text in moves[:130]:
+            move = board.parse_uci(text)
+            node = node.add_variation(move)
+            board.push(move)
+        ingest_pgn(rotation_db, str(game))
+    rotation_games = [
+        (rotation_db.connection.execute("SELECT * FROM games WHERE id=?", (i,)).fetchone(), "white")
+        for i in (1, 2)
+    ]
+    for sequence, expected in ((1, 1), (5, 2), (9, 1), (13, 2)):
+        with history_budget() as budget:
+            budget["limit"] = 500
+            ordered, _ = prioritize(rotation_db, rotation_games, sequence)
+            nominated, _, _, exhausted, replayed = read_games(rotation_db, ordered, 0)
+            assert ordered[0][0]["id"] == expected and replayed == 1 and exhausted
+            assert budget["used"] == 500
+            assert any(item["early_center"] for item in nominated) == (expected == 2)
+    rotation_db.close()
+
 
 def test_report_engine_digest_reuse_and_freshness(tmp_path, monkeypatch):
     import hashlib
