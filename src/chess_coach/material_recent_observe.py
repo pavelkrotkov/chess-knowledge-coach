@@ -4,7 +4,7 @@ from .material_recent_cursor import save
 from .material_worker_item import process_item
 
 
-def observe(db, learner, row, state, report, outcomes, recent):
+def record(db, learner, row, report, outcomes, recent):
     report["examined"] += 1
     recent["examined"] += 1
     before = report["unavailable"]
@@ -16,6 +16,10 @@ def observe(db, learner, row, state, report, outcomes, recent):
         recent["processed"] += int(not result["replayed"])
         name = "no_opportunity" if result["outcome"] == "no_opportunity" else "observed"
         recent[name] += 1
+
+
+def observe(db, learner, row, state, report, outcomes, recent):
+    record(db, learner, row, report, outcomes, recent)
     state = {**state, "ply": row["ply"]}
     save(db, learner, state)
     return state
