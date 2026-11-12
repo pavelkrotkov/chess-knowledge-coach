@@ -1,0 +1,9 @@
+{% if evidence.discovery_success_currentness %}
+<p>Discovered-mate success source is {{ evidence.discovery_success_currentness }}. This is a provisional immediate-defense observation.</p>
+{% if evidence.discovery_success_currentness == "current" %}{% set d = evidence.discovery_success_observation %}
+{% if d.threat %}
+<p>The played move {{ d.played.san }} prevents every immediate opposing checkmate in the completed bounded scan.</p>
+<p>A distinct legal quiet alternative {{ d.witness.san }} permits {{ d.threat.san }}, revealing the slider on {{ d.threat.slider }} toward {{ d.threat.target }} and checkmating.{% if d.threat.double_check %} The move is double check.{% endif %}</p>
+<p>The opponent-turn probe nominated geometry only. The alternative and mate were replayed from the original history. Later consequences and intent remain unknown.</p>
+{% else %}<p>The mate-success observation remains unresolved ({{ d.reason | replace("_", " ") }}).</p>{% endif %}
+{% endif %}{% endif %}

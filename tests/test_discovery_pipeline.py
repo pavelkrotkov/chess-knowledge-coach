@@ -529,3 +529,135 @@ def test_source_worker_lesson_practice_and_review(tmp_path, monkeypatch):
             },
         )
         assert not combined(material_db, 1, LEARNER, exclusions=Counter())["replayed"]
+
+    # Success uses an independent witness even when best and played roots match.
+    import time
+
+    from chess_coach.discovery_mate_success_contract import MAPPER as SUCCESS_MAPPER
+    from chess_coach.discovery_mate_success_observation import observe as observe_success
+    from chess_coach.discovery_mate_success_source import process_source as success_source
+    from chess_coach.material_source import prepare
+
+    success_board = chess.Board("5n1k/p7/5K1N/8/8/8/8/6RR b - - 0 1")
+    safe_move = "f8g6"
+    same_line = source_line("f8g6 h6f7")
+    success = observe_success(success_board, safe_move, same_line, same_line)
+    assert success["outcome"] == "success" and success["threat"]["double_check"]
+    assert success["witness"]["move"] != safe_move
+    timed_out = observe_success(
+        success_board, safe_move, same_line, same_line, started=time.monotonic() - 2
+    )
+    assert timed_out["reason"] == "proof_deadline_exhausted"
+    with monkeypatch.context() as patch:
+        patch.setattr("chess_coach.discovery_mate_success_probe.MAX_CANDIDATES", 0)
+        limited = observe_success(success_board, safe_move, same_line, same_line)
+        assert limited["reason"] == "nomination_limit_or_unavailable"
+    assert all(
+        success["witness"]["nomination"][key] == success["threat"][key]
+        for key in ("move", "slider", "moved_from", "moved_to", "target")
+    )
+    reverse = observe_success(success_board.mirror(), mirror(safe_move), same_line, same_line)
+    assert reverse["outcome"] == "success"
+    unknown_board = chess.Board("5n1k/p7/5K1N/8/8/8/8/6RR b - - 8 1")
+    assert observe_success(unknown_board, safe_move, same_line, same_line)["reason"] == (
+        "history_or_position_unavailable"
+    )
+
+    success_path = tmp_path / "discovery-success.sqlite"
+    success_game = chess.pgn.Game()
+    success_game.setup(success_board)
+    success_game.headers.update(
+        {
+            "White": "fixture_opponent",
+            "Black": LEARNER,
+            "Result": "*",
+            "UTCDate": "2026.01.01",
+            "UTCTime": "12:03:00",
+        }
+    )
+    first = success_game.add_variation(success_board.parse_uci(safe_move))
+    success_board.push_uci(safe_move)
+    first.add_variation(success_board.parse_uci("h6f7"))
+    success_db = Database(success_path)
+    success_db.initialize()
+    ingest_pgn(success_db, str(success_game))
+    monkeypatch.setattr(
+        chess.engine.SimpleEngine,
+        "popen_uci",
+        lambda _: DefenseEngine([safe_move, "h6f7"], [safe_move, "h6f7"]),
+    )
+    assert (
+        run_analysis(
+            success_db, 1, game_input(success_db, 1), config, engine_identity(sys.executable)
+        )["status"]
+        == "complete"
+    )
+    successes = process_defenses(success_db, config)
+    assert successes["limits"] == {"positions": 20, "decisions": 4}
+    assert successes["outcomes"]["success"] == 1
+    success_id = success_db.connection.execute(
+        """SELECT e.id FROM evidence_mappings e JOIN mapping_runs r ON r.id=e.mapping_run_id
+           WHERE r.producer=? AND e.position_id=1""",
+        (SUCCESS_MAPPER,),
+    ).fetchone()[0]
+    success_evidence = inspect_evidence(success_db, success_id)
+    assert success_evidence["discovery_success_currentness"] == "current"
+    prepared = prepare(success_db, 1, LEARNER)
+    assert prepared["best"]["root_move"] == prepared["played"]["root_move"] == safe_move
+    assert success_source(success_db, prepared, time.monotonic())["replayed"]
+    review_evidence(success_db, success_id, decision="accept", actor="fixture_reviewer")
+    success_eligible, success_excluded = eligible_contexts(
+        success_db, LEARNER, "discovered_attack", "prevent", datetime.now(UTC)
+    )
+    assert not success_eligible and success_excluded["discovery_family_unvalidated"] == 1
+    success_groups = report(
+        success_db,
+        LEARNER,
+        "2025-12-31T00:00:00+00:00",
+        "2026-02-01T00:00:00+00:00",
+        "2025-12-01T00:00:00+00:00",
+        skill="discovered_attack",
+        operation="prevent",
+    )
+    assert len(success_groups["current"]) == 1
+    assert success_groups["current"][0]["successes"] == 1
+    success_lesson = build(success_db, LEARNER, success_groups["current"][0])
+    assert any(
+        "distinct legal alternative" in fact.lower()
+        for fact in success_lesson["examples"][0]["facts"]
+    )
+    success_app = create_app(
+        db_path=success_path,
+        subject=LEARNER,
+        actor="fixture_reviewer",
+        corpus="test",
+        login="fixture-login",
+        origin="https://coach.invalid",
+    )
+    before_get = success_db.connection.total_changes
+    page = success_app.test_client().get(
+        f"/evidence/{success_id}",
+        base_url="https://coach.invalid",
+        headers={"Tailscale-User-Login": "fixture-login"},
+    )
+    assert b"Discovered-mate success source is current" in page.data
+    assert b"distinct legal quiet alternative" in page.data
+    assert success_db.connection.total_changes == before_get
+    review_evidence(success_db, success_id, decision="revoke", actor="fixture_reviewer")
+    hidden = report(
+        success_db,
+        LEARNER,
+        "2025-12-31T00:00:00+00:00",
+        "2026-02-01T00:00:00+00:00",
+        "2025-12-01T00:00:00+00:00",
+        skill="discovered_attack",
+        operation="prevent",
+    )
+    assert not hidden["current"]
+    review_evidence(success_db, success_id, decision="accept", actor="fixture_reviewer")
+    success_db.connection.execute(
+        "UPDATE decision_analysis_lines SET score_value=score_value+1 WHERE position_id=1 AND role=?",
+        ("best",),
+    )
+    success_db.connection.commit()
+    assert inspect_evidence(success_db, success_id)["discovery_success_currentness"] == "stale"
