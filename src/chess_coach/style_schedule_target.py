@@ -1,7 +1,7 @@
 """Choose a fully replayed target while preserving fallback rotation."""
 
+from .style_schedule_independent import independent
 from .style_schedule_priority import choose as choose_structural
-from .style_schedule_priority import independent
 from .style_schedule_rotation import choose
 
 

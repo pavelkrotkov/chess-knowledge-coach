@@ -1,5 +1,6 @@
 """Rotate structural targets independently of the fallback cursor."""
 
+from .style_schedule_budget import CURRENT
 from .style_schedule_candidates_rank import rank
 
 
@@ -16,10 +17,16 @@ def choose(key, sequence, candidates):
     return positions[(step // len(ordered)) % len(positions)]
 
 
-def independent(targets, candidates):
-    center_games = {item["game_id"] for item in candidates if item.get("early_center")}
-    if len(center_games) != 1:
-        return targets
-    game = next(iter(center_games))
-    separate = [item for item in targets if item["game_id"] != game and item["status"] == "ready"]
-    return separate or targets
+# Both parsing and exact replay spend one history unit per stored ply.
+def _fits(count):
+    budget = CURRENT.get()
+    return budget is None or count * 2 <= budget["limit"] - budget["used"]
+
+
+def firsts(first, structural_first, index, checks, structural, count):
+    if _fits(count):
+        if first is None and checks:
+            first = index
+        if structural_first is None and structural:
+            structural_first = index
+    return first, structural_first

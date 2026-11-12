@@ -6,6 +6,7 @@ from .style_defense_nomination import distinct
 from .style_early_center import eligible as early_center
 from .style_schedule_clock import reached
 from .style_schedule_game import MAX_POSITIONS, _standard
+from .style_schedule_identity import identity
 
 
 def _consistent(board, row):
@@ -64,4 +65,5 @@ def inspect(db, game, color, *, center=False):
     ).fetchall()
     if not rows or len(rows) > MAX_POSITIONS:
         raise ValueError("unsupported position count")
-    return _count(rows, color, center)
+    counts = _count(rows, color, center)
+    return (*counts, identity(db, game, rows) if center else None)
