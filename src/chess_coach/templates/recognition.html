@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Recognition check — Chess coach{% endblock %}
+{% block content %}
+<h2>Recognition check</h2>
+{% if state.status == "unavailable" %}<p>{{ state.reason }}</p>
+{% else %}
+<p>{{ state.color | capitalize }} to move. The board is oriented from that side.</p>
+{% set board_label = "Recognition position; side to move at the bottom" %}{% include "board.html" %}
+{% if state.status == "active" %}
+<p>Which opportunity is available in this position?</p>
+<form method="post" action="{{ url_for('recognition_views.answer', attempt=attempt) }}">
+<input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="answer">
+<label><input type="radio" name="choice" value="capture" required> A direct capture that wins at least three material points</label>
+<label><input type="radio" name="choice" value="mate"> Checkmate in one move</label>
+<label><input type="radio" name="choice" value="uncertain"> I am unsure</label>
+<button>Submit answer</button></form>
+<form method="post" action="{{ url_for('recognition_views.answer', attempt=attempt) }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="action" value="reveal"><button>Reveal the explanation</button></form>
+{% else %}
+<p>{% if state.assisted %}Revealed with assistance.{% elif state.outcome == "ungraded" %}Your response is ungraded.{% elif state.outcome == "correct" %}Your answer matches the supported proof.{% else %}Your answer differs from the supported proof.{% endif %}</p>
+{% if state.explanation.kind == "mate" %}<p>{{ state.explanation.san }} is the unique verified immediate checkmate.</p>{% else %}<p>{{ state.explanation.san }} captures the piece on {{ state.explanation.target }}, with at least {{ state.explanation.gain }} points supported within the bounded reply check.</p>{% endif %}
+<p>This is a bounded position check and does not establish later safety or mastery.</p>
+{% endif %}{% endif %}
+<p><a href="{{ url_for('recognition_views.index') }}">Recognition checks</a></p>
+{% endblock %}

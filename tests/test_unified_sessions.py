@@ -83,7 +83,294 @@ def begin(db, attempt, source="public", version="public", key="multi", subject="
     )
 
 
+def _check_neutral_recognition(monkeypatch):
+    import sqlite3
+    from urllib.parse import urlparse
+
+    import chess.pgn
+
+    from chess_coach import recognition_current, recognition_scan, web_recognition
+    from chess_coach.recognition_proof import prove
+    from chess_coach.recognition_view import view
+    from chess_coach.related_capture_assessment import setup
+
+    db = Database(":memory:")
+    db.initialize()
+    db.connection.execute(
+        "INSERT INTO puzzle_corpora(version,source,checksum,state) VALUES('checks','fixture','hash','staging')"
+    )
+    corpus = db.connection.execute("SELECT id FROM puzzle_corpora").fetchone()[0]
+    for file in "abcdef":
+        board = chess.Board("4k3/8/8/8/3q4/8/8/3RK3 b - - 0 1")
+        board.set_piece_at(chess.parse_square(file + "7"), chess.Piece(chess.PAWN, chess.BLACK))
+        game_id = "owned" if file == "a" else "future" if file == "e" else "external" + file
+        db.connection.execute(
+            """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,rating_deviation,themes_json,objective)
+            VALUES(?,?,?, ?,?,1200,80,'[]','unknown')""",
+            (
+                file,
+                corpus,
+                board.fen(),
+                "https://lichess.org/" + game_id,
+                file + "7" + file + "6 d1d4",
+            ),
+        )
+        db.connection.execute(
+            "INSERT INTO puzzle_themes VALUES(?,?,'hangingPiece',1200)", (corpus, file)
+        )
+    mate = chess.Board("6k1/1p3ppp/8/8/8/8/8/R4K2 b - - 0 1")
+    for key, board, solution in (
+        ("mate-a", mate, "b7b6 a1a8"),
+        ("mate-b", mate.mirror(), "b2b3 a8a1"),
+    ):
+        db.connection.execute(
+            """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,rating_deviation,themes_json,objective)
+            VALUES(?,?,?,'https://example.invalid',?,1200,80,'[]','unknown')""",
+            (key, corpus, board.fen(), solution),
+        )
+        db.connection.execute("INSERT INTO puzzle_themes VALUES(?,?,'mateIn1',1200)", (corpus, key))
+    mixed = mate.copy()
+    mixed.set_piece_at(chess.B1, chess.Piece(chess.BISHOP, chess.BLACK))
+    db.connection.execute(
+        """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,rating_deviation,themes_json,objective)
+        VALUES('mixed',?,?,'https://example.invalid','b7b6 a1a8',1200,80,'[]','unknown')""",
+        (corpus, mixed.fen()),
+    )
+    db.connection.execute(
+        """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,rating_deviation,themes_json,objective)
+        VALUES('mixed-unknown',?,?,'https://example.invalid','b7b6 a1a8',1200,80,'[]','unknown')""",
+        (corpus, "6k1/1p3ppp/8/8/8/8/1r6/Rn3K2 b - - 0 1"),
+    )
+    db.connection.execute("UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus,))
+    pgn = '[White "Learner"]\n[Black "Opponent"]\n[Result "*"]\n\n1. e4 *'
+    db.connection.execute(
+        "INSERT INTO games(source,source_id,pgn,white,black,result) VALUES('lichess','owned',?,'Learner','Opponent','*')",
+        (pgn,),
+    )
+    db.connection.commit()
+    assert prove(db, "checks", "mixed", "mate", setup(db, "checks", "mixed")) is None
+    from chess_coach.mate_proof import immediate_mates
+    from chess_coach.objective_capture_judge import judge
+
+    unknown = setup(db, "checks", "mixed-unknown")
+    assert len(immediate_mates(unknown[0])) == 1
+    competing = next(move for move in unknown[0].legal_moves if unknown[0].is_capture(move))
+    assert (
+        judge(
+            unknown[0],
+            competing,
+            "bounded_material_gain",
+            competing.to_square,
+            3,
+            lambda: 0.0,
+            0.0,
+            1.5,
+            {},
+        )["status"]
+        == "unresolved"
+    )
+    assert prove(db, "checks", "mixed-unknown", "mate", unknown) is None
+
+    monkeypatch.setattr(web_recognition, "database", lambda: db)
+    app = create_app(
+        db_path=":memory:",
+        subject="learner",
+        actor="fixture",
+        corpus="checks",
+        login="fixture",
+        origin="https://coach.invalid",
+    )
+    client = app.test_client()
+    base, headers = "https://coach.invalid", {"Tailscale-User-Login": "fixture"}
+    assert client.get("/recognition", base_url=base).status_code == 403
+    landing = client.get("/recognition", base_url=base, headers=headers)
+    csrf = token(landing, "csrf")
+    assert (
+        client.post(
+            "/recognition/start", base_url=base, headers=headers, data={"csrf": csrf}
+        ).status_code
+        == 403
+    )
+    post_headers = headers | {"Origin": base}
+
+    def begin(prefer):
+        monkeypatch.setattr(recognition_scan.secrets, "randbelow", lambda _: prefer)
+        response = client.post(
+            "/recognition/start", base_url=base, headers=post_headers, data={"csrf": csrf}
+        )
+        assert response.status_code == 303
+        attempt = urlparse(response.headers["Location"]).path.rsplit("/", 1)[-1]
+        page = client.get(response.headers["Location"], base_url=base, headers=headers)
+        assert page.status_code == 200 and b"Which opportunity is available" in page.data
+        assert b"direct capture that wins at least three material points" in page.data
+        assert b"Checkmate in one move" in page.data and b"I am unsure" in page.data
+        assert b"Rxd4" not in page.data and b"Ra8" not in page.data
+        assert b"https://lichess.org" not in page.data and b"mate-a" not in page.data
+        return attempt
+
+    def respond(attempt, action, choice=None):
+        return client.post(
+            f"/recognition/{attempt}/answer",
+            base_url=base,
+            headers=post_headers,
+            data={"csrf": csrf, "action": action, **({"choice": choice} if choice else {})},
+        )
+
+    capture = begin(0)
+    record = db.connection.execute(
+        "SELECT source_key,cue_status FROM recognition_attempts WHERE attempt_id=?", (capture,)
+    ).fetchone()
+    assert tuple(record) == ("b", "uncued")  # The owned source game is excluded.
+    from chess_coach.related_capture_probe import position_probe
+
+    key = db.connection.execute(
+        "SELECT prompt_key FROM recognition_attempts WHERE attempt_id=?", (capture,)
+    ).fetchone()[0]
+    assert position_probe(db, "learner", "learner")(key)
+    assert respond(capture, "answer", "mate").status_code == 303
+    assert view(db, "learner", capture)["outcome"] == "incorrect"
+    assert respond(capture, "answer", "mate").status_code == 303
+    assert respond(capture, "answer", "capture").status_code == 400
+    start(
+        db,
+        attempt_id="later-replay",
+        subject="learner",
+        source_type="corpus",
+        version="checks",
+        key="b",
+    )
+    assert view(db, "learner", capture)["outcome"] == "incorrect"
+
+    mate_attempt = begin(1)
+    assert respond(mate_attempt, "answer", "mate").status_code == 303
+    assert view(db, "learner", mate_attempt)["outcome"] == "correct"
+    assisted = begin(0)
+    assert respond(assisted, "reveal").status_code == 303
+    assert view(db, "learner", assisted)["assisted"]
+    uncertain = begin(1)
+    black_page = client.get(f"/recognition/{uncertain}", base_url=base, headers=headers)
+    assert b"Black to move" in black_page.data
+    assert respond(uncertain, "answer", "uncertain").status_code == 303
+    assert view(db, "learner", uncertain)["outcome"] == "ungraded"
+
+    exposed = begin(0)
+    exposed_row = db.connection.execute(
+        "SELECT source_key FROM recognition_attempts WHERE attempt_id=?", (exposed,)
+    ).fetchone()
+    start(
+        db,
+        attempt_id="prior-replay",
+        subject="learner",
+        source_type="corpus",
+        version="checks",
+        key=exposed_row["source_key"],
+    )
+    assert view(db, "learner", exposed)["status"] == "unavailable"
+    assert respond(exposed, "answer", "capture").status_code == 400
+
+    newly_owned = begin(0)
+    db.connection.execute(
+        "INSERT INTO games(source,source_id,pgn,white,black,result) VALUES('lichess','future',?,'Learner','Opponent','*')",
+        (pgn,),
+    )
+    db.connection.commit()
+    assert view(db, "learner", newly_owned)["status"] == "unavailable"
+    assert respond(newly_owned, "answer", "capture").status_code == 400
+    with monkeypatch.context() as patch:
+        patch.setattr(recognition_current, "VERSION", "revoked")
+        assert view(db, "learner", mate_attempt)["status"] == "unavailable"
+
+    class ChangedVersion:
+        def __init__(self, connection):
+            self.connection = connection
+            self.count = 0
+
+        def execute(self, sql, *args):
+            if sql == "PRAGMA data_version":
+                self.count += 1
+                return type("VersionRow", (), {"fetchone": lambda _: (self.count,)})()
+            return self.connection.execute(sql, *args)
+
+        def __getattr__(self, name):
+            return getattr(self.connection, name)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(db, "connection", ChangedVersion(db.connection))
+        assert view(db, "learner", mate_attempt)["status"] == "unavailable"
+
+    raced = begin(0)
+    with monkeypatch.context() as patch:
+        patch.setattr(db, "connection", ChangedVersion(db.connection))
+        assert respond(raced, "answer", "capture").status_code == 400
+    assert view(db, "learner", raced)["status"] == "active"
+    from chess_coach import recognition_view
+
+    def timeout(*_args):
+        raise ValueError("recognition familiarity deadline reached")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(recognition_view, "novel", timeout)
+        timed = client.get(f"/recognition/{raced}", base_url=base, headers=headers)
+    assert b"timed out" in timed.data
+
+    # A different newly imported game can start at the prompt without indexing that initial board.
+    from chess_coach import recognition_game_frontier
+    from chess_coach.ingest import ingest_pgn
+
+    saved = db.connection.execute(
+        "SELECT prompt_fen,prompt_key,game_watermark FROM recognition_attempts WHERE attempt_id=?",
+        (raced,),
+    ).fetchone()
+    initial_board = chess.Board(saved["prompt_fen"])
+    custom = chess.pgn.Game()
+    custom.setup(initial_board)
+    custom.headers.update({"White": "Learner", "Black": "Opponent", "Result": "*"})
+    custom.add_variation(next(iter(initial_board.legal_moves)))
+    ingest_pgn(db, str(custom))
+    assert (
+        db.connection.execute("SELECT MAX(id) FROM games").fetchone()[0] > saved["game_watermark"]
+    )
+    assert not position_probe(db, "learner", "learner", exclude_recognition=raced)(
+        saved["prompt_key"]
+    )
+    with monkeypatch.context() as patch:
+        patch.setattr(recognition_game_frontier, "MAX_NEW_GAMES", 0)
+        bounded = client.get(f"/recognition/{raced}", base_url=base, headers=headers)
+    assert b"Too many newly imported games" in bounded.data
+    assert view(db, "learner", raced)["status"] == "unavailable"
+    stale = client.get(f"/recognition/{raced}", base_url=base, headers=headers)
+    assert b"first-encounter status is unavailable" in stale.data
+    assert b"Which opportunity is available" not in stale.data
+    assert respond(raced, "answer", "capture").status_code == 400
+    assert view(db, "learner", capture)["outcome"] == "incorrect"
+
+    history = client.get("/recognition", base_url=base, headers=headers)
+    assert b"View result" in history.data and b"Resume a check" in history.data
+    count = db.connection.execute("SELECT COUNT(*) FROM recognition_events").fetchone()[0]
+    assert count == 4
+    for table in (
+        "mastery_events",
+        "mastery_states",
+        "training_items",
+        "training_attempts",
+        "training_completions",
+        "objective_requests",
+    ):
+        assert db.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0
+    with pytest.raises(sqlite3.IntegrityError):
+        db.connection.execute(
+            "UPDATE recognition_events SET answer='mate' WHERE attempt_id=?", (capture,)
+        )
+    db.connection.rollback()
+    db.connection.execute("PRAGMA user_version=31")
+    db.initialize()
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 32
+    assert db.connection.execute("SELECT COUNT(*) FROM recognition_events").fetchone()[0] == count
+    db.close()
+
+
 def test_public_multiline_resume_hints_and_no_hidden_solution(tmp_path, monkeypatch):
+    _check_neutral_recognition(monkeypatch)
     db = fixture_db(tmp_path / "coach.sqlite")
     initial = begin(db, "a1")
     assert initial["fen"] == chess.STARTING_FEN and initial["learner_color"] == "white"
