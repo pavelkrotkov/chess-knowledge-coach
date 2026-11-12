@@ -979,6 +979,184 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     assert chess.pgn.read_game(stream) is None
     assert experiment_db.connection.execute("PRAGMA data_version").fetchone()[0] == version_before
 
+    # Admission replays the line and source binding even if content is rehashed.
+    from chess_coach.opening_unfamiliar_course import VERSION as UNFAMILIAR_VERSION
+    from chess_coach.opening_unfamiliar_study_course import build as build_unfamiliar_study
+
+    def rehash_unfamiliar(value):
+        value["version"] = digest(
+            canonical(
+                {
+                    "schema": UNFAMILIAR_VERSION,
+                    "report": value["report"],
+                    "chapters": value["chapters"],
+                }
+            )
+        )
+        return value["version"]
+
+    altered_course = copy.deepcopy(course)
+    altered_game = chess.pgn.read_game(io.StringIO(altered_course["chapters"][0]["pgn"]))
+    assert altered_game is not None
+    tail = altered_game.end()
+    assert tail.parent is not None
+    tail.parent.remove_variation(tail)
+    altered_course["chapters"][0]["pgn"] = str(altered_game)
+    with pytest.raises(ValueError, match="line differs"):
+        build_unfamiliar_study(altered_course, rehash_unfamiliar(altered_course))
+    altered_course = copy.deepcopy(course)
+    altered_course["chapters"][0]["source"]["license"] = "unrelated"
+    with pytest.raises(ValueError, match="chapter differs"):
+        build_unfamiliar_study(altered_course, rehash_unfamiliar(altered_course))
+
+    # Exact unfamiliar previews use the existing strict private Study ledger.
+    import os
+    import sys
+    from contextlib import nullcontext
+
+    from chess_coach import (
+        opening_unfamiliar_study,
+        ops_opening_study_publish,
+        study_anonymous,
+        study_session,
+    )
+    from chess_coach.study_remote import StudyError
+    from tests.test_private_study import Provider
+
+    unfamiliar_provider = Provider()
+
+    with monkeypatch.context() as patch:
+        patch.setenv("CHESS_DB", str(experiment_path))
+        patch.setattr(
+            study_session.httpx, "Client", lambda **_kwargs: nullcontext(unfamiliar_provider)
+        )
+        patch.setattr(study_anonymous, "request", unfamiliar_provider.anonymous)
+        patch.delenv("LICHESS_STUDY_TOKEN", raising=False)
+        with pytest.raises(ValueError, match="credentials"):
+            opening_unfamiliar_study.publish_locked(tmp_path, course_version)
+        assert unfamiliar_provider.created == 0
+        assert not (planning_dir / f"opening-study-{course_version}-intent.json").exists()
+        patch.setenv("LICHESS_STUDY_TOKEN", "fixture-token")
+        with pytest.raises(ValueError, match="version"):
+            opening_unfamiliar_study.publish_locked(tmp_path, "0" * 64)
+        assert unfamiliar_provider.created == 0
+        import chess_coach.opening_unfamiliar_public as public_source
+
+        with monkeypatch.context() as missing:
+            missing.setattr(public_source, "_private_file", lambda *_args: False)
+            with pytest.raises(ValueError, match="version"):
+                opening_unfamiliar_study.publish_locked(tmp_path, course_version)
+        assert unfamiliar_provider.created == 0
+        unfamiliar_provider.scopes = "study:read"
+        with pytest.raises(StudyError, match="scopes"):
+            opening_unfamiliar_study.publish_locked(tmp_path, course_version)
+        assert unfamiliar_provider.created == 0
+        unfamiliar_provider.scopes = "study:read,study:write"
+
+        # Index drift after freeze must abort before provider creation.
+        original_freeze = opening_study_session.freeze
+
+        def change_unfamiliar_source(*args):
+            guard = original_freeze(*args)
+            index = planning_dir / PROFILE_INDEX
+            info = index.stat()
+            os.utime(index, ns=(info.st_atime_ns, info.st_mtime_ns + 1))
+            return guard
+
+        with monkeypatch.context() as changed:
+            changed.setattr(opening_study_session, "freeze", change_unfamiliar_source)
+            with pytest.raises(ValueError, match="source changed"):
+                opening_unfamiliar_study.publish_locked(tmp_path, course_version)
+        assert unfamiliar_provider.created == 0
+        with pytest.raises(StudyError, match="unknown"):
+            opening_unfamiliar_study.publish_locked(tmp_path, course_version)
+        frozen = planning_dir / f"opening-study-{course_version}-course.json"
+        intent = planning_dir / f"opening-study-{course_version}-intent.json"
+        assert frozen.is_file() and frozen.stat().st_mode & 0o777 == 0o400
+        assert intent.is_file() and unfamiliar_provider.created == 1
+        assert not unfamiliar_provider.uploaded
+
+        # Source drift blocks upload, but uncertain creation can be reconciled read-only.
+        original_pgn = experiment_db.connection.execute(
+            "SELECT pgn FROM games WHERE id=1"
+        ).fetchone()[0]
+        experiment_db.connection.execute(
+            "UPDATE games SET pgn=replace(pgn, ?, ?) WHERE id=1",
+            ('[Event "Fixture"]', '[Event "Changed fixture"]'),
+        )
+        experiment_db.connection.commit()
+        with pytest.raises(ValueError, match="version"):
+            opening_unfamiliar_study.publish_locked(tmp_path, course_version)
+        assert not unfamiliar_provider.uploaded
+        with monkeypatch.context() as cli:
+            cli.setattr(
+                sys,
+                "argv",
+                [
+                    "publish",
+                    "--project-root",
+                    str(tmp_path),
+                    "--preview-version",
+                    course_version,
+                    "--reconcile-only",
+                ],
+            )
+            ops_opening_study_publish.main()
+        assert json.loads(intent.read_text())["study"] == "abcd1234"
+        assert unfamiliar_provider.created == 1 and not unfamiliar_provider.uploaded
+        experiment_db.connection.execute("UPDATE games SET pgn=? WHERE id=1", (original_pgn,))
+        from chess_coach.style_time_projection import update_projection
+
+        update_projection(experiment_db.connection, 1)
+        experiment_db.connection.commit()
+        with pytest.raises(StudyError, match="unknown"):
+            opening_unfamiliar_study.publish_locked(tmp_path, course_version)
+        assert len(unfamiliar_provider.uploaded) == 1
+        opening_unfamiliar_study.publish_locked(tmp_path, course_version)
+        assert unfamiliar_provider.created == 1 and len(unfamiliar_provider.uploaded) == 2
+        assert [item["orientation"] for item in unfamiliar_provider.uploaded] == ["white", "black"]
+        assert all(item["mode"] == "conceal" for item in unfamiliar_provider.uploaded)
+        assert [item["pgn"] for item in unfamiliar_provider.uploaded] == [
+            item["pgn"] for item in course["chapters"]
+        ]
+        receipt = json.loads(intent.read_text())
+        assert receipt["chapters"] == ["done", "done"] and len(receipt["chapter_ids"]) == 2
+        assert receipt["empty_chapter"] == unfamiliar_provider.empty_id
+        assert all(
+            receipt[flag]
+            for flag in ("complete", "privacy_verified", "anonymous_verified", "ordered_verified")
+        )
+        with monkeypatch.context() as cli:
+            cli.setattr(
+                sys,
+                "argv",
+                [
+                    "publish",
+                    "--project-root",
+                    str(tmp_path),
+                    "--unfamiliar",
+                    "--preview-version",
+                    course_version,
+                ],
+            )
+            ops_opening_study_publish.main()
+        assert unfamiliar_provider.created == 1 and len(unfamiliar_provider.uploaded) == 2
+        unfamiliar_provider.anonymous_status = 200
+        with pytest.raises(StudyError, match="anonymous"):
+            opening_unfamiliar_study.publish_locked(tmp_path, course_version)
+        unfamiliar_provider.anonymous_status = 401
+        unfamiliar_provider.uploaded.reverse()
+        with pytest.raises(StudyError, match="order"):
+            opening_unfamiliar_study.publish_locked(tmp_path, course_version)
+        unfamiliar_provider.uploaded.reverse()
+        original = unfamiliar_provider.uploaded[1]["pgn"]
+        altered = chess.pgn.read_game(io.StringIO(original))
+        altered.comment = "Attribution removed."
+        unfamiliar_provider.uploaded[1]["pgn"] = str(altered)
+        with pytest.raises(StudyError, match="different content"):
+            opening_unfamiliar_study.publish_locked(tmp_path, course_version)
+        unfamiliar_provider.uploaded[1]["pgn"] = original
+
     empty = explore_unfamiliar(experiment_db, tmp_path / "missing", "learner")
     assert empty["white"] is None and empty["black"] is None
     missing_app = create_app(
@@ -1031,6 +1209,9 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
             headers=headers,
         )
         assert partial_export.status_code == 200
+        partial_course = unfamiliar_course_preview(experiment_db, tmp_path, "learner")
+        partial_study = build_unfamiliar_study(partial_course, partial_match.group(1))
+        assert len(partial_study["course"]["chapters"]) == 1
         partial_stream = io.StringIO(partial_export.get_data(as_text=True))
         assert chess.pgn.read_game(partial_stream) is not None
         assert chess.pgn.read_game(partial_stream) is None
