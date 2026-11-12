@@ -488,6 +488,87 @@ def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch):
         )
         assert selected == fallback and not targeted
 
+    # A terminal reserved request must not displace an independent fresh game.
+    from collections import defaultdict
+
+    from chess_coach.deep_selection_source import learner_key
+    from chess_coach.style_early_center_report import slot_coverage
+
+    fresh_db = Database(":memory:")
+    fresh_db.initialize()
+    ingest_pgn(fresh_db, PGN)
+    ingest_pgn(fresh_db, PGN.replace(OPPONENT, "Independent opponent"))
+    positions = [
+        [
+            row[0]
+            for row in fresh_db.connection.execute(
+                "SELECT id FROM positions WHERE game_id=? ORDER BY ply LIMIT 2", (game_id,)
+            )
+        ]
+        for game_id in (1, 2)
+    ]
+    key = learner_key(LEARNER)
+    for number, (game_id, position_id) in enumerate(
+        ((1, positions[0][0]), (2, positions[1][1])), start=1
+    ):
+        fresh_db.connection.execute(
+            """INSERT INTO purpose_analysis_requests
+            (game_id,position_id,learner_key,purpose,policy_version,source_fingerprint,
+             config_json,request_fingerprint,status)
+            VALUES(?,?,?,'candidate-comparison','candidate-comparison-v1',?,'{}',?,'insufficient')""",
+            (game_id, position_id, key, str(number), str(number)),
+        )
+    fresh_db.connection.execute(
+        """INSERT INTO style_schedule_cycles(learner_key,sequence,coverage_json)
+        VALUES(?,1,'{"early_center_policy":"early-center-v1","early_center_targeted":true}')""",
+        (key,),
+    )
+    fresh_db.connection.execute(
+        """INSERT INTO style_schedule_slots(cycle_id,kind,game_id,position_id,status,detail,request_id)
+        VALUES(1,'control',1,?,'insufficient','insufficient',1)""",
+        (positions[0][0],),
+    )
+    first = {**chosen, "game_id": 1, "position_id": positions[0][0], "_game_key": "a"}
+    second = {**chosen, "game_id": 2, "position_id": positions[1][0], "_game_key": "b"}
+    identities = {1: "a", 2: "b"}
+    selected, targeted, nominated = style_schedule_control.select(
+        fresh_db, key, 5, [first, second], None, identities=identities
+    )
+    assert selected == second and targeted and nominated == 2
+    with monkeypatch.context() as patch:
+        patch.setattr("chess_coach.style_schedule_fresh_history.reached", lambda: True)
+        _selected, deadline_targeted, _nominated = style_schedule_control.select(
+            fresh_db, key, 5, [first, second], None, identities=identities
+        )
+        assert not deadline_targeted
+    # Request creation still checks the exact owned source and records only pending work.
+    from chess_coach.purpose_request import create as create_purpose
+
+    fresh_db.connection.commit()
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            "chess_coach.purpose_request.configuration",
+            lambda *_args: (None, {"fixture": "no-engine"}),
+        )
+        request = create_purpose(fresh_db, second["position_id"], LEARNER)
+    assert request["status"] == "pending"
+    fresh_db.connection.execute(
+        "UPDATE purpose_analysis_requests SET status='complete' WHERE id=?",
+        (request["request_id"],),
+    )
+    selected, targeted, nominated = style_schedule_control.select(
+        fresh_db, key, 5, [first, second], None, identities=identities
+    )
+    assert selected in (first, second) and not targeted and nominated == 2
+    coverage = defaultdict(int)
+    slot_coverage(
+        {"early_center_cycle": True, "early_center_target": False, "early_center_no_fresh": True},
+        {},
+        coverage,
+    )
+    assert coverage["fallback"] == coverage["no_fresh"] == 1
+    fresh_db.close()
+
     played = line("e4d5 d8d5 b1c3 d5e5")
     alternative = line("g1f3 d5e4 f3g5 e4e3")
     context = {"game_id": 1, "position_id": 3, "ply": 3, "played_move": "e4d5"}
