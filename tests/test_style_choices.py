@@ -1129,8 +1129,9 @@ def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch):
     duplicate = both.replace('[Event "original"]', '[Event "cosmetic copy"]')
     duplicate = duplicate.replace('[Site "?"]', '[Site "https://example.invalid/copy"]')
     duplicate = duplicate.replace("1. e4", "1. e4 {comment} ", 1)
-    separate = padded_game("independent", ["d2d4", "c7c6", "e2e4", "d8a5", "e1e2"])
-    for pgn in (both, duplicate, separate):
+    same_context = padded_game("same context", ["d2d4", "c7c6", "e2e4", "d8a5", "e1e2"])
+    separate = same_context.replace(OPPONENT, "independent_opponent")
+    for pgn in (both, duplicate, separate, same_context):
         ingest_pgn(duplicate_db, pgn)
     duplicate_games = [
         (
@@ -1173,19 +1174,26 @@ def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch):
 
     alias = {"game_id": 2, "position_id": alias_position, "_game_key": identities[2]}
     independent = {"game_id": 3, "position_id": independent_position, "_game_key": identities[3]}
+    same_game = duplicate_db.connection.execute("SELECT * FROM games WHERE id=4").fetchone()
+    same_key = style_schedule_nomination_game.inspect(
+        duplicate_db, same_game, "white", center=True
+    )[-1]
+    same_position = duplicate_db.connection.execute(
+        "SELECT id FROM positions WHERE game_id=4 ORDER BY ply LIMIT 1"
+    ).fetchone()[0]
+    same = {"game_id": 4, "position_id": same_position, "_game_key": same_key}
+    assert same_key not in (identities[2], identities[3])
+    candidates, keys = [alias, independent, same], {2: identities[2], 3: identities[3], 4: same_key}
     with history_budget() as budget:
         budget["limit"] = 500
-        assert fresh_available(
-            duplicate_db, duplicate_key, [alias, independent], {2: identities[2], 3: identities[3]}
-        ) == [independent]
+        assert fresh_available(duplicate_db, duplicate_key, candidates, keys) == [independent]
         assert budget["used"] == 0
-    duplicate_db.connection.execute("SAVEPOINT invalid_prior")
-    duplicate_db.connection.execute("UPDATE positions SET uci='invalid' WHERE game_id=1 AND ply=1")
-    assert not fresh_available(
-        duplicate_db, duplicate_key, [alias, independent], {2: identities[2], 3: identities[3]}
-    )
-    duplicate_db.connection.execute("ROLLBACK TO invalid_prior")
-    duplicate_db.connection.execute("RELEASE invalid_prior")
+    duplicate_db.connection.execute("SAVEPOINT contradictory_prior")
+    duplicate_db.connection.execute("UPDATE positions SET uci='d2d4' WHERE game_id=1 AND ply=1")
+    assert decisions_for_game(duplicate_db, 1, LEARNER) is None
+    assert fresh_available(duplicate_db, duplicate_key, candidates, keys) == [independent]
+    duplicate_db.connection.execute("ROLLBACK TO contradictory_prior")
+    duplicate_db.connection.execute("RELEASE contradictory_prior")
     with monkeypatch.context() as patch:
         patch.setattr(
             style_schedule_candidates,
