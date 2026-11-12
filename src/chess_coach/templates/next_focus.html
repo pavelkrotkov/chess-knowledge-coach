@@ -1,5 +1,8 @@
 {% extends "base.html" %}
-{% block title %}Next practice focus — Chess coach{% endblock %}
+{% block title %}Next practice focus — Chess coach{% if protection and protection.source %}<p><a href="{{ url_for('related_protection.show', evidence_id=protection.source.evidence_id) }}">Find unfamiliar practice for the selected source</a>. The <a href="{{ url_for('related_protection.finder') }}">general finder</a> checks other sources.</p>{% endif %}
+{% set selected_evidence = protection.source.evidence_id if protection and protection.source else none %}
+{% include "protection_plan_assessment.html" %}
+{% endblock %}
 {% block content %}
 <p><a href="{{ url_for('related_protection.finder') }}">Find an unfamiliar protection exercise</a> · A separate optional source check.</p>
 <h2>Next non-mate practice focus</h2>
@@ -58,4 +61,7 @@
 {% if fork.assessment.status != "correct" %}<p><a href="{{ url_for('related_fork.find_verified', evidence_id=fork.source.evidence_id) }}">Find an unfamiliar fork assessment for this source</a>. The search may find no match.</p>{% endif %}
 </section>
 {% endif %}
+{% if protection and protection.source %}<p><a href="{{ url_for('related_protection.show', evidence_id=protection.source.evidence_id) }}">Find unfamiliar practice for the selected source</a>. The <a href="{{ url_for('related_protection.finder') }}">general finder</a> checks other sources.</p>{% endif %}
+{% set selected_evidence = protection.source.evidence_id if protection and protection.source else none %}
+{% include "protection_plan_assessment.html" %}
 {% endblock %}
