@@ -13,6 +13,7 @@ from .repertoire import game_detail, repertoire_report
 from .tactical_course_deadline import PreviewDeadline
 from .web_board import board_rows
 from .web_db import database
+from .web_opening_study import submit as submit_unfamiliar_study
 from .web_unfamiliar_course import show as show_unfamiliar_course
 from .web_unfamiliar_measure import show as show_unfamiliar
 
@@ -50,6 +51,11 @@ def opening_unfamiliar():
 @repertoire_views.get("/repertoire/unfamiliar/course")
 def unfamiliar_course():
     return show_unfamiliar_course()
+
+
+@repertoire_views.post("/repertoire/unfamiliar/course/study")
+def unfamiliar_study():
+    return submit_unfamiliar_study()
 
 
 @repertoire_views.get("/repertoire/games/<int:game_id>")

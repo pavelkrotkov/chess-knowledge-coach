@@ -8,6 +8,7 @@ from .db import Database
 from .fork_game_trend_scan import after_pipeline as fork_after_pipeline
 from .fork_miss_worker import after_pipeline as fork_miss_after_pipeline
 from .opening_queue_worker import after_pipeline as opening_after_pipeline
+from .opening_study_worker import after_pipeline as study_after_pipeline
 from .pipeline_config import PipelineConfig
 from .pipeline_cooldown import utc_now
 from .pipeline_health import finish_run, start_run
@@ -47,6 +48,7 @@ def process_pipeline(
             opening_after_pipeline(db, config, started)
             fork_after_pipeline(db, config.learner, started)
             fork_miss_after_pipeline(db, config.learner, started)
+            study_after_pipeline(db, config.learner, started)
         return result
 
 

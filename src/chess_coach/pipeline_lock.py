@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 @contextmanager
-def pipeline_lock(database: Path, *, sync: bool = False):
+def pipeline_lock(database: Path, *, sync: bool = False, sync_wait: bool = True):
     if str(database) == ":memory:":
         raise ValueError("pipeline requires a file-backed database")
     suffix = ".sync.lock" if sync else ".pipeline.lock"
@@ -15,7 +15,7 @@ def pipeline_lock(database: Path, *, sync: bool = False):
     fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
     try:
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX | (0 if sync else fcntl.LOCK_NB))
+            fcntl.flock(fd, fcntl.LOCK_EX | (0 if sync and sync_wait else fcntl.LOCK_NB))
         except BlockingIOError:
             raise RuntimeError("pipeline is already running") from None
         yield
