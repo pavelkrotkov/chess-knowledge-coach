@@ -731,7 +731,26 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
             rehearsal.headers["Location"], base_url="https://coach.invalid", headers=headers
         )
         assert b"Find a continuation" in rehearsal_page.data
-        assert latest(db, LEARNER, 1, "capture")["status"] == "correct"
+        current_result = latest(db, LEARNER, 1, "capture")
+        assert current_result["status"] == "correct"
+        event = db.connection.execute(
+            "SELECT e.event_id,e.created_at FROM objective_requests r JOIN unified_session_events e "
+            "ON e.attempt_id=r.attempt_id AND e.event_id=r.event_id WHERE r.attempt_id=?",
+            (current_result["attempt_id"],),
+        ).fetchone()
+        assert current_result["answered_at"] == event["created_at"]
+        import chess_coach.objective_current as capture_current
+
+        prefix = capture_current.prefix
+
+        def changed_prefix(*args):
+            events = prefix(*args)
+            events[-1]["created_at"] = "2020-01-01T00:00:00+00:00"
+            return events
+
+        with monkeypatch.context() as patch:
+            patch.setattr(capture_current, "prefix", changed_prefix)
+            assert latest(db, LEARNER, 1, "capture")["status"] == "stale"
         # A second unfamiliar prompt shares source checking, while old snapshots
         # without admission context remain descriptive and unranked.
         next_page = client.get(
@@ -962,6 +981,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
             return {
                 "attempt_id": row["attempt_id"],
                 "started_at": row["started_at"],
+                "answered_at": row["started_at"].replace("+00:00", ".500000+00:00"),
                 "status": "correct" if number < 15 else "incorrect",
                 "hints": 0,
                 "reveals": 0,
@@ -998,10 +1018,90 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
                 "/plan/captures/comparison", base_url="https://coach.invalid", headers=headers
             )
             assert (
-                compared_page.status_code == 200
-                and b"Both nonoverlapping samples" in compared_page.data
+                compared_page.status_code == 200 and b"Both matched samples" in compared_page.data
             )
             assert b"10 correct" in compared_page.data and b"5 incorrect" in compared_page.data
+            from chess_coach.capture_compare_chronology import answer_end
+            from chess_coach.capture_compare_game import relation
+            from chess_coach.capture_compare_verify import verify
+
+            entries, complete = verify(db, synthetic, "capture")
+            assert complete and answer_end(entries) == "2026-01-01T00:00:19.500000+00:00"
+            sample = {
+                "games": 20,
+                "oldest": "2026-01-02T00:00:00+00:00",
+                "newest": "2026-01-03T00:00:00+00:00",
+                "complete": True,
+                "opportunities": 5,
+                "played": 3,
+                "other": 2,
+                "opportunity_unresolved": 0,
+                "unknown": 0,
+                "unchecked": 0,
+            }
+            games = {
+                "comparable": True,
+                "historical": False,
+                "earlier": sample,
+                "newer": sample,
+                "bounds": {"status": "available"},
+            }
+            assert relation(matched, games) == "later"
+            patch.setattr("chess_coach.capture_compare_game.capture", lambda *_: games)
+            page = client.get(
+                "/plan/captures/comparison", base_url="https://coach.invalid", headers=headers
+            )
+            assert b"Both comparable game windows start after" in page.data
+            assert b"5 proved opportunities" in page.data
+            games["earlier"] = {**sample, "oldest": "2026-01-01T00:00:19.500000+00:00"}
+            assert relation(matched, games) == "newer_only"
+            page = client.get(
+                "/plan/captures/comparison", base_url="https://coach.invalid", headers=headers
+            )
+            assert b"The more recent game window starts after" in page.data
+            assert b"pair is not a fully later comparison" in page.data
+            games["newer"] = {**sample, "oldest": "2026-01-01T00:00:19+00:00"}
+            assert relation(matched, games) == "overlap"
+            assert (
+                relation(matched, {**games, "newer": {**sample, "oldest": None}})
+                == "dates_unavailable"
+            )
+            assert (
+                answer_end(
+                    [
+                        {**entry, "answered_at": None} if i == 0 else entry
+                        for i, entry in enumerate(entries)
+                    ]
+                )
+                is None
+            )
+            assert (
+                answer_end(
+                    [
+                        {**entry, "answered_at": entries[9]["answered_at"]} if i == 10 else entry
+                        for i, entry in enumerate(entries)
+                    ]
+                )
+                is None
+            )
+            assert (
+                answer_end(
+                    [
+                        {**entry, "answered_at": entry["started_at"]} if i == 0 else entry
+                        for i, entry in enumerate(entries)
+                    ]
+                )
+                is None
+            )
+            assert relation(matched, {**games, "comparable": False}) == "games_unavailable"
+            assert (
+                relation(matched, {**games, "earlier": {**sample, "oldest": None}})
+                == "dates_unavailable"
+            )
+            assert (
+                relation(matched, {**games, "earlier": {**sample, "unchecked": 1}})
+                == "games_incomplete"
+            )
             tied = list(synthetic)
             tied[10] = dict(tied[10], started_at=tied[9]["started_at"])
             patch.setattr(comparison_select, "rows", lambda *_args: (tied, False))

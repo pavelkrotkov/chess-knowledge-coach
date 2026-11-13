@@ -1,5 +1,6 @@
 """Validate selected first and recent capture samples."""
 
+from .capture_compare_chronology import answer_end
 from .capture_compare_verify import verify
 from .mate_assessment_compare import SAMPLE, comparable, ordered
 from .mate_assessment_group_counts import counts
@@ -26,4 +27,5 @@ def comparison(db, group, corpus):
         result.update(earlier=counts(entries[:SAMPLE]), later=counts(entries[-SAMPLE:]))
         if comparable(entries, False) and _unassisted(entries):
             result["status"] = "comparable"
+            result["answer_end"] = answer_end(entries)
     return result
