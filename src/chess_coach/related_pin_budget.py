@@ -1,5 +1,7 @@
 """Reserve candidate line and pin-root work before inspecting it."""
 
+import chess
+
 from .related_pin_contract import LINE_LIMIT, PIN_GEOMETRY_LIMIT, ROOT_PROOF_LIMIT
 
 
@@ -22,3 +24,11 @@ def take(budget, kind, amount=1):
         return False
     budget[kind] += amount
     return True
+
+
+def slide_root(budget, move, attacker, pinned):
+    if move.from_square != pinned["pinned"] or not (
+        chess.between(attacker, pinned["rear"]) & chess.BB_SQUARES[move.to_square]
+    ):
+        return False
+    return pinned["type"] != "absolute_pin" or take(budget, "root_proofs")
