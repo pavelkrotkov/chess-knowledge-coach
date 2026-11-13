@@ -4,6 +4,8 @@ import re
 import sys
 from pathlib import Path
 
+from .web_release_compact import valid as compact_layout
+
 
 def release_info() -> dict | None:
     environment = Path(sys.prefix).resolve()
@@ -25,5 +27,5 @@ def _valid_layout(environment: Path, release: Path, module: Path) -> bool:
         environment.name == "venv"
         and release.parent.name == "releases"
         and release.parent.parent.name == ".runtime"
-        and module.is_relative_to(environment)
+        and (module.is_relative_to(environment) or compact_layout(environment, release, module))
     )
