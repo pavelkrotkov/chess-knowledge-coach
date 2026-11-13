@@ -2083,7 +2083,7 @@ def test_protection_lesson_offers_only_a_current_bounded_line_replay(tmp_path, m
 
                 missed = make_protection_game(Path(":memory:"), patch, created=True)
                 missed_id = material_decision(missed, 1, LEARNER)["evidence_ids"][0]
-                add_sample(missed)
+                add_sample(missed, fen="4k3/7p/8/2b5/8/3R3b/1P2P3/5b1K b - - 0 1")
                 candidate = created_preview(missed, LEARNER, missed_id, "test")
                 start_created(
                     missed,
@@ -2094,8 +2094,11 @@ def test_protection_lesson_offers_only_a_current_bounded_line_replay(tmp_path, m
                     reference=candidate["items"][0]["reference"],
                     assessment=True,
                 )
-                submit(missed, "missed", LEARNER, event_id="answer", move="d3d4")
+                submit(missed, "missed", LEARNER, event_id="answer", move="e2e3")
                 assert verify_objectives(missed, LEARNER)["outcomes"] == {"incorrect": 1}
+                missed_state = show(missed, "missed", LEARNER)
+                assert missed_state["created_target"] == "d3"
+                assert missed_state["verification"]["capture_san"] == "Bxd3"
                 with patch.context() as next_action:
                     next_action.setattr(
                         "chess_coach.web_unified_practice.database", lambda db=missed: db
@@ -2106,7 +2109,8 @@ def test_protection_lesson_offers_only_a_current_bounded_line_replay(tmp_path, m
                         headers=assessment_headers,
                     )
                     assert followup_text in page.data
-                    assert b"check what can capture it on its destination square" in page.data
+                    assert b"check what can capture the named piece after your move" in page.data
+                    assert b"even if that piece stays put" in page.data
                 missed.close()
 
                 found = created_preview(created_db, LEARNER, created_id, "test")
