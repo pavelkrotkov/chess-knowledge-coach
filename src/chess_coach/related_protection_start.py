@@ -5,7 +5,15 @@ from .related_session_start import start_selected
 
 
 def start_related(
-    db, *, attempt_id, subject, evidence_id, corpus_version, reference, assessment=False
+    db,
+    *,
+    attempt_id,
+    subject,
+    evidence_id,
+    corpus_version,
+    reference,
+    assessment=False,
+    followup=None,
 ):
     if not all(
         isinstance(value, str) and 0 < len(value) <= 256
@@ -16,6 +24,10 @@ def start_related(
         raise RuntimeError("cannot start during an existing transaction")
     version = db.connection.execute("PRAGMA main.data_version").fetchone()[0]
     selected = admit(db, subject, evidence_id, corpus_version, reference)
+    if followup:
+        from .protection_followup_prior import selected as validate_followup
+
+        validate_followup(db, subject, corpus_version, evidence_id, followup, assessment, selected)
     if assessment:
         source_type, corpus, key, binding, lines = selected
         if source_type != "corpus":

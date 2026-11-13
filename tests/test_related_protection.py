@@ -50,7 +50,7 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
         other = "a2a3" if color == "white" else "a7a6"
         pawn_from = "a2" if color == "white" else "a7"
         alternatives = []
-        for file in ("b", "c", "e"):
+        for file in ("b", "c", "e", "g"):
             alternate = setup.copy()
             pawn = alternate.remove_piece_at(chess.parse_square(pawn_from))
             alternate.set_piece_at(chess.parse_square(file + pawn_from[1]), pawn)
@@ -64,6 +64,7 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
             ("z-second", alternatives[0].fen(), " ".join(moves)),
             ("z-third", alternatives[1].fen(), " ".join(moves)),
             ("z-fourth", alternatives[2].fen(), " ".join(moves)),
+            ("z-fifth", alternatives[3].fen(), " ".join(moves)),
         ]
         db.connection.executemany(
             """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,rating_deviation,themes_json,objective)
@@ -78,8 +79,8 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
         db.connection.commit()
         result = preview(db, LEARNER, evidence, "test")
         assert result["source_outcome"] == "success"
-        assert len(result["items"]) == 4 and result["scanned"] == 127
-        assert result["protection_scan"]["checked"] == 5
+        assert len(result["items"]) == 4 and result["scanned"] == 128
+        assert result["protection_scan"]["checked"] == 6
         assert all(item["assessment_available"] for item in result["items"])
         from chess_coach.related_protection_assessment import certificate
 
@@ -123,7 +124,7 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
         )
         with pytest.raises(ValueError):
             certificate(db, "test", "z-match", chess.square_name(target), [wrong])
-        assert moves[1] not in json.dumps(result)
+        assert json.dumps(moves[1]) not in json.dumps(result)
         reference = result["items"][0]["reference"]
         with pytest.raises(ValueError):
             preview(db, "other", evidence, "test")
@@ -426,7 +427,7 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
 
         # A different still-unfamiliar candidate supports an independently checked first move.
         fresh = preview(db, LEARNER, evidence, "test")
-        assert len(fresh["items"]) == 3 and fresh["items"][0]["assessment_available"]
+        assert len(fresh["items"]) == 4 and fresh["items"][0]["assessment_available"]
         assessment = client.post(
             url,
             base_url="https://coach.invalid",
@@ -451,6 +452,63 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
         )
         assert checked["protection_assessment"] and checked["protection_target"]
 
+        from chess_coach.protection_plan_history import report as assessment_history
+
+        history = assessment_history(db, LEARNER, "test", evidence)
+        if color == "white":
+            assert history["status"] == "correct" and history["evidence_id"] == evidence
+            separate = assessment_history(db, LEARNER, "test", evidence + 1)
+            assert separate == history
+            page = client.get(
+                f"/evidence/{evidence}/related-protections?followup={assessment_attempt}",
+                base_url="https://coach.invalid",
+                headers=headers,
+            )
+            assert page.status_code == 200 and b"200-point content-rating band" in page.data
+            import chess_coach.web_protection_plan as plan_web
+
+            source = {
+                "evidence_id": evidence + 1,
+                "markers": 2,
+                "games": 2,
+                "review_status": "provisional",
+                "color": color,
+                "version": "fixture",
+                "key": "1",
+            }
+            group = {
+                "source": source,
+                "scanned": 2,
+                "groups": 1,
+                "checked": 1,
+                "unavailable": 0,
+                "limited": False,
+                "partial": False,
+            }
+            with monkeypatch.context() as patch:
+                patch.setattr(plan_web, "report", lambda *_, group=group: group)
+                view = client.get(
+                    "/plan/protection", base_url="https://coach.invalid", headers=headers
+                )
+                assert view.status_code == 200
+                assert b"assessment source is separate" in view.data
+                assert f"/evidence/{evidence}/related-protections?followup=".encode() in view.data
+                assert b"general finder" in view.data
+                assert (
+                    b"<title>Piece-protection rehearsal \xe2\x80\x94 Chess coach</title>"
+                    in view.data
+                )
+                assert view.data.count(b"Find a comparable unfamiliar protection assessment") == 1
+                patch.setattr(plan_web, "admissible", lambda *_: None)
+                patch.setattr(plan_web, "fork_recommendation", lambda *_: None)
+                focus = client.get(
+                    "/plan/next-focus", base_url="https://coach.invalid", headers=headers
+                )
+                assert b"<title>Next practice focus \xe2\x80\x94 Chess coach</title>" in focus.data
+                assert focus.data.count(b"Find a comparable unfamiliar protection assessment") == 1
+        else:
+            assert history["status"] == "unknown"
+
         from chess_coach.puzzle_sessions import start_attempt as start_legacy
         from chess_coach.unified_sessions import start as start_unified
 
@@ -466,6 +524,8 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
             key=answered,
         )
         assert show(db, assessment_attempt, LEARNER)["verification"]["status"] == "correct"
+        if color == "white":
+            assert assessment_history(db, LEARNER, "test", evidence)["status"] == "correct"
 
         for exposure in ("unified", "legacy"):
             available = preview(db, LEARNER, evidence, "test")["items"]
@@ -479,6 +539,7 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
                 corpus_version="test",
                 reference=token,
                 assessment=True,
+                followup=assessment_attempt if color == "white" and exposure == "unified" else None,
             )
             key = db.connection.execute(
                 "SELECT source_key FROM unified_sessions WHERE attempt_id=?", (active,)
@@ -508,6 +569,55 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
                 ).fetchone()[0]
                 == 0
             )
+
+        if color == "white":
+            last = preview(db, LEARNER, evidence, "test")["items"][0]
+            start_related(
+                db,
+                attempt_id="verified-miss",
+                subject=LEARNER,
+                evidence_id=evidence,
+                corpus_version="test",
+                reference=last["reference"],
+                assessment=True,
+            )
+            submit(db, "verified-miss", LEARNER, event_id="answer", move=wrong)
+            assert verify(db, LEARNER)["processed"] == 1
+            db.connection.execute(
+                "UPDATE unified_sessions SET started_at='2099-01-01T00:00:00+00:00' WHERE attempt_id=?",
+                ("verified-miss",),
+            )
+            db.connection.commit()
+            assert assessment_history(db, LEARNER, "test", evidence)["status"] == "incorrect"
+            from chess_coach.objective_protection_contract import VERSION as protection_version
+
+            with monkeypatch.context() as patch:
+                patch.setattr(plan_web, "report", lambda *_, group=group: group)
+                view = client.get(
+                    "/plan/protection", base_url="https://coach.invalid", headers=headers
+                )
+                assert b"Rehearse this assessment source" in view.data
+                assert b"check the opponent" in view.data
+                with app.test_request_context():
+                    from flask import url_for
+
+                    start_url = url_for("unified_practice.begin")
+                replay = client.post(
+                    start_url,
+                    base_url="https://coach.invalid",
+                    headers=headers | {"Origin": "https://coach.invalid"},
+                    data={
+                        "csrf": csrf,
+                        "source_type": "own-game",
+                        "version": protection_version,
+                        "key": str(evidence),
+                    },
+                )
+                assert replay.status_code == 303
+            from chess_coach.protection_followup_prior import prior
+
+            with pytest.raises(ValueError):
+                prior(db, LEARNER, "test", evidence, assessment_attempt)
 
         with pytest.raises(ValueError):
             start_related(
