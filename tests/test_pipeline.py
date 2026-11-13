@@ -366,6 +366,75 @@ def test_network_logging_never_exposes_account_or_token(tmp_path, monkeypatch, c
     assert "/games/user/learner" not in caplog.text.lower()
 
 
+def _ordinary_cursor_busy(tmp_path, monkeypatch):
+    import sqlite3
+
+    import chess_coach.pipeline_ordinary_archive as archive_worker
+    from chess_coach.ingest import ingest_pgn
+    from chess_coach.lichess_state import account_key
+    from chess_coach.pipeline_cursor import save_cursor
+    from chess_coach.pipeline_health import run_status
+    from chess_coach.pipeline_inputs import engine_identity, scan_input
+
+    db = Database(tmp_path / "ordinary-cursor-busy.sqlite")
+    db.initialize()
+    for index in (1, 2):
+        ingest_pgn(db, game(f"busy{index:02}", int(time.time()) - 20 + index))
+    config = PipelineConfig(
+        learner="learner",
+        max_games=2,
+        max_scan=10,
+        nodes=100,
+        seconds_per_position=0.1,
+        engine_path=sys.executable,
+    )
+    engine_hash = engine_identity(config.engine_path)
+    account = account_key(config.learner)
+    save_cursor(db, account, 0, scan_input(db, config, engine_hash))
+    db.connection.execute("PRAGMA busy_timeout=0")
+    reader = sqlite3.connect(db.path, timeout=0)
+    process = archive_worker.process_game
+
+    def hold_after_game(*args):
+        result = process(*args)
+        reader.execute("BEGIN")
+        reader.execute("SELECT COUNT(*) FROM pipeline_cursors").fetchone()
+        return result
+
+    with monkeypatch.context() as patch:
+        patch.setattr(archive_worker, "process_game", hold_after_game)
+        games, scan = archive_worker.process_archive(db, config, engine_hash, set(), single=False)
+    assert len(games) == 1 and scan["detail"] == "cursor_busy"
+    assert scan["error_category"] == "sqlite_busy" and scan["has_more"]
+    assert not scan["archive_checked"] and not db.connection.in_transaction
+    assert run_status(db, {"status": "complete"}, games, scan) == "partial"
+    assert (
+        db.connection.execute(
+            "SELECT last_game_id FROM pipeline_cursors WHERE account_key=?", (account,)
+        ).fetchone()[0]
+        == 0
+    )
+    assert db.connection.execute("SELECT COUNT(*) FROM analysis_runs").fetchone()[0] == 1
+    reader.rollback()
+    reader.close()
+    resumed, scan = archive_worker.process_archive(db, config, engine_hash, set(), single=False)
+    assert resumed and scan["archive_checked"]
+    assert db.connection.execute("SELECT COUNT(*) FROM analysis_runs").fetchone()[0] == 2
+    assert (
+        db.connection.execute("SELECT COUNT(*) FROM analysis_runs WHERE game_id=1").fetchone()[0]
+        == 1
+    )
+
+    writer = sqlite3.connect(db.path, timeout=0)
+    writer.execute("BEGIN IMMEDIATE")
+    with pytest.raises(sqlite3.OperationalError) as begin_error:
+        archive_worker._save(db, account, 0, scan_input(db, config, engine_hash))
+    assert begin_error.value.sqlite_errorcode & 255 == sqlite3.SQLITE_BUSY
+    writer.rollback()
+    writer.close()
+    db.close()
+
+
 def test_recent_ordinary_budget_archive_and_single_lane_fairness(tmp_path, monkeypatch):
     from chess_coach.ingest import ingest_pgn
     from chess_coach.lichess_state import account_key
@@ -377,6 +446,7 @@ def test_recent_ordinary_budget_archive_and_single_lane_fairness(tmp_path, monke
     from chess_coach.pipeline_work import run_analysis
 
     monkeypatch.setattr(chess.engine.SimpleEngine, "popen_uci", lambda _: FakeEngine())
+    _ordinary_cursor_busy(tmp_path, monkeypatch)
     db = Database(tmp_path / "recent.sqlite")
     db.initialize()
     now = int(time.time())
