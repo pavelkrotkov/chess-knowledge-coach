@@ -23,7 +23,11 @@ def insert_slot(db, cycle_id, kind, item):
 
 def pending(db, learner):
     return db.connection.execute(
-        """SELECT s.*,c.sequence FROM style_schedule_slots s JOIN style_schedule_cycles c ON c.id=s.cycle_id
+        """SELECT s.*,c.sequence,
+        (s.kind='control' AND c.sequence % 4=1
+         AND json_extract(c.coverage_json,'$.early_center_policy')='early-center-v1'
+         AND json_extract(c.coverage_json,'$.early_center_targeted')=1) AS early_center_target
+        FROM style_schedule_slots s JOIN style_schedule_cycles c ON c.id=s.cycle_id
         WHERE c.learner_key=? AND s.status IN ('ready','pending','running','interrupted')
         ORDER BY c.sequence,s.id LIMIT 3""",
         (learner_key(learner),),
