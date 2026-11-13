@@ -1,5 +1,6 @@
 """Rotate bounded game scans across runs without storing account names."""
 
+import sqlite3
 from datetime import UTC, datetime
 
 from .db import Database
@@ -23,15 +24,33 @@ def scan_from(db: Database, learner: str, limit: int, scan_hash: str):
     return key, games
 
 
-def save_cursor(db: Database, key: str, game_id: int, scan_hash: str) -> None:
-    with mapping_transaction(db):
-        db.connection.execute(
-            """INSERT INTO pipeline_cursors(account_key,last_game_id,updated_at,scan_hash)
-            VALUES (?,?,?,?) ON CONFLICT(account_key) DO UPDATE SET
-            last_game_id=excluded.last_game_id,updated_at=excluded.updated_at,
-            scan_hash=excluded.scan_hash""",
-            (key, game_id, datetime.now(UTC).isoformat(), scan_hash),
-        )
+class CursorCommitBusy(Exception):
+    """A cursor write reached commit and rolled back because a reader held a lock."""
+
+
+def save_cursor(
+    db: Database, key: str, game_id: int, scan_hash: str, *, classify_commit_busy=False
+) -> None:
+    written = False
+    try:
+        with mapping_transaction(db):
+            db.connection.execute(
+                """INSERT INTO pipeline_cursors(account_key,last_game_id,updated_at,scan_hash)
+                VALUES (?,?,?,?) ON CONFLICT(account_key) DO UPDATE SET
+                last_game_id=excluded.last_game_id,updated_at=excluded.updated_at,
+                scan_hash=excluded.scan_hash""",
+                (key, game_id, datetime.now(UTC).isoformat(), scan_hash),
+            )
+            written = True
+    except sqlite3.OperationalError as error:
+        if (
+            classify_commit_busy
+            and written
+            and not db.connection.in_transaction
+            and getattr(error, "sqlite_errorcode", 0) & 255 == sqlite3.SQLITE_BUSY
+        ):
+            raise CursorCommitBusy from None
+        raise
 
 
 def has_more(db: Database, games, scanned: int, last_game: int) -> bool:
