@@ -10,7 +10,10 @@ def distribution(values):
         if not isinstance(value, str) or not re.fullmatch(r"(?:0|[1-9][0-9]*)(?:\+[0-9]+)?", value):
             return None
         base, _, increment = value.partition("+")
-        if int(base) == 0 and (not increment or int(increment) == 0):
+        try:
+            if int(base) == 0 and (not increment or int(increment) == 0):
+                return None
+        except ValueError:
             return None
         result.append(value)
     return Counter(result)
