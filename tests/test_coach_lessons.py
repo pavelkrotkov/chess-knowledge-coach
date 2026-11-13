@@ -1833,10 +1833,13 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
 
 def test_protection_lesson_offers_only_a_current_bounded_line_replay(tmp_path, monkeypatch):
     import sys
+    from io import StringIO
+    from pathlib import Path
 
     import pytest
 
     from chess_coach.db import Database
+    from chess_coach.evidence_review import review_evidence
     from chess_coach.ingest import ingest_pgn
     from chess_coach.material_detector import process_decision as material_decision
     from chess_coach.pipeline_config import PipelineConfig
@@ -1846,10 +1849,71 @@ def test_protection_lesson_offers_only_a_current_bounded_line_replay(tmp_path, m
     from tests.test_material_pipeline import LEARNER, make_protection_game
     from tests.test_unified_sessions import token
 
+    for color in ("white", "black"):
+        with monkeypatch.context() as patch:
+            patch.setattr("chess_coach.analysis_transaction.TemporaryFile", lambda **_: StringIO())
+            created_db = make_protection_game(Path(":memory:"), patch, color=color, created=True)
+            created_id = material_decision(created_db, 1, LEARNER)["evidence_ids"][0]
+            app = create_app(
+                db_path=":memory:",
+                subject=LEARNER,
+                actor="fixture",
+                corpus="test",
+                login="login",
+                origin="https://coach.invalid",
+            )
+            patch.setattr("chess_coach.web_views.database", lambda db=created_db: db)
+            client = app.test_client()
+            before = created_db.connection.total_changes
+            page = client.get(
+                f"/evidence/{created_id}",
+                base_url="https://coach.invalid",
+                headers={"Tailscale-User-Login": "login"},
+            )
+            assert page.status_code == 200 and created_db.connection.total_changes == before
+            assert b"Exposure created by the played move" in page.data
+            assert b"checked continuation" in page.data and b"checked alternative" in page.data
+            with patch.context() as unknown:
+                unknown.setattr(
+                    "chess_coach.material_created_exposure_proof.history_known", lambda _: False
+                )
+                unavailable = client.get(
+                    f"/evidence/{created_id}",
+                    base_url="https://coach.invalid",
+                    headers={"Tailscale-User-Login": "login"},
+                )
+                assert b"Exposure created by the played move" not in unavailable.data
+            created_db.connection.execute(
+                "UPDATE decision_analysis_lines SET score_value=score_value+1 WHERE position_id=1"
+            )
+            created_db.connection.commit()
+            stale = client.get(
+                f"/evidence/{created_id}",
+                base_url="https://coach.invalid",
+                headers={"Tailscale-User-Login": "login"},
+            )
+            assert b"Exposure created by the played move" not in stale.data
+            created_db.connection.execute(
+                "UPDATE decision_analysis_lines SET score_value=score_value-1 WHERE position_id=1"
+            )
+            created_db.connection.commit()
+            review_evidence(created_db, created_id, decision="reject", actor="fixture")
+            rejected = client.get(
+                f"/evidence/{created_id}",
+                base_url="https://coach.invalid",
+                headers={"Tailscale-User-Login": "login"},
+            )
+            assert b"Exposure created by the played move" not in rejected.data
+            created_db.close()
+
     path = tmp_path / "protection-coaching.sqlite"
     db = make_protection_game(path, monkeypatch)
-    material_decision(db, 1, LEARNER)
+    original_id = material_decision(db, 1, LEARNER)["evidence_ids"][0]
+    from chess_coach.evidence_review import inspect_evidence
+    from chess_coach.material_created_exposure import explain as created_exposure
     from chess_coach.protection_plan import report as protection_report
+
+    assert created_exposure(db, inspect_evidence(db, original_id), LEARNER) is None
 
     single = protection_report(db, LEARNER)
     assert single["groups"] == 0 and single["source"] is None and single["checked"] == 0

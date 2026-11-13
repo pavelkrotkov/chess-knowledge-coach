@@ -54,6 +54,11 @@ def evidence_detail(evidence_id: int):
         evidence = inspect_evidence(database(), evidence_id)
     except ValueError:
         abort(404)
+    from .material_created_exposure import explain as created_exposure
+
+    evidence["created_material_exposure"] = created_exposure(
+        database(), evidence, current_app.config["SUBJECT"]
+    )
     return render_evidence(evidence)
 
 

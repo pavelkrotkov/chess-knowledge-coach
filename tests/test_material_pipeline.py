@@ -574,8 +574,13 @@ def test_real_stockfish_bounded_worker_records_nonmate_observation(tmp_path):
     assert observation["outcome"] in {"success", "failure", "ambiguous"}
 
 
-def make_protection_game(path, monkeypatch, *, timed=True, played="a2a3", color="white"):
-    board = chess.Board("4k3/8/8/2b5/3R4/8/P7/7K w - - 0 1")
+def make_protection_game(
+    path, monkeypatch, *, timed=True, played="a2a3", color="white", created=False
+):
+    fen = "4k3/8/8/2b5/8/3R4/P7/7K w - - 0 1" if created else "4k3/8/8/2b5/3R4/8/P7/7K w - - 0 1"
+    if created:
+        played = "d3d4"
+    board = chess.Board(fen)
 
     def orient(uci):
         move = chess.Move.from_uci(uci)
@@ -597,7 +602,7 @@ def make_protection_game(path, monkeypatch, *, timed=True, played="a2a3", color=
         game.headers["UTCTime"] = "12:00:00"
     node = game.add_variation(board.parse_uci(orient(played)))
     board.push_uci(orient(played))
-    reply = "c5d4" if played == "a2a3" else "e8f8"
+    reply = "c5d4" if played in {"a2a3", "d3d4"} else "e8f8"
     node.add_variation(board.parse_uci(orient(reply)))
 
     class ProtectionEngine(Engine):
@@ -611,8 +616,15 @@ def make_protection_game(path, monkeypatch, *, timed=True, played="a2a3", color=
                         "depth": 5,
                     }
                 ]
-            move = root_moves[0] if root_moves else chess.Move.from_uci(orient("d4d5"))
-            reply = chess.Move.from_uci(orient("c5d4" if move.uci() == orient("a2a3") else "e8f8"))
+            best = "d3d5" if created else "d4d5"
+            move = root_moves[0] if root_moves else chess.Move.from_uci(orient(best))
+            reply = chess.Move.from_uci(
+                orient(
+                    "c5d4"
+                    if move.uci() == orient(played) and played in {"a2a3", "d3d4"}
+                    else "e8f8"
+                )
+            )
             score = 0 if root_moves else 500
             return [
                 {
