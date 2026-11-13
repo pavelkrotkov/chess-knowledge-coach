@@ -138,7 +138,7 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
         patch.setattr("chess_coach.web_protection_plan.report", lambda *_args: None)
         patch.setattr(finder, "selection", lambda *_args: pytest.fail("unexpected corpus search"))
         focus = client.get("/plan/next-focus", base_url=base, headers=headers)
-    assert focus.data.count(b"Optional practice: finding forks") == 1
+    assert focus.data.count(b"Next focus: finding forks") == 1
     assert b"<title>Next practice focus \xe2\x80\x94 Chess coach</title>" in focus.data
     assert b"2 independent games" in focus.data and b"Rehearse this fork" in focus.data
     assert assessment.encode() in focus.data
@@ -185,7 +185,7 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
         patch.setattr("chess_coach.web_protection_plan.admissible", lambda *_args: None)
         patch.setattr("chess_coach.web_protection_plan.report", lambda *_args: None)
         focus = client.get("/plan/next-focus", base_url=base, headers=headers)
-        assert b"Optional practice: finding forks" in focus.data
+        assert b"Next focus: finding forks" in focus.data
         assert b"Find an unfamiliar fork assessment for this source" in focus.data
         clock[0] = time.monotonic()
         patch.setattr(coaching_quick, "TOTAL_SECONDS", 2.5)
