@@ -7,6 +7,7 @@ from .capture_game_trend_bounds import bounds
 from .capture_game_trend_current import current
 from .capture_game_trend_paths import binding, location
 from .capture_game_trend_validate import validate
+from .dated_game_controls import reason as control_reason
 from .dated_game_trend import choose
 from .mate_game_comparability import reason as comparability_reason
 from .short_mate_trend_report import _qualified
@@ -47,14 +48,9 @@ def report(db, learner, root):
         state, candidates, coverage, historical = selected
         games = state["games"]
         newer, earlier = _sample(games[:20]), _sample(games[20:40])
+        reason = _comparison(state, games, candidates, (newer, earlier), coverage)
         if not current(db, state, candidates, (newer, earlier), before):
             return None
-        dates = [item["date"] for item in games]
-        reason = (
-            comparability_reason([newer, earlier], dates, coverage, state["unavailable"])
-            if state["selection_complete"]
-            else "selection_pending"
-        )
         comparable = reason is None
         return {
             "historical": historical,
@@ -71,3 +67,12 @@ def report(db, learner, root):
         }
     except (OSError, sqlite3.Error, ValueError, TypeError, KeyError, IndexError):
         return None
+
+
+def _comparison(state, games, candidates, samples, coverage):
+    if not state["selection_complete"]:
+        return "selection_pending"
+    dates = [item["date"] for item in games]
+    return comparability_reason(samples, dates, coverage, state["unavailable"]) or control_reason(
+        games, candidates
+    )

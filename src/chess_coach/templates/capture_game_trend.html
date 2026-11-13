@@ -7,7 +7,7 @@
 {% if not report %}
 <p>The background game scan is pending or its sources have changed. This page will update after the worker checks the games.</p>
 {% else %}
-{% if report.comparable %}<p>The game samples and their boundaries are verified. Results are descriptive and can change as the scan progresses.</p>{% else %}<p>The game samples or their boundaries are not fully verified. Do not compare these partial samples.</p>{% endif %}
+{% if report.comparable %}<p>The game samples and their boundaries are verified. Results are descriptive and can change as the scan progresses.</p>{% else %}<p>These game samples are not comparable yet. See the reason below.</p>{% endif %}
 {% if report.historical %}<p>Historical sample through {{ report.through }}. Newer games are pending and are not included in these results.</p>{% endif %}
 {% for label, sample in (("More recent", report.newer), ("Earlier", report.earlier)) %}
 <section><h3>{{ label }} games</h3>
@@ -28,6 +28,12 @@
 {% else %}
 {% if report.comparable_reason == "selection_pending" %}<p>A rate comparison is unavailable while the worker is still selecting independent games.</p>
 {% elif report.comparable_reason == "source_unavailable" %}<p>A rate comparison is unavailable because some game dates, ownership records or source checks could not be verified.</p>
+{% elif report.comparable_reason == "time_control_unknown" %}
+<p>A rate comparison is unavailable because some game time controls are missing or unsupported.</p>
+{% elif report.comparable_reason == "time_control_source" %}
+<p>A rate comparison is unavailable because a stored time control does not match the game’s PGN header.</p>
+{% elif report.comparable_reason == "time_control_mismatch" %}
+<p>A rate comparison is unavailable because the two samples have different time-control distributions.</p>
 {% elif report.comparable_reason == "too_few_games" %}<p>A rate comparison is unavailable because each sample needs 20 independent games. Earlier has {{ report.earlier.games }} and more recent has {{ report.newer.games }}.</p>
 {% elif report.comparable_reason == "between_tie" %}<p>A rate comparison is unavailable because games on either side of the sample boundary share a start time.</p>
 {% elif report.comparable_reason == "frontier_tie" %}<p>A rate comparison is unavailable because the older sample and its boundary game share a start time.</p>
