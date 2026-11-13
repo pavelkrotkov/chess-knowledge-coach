@@ -12,6 +12,8 @@ def add_fields(result, row):
     if not binding:
         return
     result["created_exposure"] = True
+    # The target is visible, but the contrast remains hidden until a legal answer.
+    _assessment(result, row, binding)
     if waiting(row, binding):
         result["created_waiting"] = True
         return
@@ -44,3 +46,17 @@ def waiting(row, binding=None):
     if binding is None:
         binding = json.loads(row["provenance_json"]).get(KEY)
     return bool(binding) and row["status"] == "active" and row["next_index"] == 0
+
+
+def _assessment(result, row, binding):
+    if binding.get("assessment"):
+        board = chess.Board(row["prompt_fen"])
+        target = binding["assessment"]["target"]
+        piece = board.piece_at(chess.parse_square(target))
+        if piece is None:
+            raise ValueError("named piece unavailable")
+        result.update(
+            created_assessment=True,
+            created_target=target,
+            created_piece=chess.piece_name(piece.piece_type),
+        )

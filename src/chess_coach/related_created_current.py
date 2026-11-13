@@ -40,6 +40,11 @@ def _recheck(db, row, binding, snapshot_hash):
     select_lines(selected, binding, expected_version=FILTER_VERSION)
     recheck_candidate(db, row, selected, binding, source)
     selected["objective"] = "legal_line"
+    # Rehearsal snapshots retain their original goal; assessments bind a certified one.
+    if binding.get("assessment"):
+        from .related_created_objective import current
+
+        current(db, row, binding, selected)
     selected["provenance"][KEY] = binding
     if snapshot_hash(selected) != row["snapshot_hash"]:
         raise ValueError("practice snapshot changed")

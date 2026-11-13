@@ -7,14 +7,18 @@ from .material_exchange import exchange
 from .material_exchange_rules import has_legal_recapture
 
 
-def collect(probe):
+def collect(probe, *, check=None):
     targets = {}
     uncertain = {}
-    for move in probe.generate_pseudo_legal_captures():
+    for index, move in enumerate(probe.generate_pseudo_legal_captures()):
+        if check is not None:
+            check(index)
         target = probe.piece_at(move.to_square)
         if not _supported_target(target):
             continue
         value = _gain(probe, move)
+        if check is not None:
+            check(index)
         if value is None:
             uncertain.setdefault(move.to_square, []).append(move.uci())
         elif value >= 3:
