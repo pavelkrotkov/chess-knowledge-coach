@@ -1098,6 +1098,116 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
     export_path.write_bytes(exported_bytes)
     export_path.chmod(0o400)
 
+    # Request only the exact offered course; an incomplete attempt retries the same file.
+    from chess_coach import tactical_study_worker
+    from chess_coach.study_remote import StudyError
+
+    with monkeypatch.context() as patch:
+        patch.setenv("LICHESS_STUDY_TOKEN", "fixture-token")
+        patch.setenv("CHESS_PROJECT_ROOT", str(project))
+        with course_client.session_transaction(base_url="https://coach.invalid") as session:
+            course_csrf = session["csrf"]
+        submit = course_url + "/study"
+        post_headers = course_headers | {"Origin": "https://coach.invalid"}
+        payload = {"csrf": course_csrf, "version": exported["export_sha256"]}
+        assert (
+            course_client.post(
+                submit,
+                data={"version": payload["version"]},
+                base_url="https://coach.invalid",
+                headers=post_headers,
+            ).status_code
+            == 403
+        )
+        assert (
+            course_client.post(
+                submit,
+                data={**payload, "version": "0" * 64},
+                base_url="https://coach.invalid",
+                headers=post_headers,
+            ).status_code
+            == 409
+        )
+        assert (
+            course_client.post(
+                submit, data=payload, base_url="https://coach.invalid", headers=post_headers
+            ).status_code
+            == 303
+        )
+        request_slot = planning / "tactical-study-request.json"
+        first_request = request_slot.read_bytes()
+        assert (
+            course_client.post(
+                submit, data=payload, base_url="https://coach.invalid", headers=post_headers
+            ).status_code
+            == 303
+        )
+        assert request_slot.read_bytes() == first_request
+        calls = []
+
+        def incomplete(_root, saved, version, *, queued):
+            calls.append((saved, version, queued))
+            raise StudyError("incomplete")
+
+        patch.setattr(tactical_study_worker, "publish_locked", incomplete)
+        assert tactical_study_worker.run(db, LEARNER, project)
+        assert json.loads(request_slot.read_text())["state"] == "incomplete"
+        assert (
+            b"Publication is incomplete"
+            in course_client.get(
+                course_url, base_url="https://coach.invalid", headers=course_headers
+            ).data
+        )
+        assert calls == [(export_path, payload["version"], True)]
+        from chess_coach import study_worker
+
+        db.connection.execute(
+            "INSERT OR IGNORE INTO pipeline_health(id,status,started_at,sync_status) VALUES(1,?,?,?)",
+            ("complete", "2026-01-01", "complete"),
+        )
+        db.connection.execute(
+            "UPDATE pipeline_health SET retry_until = ? WHERE id = 1",
+            ("2999-01-01T00:00:00+00:00",),
+        )
+        db.connection.commit()
+        saved_request = request_slot.read_bytes()
+        study_worker.dispatch(db, LEARNER, project)
+        assert request_slot.read_bytes() == saved_request and len(calls) == 1
+        db.connection.execute("UPDATE pipeline_health SET retry_until = NULL WHERE id = 1")
+        db.connection.commit()
+        offer_slot.write_bytes(b"{}")
+        study_worker.dispatch(db, LEARNER, project)
+        offer_slot.write_bytes(original_offer)
+        assert calls == [(export_path, payload["version"], True)] * 2
+        from chess_coach.deep_selection_source import learner_key
+
+        chapters = exported["export"]["chapters"]
+        ids = [f"{index:08d}" for index in range(len(chapters))]
+        receipt = {
+            "learner_key": learner_key(LEARNER),
+            "course_sha256": payload["version"],
+            "complete": True,
+            "privacy_verified": True,
+            "anonymous_verified": True,
+            "ordered_verified": True,
+            "chapter_ids": ids,
+            "entry_chapter": ids[0],
+            "chapters": ["done"] * len(ids),
+            "chapter_modes": [chapter["mode"] for chapter in chapters],
+            "study": "Abcd1234",
+            "verified_at": "2026-01-01T00:00:00+00:00",
+        }
+        with patch.context() as receipt_patch:
+            receipt_patch.setattr("chess_coach.tactical_study_receipt.read", lambda _path: receipt)
+            study_worker.dispatch(db, LEARNER, project)
+            assert len(calls) == 2 and json.loads(request_slot.read_text())["state"] == "complete"
+            assert (
+                b"Open the verified private Study"
+                in course_client.get(
+                    course_url, base_url="https://coach.invalid", headers=course_headers
+                ).data
+            )
+
     # A saved v1 preview retains its exact scope, hash, export and Study reconstruction.
     from chess_coach.tactical_course_budget import Budget
     from chess_coach.tactical_export import build as build_export

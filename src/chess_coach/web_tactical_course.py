@@ -1,9 +1,14 @@
 """Display one offered private tactical export without rebuilding it."""
 
+from pathlib import Path
+from types import SimpleNamespace
+
 from flask import Blueprint, abort, current_app, render_template, request
 
 from .tactical_course_display import chapter as display
 from .tactical_course_offer_read import offered
+from .tactical_study_request_status import status
+from .web_tactical_study import submit
 
 tactical_course_views = Blueprint("tactical_course_views", __name__)
 
@@ -39,4 +44,20 @@ def show():
         )
     except (OSError, ValueError, TypeError, KeyError, IndexError, AttributeError):
         return render_template("tactical_course_browser.html", course=None), 200
-    return render_template("tactical_course_browser.html", course=course, offer=item, shown=shown)
+    db = SimpleNamespace(path=Path(current_app.config["DB_PATH"]))
+    study = status(
+        db,
+        current_app.config["PROJECT_ROOT"],
+        current_app.config["SUBJECT"],
+        current_app.config["CORPUS"],
+        item,
+        course,
+    )
+    return render_template(
+        "tactical_course_browser.html", course=course, offer=item, shown=shown, study=study
+    )
+
+
+tactical_course_views.add_url_rule(
+    "/coaching/tactical-course/study", view_func=submit, methods=["POST"]
+)

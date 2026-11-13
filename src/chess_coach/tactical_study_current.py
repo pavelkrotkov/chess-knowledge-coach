@@ -12,7 +12,7 @@ from .tactical_study_preview import preview
 
 
 @contextmanager
-def revalidate(path, envelope, expected):
+def revalidate(path, envelope, expected, *, with_budget=False):
     saved_preview = preview(envelope, expected)
     connection = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=1)
     connection.row_factory = sqlite3.Row
@@ -26,6 +26,6 @@ def revalidate(path, envelope, expected):
         if canonical(current) != canonical(envelope):
             raise ValueError("tactical export changed")
         budget.check()
-        yield budget.check
+        yield budget if with_budget else budget.check
     finally:
         connection.close()
