@@ -238,13 +238,13 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
         )
         select = protection_worker.select
 
-        def partial(db, learner, games, state, deadline, **kwargs):
+        def select_partial_protection(db, learner, games, state, deadline, **kwargs):
             ticks = iter((0, 0, float("inf")))
             with patch.context() as limited:
                 limited.setattr(selection, "time", SimpleNamespace(monotonic=lambda: next(ticks)))
                 select(db, learner, games, state, deadline, **kwargs)
 
-        patch.setattr(protection_worker, "select", partial)
+        patch.setattr(protection_worker, "select", select_partial_protection)
         protection_worker.run(games_db, "fixture_a", None)
         assert protection_worker.valid(cache["state"], "fixture")
         assert cache["state"]["retained"] and not cache["state"]["selection_complete"]
