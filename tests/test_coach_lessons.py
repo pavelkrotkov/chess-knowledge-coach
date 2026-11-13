@@ -1910,6 +1910,36 @@ def test_protection_lesson_offers_only_a_current_bounded_line_replay(tmp_path, m
                         {},
                     )
                     assert checked["status"] == expected
+                for mate_fen, answer in (
+                    ("4k3/7p/1P6/2b5/b7/3R4/1P3q2/7K b - - 0 1", "d3d5"),
+                    ("4k3/7p/8/2b5/P4q2/3R4/rP6/7K b - - 0 1", "b2b3"),
+                ):
+                    mate_board = chess.Board(mate_fen)
+                    mate_board.push_uci("h7h6")
+                    mate_result = created_judge(
+                        mate_board,
+                        mate_board.parse_uci(answer),
+                        chess.D3,
+                        time.monotonic,
+                        time.monotonic(),
+                        5,
+                        {},
+                    )
+                    assert (mate_result["status"], mate_result["reason"]) == (
+                        "unresolved",
+                        "opponent_immediate_mate",
+                    )
+                checking_board = chess.Board("4k3/8/7p/2b5/8/3R4/1P6/3n3K w - - 0 2")
+                move = checking_board.parse_uci("d3d5")
+                child = checking_board.copy()
+                child.push(move)
+                assert any(child.gives_check(reply) for reply in child.legal_moves)
+                assert (
+                    created_judge(
+                        checking_board, move, chess.D3, time.monotonic, time.monotonic(), 5, {}
+                    )["status"]
+                    == "correct"
+                )
                 assessment_app = create_app(
                     db_path=":memory:",
                     subject=LEARNER,

@@ -1,5 +1,7 @@
 """Classify the checked named-piece capture on the played child board."""
 
+from .mate_proof_moves import immediate_mates
+from .material_reply_guard import MAX_REPLIES
 from .material_threats import threats
 from .objective_protection_piece import same_piece
 from .objective_protection_refute import witness
@@ -33,4 +35,16 @@ def _following(board, target, check):
             return {"status": "incorrect", "reason": "profitable_capture", "capture_reply": reply}
     if attacks:
         return {"status": "unresolved", "reason": "capture_unresolved"}
+    return _safe(board, check)
+
+
+def _safe(board, check):
+    # A material-safety success must not overlook an immediate mating reply.
+    check(0)
+    if board.legal_moves.count() > MAX_REPLIES:
+        return {"status": "unresolved", "reason": "reply_limit"}
+    mates = immediate_mates(board)
+    check(0)
+    if mates:
+        return {"status": "unresolved", "reason": "opponent_immediate_mate"}
     return {"status": "correct", "reason": "no_profitable_immediate_capture"}
