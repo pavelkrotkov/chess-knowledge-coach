@@ -2,6 +2,7 @@
 
 from . import (
     related_backrank_contract,
+    related_created_contract,
     related_fork_avoidance_contract,
     related_fork_prevention_contract,
     related_mate,
@@ -31,7 +32,7 @@ def _capture(snapshot, provenance, line_filter):
 def _other(snapshot, provenance, provenance_key, line_filter):
     if provenance_key in {
         "related_fork",
-        "related_created_exposure",
+        related_created_contract.KEY,
         "related_protection",
         "related_fork_prevention",
         "related_fork_avoidance",
@@ -42,7 +43,7 @@ def _other(snapshot, provenance, provenance_key, line_filter):
     }:
         version = {
             "related_protection": PROTECTION_FILTER,
-            "related_created_exposure": "created-material-lines-v1",
+            related_created_contract.KEY: related_created_contract.FILTER_VERSION,
             "related_fork_prevention": related_fork_prevention_contract.FILTER_VERSION,
             "related_fork_avoidance": related_fork_avoidance_contract.FILTER_VERSION,
             "related_mate": related_mate.FILTER_VERSION,
@@ -60,7 +61,7 @@ def _other(snapshot, provenance, provenance_key, line_filter):
         if provenance_key in {
             "related_pin",
             "related_backrank_defense",
-            "related_created_exposure",
+            related_created_contract.KEY,
         }:
             snapshot["objective"] = "legal_line"
         if provenance_key in {"related_mate", "related_backrank_attack"}:
