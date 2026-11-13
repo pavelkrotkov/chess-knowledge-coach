@@ -128,13 +128,17 @@ def test_imported_source_queues_exemplar_and_resumes_every_defense(tmp_path, mon
 
     # A public collection version can equal an unrelated owned practice version.
     collision_version = "discovery-material-defense-own-v1"
+    collision_content = tmp_path / "collision.csv"
+    collision_content.write_bytes(CONTENT.read_bytes())
     collision_manifest = tmp_path / "collision-manifest.json"
     collision_manifest.write_text(
         json.dumps(json.loads(MANIFEST.read_text()) | {"version": collision_version}),
         encoding="utf-8",
     )
     assert (
-        import_collection(db, CONTENT, CONTENT, collision_manifest, project_root=ROOT)["accepted"]
+        import_collection(
+            db, collision_content, collision_content, collision_manifest, project_root=tmp_path
+        )["accepted"]
         == 8
     )
     collision = client.post(
