@@ -8,6 +8,7 @@
 <p>The background game scan is pending or its sources have changed. This page will update after the worker checks the games.</p>
 {% else %}
 {% if report.comparable %}<p>The game samples and their boundaries are verified. Results are descriptive and can change as the scan progresses.</p>{% else %}<p>The game samples or their boundaries are not fully verified. Do not compare these partial samples.</p>{% endif %}
+{% if report.historical %}<p>Historical sample through {{ report.through }}. Newer games are pending and are not included in these results.</p>{% endif %}
 {% for label, sample in (("More recent", report.newer), ("Earlier", report.earlier)) %}
 <section><h3>{{ label }} games</h3>
 <p>{{ sample.games }} games{% if sample.newest %}, from {{ sample.oldest }} to {{ sample.newest }} UTC{% endif %}.</p>
