@@ -1854,6 +1854,151 @@ def test_protection_lesson_offers_only_a_current_bounded_line_replay(tmp_path, m
             patch.setattr("chess_coach.analysis_transaction.TemporaryFile", lambda **_: StringIO())
             created_db = make_protection_game(Path(":memory:"), patch, color=color, created=True)
             created_id = material_decision(created_db, 1, LEARNER)["evidence_ids"][0]
+            if color == "white":
+                from chess_coach.related_created import preview as created_preview
+                from chess_coach.unified_session_events import hint, reveal, show, submit
+
+                created_db.connection.execute(
+                    "INSERT INTO puzzle_corpora(version,source,checksum,state) VALUES('test','fixture','checksum','staging')"
+                )
+                corpus = created_db.connection.execute("SELECT id FROM puzzle_corpora").fetchone()[
+                    0
+                ]
+                fen = "4k3/7p/8/2b5/8/3R4/1P6/7K b - - 0 1"
+                created_db.connection.execute(
+                    """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,
+                    rating_deviation,themes_json,objective) VALUES(
+                    'sample',?,?,'https://example.invalid','h7h6 d3d5 e8f8 d5d6',
+                    1200,80,'[]','unknown')""",
+                    (corpus, fen),
+                )
+                created_db.connection.execute(
+                    "INSERT INTO puzzle_themes VALUES(?,'sample','defensiveMove',1200)", (corpus,)
+                )
+                created_db.connection.execute(
+                    "UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus,)
+                )
+                created_db.connection.commit()
+                found = created_preview(created_db, LEARNER, created_id, "test")
+                assert len(found["items"]) == 1 and not found["created_scan"]["truncated"]
+                assert "created_witness" not in found["items"][0]
+                from chess_coach import related_created
+
+                frozen = related_created.selection(created_db, LEARNER, created_id, "test")
+                created_db.connection.execute(
+                    """INSERT INTO puzzle_sessions(attempt_id,corpus_version,corpus_checksum,
+                    puzzle_id,initial_fen,solution,current_fen,next_index,status,started_at)
+                    VALUES('later-legacy','test','checksum','sample',?,?,
+                    ?,0,'active','2020-01-01T00:00:00+00:00')""",
+                    (fen, "h7h6 d3d5 e8f8 d5d6", fen),
+                )
+                created_db.connection.commit()
+                with patch.context() as changed:
+                    changed.setattr(
+                        related_created, "selection", lambda *_args, frozen=frozen: frozen
+                    )
+                    with pytest.raises(ValueError):
+                        related_created.start_related(
+                            created_db,
+                            attempt_id="blocked",
+                            subject=LEARNER,
+                            evidence_id=created_id,
+                            corpus_version="test",
+                            reference=found["items"][0]["reference"],
+                        )
+                assert (
+                    created_db.connection.execute(
+                        "SELECT 1 FROM unified_sessions WHERE attempt_id='blocked'"
+                    ).fetchone()
+                    is None
+                )
+                created_db.connection.execute(
+                    "DELETE FROM puzzle_sessions WHERE attempt_id='later-legacy'"
+                )
+                created_db.connection.commit()
+                preview_app = create_app(
+                    db_path=":memory:",
+                    subject=LEARNER,
+                    actor="fixture",
+                    corpus="test",
+                    login="login",
+                    origin="https://coach.invalid",
+                )
+                patch.setattr("chess_coach.web_related_created.database", lambda db=created_db: db)
+                patch.setattr("chess_coach.web_unified_practice.database", lambda db=created_db: db)
+                patch.setattr("chess_coach.web_unified_actions.database", lambda db=created_db: db)
+                browser = preview_app.test_client()
+                headers = {"Tailscale-User-Login": "login"}
+                preview_page = browser.get(
+                    f"/evidence/{created_id}/related-created-exposure",
+                    base_url="https://coach.invalid",
+                    headers=headers,
+                )
+                assert preview_page.status_code == 200 and b"You play white" in preview_page.data
+                import sqlite3
+                from unittest.mock import Mock
+
+                busy = sqlite3.OperationalError("busy")
+                busy.sqlite_errorcode = sqlite3.SQLITE_BUSY
+                with patch.context() as locked:
+                    locked.setattr(
+                        "chess_coach.web_related_created.preview", Mock(side_effect=busy)
+                    )
+                    retry = browser.get(
+                        f"/evidence/{created_id}/related-created-exposure",
+                        base_url="https://coach.invalid",
+                        headers=headers,
+                    )
+                    assert retry.status_code == 503 and b"try again" in retry.data
+                assert all(text not in preview_page.data for text in (b"Rd5", b"Rd4", b"Bxd4"))
+                started = browser.post(
+                    f"/evidence/{created_id}/related-created-exposure/start",
+                    base_url="https://coach.invalid",
+                    headers=headers | {"Origin": "https://coach.invalid"},
+                    data={
+                        "csrf": token(preview_page, "csrf"),
+                        "reference": token(preview_page, "reference"),
+                    },
+                )
+                assert started.status_code == 303
+                attempt = started.headers["Location"].rsplit("/", 1)[-1]
+                practice_page = browser.get(
+                    started.headers["Location"], base_url="https://coach.invalid", headers=headers
+                )
+                assert practice_page.status_code == 200
+                assert all(
+                    text not in practice_page.data
+                    for text in (b"Rd5", b"Rd4", b"Bxd4", b"Reveal a line")
+                )
+                state = show(created_db, attempt, LEARNER)
+                assert state["created_waiting"] and "created_contrast" not in state
+                for action in (hint, reveal):
+                    with pytest.raises(ValueError, match="answer before"):
+                        action(created_db, attempt, LEARNER, event_id=action.__name__)
+                illegal = submit(created_db, attempt, LEARNER, event_id="illegal", move="a1a1")
+                assert illegal["feedback"] == "illegal" and "created_contrast" not in illegal
+                answered = browser.post(
+                    "/unified/move",
+                    base_url="https://coach.invalid",
+                    headers=headers | {"Origin": "https://coach.invalid"},
+                    data={
+                        "csrf": token(practice_page, "csrf"),
+                        "attempt": attempt,
+                        "event": token(practice_page, "event"),
+                        "move": "d3d4",
+                    },
+                )
+                assert answered.status_code == 303
+                result = browser.get(
+                    answered.headers["Location"], base_url="https://coach.invalid", headers=headers
+                )
+                assert result.status_code == 200 and b"ungraded" in result.data
+                assert all(text in result.data for text in (b"Rd5", b"Rd4", b"Bxd4"))
+                assert show(created_db, attempt, LEARNER)["created_contrast"] == {
+                    "good": "Rd5",
+                    "bad": "Rd4",
+                    "capture": "Bxd4",
+                }
             app = create_app(
                 db_path=":memory:",
                 subject=LEARNER,

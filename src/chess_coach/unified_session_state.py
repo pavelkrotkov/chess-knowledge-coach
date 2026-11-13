@@ -3,6 +3,7 @@
 from datetime import UTC, datetime
 
 from .related_backrank_view import add_fields as add_backrank_fields
+from .related_created_view import add_fields as add_created_fields
 from .related_fork_assessment_view import add as add_fork_assessment
 from .related_fork_prevention_view import add_fields as add_prevention_fields
 from .related_pin_created_view import add_fields as add_pin_contrast
@@ -68,5 +69,7 @@ def view(row):
     add_protection_fields(result, row)
     add_prevention_fields(result, row)
     add_backrank_fields(result, row)
+    # The created-exposure witness stays hidden until a legal first move.
+    add_created_fields(result, row)
     add_pin_contrast(result, row)
     return result
