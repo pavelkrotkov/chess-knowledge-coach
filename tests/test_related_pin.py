@@ -697,17 +697,57 @@ def _slide_transfer(monkeypatch, black, absolute=False):
     if absolute:
         witness = candidate[2]["refutation"]
         assert all(text.encode() not in visible for text in witness.values())
-    with client.session_transaction(base_url=base) as session:
-        csrf = session["csrf"]
-    response = client.post(
-        url + "/start",
-        base_url=base,
-        headers=headers | {"Origin": base},
-        data={"csrf": csrf, "mechanism": "slide", "reference": result["items"][0]["reference"]},
-    )
-    assert response.status_code == 303
-    with client.session_transaction(base_url=base) as session:
-        browser_attempt = session["unified_attempt"]
+    if absolute and black:
+        import io
+        from contextlib import redirect_stdout
+
+        from chess_coach.cli_parser import build_parser
+        from chess_coach.cli_related_pin import begin, listing
+
+        common = [
+            "--subject",
+            SUBJECT,
+            "--evidence",
+            str(evidence),
+            "--corpus",
+            "slide",
+            "--mechanism",
+            "slide",
+        ]
+        output = io.StringIO()
+        with redirect_stdout(output):
+            listing(db, build_parser().parse_args(["related-pins", *common]))
+        cli_result = json.loads(output.getvalue())
+        assert cli_result["scope"] == result["scope"]
+        assert cli_result["items"][0]["reference"] == result["items"][0]["reference"]
+        browser_attempt = "slide-cli"
+        args = build_parser().parse_args(
+            [
+                "start-related-pin",
+                *common,
+                "--attempt",
+                browser_attempt,
+                "--reference",
+                result["items"][0]["reference"],
+            ]
+        )
+        output = io.StringIO()
+        with redirect_stdout(output):
+            begin(db, args)
+        started = json.loads(output.getvalue())
+        assert started["status"] == "active" and "source_key" not in started
+    else:
+        with client.session_transaction(base_url=base) as session:
+            csrf = session["csrf"]
+        response = client.post(
+            url + "/start",
+            base_url=base,
+            headers=headers | {"Origin": base},
+            data={"csrf": csrf, "mechanism": "slide", "reference": result["items"][0]["reference"]},
+        )
+        assert response.status_code == 303
+        with client.session_transaction(base_url=base) as session:
+            browser_attempt = session["unified_attempt"]
     assert "pin_contrast" not in show(db, browser_attempt, SUBJECT)
 
     state = show(db, browser_attempt, SUBJECT)
