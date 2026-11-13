@@ -173,6 +173,15 @@ def test_certified_fork_progress_workflow(tmp_path, monkeypatch):
     assert result["earlier"]["counts"]["unresolved"] == 1
     assert result["recent"]["counts"]["unresolved"] == 1
     assert result["rating_start"] == 1200 and result["deviation_start"] == 0
+    # Timing comes from the same immutable event bound to the verified result.
+    first_entry = result["earlier"]["items"][0]
+    bound = db.connection.execute(
+        "SELECT e.created_at FROM objective_requests q JOIN unified_session_events e "
+        "ON e.attempt_id=q.attempt_id AND e.event_id=q.event_id WHERE q.attempt_id=?",
+        (first_entry["attempt_id"],),
+    ).fetchone()
+    assert first_entry["answered_at"] == bound["created_at"]
+    assert not result.get("answer_end")  # Assisted and unresolved checks stay descriptive.
     from chess_coach.fork_progress_bounds import direction
     from chess_coach.fork_progress_samples import sample
 
@@ -217,6 +226,90 @@ def test_certified_fork_progress_workflow(tmp_path, monkeypatch):
     assert b"synthetic-" not in page.data
     assert not re.search(rb"(?<![A-Za-z0-9_-])b5c7(?![A-Za-z0-9_-])", page.data)
     assert b"/plan/forks/attempts" in page.data
+    # A fully resolved, unassisted selected pair can be dated against qualified games.
+    from chess_coach import fork_progress_compare, fork_progress_game
+
+    cohort = [dict(original, started_at=f"2026-01-01T00:00:{i:02}+00:00") for i in range(20)]
+    clean = [
+        {
+            "attempt_id": f"check-{i}",
+            "started_at": row["started_at"],
+            "answered_at": row["started_at"].replace("+00:00", ".500000+00:00"),
+            "status": "correct",
+            "hints": 0,
+            "reveals": 0,
+        }
+        for i, row in enumerate(cohort)
+    ]
+    with monkeypatch.context() as patch:
+        patch.setattr(fork_progress_compare, "_entries", lambda *_: clean)
+        dated = fork_progress_compare.comparison(db, cohort, "progress", None)
+        assert dated["answer_end"] == "2026-01-01T00:00:19.500000+00:00"
+        clean[0]["hints"] = 1
+        assert not fork_progress_compare.comparison(db, cohort, "progress", None).get("answer_end")
+        clean[0]["hints"] = 0
+        clean[1]["status"] = "unresolved"
+        assert not fork_progress_compare.comparison(db, cohort, "progress", None).get("answer_end")
+        clean[1]["status"] = "correct"
+        saved_answer = clean[0]["answered_at"]
+        clean[0]["answered_at"] = None
+        assert not fork_progress_compare.comparison(db, cohort, "progress", None).get("answer_end")
+        clean[0]["answered_at"] = saved_answer
+        saved_ninth = clean[9]["answered_at"]
+        clean[9]["answered_at"] = clean[10]["started_at"]
+        assert not fork_progress_compare.comparison(db, cohort, "progress", None).get("answer_end")
+        clean[9]["answered_at"] = saved_ninth
+    sample = {
+        "games": 20,
+        "oldest": "2026-01-02T00:00:00+00:00",
+        "newest": "2026-01-03T00:00:00+00:00",
+        "scanned": 40,
+        "eligible": 40,
+        "unchecked": 0,
+        "unknown": 1,
+        "unresolved": 1,
+        "opportunities": 5,
+        "unresolved_roots": 2,
+    }
+    counts = {
+        "opportunities": 5,
+        "played": 3,
+        "miss": 2,
+        "unresolved": 0,
+        "pending": 0,
+        "uncertain": 1,
+    }
+    games = {
+        "historical": False,
+        "earlier": sample,
+        "newer": sample,
+        "comparison": {"qualified": True, "earlier": counts, "newer": counts},
+    }
+    with monkeypatch.context() as patch:
+        patch.setattr(fork_progress_game, "practice_report", lambda *_: dated)
+        patch.setattr(fork_progress_game, "game_report", lambda *_: games)
+        page = client.get(
+            "/plan/forks/progress", base_url=base, headers={"Tailscale-User-Login": "fixture-login"}
+        )
+        assert b"Both qualified game windows start after" in page.data
+        assert b"5 comparison opportunities" in page.data
+        assert b"<title>Matched knight-fork practice - Chess coach</title>" in page.data
+        assert page.data.count(b"<h3>Independent knight-fork game windows</h3>") == 1
+        games["earlier"] = {**sample, "oldest": dated["answer_end"]}
+        page = client.get(
+            "/plan/forks/progress", base_url=base, headers={"Tailscale-User-Login": "fixture-login"}
+        )
+        assert b"The more recent qualified game window starts after" in page.data
+        games["newer"] = {**sample, "oldest": None}
+        page = client.get(
+            "/plan/forks/progress", base_url=base, headers={"Tailscale-User-Login": "fixture-login"}
+        )
+        assert b"required date could not be verified" in page.data
+        games["historical"] = True
+        page = client.get(
+            "/plan/forks/progress", base_url=base, headers={"Tailscale-User-Login": "fixture-login"}
+        )
+        assert b"sources, time controls, analysis and coverage qualify" in page.data
     assert client.get("/plan/forks/attempts", base_url=base).status_code == 403
 
     def next_link(response):

@@ -20,5 +20,22 @@
 {% endfor %}
 {% if report.direction %}<p>The possible correct shares are {{ report.direction }} in the recent sample than in the earlier sample. These ranges describe the selected attempts and account for unresolved moves. They do not establish a cause or a change in game play.</p>{% else %}<p>A direction is withheld because the bounds overlap, fewer than five unassisted outcomes are available in a sample, or a selected attempt is still pending, in progress, or unavailable. These ranges describe the selected attempts and account for unresolved moves. They do not establish a cause or a change in game play.</p>{% endif %}
 {% endif %}
+<h3>Independent knight-fork game windows</h3>
+<p>Game observations and practice assessments are separate. Their timing does not establish a training effect.</p>
+{% if games %}
+{% if games.historical %}<p>Historical game sample through {{ games.through }}; newer games are pending and the separate miss comparison is unavailable.</p>{% endif %}
+{% if not games.comparison %}<p>The checked game comparison is pending or unavailable.</p>{% elif not games.comparison.qualified %}<p>The game comparison does not meet its source, time-control, analysis or coverage gates.</p>{% endif %}
+{% for label, sample, comparison in (("Earlier", games.earlier, games.comparison.earlier if games.comparison else none), ("More recent", games.newer, games.comparison.newer if games.comparison else none)) %}
+<p>{{ label }}: {{ sample.games }} games, {{ sample.oldest or "date unavailable" }} to {{ sample.newest or "date unavailable" }}; {{ sample.scanned }} of {{ sample.eligible }} turns checked, {{ sample.unchecked }} pending, {{ sample.unknown }} unavailable or timed out, {{ sample.unresolved }} unresolved, and {{ sample.opportunities }} proved opportunities. {{ sample.unresolved_roots }} turns had unproved fork candidates, which can overlap the proved totals.</p>
+{% if comparison %}<p>Of {{ comparison.opportunities }} comparison opportunities, {{ comparison.played }} played a proved fork, {{ comparison.miss }} were verified misses, {{ comparison.unresolved }} remain unresolved and {{ comparison.pending }} are pending. {{ comparison.uncertain }} additional turns had unproved candidates.</p>{% endif %}
+{% endfor %}
+{% else %}<p>Cached fork game windows are pending or unavailable.</p>{% endif %}
+{% if relation == "later" %}<p>Both qualified game windows start after the last verified answer in the selected practice samples ({{ report.answer_end }}). Game outcomes remain independent observations.</p>
+{% elif relation == "newer_only" %}<p>The more recent qualified game window starts after the last verified practice answer ({{ report.answer_end }}). The earlier window starts on or before that answer, so the pair is not a fully later comparison.</p>
+{% elif relation == "practice_unavailable" %}<p>A temporal comparison is unavailable because selected practice results or their answer times are incomplete, assisted, tied or overlapping.</p>
+{% elif relation == "games_incomplete" %}<p>A temporal comparison is unavailable while game turns remain unchecked.</p>
+{% elif relation == "dates_unavailable" %}<p>A temporal comparison is unavailable because a required date could not be verified.</p>
+{% elif relation == "overlap" %}<p>A temporal comparison is unavailable because game windows overlap, precede or tie the practice answers.</p>
+{% else %}<p>A temporal comparison is unavailable until both game windows and their sources, time controls, analysis and coverage qualify.</p>{% endif %}
 <p><a href="{{ url_for('related_fork.find_next') }}">Find a comparable next fork assessment</a> · <a href="{{ url_for('related_fork.attempts') }}">Browse prior fork assessments</a> · <a href="{{ url_for('related_fork.history') }}">First-encounter fork history</a> · <a href="{{ url_for('short_mate_game_views.fork_samples') }}">Knight forks in your games</a> · <a href="{{ url_for('views.plan') }}">Daily plan</a></p>
 {% endblock %}

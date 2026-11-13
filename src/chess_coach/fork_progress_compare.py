@@ -2,6 +2,7 @@
 
 import json
 
+from .capture_compare_chronology import answer_end
 from .fork_history_item import item
 from .fork_progress_bounds import direction
 from .fork_progress_samples import sample
@@ -23,6 +24,13 @@ def comparison(db, group, corpus, budget):
         return report
     entries = _entries(db, group[:SAMPLE] + group[-SAMPLE:], corpus, budget)
     earlier, recent = sample(entries[:SAMPLE]), sample(entries[SAMPLE:])
+    if all(
+        entry["status"] in {"correct", "incorrect"}
+        and entry.get("hints") == 0
+        and entry.get("reveals") == 0
+        for entry in entries
+    ):
+        report["answer_end"] = answer_end(entries)
     context = json.loads(group[0]["provenance_json"])["related_fork"]["assessment"]["context"]
     report.update(
         earlier=earlier,
