@@ -15,10 +15,10 @@ def create():
     }
 
 
-def take(budget, kind):
+def take(budget, kind, amount=1):
     limit = budget[{"lines": "line_limit", "root_proofs": "root_proof_limit"}[kind]]
-    if budget[kind] >= limit:
+    if budget[kind] + amount > limit:
         budget["truncated"] = True
         return False
-    budget[kind] += 1
+    budget[kind] += amount
     return True
