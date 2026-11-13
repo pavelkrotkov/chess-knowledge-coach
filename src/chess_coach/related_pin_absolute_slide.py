@@ -20,7 +20,8 @@ def refutation(after, move, attacker):
     if not replies or len(replies) > MAX_REPLIES:
         return None
     witness = next(
-        (move for move in replies if reply_status(after, move, color, initial) == "disproved"), None
+        (reply for reply in replies if reply_status(after, reply, color, initial) == "disproved"),
+        None,
     )
     if witness is None:
         return None

@@ -63,7 +63,7 @@ def test_recorded_capture_and_missed_capture_are_bounded_observations(monkeypatc
         patch.setattr("chess_coach.capture_game_replies.MAX_REPLIES", 0)
         assert inspect_replies(counterexample, capture) == "unknown"
     with monkeypatch.context() as patch:
-        patch.setattr("chess_coach.capture_game_replies._reply", lambda *_: "unknown")
+        patch.setattr("chess_coach.capture_game_replies.reply_status", lambda *_: "unknown")
         assert inspect_replies(counterexample, capture) == "unknown"
     assert counterexample.fen() == "r3k3/8/8/8/3q4/8/7K/Q2R4 w - - 0 1"
     # The game audit proves the same opportunity before inspecting either choice.
