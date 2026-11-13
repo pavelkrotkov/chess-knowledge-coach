@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.95.0"
+REGISTRY_VERSION = "1.96.0"
 
 CAPABILITIES = (
     {
@@ -438,7 +438,7 @@ CAPABILITIES = (
         "area": "Training",
         "name": "Recognition and lesson probes",
         "status": "observation-only",
-        "details": "Cued lesson probes and separate uncued unfamiliar capture and immediate-mate checks record bounded responses. No results change mastery or scheduling; assisted and uncertain responses remain visible.",
+        "details": "Cued lesson probes and separate uncued unfamiliar capture and immediate-mate checks record bounded responses. A private matched-history view keeps them separate from game samples. No results change mastery or scheduling; assisted and uncertain responses remain visible.",
     },
     {
         "id": "opening_classification",
