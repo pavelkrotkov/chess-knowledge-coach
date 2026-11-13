@@ -7,6 +7,7 @@ import chess
 import pytest
 
 from chess_coach.db import Database
+from chess_coach.db_versioning import CURRENT_VERSION
 from chess_coach.puzzle_sessions import show_attempt as show_legacy
 from chess_coach.puzzle_sessions import start_attempt as start_legacy
 from chess_coach.unified_session_events import hint, reveal, show, submit
@@ -364,7 +365,7 @@ def _check_neutral_recognition(monkeypatch):
     db.connection.rollback()
     db.connection.execute("PRAGMA user_version=31")
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 33
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == CURRENT_VERSION
     assert db.connection.execute("SELECT COUNT(*) FROM recognition_events").fetchone()[0] == count
     db.close()
 

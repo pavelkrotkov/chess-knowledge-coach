@@ -23,7 +23,7 @@ def superseded(connection: sqlite3.Connection, game_id: int, stage: str, generat
 
 def _tactical_superseded(connection: sqlite3.Connection, game_id: int, generation: int) -> bool:
     for table, path, producer in (
-        ("detector_runs", "$.detector_input.pipeline_generation", PRODUCER),
+        ("detector_runs_read", "$.detector_input.pipeline_generation", PRODUCER),
         ("mapping_runs", "$.pipeline_generation", MAPPER),
     ):
         row = connection.execute(

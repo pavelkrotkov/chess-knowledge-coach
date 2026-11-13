@@ -13,7 +13,7 @@ def _active(db, game_id):
         """SELECT p.id AS position_id,d.id,d.detector_version,d.input_json,
         f.id AS fact_id,f.position_id AS fact_position,
         f.detector_version AS fact_version,f.fact_type,f.payload_json
-        FROM positions p JOIN detector_runs d ON d.position_id=p.id
+        FROM positions p JOIN detector_runs_read d ON d.position_id=p.id
         AND d.producer=? AND d.status='active'
         LEFT JOIN detector_facts f ON f.run_id=d.id
         WHERE p.game_id=? ORDER BY p.ply,f.id LIMIT 1001""",

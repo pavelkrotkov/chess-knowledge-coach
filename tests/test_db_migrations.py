@@ -81,7 +81,7 @@ def test_populated_legacy_upgrade_is_repeatable_and_preserves_history(
     }
     db.initialize()
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 33
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 34
     assert dict(db.connection.execute("SELECT * FROM analysis_runs").fetchone()) == old_run
     assert dict(db.connection.execute("SELECT * FROM analysis_runs_read").fetchone()) == old_run
     assert (
@@ -103,6 +103,61 @@ def test_populated_legacy_upgrade_is_repeatable_and_preserves_history(
     ] == [
         dict(row) for row in db.connection.execute("SELECT * FROM analysis_runs_read ORDER BY id")
     ]
+    # Simulate a fully initialized schema-33 archive using the documented direct API.
+    from chess_coach.fact_runs import record_fact_run, record_fact_run_in_transaction
+
+    db.connection.execute("DROP VIEW detector_runs_read")
+    db.connection.execute("DROP TABLE detector_input_settings")
+    db.connection.execute("DROP TABLE detector_inputs")
+    db.connection.execute("PRAGMA user_version=33")
+    db.connection.commit()
+    args = {
+        "position_id": 1,
+        "producer": "legacy-direct",
+        "detector_version": "v1",
+        "input_data": {"sample": "original"},
+        "facts": [{"fact_type": "fixture", "payload": {"note": "original"}}],
+    }
+    old = record_fact_run(db, **args)
+    assert record_fact_run(db, **args) == {**old, "replayed": True}
+    db.connection.execute("BEGIN IMMEDIATE")
+    assert record_fact_run_in_transaction(db, **args) == {**old, "replayed": True}
+    db.connection.commit()
+    detector_before = dict(
+        db.connection.execute("SELECT * FROM detector_runs WHERE id=?", (old["run_id"],)).fetchone()
+    )
+    detector_columns = [
+        tuple(row) for row in db.connection.execute("PRAGMA table_info(detector_runs)")
+    ]
+    db.connection.execute(
+        "CREATE TABLE detector_inputs(input_hash TEXT PRIMARY KEY, input_json TEXT NOT NULL) WITHOUT ROWID"
+    )
+    with pytest.raises(ValueError, match="detector input schema unavailable"):
+        record_fact_run(db, **args)
+    db.connection.execute("DROP TABLE detector_inputs")
+    db.initialize()
+    assert (
+        dict(
+            db.connection.execute(
+                "SELECT * FROM detector_runs WHERE id=?", (old["run_id"],)
+            ).fetchone()
+        )
+        == detector_before
+    )
+    assert (
+        dict(
+            db.connection.execute(
+                "SELECT * FROM detector_runs_read WHERE id=?", (old["run_id"],)
+            ).fetchone()
+        )
+        == detector_before
+    )
+    assert [
+        tuple(row) for row in db.connection.execute("PRAGMA table_info(detector_runs)")
+    ] == detector_columns
+    assert db.connection.execute("SELECT compact FROM detector_input_settings").fetchone()[0] == 0
+    assert db.connection.execute("SELECT COUNT(*) FROM detector_inputs").fetchone()[0] == 0
+    assert record_fact_run(db, **args) == {**old, "replayed": True}
     for table, old_rows in preserved.items():
         new_rows = rows(db, table)
         assert [
@@ -197,3 +252,35 @@ def test_failed_upgrade_rolls_back_schema_and_data(monkeypatch: pytest.MonkeyPat
     )
     assert {table: rows(db, table) for table in before} == before
     assert db.connection.execute("PRAGMA foreign_key_check").fetchall() == []
+
+    # A failed v34 installation also rolls back its new objects and version.
+    monkeypatch.setattr(db_migrations, "rebuild_evidence", original)
+    from chess_coach import db_recent
+
+    recent = Database(":memory:")
+    recent.initialize()
+    recent.connection.execute("DROP VIEW detector_runs_read")
+    recent.connection.execute("DROP TABLE detector_input_settings")
+    recent.connection.execute("DROP TABLE detector_inputs")
+    recent.connection.execute("PRAGMA user_version=33")
+    recent.connection.commit()
+    before_recent = list(
+        recent.connection.execute("SELECT type,name,sql FROM sqlite_master ORDER BY type,name")
+    )
+    add_inputs = db_recent.add_detector_inputs
+
+    def fail_after_inputs(connection):
+        add_inputs(connection)
+        raise RuntimeError("injected detector migration failure")
+
+    monkeypatch.setattr(db_recent, "add_detector_inputs", fail_after_inputs)
+    with pytest.raises(RuntimeError, match="detector migration failure"):
+        recent.initialize()
+    assert recent.connection.execute("PRAGMA user_version").fetchone()[0] == 33
+    assert (
+        list(
+            recent.connection.execute("SELECT type,name,sql FROM sqlite_master ORDER BY type,name")
+        )
+        == before_recent
+    )
+    assert recent.connection.execute("PRAGMA foreign_key_check").fetchall() == []

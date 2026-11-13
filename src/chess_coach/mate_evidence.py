@@ -24,8 +24,10 @@ def load(db, evidence_id, learner):
         raise ValueError("mate opportunity unavailable")
     position = position_row(db, evidence["position_id"])
     _, fingerprint = source(db, position, learner)
+    # Compare the original recorded source even when detector inputs are shared.
     row = db.connection.execute(
-        "SELECT input_json FROM detector_runs WHERE id=?", (fact["detector_run_id"],)
+        "SELECT input_json FROM detector_runs_read WHERE id=?",
+        (fact["detector_run_id"],),
     ).fetchone()
     try:
         recorded = json.loads(row["input_json"])["detector_input"]["source_fingerprint"]

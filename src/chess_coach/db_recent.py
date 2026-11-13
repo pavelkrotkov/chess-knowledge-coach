@@ -8,6 +8,7 @@ from .classification_schema import add_classification_lineage
 from .curriculum_schema import add_curriculum_index
 from .deep_execution_schema import add_deep_execution
 from .deep_selection_schema import add_deep_selection
+from .detector_input_schema import add_detector_inputs
 from .evidence_review_schema import add_evidence_reviews
 from .evidence_schema import add_evidence_lineage
 from .fact_schema import add_fact_lineage
@@ -64,6 +65,7 @@ def upgrade_recent(connection: sqlite3.Connection, version: int) -> None:
         (31, add_protection_schedule),
         (32, add_recognition),
         (33, add_analysis_provenance),
+        (34, add_detector_inputs),
     )
     for target, apply_upgrade in upgrades:
         if version < target:

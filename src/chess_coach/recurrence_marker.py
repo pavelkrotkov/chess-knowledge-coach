@@ -38,7 +38,8 @@ def marker(db, row, parts):
 def source_state(db, row, fact, parts):
     try:
         stored = db.connection.execute(
-            "SELECT input_json FROM detector_runs WHERE id=?", (fact["detector_run_id"],)
+            "SELECT input_json FROM detector_runs_read WHERE id=?",
+            (fact["detector_run_id"],),
         ).fetchone()
         expected = json.loads(stored[0])["detector_input"]["source_marker"]
         return "marker matches" if expected == marker(db, row, parts) else "stale"

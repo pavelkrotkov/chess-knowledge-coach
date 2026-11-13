@@ -10,7 +10,7 @@ from .mate_mapping_current import mapping_current
 def replay(db, position_id, fingerprint, subject):
     row = db.connection.execute(
         """SELECT d.id,d.input_json,d.output_hash,f.id AS fact_id,f.fact_key,f.payload_json
-        FROM detector_runs d JOIN detector_facts f ON f.run_id=d.id
+        FROM detector_runs_read d JOIN detector_facts f ON f.run_id=d.id
         WHERE d.position_id=? AND d.producer=? AND d.detector_version=? AND d.status=?
         AND f.fact_type='bounded_mate'""",
         (position_id, PRODUCER, VERSION, "active"),

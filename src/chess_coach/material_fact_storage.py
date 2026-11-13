@@ -8,7 +8,7 @@ from .material_contract import PRODUCER, detector_version
 
 def fact_run(db, position_id, inputs, fact):
     active = db.connection.execute(
-        "SELECT id,input_json FROM detector_runs WHERE position_id=? AND producer=? AND status=?",
+        "SELECT id,input_json FROM detector_runs_read WHERE position_id=? AND producer=? AND status=?",
         (position_id, PRODUCER, "active"),
     ).fetchone()
     if active:

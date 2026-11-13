@@ -81,11 +81,25 @@ def make_game(path, monkeypatch, *, timed=True, played="e1f1"):
 
 def test_unreviewed_observation_replays_and_never_enters_mastery(tmp_path, monkeypatch):
     db = make_game(tmp_path / "material.sqlite", monkeypatch)
+    from chess_coach.detector_input_schema import add_detector_inputs
+    from chess_coach.material_opportunity_source import load_source
+
+    add_detector_inputs(db.connection)
+    db.connection.execute("UPDATE detector_input_settings SET compact=1 WHERE id=1")
+    db.connection.commit()
     before = db.connection.execute("SELECT COUNT(*) FROM engine_outputs").fetchone()[0]
     result = process_decision(db, 1, LEARNER)
     assert result["outcome"] == "failure" and len(result["evidence_ids"]) == 1
     evidence_id = result["evidence_ids"][0]
     evidence = inspect_evidence(db, evidence_id)
+    run_id = result["detector_run_id"]
+    assert (
+        db.connection.execute(
+            "SELECT input_json FROM detector_runs WHERE id=?", (run_id,)
+        ).fetchone()[0]
+        == ""
+    )
+    assert isinstance(load_source(db, run_id)["source_marker"], str)
     assert evidence["review_status"] == "unreviewed" and evidence["skill"] == "hanging_piece"
     assert evidence["context"]["material_observation"]["best"]["san"] == ["Rxd4", "Kf8"]
     review_evidence(db, evidence_id, decision="accept", actor="fixture_reviewer")

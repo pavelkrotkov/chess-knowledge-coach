@@ -11,6 +11,7 @@ import pytest
 
 from chess_coach.analysis import analyze_game, merge_analysis_outputs
 from chess_coach.db import Database
+from chess_coach.db_versioning import CURRENT_VERSION
 from chess_coach.ingest import ingest_pgn
 
 PGN = """[Event "Test"]
@@ -220,7 +221,7 @@ def test_merge_preserves_decision_provenance(monkeypatch):
     rollback.connection.commit()
     run_fake(monkeypatch, rollback, FakeEngine())
     rollback.initialize()
-    assert rollback.connection.execute("PRAGMA user_version").fetchone()[0] == 33
+    assert rollback.connection.execute("PRAGMA user_version").fetchone()[0] == CURRENT_VERSION
 
     # A genuine pre-33 target accepts compact imports and direct engine runs inline.
     old = database()

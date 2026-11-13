@@ -20,7 +20,7 @@ def automatic_view(db, position_id, learner):
 
 def _view(db, position_id, fingerprint, subject):
     row = db.connection.execute(
-        """SELECT d.id,d.input_json,f.payload_json FROM detector_runs d
+        """SELECT d.id,d.input_json,f.payload_json FROM detector_runs_read d
         JOIN detector_facts f ON f.run_id=d.id WHERE d.position_id=? AND d.producer=?
         AND d.detector_version=? AND d.status='active' AND f.fact_type='bounded_mate'""",
         (position_id, PRODUCER, VERSION),

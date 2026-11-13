@@ -21,7 +21,8 @@ def valid(db, evidence, fact):
 
 def recorded_key(db, fact):
     row = db.connection.execute(
-        "SELECT input_json FROM detector_runs WHERE id=?", (fact["detector_run_id"],)
+        "SELECT input_json FROM detector_runs_read WHERE id=?",
+        (fact["detector_run_id"],),
     ).fetchone()
     try:
         return json.loads(row["input_json"])["detector_input"]["source_fingerprint"]

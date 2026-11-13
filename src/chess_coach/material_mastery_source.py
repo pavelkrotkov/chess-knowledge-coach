@@ -11,7 +11,7 @@ def source_reason(db, row):
         return None
     records = db.connection.execute(
         """SELECT d.input_json FROM evidence_fact_links l
-        JOIN detector_facts f ON f.id=l.fact_id JOIN detector_runs d ON d.id=f.run_id
+        JOIN detector_facts f ON f.id=l.fact_id JOIN detector_runs_read d ON d.id=f.run_id
         WHERE l.evidence_id=? AND d.producer=?""",
         (row["id"], PRODUCER),
     ).fetchall()

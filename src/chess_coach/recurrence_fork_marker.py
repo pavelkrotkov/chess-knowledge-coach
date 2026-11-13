@@ -7,7 +7,8 @@ from .recurrence_marker import material_state
 
 def fork_state(db, row, fact, parts):
     stored = db.connection.execute(
-        "SELECT input_json FROM detector_runs WHERE id=?", (fact["detector_run_id"],)
+        "SELECT input_json FROM detector_runs_read WHERE id=?",
+        (fact["detector_run_id"],),
     ).fetchone()
     try:
         inputs = json.loads(stored[0])["detector_input"]
