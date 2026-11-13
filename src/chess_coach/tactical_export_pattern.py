@@ -10,8 +10,8 @@ def _independent(pattern, saved):
         raise ValueError("supporting game count differs")
 
 
-def supports(pattern):
-    if (pattern["skill"], pattern["operation"]) not in PAIRS:
+def supports(pattern, *, pairs=PAIRS):
+    if (pattern["skill"], pattern["operation"]) not in pairs:
         raise ValueError("unsupported pattern")
     saved = pattern["supporting_sources"]
     if not isinstance(saved, list) or not 2 <= len(saved) <= 3:

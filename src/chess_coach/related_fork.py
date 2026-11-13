@@ -9,7 +9,7 @@ from .related_transfer_select import select
 VERSION = "fork-execute-transfer-v1"
 
 
-def selection(db, subject, evidence_id, corpus_version):
+def selection(db, subject, evidence_id, corpus_version, *, familiar_data=None):
     source = source_for_evidence(db, subject, evidence_id)
     return select(
         db,
@@ -19,6 +19,7 @@ def selection(db, subject, evidence_id, corpus_version):
         VERSION,
         theme="fork",
         all_lines=True,
+        familiar_data=familiar_data,
         feature=fork_features,
         score=candidate,
     )

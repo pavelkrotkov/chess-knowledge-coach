@@ -36,5 +36,26 @@
 <button>Replay the prepared defensive line</button>
 </form>
 <p>The prepared replay is provisional; other legal defenses may remain ungraded. It does not change scheduled reviews or mastery.</p>
-{% else %}<p>No current recurring practice action was available in the sources checked. This does not rule out other sources.</p>{% endif %}
+{% elif not fork %}<p>No current recurring practice action was available in the sources checked. This does not rule out other sources.</p>{% endif %}
+{% if fork %}
+<section>
+<h3>Optional practice: finding forks</h3>
+<p>A current fork lesson has checked failures in {{ fork.games }} independent games. Review the <a href="{{ url_for('views.evidence_detail', evidence_id=fork.source.evidence_id) }}">source decision</a>. The rehearsal is cued and separate from your game results and mastery.</p>
+{% if fork.assessment.status == "correct" %}
+<p>A current first-encounter assessment was verified without assistance. <a href="{{ url_for('related_fork.find_next', attempt=fork.assessment.attempt) }}">Find a comparable follow-up fork assessment</a>. The search may find no match.</p>
+{% elif fork.assessment.status == "incorrect" %}
+<p>A current first-encounter assessment found a verified miss without assistance. Before you commit to a move, name both targets.</p>
+{% else %}
+<p>Rehearse the shown source, or try a distinct unfamiliar assessment.</p>
+{% endif %}
+<form method="post" action="{{ url_for('unified_practice.begin') }}">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<input type="hidden" name="source_type" value="own-game">
+<input type="hidden" name="version" value="{{ fork.source.version }}">
+<input type="hidden" name="key" value="{{ fork.source.key }}">
+<button>Rehearse this fork</button>
+</form>
+{% if fork.assessment.status != "correct" %}<p><a href="{{ url_for('related_fork.find_verified', evidence_id=fork.source.evidence_id) }}">Find an unfamiliar fork assessment for this source</a>. The search may find no match.</p>{% endif %}
+</section>
+{% endif %}
 {% endblock %}

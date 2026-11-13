@@ -4,9 +4,12 @@ from .course_preview import preview_hash
 from .learner_identity import normalize_identity
 from .tactical_course_budget import SLICE_SECONDS, Budget, PreviewUnavailable
 from .tactical_course_patterns import MAX_PATTERNS, assemble
-from .tactical_course_selection import PAIRS, PER_PAIR, candidates
+from .tactical_course_selection import CURRENT_PAIRS, PER_PAIR, candidates
 
-VERSION = "local-tactical-course-v1"
+LEGACY_VERSION = "local-tactical-course-v1"
+LEGACY_POLICY = "provisional-recurring-tactics-v1"
+VERSION = "local-tactical-course-v2"
+POLICY = "provisional-recurring-tactics-v2"
 
 
 def build(db, subject, corpus, *, budget=None):
@@ -19,9 +22,9 @@ def build(db, subject, corpus, *, budget=None):
     budget.check()
     body = {
         "kind": VERSION,
-        "policy": "provisional-recurring-tactics-v1",
+        "policy": POLICY,
         "selection": {
-            "pairs": [list(pair) for pair in PAIRS],
+            "pairs": [list(pair) for pair in CURRENT_PAIRS],
             "corpus_version": corpus,
             "per_pair_limit": PER_PAIR,
             "pattern_limit": MAX_PATTERNS,
