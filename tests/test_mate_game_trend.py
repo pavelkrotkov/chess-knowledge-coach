@@ -239,12 +239,15 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
     mate_before = read(location(db, root), binding(db, "fixture_a"))
     # The new policy starts a distinct sidecar and keeps the earlier history.
     capture_cache = capture_location(db, root)
-    assert capture_cache.name.endswith(".capture-trend-v2.json")
+    assert capture_paths.PROOF_VERSION == "direct-capture-v3"
+    assert capture_paths.VERSION == "capture-game-trend-v3"
+    assert capture_cache.name.endswith(".capture-trend-v3.json")
     old_capture_cache = capture_cache.with_name(
-        capture_cache.name.replace(".capture-trend-v2.json", ".capture-trend.json")
+        capture_cache.name.replace(".capture-trend-v3.json", ".capture-trend-v2.json")
     )
     old_capture_cache.write_bytes(b"synthetic prior capture cache")
     old_capture_cache.chmod(0o600)
+    assert capture_report(db, "fixture_a", root) is None
     monkeypatch.setattr(
         capture_scan,
         "classify",
