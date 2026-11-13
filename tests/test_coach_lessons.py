@@ -148,6 +148,68 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
         for table in counts
     } == counts
 
+    # Reproduce the measured overrun without waiting: each stage fits its
+    # three-second slice, but together they exceed the old shared deadline.
+    import sqlite3
+    import time
+    from types import SimpleNamespace
+
+    from chess_coach import coaching_quick, coaching_quick_run
+
+    clock = [time.monotonic()]
+    real_build, real_choose = coaching_quick_run.build, coaching_quick_run.choose
+
+    def measured_build(db, learner, pair, check):
+        result = real_build(db, learner, pair, check)
+        if pair == ("fork", "execute"):
+            clock[0] += 2.0
+        return result
+
+    def measured_choose(db, learner, group, check):
+        result = real_choose(db, learner, group, check)
+        clock[0] += 1.25
+        check()
+        return result
+
+    with monkeypatch.context() as patch:
+        patch.setattr(coaching_quick_run, "time", SimpleNamespace(monotonic=lambda: clock[0]))
+        patch.setattr(coaching_quick_run, "build", measured_build)
+        patch.setattr(coaching_quick_run, "choose", measured_choose)
+        start = clock[0]
+        focused = client.get("/coaching?pattern=fork.execute", base_url=base, headers=headers)
+        assert clock[0] - start > coaching_quick_run.PAIR_SECONDS
+        assert b"Rehearse this fork" in focused.data
+        assert b"Find an unfamiliar fork assessment for this source" in focused.data
+        assert b"Some practice links could not be checked" not in focused.data
+        clock[0] = time.monotonic()
+        patch.setattr("chess_coach.web_protection_plan.admissible", lambda *_args: None)
+        patch.setattr("chess_coach.web_protection_plan.report", lambda *_args: None)
+        focus = client.get("/plan/next-focus", base_url=base, headers=headers)
+        assert b"Optional practice: finding forks" in focus.data
+        assert b"Find an unfamiliar fork assessment for this source" in focus.data
+        clock[0] = time.monotonic()
+        patch.setattr(coaching_quick, "TOTAL_SECONDS", 2.5)
+        limited, actions = coaching_quick.report(db, LEARNER, (("fork", "execute"),))
+        assert limited["quick"]["practice_limited"] and actions[0] is None
+        patch.setattr(coaching_quick, "TOTAL_SECONDS", 12.0)
+        clock[0] = time.monotonic()
+        multi, actions = coaching_quick.report(
+            db, LEARNER, (("fork", "execute"), ("mate_in_one", "execute"))
+        )
+        assert multi["quick"]["practice_limited"] and actions[0] is None
+
+    def changed_choose(*args):
+        result = real_choose(*args)
+        with sqlite3.connect(path) as writer:
+            writer.execute("UPDATE games SET event=event WHERE id=1")
+        return result
+
+    with monkeypatch.context() as patch:
+        patch.setattr(coaching_quick_run, "choose", changed_choose)
+        changed = client.get("/coaching?pattern=fork.execute", base_url=base, headers=headers)
+    assert b"The source changed or the quick checks were unavailable" in changed.data
+    assert b"Rehearse this fork" not in changed.data
+
     # Unsupported sources remain visible without practice or finder actions.
     with monkeypatch.context() as patch:
         patch.setattr(
