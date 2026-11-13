@@ -32,7 +32,7 @@ def candidate_db(path=":memory:") -> tuple[Database, int]:
     return db, evidence_ids[0]
 
 
-def test_review_lifecycle_replay_and_mastery_invalidation() -> None:
+def test_review_lifecycle_replay_and_mastery_invalidation(monkeypatch) -> None:
     db, evidence_id = candidate_db()
     before = inspect_evidence(db, evidence_id)
     assert before["review_status"] == "unreviewed" and before["lifecycle_status"] == "active"
@@ -72,6 +72,101 @@ def test_review_lifecycle_replay_and_mastery_invalidation() -> None:
         "accept",
     ]
     assert db.connection.execute("SELECT COUNT(*) FROM evidence_mappings").fetchone()[0] == 1
+
+    # A newer no-fact result retires the current mapping without rewriting history.
+    from chess_coach import tactical_opportunities
+
+    with monkeypatch.context() as patch:
+        patch.setattr(tactical_opportunities, "mate_in_one_fact", lambda *_: None)
+        assert (
+            record_game_opportunities(db, 1, learner="SyntheticWhite", detector_version="v2") == []
+        )
+        assert (
+            record_game_opportunities(db, 1, learner="SyntheticWhite", detector_version="v2") == []
+        )
+    assert db.connection.execute("SELECT COUNT(*) FROM mapping_runs").fetchone()[0] == 1
+    assert db.connection.execute("SELECT status FROM mapping_runs").fetchone()[0] == "superseded"
+    old = inspect_evidence(db, evidence_id)
+    assert old["review_status"] == "accepted" and old["lifecycle_status"] == "superseded"
+    assert db.connection.execute("SELECT COUNT(*) FROM detector_runs").fetchone()[0] == 2
+    assert (
+        db.connection.execute(
+            "SELECT COUNT(*) FROM detector_facts f JOIN detector_runs r ON r.id=f.run_id WHERE r.status='active'"
+        ).fetchone()[0]
+        == 0
+    )
+    restored = record_game_opportunities(db, 1, learner="SyntheticWhite", detector_version="v3")[0]
+    restored_ids = restored["evidence_ids"]
+    assert isinstance(restored_ids, list) and restored_ids != [evidence_id]
+    with monkeypatch.context() as patch:
+        patch.setattr(tactical_opportunities, "mate_in_one_fact", lambda *_: None)
+        assert (
+            record_game_opportunities(db, 1, learner="SyntheticWhite", detector_version="v2") == []
+        )
+    assert inspect_evidence(db, restored_ids[0])["lifecycle_status"] == "active"
+    assert inspect_evidence(db, evidence_id)["review_status"] == "accepted"
+    # A fresh no-fact stage remains complete and restartable after interruption.
+    from chess_coach import pipeline_stage
+
+    game = chess.pgn.Game()
+    game.headers["White"], game.headers["Black"] = "SyntheticWhite", "SyntheticBlack"
+    game.add_variation(chess.Move.from_uci("e2e4"))
+    ingest_pgn(db, str(game))
+    game_id = db.connection.execute("SELECT MAX(id) FROM games").fetchone()[0]
+
+    def scan(generation):
+        record_game_opportunities(
+            db, game_id, learner="SyntheticWhite", pipeline_generation=generation
+        )
+
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            pipeline_stage,
+            "checkpoint",
+            lambda *_a, **_k: (_ for _ in ()).throw(KeyboardInterrupt()),
+        )
+        with pytest.raises(KeyboardInterrupt):
+            pipeline_stage.run_stage(db, game_id, "tactical", "fixture", scan, generated=True)
+    result = pipeline_stage.run_stage(db, game_id, "tactical", "fixture", scan, generated=True)
+    assert result["status"] == "complete"
+    assert pipeline_stage.run_stage(db, game_id, "tactical", "fixture", scan, generated=True)[
+        "replayed"
+    ]
+    assert (
+        db.connection.execute(
+            "SELECT COUNT(*) FROM mapping_runs m JOIN positions p ON p.id=m.position_id WHERE p.game_id=?",
+            (game_id,),
+        ).fetchone()[0]
+        == 0
+    )
+    # Retain an exact legacy empty scope, but retire it after its detector changes.
+    from chess_coach.learner_context import decision_contexts
+    from chess_coach.mapping_transaction import mapping_transaction
+    from chess_coach.tactical_mapping import map_decision
+    from chess_coach.tactical_pipeline_replay import fact_run
+
+    context = next(decision_contexts(db, game_id, learner="SyntheticWhite"))
+    with mapping_transaction(db):
+        run = fact_run(db, context, tactical_opportunities.PRODUCER, "1.0.0", [], None)
+        legacy = map_decision(db, context, run, None, "tactical-mate-v1")
+    legacy_id = legacy["mapping_run_id"]
+    assert record_game_opportunities(db, game_id, learner="SyntheticWhite") == []
+    assert (
+        db.connection.execute(
+            "SELECT status FROM mapping_runs WHERE id=?", (legacy_id,)
+        ).fetchone()[0]
+        == "active"
+    )
+    assert (
+        record_game_opportunities(db, game_id, learner="SyntheticWhite", detector_version="v2")
+        == []
+    )
+    assert (
+        db.connection.execute(
+            "SELECT status FROM mapping_runs WHERE id=?", (legacy_id,)
+        ).fetchone()[0]
+        == "superseded"
+    )
 
 
 def test_review_events_are_immutable_and_actor_is_required() -> None:
