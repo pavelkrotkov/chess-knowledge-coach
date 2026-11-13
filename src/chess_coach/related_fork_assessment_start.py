@@ -1,5 +1,6 @@
 """Admit a certified unfamiliar fork without proving under a writer lock."""
 
+from .fork_difficulty_selection import selection_options
 from .recurrence_cursor import _valid_id
 from .related_capture_start import _reference
 from .related_fork import VERSION, selection
@@ -9,13 +10,26 @@ from .related_session_start import start_selected
 from .related_transfer_admission import admit
 
 
-def start(db, *, attempt_id, subject, evidence_id, corpus_version, reference, secret, prior=None):
+def start(
+    db,
+    *,
+    attempt_id,
+    subject,
+    evidence_id,
+    corpus_version,
+    reference,
+    secret,
+    prior=None,
+):
     if not _valid_id(evidence_id):
         raise ValueError("fork assessment unavailable")
     if db.connection.in_transaction:
         raise RuntimeError("cannot start during an existing transaction")
     data_version = db.connection.execute("PRAGMA data_version").fetchone()[0]
-    selected = selection(db, subject, evidence_id, corpus_version)
+    from .fork_difficulty import start_context
+
+    prior, difficulty = start_context(db, subject, corpus_version, evidence_id, prior)
+    selected = selection(db, subject, evidence_id, corpus_version, **selection_options(difficulty))
     if selected is None or selected[0]["outcome"] != "failure" or secret is None:
         raise ValueError("fork assessment unavailable")
     from .fork_followup_admission import attach
@@ -24,7 +38,9 @@ def start(db, *, attempt_id, subject, evidence_id, corpus_version, reference, se
     selected_reference, expected = (
         (_reference(selected, reference, secret), None)
         if prior is None
-        else matched_reference(db, selected, subject, corpus_version, secret, reference, prior)
+        else matched_reference(
+            db, selected, subject, corpus_version, secret, reference, prior, difficulty
+        )
     )
     resolved = admit(selected, selected_reference, VERSION, "fork")
     source_type, version, key, binding, _ = resolved
