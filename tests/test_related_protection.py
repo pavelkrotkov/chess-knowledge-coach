@@ -4,6 +4,7 @@ import json
 import re
 import sqlite3
 import sys
+from unittest.mock import Mock
 
 import chess
 import pytest
@@ -32,6 +33,19 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
         path = tmp_path / (color + ".sqlite")
         db = make_protection_game(path, monkeypatch, played="d4d5", color=color)
         evidence = process_decision(db, 1, LEARNER)["evidence_ids"][0]
+        from chess_coach import objective_protection_source, related_protection_source
+
+        with monkeypatch.context() as patch:
+            current = Mock(wraps=objective_protection_source.current)
+            patch.setattr(objective_protection_source, "current", current)
+            related_protection_source.source_for_evidence(db, LEARNER, evidence)
+            assert current.call_count == 2
+            view, review = current(
+                db, evidence, LEARNER, kind="material_protection", operation="prevent"
+            )
+            current.side_effect = [(view, review), (dict(view, outcome="changed"), review)]
+            with pytest.raises(ValueError, match="source changed"):
+                related_protection_source.source_for_evidence(db, LEARNER, evidence)
         from chess_coach.protection_game_review import binding as game_review
 
         protection_marker, blocked = game_review(db, 1, LEARNER)
