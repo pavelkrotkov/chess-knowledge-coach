@@ -4,6 +4,7 @@ from .discovery_contract import MAPPER as DISCOVERY_MAPPER
 from .discovery_defense_contract import MAPPER as DISCOVERY_DEFENSE_MAPPER
 from .discovery_mate_success_contract import MAPPER as DISCOVERY_SUCCESS_MAPPER
 from .discovery_material_contract import MAPPER as DISCOVERY_MATERIAL_MAPPER
+from .discovery_material_success_contract import MAPPER as MATERIAL_SUCCESS_MAPPER
 from .fork_contract import MAPPER as FORK_MAPPER
 from .fork_defense_contract import MAPPER as DEFENSE_MAPPER
 from .king_safety_probe import state as king_state
@@ -41,6 +42,7 @@ def source_state(db, row, fact, parts, structure_state, rook_state, *, _history=
         DISCOVERY_DEFENSE_MAPPER,
         DISCOVERY_MATERIAL_MAPPER,
         DISCOVERY_SUCCESS_MAPPER,
+        MATERIAL_SUCCESS_MAPPER,
         *PIN_FAMILIES,
     }:
         return marker_state(db, row, fact, parts)

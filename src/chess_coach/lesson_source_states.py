@@ -1,6 +1,7 @@
 """Map lesson sources to their family-specific currentness fields."""
 
 STATES = {
+    "discovery-material-success-mapper": "discovery_material_success_currentness",
     "discovery-opportunity-mapper": "discovery_currentness",
     "discovery-mate-defense-mapper": "discovery_defense_currentness",
     "discovery-mate-success-mapper": "discovery_success_currentness",

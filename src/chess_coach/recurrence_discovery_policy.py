@@ -16,6 +16,10 @@ from .discovery_material_contract import FACT as DISCOVERY_MATERIAL_FACT
 from .discovery_material_contract import MAPPER as DISCOVERY_MATERIAL_MAPPER
 from .discovery_material_contract import PRODUCER as DISCOVERY_MATERIAL_PRODUCER
 from .discovery_material_contract import VERSION as DISCOVERY_MATERIAL_VERSION
+from .discovery_material_success_contract import FACT as MATERIAL_SUCCESS_FACT
+from .discovery_material_success_contract import MAPPER as MATERIAL_SUCCESS_MAPPER
+from .discovery_material_success_contract import PRODUCER as MATERIAL_SUCCESS_PRODUCER
+from .discovery_material_success_contract import VERSION as MATERIAL_SUCCESS_VERSION
 
 
 def discovery_ok(row, fact):
@@ -50,7 +54,20 @@ def discovery_success_ok(row, fact):
     )
 
 
+def material_success_ok(row, fact):
+    return (row["skill"], row["operation"], fact["payload"].get("kind")) == (
+        "discovered_attack",
+        "prevent",
+        "discovery_material_success",
+    )
+
+
 FAMILIES = {
+    MATERIAL_SUCCESS_MAPPER: (
+        MATERIAL_SUCCESS_PRODUCER,
+        MATERIAL_SUCCESS_VERSION,
+        MATERIAL_SUCCESS_FACT,
+    ),
     DISCOVERY_MAPPER: (DISCOVERY_PRODUCER, DISCOVERY_VERSION, DISCOVERY_FACT),
     DISCOVERY_SUCCESS_MAPPER: (
         DISCOVERY_SUCCESS_PRODUCER,
@@ -70,6 +87,7 @@ FAMILIES = {
 }
 
 VALIDATORS = {
+    MATERIAL_SUCCESS_MAPPER: material_success_ok,
     DISCOVERY_MAPPER: discovery_ok,
     DISCOVERY_SUCCESS_MAPPER: discovery_success_ok,
     DISCOVERY_MATERIAL_MAPPER: discovery_material_ok,

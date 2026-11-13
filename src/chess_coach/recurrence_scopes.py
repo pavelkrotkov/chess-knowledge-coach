@@ -14,6 +14,9 @@ from .discovery_mate_success_contract import VERSION as DISCOVERY_SUCCESS_VERSIO
 from .discovery_material_contract import MAPPER as DISCOVERY_MATERIAL
 from .discovery_material_contract import SCOPE as DISCOVERY_MATERIAL_SCOPE
 from .discovery_material_contract import VERSION as DISCOVERY_MATERIAL_VERSION
+from .discovery_material_success_contract import MAPPER as MATERIAL_SUCCESS
+from .discovery_material_success_contract import SCOPE as MATERIAL_SUCCESS_SCOPE
+from .discovery_material_success_contract import VERSION as MATERIAL_SUCCESS_VERSION
 from .fork_contract import MAPPER as FORK
 from .fork_contract import SCOPE as FORK_SCOPE
 from .fork_contract import VERSION as FORK_VERSION
@@ -31,6 +34,7 @@ from .pawn_coach_contract import VERSION as PAWN_VERSION
 from .pin_pipeline import VERSION as PIN_VERSION
 
 SCOPES = {
+    MATERIAL_SUCCESS: (MATERIAL_SUCCESS_VERSION, MATERIAL_SUCCESS_SCOPE),
     DISCOVERY_SUCCESS: (DISCOVERY_SUCCESS_VERSION, DISCOVERY_SUCCESS_SCOPE),
     DISCOVERY_MATERIAL: (DISCOVERY_MATERIAL_VERSION, DISCOVERY_MATERIAL_SCOPE),
     DISCOVERY_DEFENSE: (DISCOVERY_DEFENSE_VERSION, DISCOVERY_DEFENSE_SCOPE),

@@ -530,6 +530,99 @@ def test_source_worker_lesson_practice_and_review(tmp_path, monkeypatch):
         )
         assert not combined(material_db, 1, LEARNER, exclusions=Counter())["replayed"]
 
+    # Material success proves a distinct witness and follows the same target.
+    from chess_coach.discovery_material_success_contract import MAPPER as MATERIAL_SUCCESS_MAPPER
+    from chess_coach.discovery_material_success_observation import observe as material_success
+
+    position = chess.Board("8/Q2K4/8/8/n7/7P/1P5k/r7 w - - 0 1")
+    proved = material_success(position, "a7b7")
+    assert proved["outcome"] == "success"
+    assert proved["witness"]["move"] == "a7a8"
+    assert proved["target_origin"] == "a7" and proved["threat"]["legal_replies"] == 7
+    assert material_success(position, "a7c5")["reason"] == "played_target_or_line_unresolved"
+
+    safe_game = chess.pgn.Game()
+    safe_game.setup(position)
+    safe_game.headers.update(
+        {
+            "White": LEARNER,
+            "Black": "fixture_opponent",
+            "Result": "*",
+            "UTCDate": "2026.01.01",
+            "UTCTime": "12:02:30",
+        }
+    )
+    safe_game.add_variation(position.parse_uci("a7b7"))
+    ingest_pgn(material_db, str(safe_game))
+    game_id = material_db.connection.execute("SELECT MAX(id) FROM games").fetchone()[0]
+    position_id = material_db.connection.execute(
+        "SELECT id FROM positions WHERE game_id=? AND ply=1", (game_id,)
+    ).fetchone()[0]
+    monkeypatch.setattr(
+        chess.engine.SimpleEngine, "popen_uci", lambda _: DefenseEngine(["a7b7"], ["a7b7"])
+    )
+    assert (
+        run_analysis(
+            material_db,
+            game_id,
+            game_input(material_db, game_id),
+            config,
+            engine_identity(sys.executable),
+        )["status"]
+        == "complete"
+    )
+    result = combined(material_db, position_id, LEARNER, exclusions=Counter(), successes=Counter())
+    assert result["outcome"] == "success"
+    material_success_id = material_db.connection.execute(
+        """SELECT e.id FROM evidence_mappings e JOIN mapping_runs r ON r.id=e.mapping_run_id
+           WHERE r.producer=? AND e.position_id=?""",
+        (MATERIAL_SUCCESS_MAPPER, position_id),
+    ).fetchone()[0]
+    assert (
+        inspect_evidence(material_db, material_success_id)["discovery_material_success_currentness"]
+        == "current"
+    )
+    review_evidence(material_db, material_success_id, decision="accept", actor="fixture_reviewer")
+    groups = report(
+        material_db,
+        LEARNER,
+        "2025-12-31T00:00:00+00:00",
+        "2026-02-01T00:00:00+00:00",
+        "2025-12-01T00:00:00+00:00",
+        skill="discovered_attack",
+        operation="prevent",
+    )
+    group = next(item for item in groups["current"] if item["family"] == MATERIAL_SUCCESS_MAPPER)
+    assert group["successes"] == 1
+    lesson = build(material_db, LEARNER, group)
+    assert any(
+        "distinct legal alternative" in fact.lower() for fact in lesson["examples"][0]["facts"]
+    )
+    branch = proved["threat"]["branches"][0]
+    expected_line = [
+        proved["witness"]["san"],
+        proved["threat"]["san"],
+        branch["reply_san"],
+        branch["capture_san"],
+    ]
+    assert any(line["moves"] == expected_line for line in lesson["examples"][0]["lines"])
+    page = material_app.test_client().get(
+        f"/evidence/{material_success_id}",
+        base_url="https://coach.invalid",
+        headers={"Tailscale-User-Login": "fixture-login"},
+    )
+    assert " ".join(expected_line).encode() in page.data
+    assert b"gain of at least 3 pawn units" in page.data
+    material_db.connection.execute(
+        "UPDATE decision_analysis_lines SET score_value=score_value+1 WHERE position_id=? AND role=?",
+        (position_id, "best"),
+    )
+    material_db.connection.commit()
+    assert (
+        inspect_evidence(material_db, material_success_id)["discovery_material_success_currentness"]
+        == "stale"
+    )
+
     # Success uses an independent witness even when best and played roots match.
     import time
 
