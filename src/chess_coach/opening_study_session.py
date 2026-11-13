@@ -35,16 +35,20 @@ def publish_locked(root, game, position, move, version):
         opening_lock(planning),
         admitted(database, planning, root, learner, game, position, move, version) as source,
     ):
-        course, budget, check = source
-        destination = planning / f"opening-study-{version}-intent.json"
-        existing = require_clear(planning, destination)
-        if len(existing) + (destination not in existing) > MAX_INTENTS:
-            raise ValueError("too many Study intents")
-        check = freeze(planning / f"opening-study-{version}-course.json", course, budget, check)
-        return _publish(
-            database,
-            destination,
-            course,
-            action=partial(publish, check=check, strict=True),
-            check=check,
-        )
+        return publish_course(database, planning, version, source)
+
+
+def publish_course(database, planning, version, source):
+    course, budget, check = source
+    destination = planning / f"opening-study-{version}-intent.json"
+    existing = require_clear(planning, destination)
+    if len(existing) + (destination not in existing) > MAX_INTENTS:
+        raise ValueError("too many Study intents")
+    check = freeze(planning / f"opening-study-{version}-course.json", course, budget, check)
+    return _publish(
+        database,
+        destination,
+        course,
+        action=partial(publish, check=check, strict=True),
+        check=check,
+    )

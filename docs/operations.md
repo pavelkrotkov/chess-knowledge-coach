@@ -492,6 +492,18 @@ parent-and-move matches from the first 40 plies, at most ten deduplicated public
 games, and up to twelve post-move positions per game, starting with the matching move. Named geometry is descriptive
 of this convenience sample; no private game data enters the index.
 
+To publish a reviewed unfamiliar-opening course, set `preview_version` to the
+version shown on its private course preview and use the existing Study credentials:
+
+```bash
+"$release" -I -B -m chess_coach.ops_opening_study_publish --project-root "$PWD" \
+  --unfamiliar --preview-version "$preview_version"
+```
+
+The command rechecks the version and source, freezes the exact course, and verifies
+the private Study and its chapters. A changed or unavailable preview cannot be
+published under the earlier version. It retains the private intent for safe resume.
+
 If an opening Study create has an uncertain outcome and the reviewed preview is
 no longer current, set `original_preview_version` to the original reviewed preview
 hash and reconcile its destination without publishing chapters:

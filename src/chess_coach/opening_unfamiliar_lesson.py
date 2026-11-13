@@ -1,8 +1,7 @@
 """Build one sourced exploratory opening lesson and its checked PGN."""
 
 from .course_pgn import chapter
-from .fact_fingerprint import canonical, digest
-from .opening_reference_source import SOURCE_ARCHIVE
+from .opening_unfamiliar_binding import binding
 
 
 def _scope(report, item):
@@ -46,7 +45,8 @@ def _geometry(data):
 
 def lesson(report, color, item):
     line, data = item["line"], item["profile"]
-    source = line["site"] or SOURCE_ARCHIVE
+    snapshot, provenance = binding(report, color, item)
+    source = provenance["source_url"]
     parent = (
         f" Against {report['parent']}, the common checked first move in "
         f"{report['parent_count']} Black games."
@@ -72,22 +72,6 @@ def lesson(report, color, item):
     note = (
         f"Play {color.title()}. {reason} {instruction} {revisit} {scope} {geometry} {attribution}"
     )
-    snapshot = {
-        "prompt_fen": line["fen"],
-        "learner_color": color,
-        "lines": [" ".join(line["moves"])],
-    }
-    provenance = {
-        "kind": "public",
-        "selection_hash": digest(canonical(report)),
-        "reference": line["reference"],
-        "record": line["record"],
-        "source_url": source,
-        "archive_sha256": data["source_sha256"],
-        "license": data["license"],
-        "license_url": data["license_url"],
-        "catalog_source": report["catalog_source"],
-    }
     result = chapter(item["name"], note, snapshot, provenance, guidance=note)
     return {
         **result,

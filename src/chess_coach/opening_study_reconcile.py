@@ -6,6 +6,7 @@ from .course_preview import preview_hash
 from .opening_queue_lock import lock as opening_lock
 from .opening_study_freeze import _stamp
 from .opening_study_session import _paths
+from .opening_unfamiliar_study_course import KIND as UNFAMILIAR_KIND
 from .study_authorization import require_scopes
 from .study_destination import destination
 from .study_remote import StudyError
@@ -52,7 +53,7 @@ def reconcile_locked(root, version):
         course = _read(frozen)
         _stamp(frozen, course)
         if (
-            course["course"].get("kind") != "opening-study-course-v1"
+            course["course"].get("kind") not in {"opening-study-course-v1", UNFAMILIAR_KIND}
             or course["course"].get("preview_version") != version
         ):
             raise StudyError("opening course version differs")
