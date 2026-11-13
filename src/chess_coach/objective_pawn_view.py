@@ -1,7 +1,7 @@
 """Display validated pawn-result feedback and any proved training reply."""
 
 from .objective_pawn_continue import latest
-from .objective_pawn_feedback import checked
+from .objective_pawn_feedback import checked_from_current_session
 from .objective_pawn_resume import resume
 
 
@@ -13,7 +13,7 @@ def display(db, session, result):
     if proof.get("status") not in {"correct", "incorrect"}:
         return
     try:
-        board, move, feedback = checked(db, session, request, proof)
+        board, move, feedback = checked_from_current_session(db, session, request, proof)
         result["pawn_feedback"] = feedback
         if proof.get("continuation", {}).get("status") == "available":
             resumed = resume(db, session, request, proof, prepared=(board, move))

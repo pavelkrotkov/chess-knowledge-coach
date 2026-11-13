@@ -1,6 +1,8 @@
 """Synthetic mover-perspective WDL intervals and immutable pawn continuations."""
 
 import json
+import sqlite3
+from unittest.mock import Mock
 
 import chess
 import chess.syzygy
@@ -113,7 +115,7 @@ def test_owned_unlisted_result_and_legal_training_continuation(tmp_path, monkeyp
     resumed = show(db, "pawn", SUBJECT)
     assert resumed["status"] == "active" and resumed["pawn_continuation"]
     assert resumed["pawn_feedback"] == {"move": "Kf3", "goal": 1, "lower": 1, "upper": 1}
-    from chess_coach.objective_pawn_feedback import checked as checked_feedback
+    from chess_coach.objective_pawn_feedback import checked_from_current_session as checked_feedback
     from chess_coach.unified_session_state import session_row
     from chess_coach.web import create_app
 
@@ -166,13 +168,38 @@ def test_owned_unlisted_result_and_legal_training_continuation(tmp_path, monkeyp
         assert process(db, SUBJECT)["outcomes"] == {status: 1}
         checked = show(db, attempt, SUBJECT)
         assert checked["verification"]["status"] == status
-        page = client.get(f"/unified/{attempt}", base_url="https://coach.invalid", headers=headers)
+        from chess_coach import unified_source_current
+
+        source_resolver = Mock(wraps=unified_source_current.resolve_source)
+        with monkeypatch.context() as patch:
+            patch.setattr(unified_source_current, "resolve_source", source_resolver)
+            page = client.get(
+                f"/unified/{attempt}", base_url="https://coach.invalid", headers=headers
+            )
+        assert source_resolver.call_count == 1
         if status == "incorrect":
             assert checked["pawn_feedback"] == {"move": "d4", "goal": 1, "lower": -1, "upper": -1}
             assert b"result for your side is loss" in page.data
         else:
             assert "pawn_feedback" not in checked
             assert b"last checked move" not in page.data
+    # A concurrent commit between source validation and display cannot bless a mixed view.
+    from chess_coach import unified_session_events
+
+    display = unified_session_events.display
+    version = db.connection.execute("PRAGMA user_version").fetchone()[0]
+
+    def changing_display(database, row):
+        result = display(database, row)
+        with sqlite3.connect(db.path) as writer:
+            writer.execute(f"PRAGMA user_version={version + 1}")
+        return result
+
+    with monkeypatch.context() as patch:
+        patch.setattr(unified_session_events, "display", changing_display)
+        with pytest.raises(ValueError, match="source changed"):
+            show(db, "miss", SUBJECT)
+
     assert {
         table: db.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
         for table in tracked

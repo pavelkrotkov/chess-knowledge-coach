@@ -1,5 +1,6 @@
 """Apply and persist subject-owned practice moves and hints exactly once."""
 
+from .objective_pawn_contract import is_source as pawn_source
 from .objective_request import enqueue
 from .objective_session_dispatch import record
 from .objective_session_view import display
@@ -25,8 +26,20 @@ def reveal(db, attempt_id, subject, *, event_id):
 
 def show(db, attempt_id, subject):
     row = session_row(db, attempt_id, subject)
+    if pawn_source(row):
+        return _show_pawn(db, attempt_id, subject)
     require_current(db, row)
     return display(db, row)
+
+
+def _show_pawn(db, attempt_id, subject):
+    generation = db.connection.execute("PRAGMA data_version").fetchone()[0]
+    row = session_row(db, attempt_id, subject)
+    require_current(db, row)
+    result = display(db, row)
+    if db.connection.execute("PRAGMA data_version").fetchone()[0] != generation:
+        raise ValueError("practice source changed")
+    return result
 
 
 def _event(db, attempt_id, subject, event_id, kind, move):

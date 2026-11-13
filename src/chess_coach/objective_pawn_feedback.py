@@ -3,17 +3,18 @@
 import json
 
 from . import pawn_proof, pawn_tables
-from .objective_current import current
 from .objective_pawn_bounds import verdict
 from .objective_pawn_contract import VERIFIER
 from .objective_pawn_history import before_answer
 from .objective_pawn_interval_binding import result_interval
+from .objective_pawn_prior import bound_events
 from .objective_short_history import history_hash
 
 
-def checked(db, session, request, result):
-    source, events = current(db, request)
-    board, move = before_answer(db, source, events)
+def checked_from_current_session(db, session, request, result):
+    # The display caller has already rechecked this source and guards its generation.
+    events = bound_events(db, session, request)
+    board, move = before_answer(db, session, events)
     data = json.loads(session["provenance_json"])
     _binding(request, result, board, move, data, session["objective"])
     return (
