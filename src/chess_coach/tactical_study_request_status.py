@@ -16,7 +16,7 @@ def status(db, root, learner, corpus, offer, course):
         if valid(item, database, learner):
             if item["version"] == version:
                 state = item["state"]
-            elif item["state"] in {"incomplete", "stale"}:
+            elif item["state"] in {"queued", "incomplete", "stale"}:
                 earlier = read(directory / f"tactical-study-{item['version']}-intent.json")
                 if earlier is not None and (
                     not isinstance(earlier, dict) or earlier.get("complete") is not True

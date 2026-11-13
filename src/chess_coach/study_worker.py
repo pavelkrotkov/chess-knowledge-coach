@@ -27,12 +27,20 @@ def _turn(directory, database, learner, original):
             write(slot, {**item, "turn": "tactical"})
 
 
+def _pending(item, database, learner):
+    return tactical_valid(item, database, learner) and item["state"] in {"queued", "incomplete"}
+
+
 def dispatch(db, learner, root):
     if active_deadline(db, None) is not None:
         return
     directory, database = location(db, root, learner)
-    item = read(directory / TACTICAL_SLOT)
-    pending = tactical_valid(item, database, learner) and item["state"] in {"queued", "incomplete"}
+    try:
+        item = read(directory / TACTICAL_SLOT)
+        pending = _pending(item, database, learner)
+    except (OSError, ValueError, TypeError):
+        opening_run(db, learner, root)
+        return
     if pending and item["turn"] == "opening" and opening_run(db, learner, root):
         _turn(directory, database, learner, item)
         return

@@ -8,10 +8,9 @@ from .opening_queue_location import location
 from .opening_queue_lock import lock
 from .opening_queue_write import write
 from .opening_study_request_validate import credentials
+from .tactical_course_offer import STUDY_SLOT as SLOT
 from .tactical_course_offer_read import offered
 from .tactical_study_slot import replaceable
-
-SLOT = "tactical-study-request.json"
 
 
 def configured(root, db, learner, corpus, version):

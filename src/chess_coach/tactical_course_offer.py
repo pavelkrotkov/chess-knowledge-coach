@@ -10,6 +10,7 @@ from .opening_queue_location import location
 from .opening_queue_write import staged, sync
 
 SLOT = "tactical-course-offer.json"
+STUDY_SLOT = "tactical-study-request.json"
 VERSION = "tactical-course-offer-v1"
 
 

@@ -1001,18 +1001,19 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
             "chess_coach.ops_tactical_export.build",
             lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("reserved export was built")),
         )
-        for offered_flag in (False, True):
+        for reserved in (offer_slot, planning / "tactical-study-request.json"):
+            for offered_flag in (False, True):
+                with pytest.raises(ValueError):
+                    export_candidate(
+                        project,
+                        first_preview,
+                        preview["preview_sha256"],
+                        reserved,
+                        offer=offered_flag,
+                    )
             with pytest.raises(ValueError):
-                export_candidate(
-                    project,
-                    first_preview,
-                    preview["preview_sha256"],
-                    offer_slot,
-                    offer=offered_flag,
-                )
-    with pytest.raises(ValueError):
-        prepare(project, offer_slot)
-    assert not offer_slot.exists()
+                prepare(project, reserved)
+            assert not reserved.exists()
     export_candidate(project, first_preview, preview["preview_sha256"], export_path, offer=True)
     exported_bytes = export_path.read_bytes()
     original_offer = offer_slot.read_bytes()
@@ -1179,6 +1180,16 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
         study_worker.dispatch(db, LEARNER, project)
         offer_slot.write_bytes(original_offer)
         assert calls == [(export_path, payload["version"], True)] * 2
+        with patch.context() as broken_slot:
+            broken_slot.setattr(
+                study_worker, "read", lambda _path: (_ for _ in ()).throw(ValueError())
+            )
+            opening_calls = []
+            broken_slot.setattr(
+                study_worker, "opening_run", lambda *_args: opening_calls.append(True)
+            )
+            study_worker.dispatch(db, LEARNER, project)
+            assert opening_calls == [True]
         from chess_coach.deep_selection_source import learner_key
 
         chapters = exported["export"]["chapters"]
