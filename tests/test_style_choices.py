@@ -125,6 +125,7 @@ def test_profile_uses_owned_current_deep_results_and_private_browser(tmp_path, m
             "counts": defaultdict(int),
             "observations": [],
             "center_control": {"coverage": defaultdict(int), "seen": set(), "observations": []},
+            "early_center": {"coverage": defaultdict(int), "seen": set(), "observations": []},
         }
 
     original_view = style_purpose_evaluate.current_view
@@ -139,6 +140,17 @@ def test_profile_uses_owned_current_deep_results_and_private_browser(tmp_path, m
         assert current["center_control"]["coverage"]["duplicate"] == 1
         center_items = current["center_control"]["observations"]
         assert len(center_items) == 1 and not current["observations"]
+        targeted_slot = {**slot, "early_center_target": True}
+        targeted = state()
+        style_purpose_evaluate.evaluate(
+            db, LEARNER, targeted_slot, context, snapshot, targeted, set()
+        )
+        style_purpose_evaluate.evaluate(
+            db, LEARNER, targeted_slot, context, snapshot, targeted, set()
+        )
+        assert targeted["early_center"]["coverage"]["duplicate"] == 1
+        assert targeted["early_center"]["observations"][0]["choice"] == "played_capture"
+        assert not targeted["center_control"]["observations"]
         assert center_items[0]["choices"] == {"center_file_opening": "file_opened"}
         dimension = counts(center_items, "center_file_opening")
         assert dimension["opportunities"] == dimension["games"] == 1
@@ -155,6 +167,17 @@ def test_profile_uses_owned_current_deep_results_and_private_browser(tmp_path, m
         )
         assert overlap["counts"]["control_duplicate"] == 1
         assert overlap["center_control"]["coverage"]["overlap"] == 1
+        targeted_overlap = state()
+        style_purpose_evaluate.evaluate(
+            db,
+            LEARNER,
+            targeted_slot,
+            context,
+            snapshot,
+            targeted_overlap,
+            {(slot["game_id"], slot["position_id"])},
+        )
+        assert targeted_overlap["early_center"]["coverage"]["ordinary_overlap"] == 1
         assert not overlap["center_control"]["observations"]
         mismatch = state()
         bad_snapshot = {"board": board, "position": {"uci": "e1d2"}}
@@ -165,6 +188,11 @@ def test_profile_uses_owned_current_deep_results_and_private_browser(tmp_path, m
         stale = state()
         style_purpose_evaluate.evaluate(db, LEARNER, slot, context, snapshot, stale, set())
         assert stale["counts"]["control_stale"] == 1
+        targeted_stale = state()
+        style_purpose_evaluate.evaluate(
+            db, LEARNER, targeted_slot, context, snapshot, targeted_stale, set()
+        )
+        assert targeted_stale["early_center"]["coverage"]["stale"] == 1
         assert not stale["center_control"]["observations"]
         patch.setattr(style_purpose_evaluate, "current_view", original_view)
         patch.setattr(style_purpose_view, "slot_matches_request", lambda *args: False)
@@ -172,13 +200,25 @@ def test_profile_uses_owned_current_deep_results_and_private_browser(tmp_path, m
         style_purpose_evaluate.evaluate(db, LEARNER, slot, context, snapshot, changed, set())
         assert changed["counts"]["control_source_unknown"] == 1
         assert not changed["center_control"]["observations"]
+        changed_target = state()
+        style_purpose_evaluate.evaluate(
+            db, LEARNER, targeted_slot, context, snapshot, changed_target, set()
+        )
+        assert changed_target["early_center"]["coverage"]["unchecked"] == 1
         patch.setattr(style_purpose_evaluate, "current_view", lambda *args: ("current", view))
         view["attempts"][0]["final"]["lines"][1]["depth"] = 3
         shallow = state()
         style_purpose_evaluate.evaluate(db, LEARNER, slot, context, snapshot, shallow, set())
         assert shallow["center_control"]["coverage"]["unavailable"] == 1
+        style_purpose_evaluate.evaluate(
+            db, LEARNER, targeted_slot, context, snapshot, shallow, set()
+        )
+        assert shallow["early_center"]["coverage"]["unsupported"] == 1
         assert not shallow["center_control"]["observations"]
 
+    from chess_coach.style_early_center_report import summary as early_summary
+
+    report["early_center"] = early_summary(targeted["early_center"])
     report["center_control"] = {
         **dimension,
         "observations": center_items,
@@ -192,7 +232,7 @@ def test_profile_uses_owned_current_deep_results_and_private_browser(tmp_path, m
     main()
     output = capsys.readouterr().out
     cli_report = json.loads(output)
-    assert cli_report["version"] == "style-choices-v12"
+    assert cli_report["version"] == "style-choices-v13"
     assert "center_control" in cli_report
     assert "not prior exposure" in cli_report["familiarity_note"]
     assert "overlapping games" in cli_report["trend_note"]
@@ -223,12 +263,62 @@ def test_profile_uses_owned_current_deep_results_and_private_browser(tmp_path, m
             headers={"Tailscale-User-Login": "login"},
         )
         assert b"Center-file choices from control comparisons" in page.data
+        assert b"Early central pawn choices" in page.data
         assert b"These lines show conditional continuations." in page.data
         assert b"Insufficient data for a direction" in page.data
         assert b"control diagnostic" in page.data
 
 
 def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch):
+    from chess_coach import style_schedule_candidates
+    from chess_coach.style_early_center_compare import observation as early_observation
+    from chess_coach.style_schedule_candidate import candidate
+
+    root = chess.Board()
+    root.push_uci("e2e4")
+    root.push_uci("d7d5")
+    capture = {"uci": "e4d5", "ply": 3, "game_id": 1, "id": 3}
+    quiet = {**capture, "uci": "g1f3"}
+    assert candidate(capture, root)["early_center"] and candidate(quiet, root)["early_center"]
+    assert not candidate({**capture, "ply": 21}, root)["early_center"]
+    chosen = candidate(capture, root)
+    fallback = {"game_id": 2, "position_id": 4, "early_center": False}
+    with monkeypatch.context() as patch:
+        patch.setattr(style_schedule_candidates, "choose", lambda *_: fallback)
+        selected, targeted, count = style_schedule_candidates._control(
+            None, "fixture", 1, [chosen, fallback]
+        )
+        assert selected == chosen and targeted and count == 1
+        selected, targeted, _ = style_schedule_candidates._control(
+            None, "fixture", 2, [chosen, fallback]
+        )
+        assert selected == fallback and not targeted
+
+    played = line("e4d5 d8d5 b1c3 d5e5")
+    alternative = line("g1f3 d5e4 f3g5 e4e3")
+    context = {"game_id": 1, "position_id": 3, "ply": 3, "played_move": "e4d5"}
+    slot = {"request_id": 1, "sequence": 1}
+    view = {
+        "attempts": [
+            {
+                "number": 1,
+                "final": {
+                    "lines": [
+                        {"rank": 1, **played},
+                        {"rank": 2, **alternative},
+                    ]
+                },
+            }
+        ]
+    }
+    status, item = early_observation(context, slot, {"board": root}, view)
+    assert status == "admitted" and item["choice"] == "played_capture"
+    context["played_move"] = "g1f3"
+    status, item = early_observation(context, slot, {"board": root}, view)
+    assert status == "admitted" and item["choice"] == "alternative_capture"
+    view["attempts"][0]["final"]["lines"][0]["depth"] = 3
+    assert early_observation(context, slot, {"board": root}, view)[0] == "unsupported"
+
     db = Database(":memory:")
     db.initialize()
     ingest_pgn(db, PGN)
@@ -451,6 +541,38 @@ def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch):
         ).fetchall()
     )
     assert cursor_rows == {"target": 3, "control": 6}
+
+    # A targeted control uses the durable cycle sequence without advancing
+    # the ordinary-control rotation cursor.
+    def center_cycle(*_args):
+        return (
+            {"early_center_policy": "early-center-v1", "early_center_targeted": True},
+            (("target", None), ("control", control)),
+            [control],
+        )
+
+    with monkeypatch.context() as patch:
+        patch.setattr(style_schedule_store, "allocate", center_cycle)
+        patch.setattr(style_schedule_store, "next_sequence", lambda *_: (learner_key(LEARNER), 9))
+        patch.setattr(
+            style_schedule_store, "discover", lambda *_args: (None, None, "unavailable", 0)
+        )
+        patch.setattr(style_schedule_store, "insert_protection", lambda *_args: None)
+        with history_budget():
+            center_id = style_schedule_store.create_cycle(db, LEARNER)
+    from chess_coach.style_purpose_slots import slots as purpose_slots
+
+    persisted, _ = purpose_slots(db, LEARNER)
+    assert next(
+        row for row in persisted if row["cycle_id"] == center_id and row["kind"] == "control"
+    )["early_center_target"]
+    assert (
+        db.connection.execute(
+            "SELECT next_index FROM style_schedule_rotation WHERE learner_key=? AND game_id=? AND kind='control'",
+            (learner_key(LEARNER), control["game_id"]),
+        ).fetchone()[0]
+        == 6
+    )
     assert positions[::2] == [checks[-1]["position_id"]] * 3
     assert positions[1::2] == [
         checks[0]["position_id"],
@@ -474,6 +596,47 @@ def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch):
     assert coverage["nomination_unknown_games"] == 0
     assert coverage["nomination_unchecked_games"] == 2
     db.close()
+
+    # A 500-unit scan can replay only one 130-ply game. Reserved starts
+    # must nevertheless visit both games rather than only even offsets.
+    rotation_db = Database(":memory:")
+    rotation_db.initialize()
+    for label, prefix in (
+        ("ordinary", ["e2e4", "e7e5"]),
+        ("center", ["e2e4", "d7d5", "e4d5", "d8d5"]),
+    ):
+        game = chess.pgn.Game()
+        game.headers.update(
+            {
+                "Event": label,
+                "White": LEARNER,
+                "Black": OPPONENT,
+                "Result": "*",
+                "UTCDate": "2026.01.01",
+                "UTCTime": "00:00:00",
+            }
+        )
+        board = game.board()
+        node = game
+        moves = prefix + ["g1f3", "g8f6", "f3g1", "f6g8"] * 33
+        for text in moves[:130]:
+            move = board.parse_uci(text)
+            node = node.add_variation(move)
+            board.push(move)
+        ingest_pgn(rotation_db, str(game))
+    rotation_games = [
+        (rotation_db.connection.execute("SELECT * FROM games WHERE id=?", (i,)).fetchone(), "white")
+        for i in (1, 2)
+    ]
+    for sequence, expected in ((1, 1), (5, 2), (9, 1), (13, 2)):
+        with history_budget() as budget:
+            budget["limit"] = 500
+            ordered, _ = prioritize(rotation_db, rotation_games, sequence)
+            nominated, _, _, exhausted, replayed = read_games(rotation_db, ordered, 0)
+            assert ordered[0][0]["id"] == expected and replayed == 1 and exhausted
+            assert budget["used"] == 500
+            assert any(item["early_center"] for item in nominated) == (expected == 2)
+    rotation_db.close()
 
 
 def test_report_engine_digest_reuse_and_freshness(tmp_path, monkeypatch):

@@ -2,6 +2,7 @@
 
 from collections import defaultdict
 
+from .style_early_center_report import slot_coverage
 from .style_purpose_counts import coverage_counts
 from .style_purpose_slots import slots
 
@@ -13,9 +14,11 @@ def prepare(db, learner, games):
     }
     grouped = defaultdict(list)
     counts = coverage_counts()
+    early = {"coverage": defaultdict(int), "seen": set(), "observations": []}
     for row in rows:
         kind = row["kind"]
         counts[f"{kind}_slots"] += 1
+        slot_coverage(row, contexts, early["coverage"])
         if row["game_id"] not in contexts:
             counts[f"{kind}_outside_sample"] += 1
         elif row["position_id"] not in contexts[row["game_id"]]:
@@ -41,6 +44,7 @@ def prepare(db, learner, games):
         "protection_sources": {},
         "observations": [],
         "center_control": {"coverage": defaultdict(int), "seen": set(), "observations": []},
+        "early_center": early,
     }
 
 
