@@ -2,12 +2,9 @@
 
 import chess
 
-from .decision_history import decision_board
-from .mate_inspection_source import position_row
-from .objective_capture_current import current
 from .objective_protection_before import probe
 from .objective_protection_contract import VERSION
-from .objective_protection_source import resolve
+from .objective_protection_source import resolve_details
 from .related_capture_position import _features
 from .related_capture_source import _opening
 from .related_protection_mechanism import mechanism
@@ -16,16 +13,7 @@ from .related_protection_mechanism import mechanism
 def source_for_evidence(db, subject, evidence_id):
     if type(evidence_id) is not int or not 0 < evidence_id < 2**63:
         raise ValueError("protection source unavailable")
-    before, review = current(
-        db, evidence_id, subject, kind="material_protection", operation="prevent"
-    )
-    source = resolve(db, VERSION, str(evidence_id), subject)
-    after, latest = current(
-        db, evidence_id, subject, kind="material_protection", operation="prevent"
-    )
-    if (before, review) != (after, latest):
-        raise ValueError("protection source changed")
-    board = decision_board(db, position_row(db, before["position_id"]))
+    source, before, board = resolve_details(db, VERSION, str(evidence_id), subject)
     move = board.parse_uci(source["lines"][0])
     target = chess.parse_square(source["provenance"]["objective_target"])
     source["features"] = _features(

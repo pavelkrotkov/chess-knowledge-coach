@@ -9,6 +9,12 @@ from .pawn_scope import history_known
 
 
 def resolve(db, version, key, subject, *, _verified_board=None, _history=None):
+    return resolve_details(
+        db, version, key, subject, _verified_board=_verified_board, _history=_history
+    )[0]
+
+
+def resolve_details(db, version, key, subject, *, _verified_board=None, _history=None):
     if not _valid_key(version, key) or not within_budget(db, int(key), subject):
         raise ValueError("protection objective unavailable")
     evidence_id = int(key)
@@ -19,7 +25,7 @@ def resolve(db, version, key, subject, *, _verified_board=None, _history=None):
     result = snapshot(board, view, review, evidence_id)
     if (view, review) != _current(db, evidence_id, subject, _history):
         raise ValueError("protection source changed")
-    return result
+    return result, view, board
 
 
 def _current(db, evidence_id, subject, _history):
