@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from .analysis_comparison_merge import merge_comparisons
+from .analysis_provenance import attach, source_table
+from .analysis_provenance import values as provenance_values
 from .db import Database
 from .deep_selection_merge import require_merge_safe
 
@@ -13,9 +15,10 @@ def merge_analysis_outputs(target: Database, source: Database) -> int:
     try:
         target.connection.execute("BEGIN IMMEDIATE")
         require_merge_safe(source)
+        table = source_table(source.connection)
         runs = source.connection.execute(
-            """SELECT runs.*, games.source AS game_source, games.source_id
-            FROM analysis_runs AS runs JOIN games ON games.id = runs.game_id ORDER BY runs.id"""
+            f"""SELECT runs.*, games.source AS game_source, games.source_id
+            FROM {table} AS runs JOIN games ON games.id = runs.game_id ORDER BY runs.id"""
         ).fetchall()
         for run in runs:
             game = target.connection.execute(
@@ -26,6 +29,9 @@ def merge_analysis_outputs(target: Database, source: Database) -> int:
                 raise ValueError(
                     f"target database is missing source game {run['game_source']}:{run['source_id']}"
                 )
+            config, nnue, compatibility, provenance_id = provenance_values(
+                target.connection, run["config_json"], run["nnue"], run["compatibility_json"]
+            )
             cursor = target.connection.execute(
                 """INSERT INTO analysis_runs
                 (game_id, engine, engine_version, config_json, binary_path, binary_version, nnue, compatibility_json)
@@ -34,15 +40,16 @@ def merge_analysis_outputs(target: Database, source: Database) -> int:
                     game["id"],
                     run["engine"],
                     run["engine_version"],
-                    run["config_json"],
+                    config,
                     run["binary_path"],
                     run["binary_version"],
-                    run["nnue"],
-                    run["compatibility_json"],
+                    nnue,
+                    compatibility,
                 ),
             )
             if cursor.lastrowid is None:
                 raise RuntimeError("SQLite did not return an imported analysis run id")
+            attach(target.connection, cursor.lastrowid, provenance_id)
             outputs = source.connection.execute(
                 """SELECT outputs.*, positions.ply FROM engine_outputs AS outputs
                 JOIN positions ON positions.id = outputs.position_id

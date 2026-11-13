@@ -13,7 +13,7 @@ def current_analysis(db, game_id):
     if stage is None or not output_is_current(db.connection, stage):
         raise ValueError("current cheap analysis is unavailable")
     run = db.connection.execute(
-        "SELECT * FROM analysis_runs WHERE id=? AND game_id=?", (stage["output_id"], game_id)
+        "SELECT * FROM analysis_runs_read WHERE id=? AND game_id=?", (stage["output_id"], game_id)
     ).fetchone()
     if run is None:
         raise ValueError("current cheap analysis is unavailable")

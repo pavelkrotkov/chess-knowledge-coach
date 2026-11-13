@@ -81,8 +81,11 @@ threads, hash, and MultiPV settings, then merge only the versioned analysis
 outputs with `merge_analysis_outputs(target_db, source_db)`. That helper maps
 games by `(source, source_id)`, positions by `(game_id, ply)`, remaps run and
 position foreign keys, and commits atomically; missing stable games or plies
-abort the entire import. Keep the 2010 Mac mini in ingestion/reporting mode
-rather than running large engine or Maia batches locally.
+abort the entire import. Analysis provenance remains inline by default; the
+optional shared representation is disabled until a verified downgrade procedure
+is available. Readers that inspect run configuration use `analysis_runs_read`,
+which projects the same values for both formats. Keep the 2010 Mac mini in
+ingestion/reporting mode rather than running large engine or Maia batches locally.
 
 The Python API can run a scan after ingestion:
 

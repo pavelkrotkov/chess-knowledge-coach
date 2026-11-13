@@ -2,7 +2,7 @@
 
 
 def cheap_run(db, game_id, position_id, run_id):
-    query = """SELECT r.* FROM analysis_runs r WHERE r.game_id=?
+    query = """SELECT r.* FROM analysis_runs_read r WHERE r.game_id=?
         AND NOT EXISTS (SELECT 1 FROM deep_analysis_attempts a WHERE a.analysis_run_id=r.id)"""
     if run_id is not None:
         row = db.connection.execute(query + " AND r.id=?", (game_id, run_id)).fetchone()

@@ -62,6 +62,13 @@ def test_populated_legacy_upgrade_is_repeatable_and_preserves_history(
     observation_column: bool, tmp_path
 ) -> None:
     db = legacy_database(observation_column=observation_column)
+    db.connection.execute(
+        "INSERT INTO analysis_runs(game_id,engine,engine_version,config_json,nnue,compatibility_json) VALUES(1,'legacy','v1',?, ?, ?)",
+        ('{"nodes": 17}', '{"net": "old"}', '{"cpu": true}'),
+    )
+    db.connection.commit()
+    old_run = dict(db.connection.execute("SELECT * FROM analysis_runs").fetchone())
+    old_columns = [tuple(row) for row in db.connection.execute("PRAGMA table_info(analysis_runs)")]
     preserved = {
         table: rows(db, table)
         for table in (
@@ -74,7 +81,28 @@ def test_populated_legacy_upgrade_is_repeatable_and_preserves_history(
     }
     db.initialize()
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 32
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 33
+    assert dict(db.connection.execute("SELECT * FROM analysis_runs").fetchone()) == old_run
+    assert dict(db.connection.execute("SELECT * FROM analysis_runs_read").fetchone()) == old_run
+    assert (
+        db.connection.execute("SELECT compact FROM analysis_provenance_settings").fetchone()[0] == 0
+    )
+    assert db.connection.execute("SELECT COUNT(*) FROM analysis_run_provenance").fetchone()[0] == 0
+    assert [
+        tuple(row) for row in db.connection.execute("PRAGMA table_info(analysis_runs)")
+    ] == old_columns
+    # With compact writes off and no links, a legacy writer sees the same table shape.
+    db.connection.execute("PRAGMA user_version=32")
+    db.connection.execute(
+        "INSERT INTO analysis_runs(game_id,engine,engine_version,config_json) VALUES(1,'old','v1','{}')"
+    )
+    db.connection.commit()
+    db.initialize()
+    assert [
+        dict(row) for row in db.connection.execute("SELECT * FROM analysis_runs ORDER BY id")
+    ] == [
+        dict(row) for row in db.connection.execute("SELECT * FROM analysis_runs_read ORDER BY id")
+    ]
     for table, old_rows in preserved.items():
         new_rows = rows(db, table)
         assert [

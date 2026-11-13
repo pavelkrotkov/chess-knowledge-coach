@@ -95,6 +95,19 @@ def populated_wal(path: Path) -> Database:
 def test_wal_online_backup_and_restore_preserve_all_history(tmp_path, monkeypatch):
     source = tmp_path / "live.sqlite"
     db = populated_wal(source)
+    from chess_coach.analysis_provenance import attach, values
+
+    db.connection.execute("UPDATE analysis_provenance_settings SET compact=1 WHERE id=1")
+    stored = values(db.connection, '{"nodes": 100}', '{"net": "fixture"}', '{"machine": "test"}')
+    run = db.connection.execute(
+        "INSERT INTO analysis_runs(game_id,engine,engine_version,config_json,nnue,compatibility_json) VALUES(1,'fixture','v1',?,?,?)",
+        stored[:3],
+    ).lastrowid
+    attach(db.connection, run, stored[3])
+    db.connection.commit()
+    expected_run = tuple(
+        db.connection.execute("SELECT * FROM analysis_runs_read WHERE id=?", (run,)).fetchone()
+    )
     assert Path(str(source) + "-wal").stat().st_size > 0
     # File-only checks do not create the missing SQLite shared index.
     from shutil import copyfile
@@ -156,6 +169,10 @@ def test_wal_online_backup_and_restore_preserve_all_history(tmp_path, monkeypatc
     tables = (
         "games",
         "positions",
+        "analysis_runs",
+        "analysis_provenance",
+        "analysis_run_provenance",
+        "analysis_provenance_settings",
         "detector_runs",
         "detector_facts",
         "mapping_runs",
@@ -213,6 +230,10 @@ def test_wal_online_backup_and_restore_preserve_all_history(tmp_path, monkeypatc
             assert copy.execute("PRAGMA integrity_check").fetchall() == [("ok",)]
             assert copy.execute("PRAGMA foreign_key_check").fetchall() == []
             assert copy.execute("PRAGMA user_version").fetchone()[0] == source_version
+            assert (
+                copy.execute("SELECT * FROM analysis_runs_read WHERE id=?", (run,)).fetchone()
+                == expected_run
+            )
             assert {
                 name: copy.execute(f"SELECT * FROM {name}").fetchall() for name in tables
             } == before
