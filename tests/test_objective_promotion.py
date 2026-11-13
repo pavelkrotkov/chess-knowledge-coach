@@ -1,5 +1,6 @@
 """Explicit public promotion goals use durable bounded legal proof."""
 
+import json
 from pathlib import Path
 
 import chess
@@ -124,6 +125,52 @@ def test_imported_source_queues_exemplar_and_resumes_every_defense(tmp_path, mon
         ).status_code
         == 303
     )
+
+    # A public collection version can equal an unrelated owned practice version.
+    collision_version = "discovery-material-defense-own-v1"
+    collision_content = tmp_path / "collision.csv"
+    collision_content.write_bytes(CONTENT.read_bytes())
+    collision_manifest = tmp_path / "collision-manifest.json"
+    collision_manifest.write_text(
+        json.dumps(json.loads(MANIFEST.read_text()) | {"version": collision_version}),
+        encoding="utf-8",
+    )
+    assert (
+        import_collection(
+            db, collision_content, collision_content, collision_manifest, project_root=tmp_path
+        )["accepted"]
+        == 8
+    )
+    collision = client.post(
+        "/unified/start",
+        base_url="https://coach.invalid",
+        headers=headers | {"Origin": "https://coach.invalid"},
+        data={
+            "csrf": csrf,
+            "source_type": "public",
+            "version": collision_version,
+            "key": "direct-white",
+        },
+    )
+    assert collision.status_code == 303
+    collision_page = collision.headers["Location"]
+    active = client.get(collision_page, base_url="https://coach.invalid", headers=headers)
+    assert b"Objective: Promote a pawn now" in active.data
+    assert b"discovered attack" not in active.data
+    with client.session_transaction(base_url="https://coach.invalid") as browser:
+        collision_attempt = browser["unified_attempt"]
+    moved = client.post(
+        "/unified/move",
+        base_url="https://coach.invalid",
+        headers=headers | {"Origin": "https://coach.invalid"},
+        data={"csrf": csrf, "attempt": collision_attempt, "event": "collision", "move": "a7a8q"},
+    )
+    assert moved.status_code == 303
+    pending = client.get(collision_page, base_url="https://coach.invalid", headers=headers)
+    assert b"Verification queued" in pending.data and b"discovered attack" not in pending.data
+    assert process(db, SUBJECT)["outcomes"] == {"correct": 1}
+    verified = client.get(collision_page, base_url="https://coach.invalid", headers=headers)
+    assert b"Verified correct" in verified.data and b"discovered attack" not in verified.data
 
     # Pending, unresolved and assisted answers cannot advance the card.
     begin(db, "direct-white", "unresolved")
