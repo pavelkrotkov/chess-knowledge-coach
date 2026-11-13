@@ -147,17 +147,138 @@ def test_result_contradicting_checkmate_is_unavailable(tmp_path):
 
 
 def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monkeypatch):
+    # A real bounded in-memory cohort resumes and withholds only a changed game.
+    import sys
     from copy import deepcopy
     from types import SimpleNamespace
 
+    import chess.engine
+
+    from chess_coach import protection_game_current as protection_current
+    from chess_coach import protection_game_worker as protection_worker
     from chess_coach import short_mate_trend_paths as mate_paths
     from chess_coach import short_mate_trend_scan as scan
+    from chess_coach import short_mate_trend_select as selection
     from chess_coach import short_mate_trend_turns as turns
+    from chess_coach.pipeline_config import PipelineConfig
+    from chess_coach.pipeline_inputs import engine_identity, game_input
+    from chess_coach.pipeline_work import run_analysis
     from chess_coach.short_mate_trend_cohort import signature as source_signature
     from chess_coach.short_mate_trend_paths import binding, location
     from chess_coach.short_mate_trend_report import report as cached_report
     from chess_coach.short_mate_trend_select import _item
     from chess_coach.short_mate_trend_store import read, write
+    from tests.test_pipeline import FakeEngine
+
+    with monkeypatch.context() as patch:
+        games_db = Database(":memory:")
+        games_db.initialize()
+        patch.setattr(chess.engine.SimpleEngine, "popen_uci", lambda _: FakeEngine())
+        config = PipelineConfig(learner="fixture_a", engine_path=sys.executable, nodes=100)
+        for index in range(3):
+            ingest_pgn(games_db, pgn(index, "Qg1"))
+            assert (
+                run_analysis(
+                    games_db,
+                    index + 1,
+                    game_input(games_db, index + 1),
+                    config,
+                    engine_identity(sys.executable),
+                )["status"]
+                == "complete"
+            )
+        cache = {}
+        for module in (protection_worker, protection_current):
+            patch.setattr(module, "location", lambda *_: "in-memory")
+            patch.setattr(module, "binding", lambda *_: "fixture")
+            patch.setattr(module, "read", lambda *_args, **_kwargs: deepcopy(cache.get("state")))
+        patch.setattr(
+            protection_worker, "write", lambda _path, state: cache.update(state=deepcopy(state))
+        )
+        changes = games_db.connection.total_changes
+        patch.setattr(scan, "TURN_LIMIT", 1)
+        for expected in (1, 2, 3):
+            protection_worker.run(games_db, "fixture_a", None)
+            assert sum(len(game["results"]) for game in cache["state"]["games"]) == expected
+        assert protection_worker.valid(cache["state"], "fixture")
+        broken = deepcopy(cache["state"])
+        broken["games"][0].pop("review")
+        assert not protection_worker.valid(broken, "fixture")
+        assert protection_current.current(games_db, "fixture_a", None)
+        date = cache["state"]["games"][0]["date"]
+        cache["state"]["games"][0]["date"] = "2000-01-01T00:00:00Z"
+        assert protection_current.current(games_db, "fixture_a", None) is None
+        cache["state"]["games"][0]["date"] = date
+        assert games_db.connection.total_changes == changes
+        games_db.connection.execute(
+            "UPDATE pipeline_stages SET status='failed' WHERE game_id=1 AND stage='analysis'"
+        )
+        games_db.connection.commit()
+        stale = protection_current.current(games_db, "fixture_a", None)
+        assert next(game for game in stale["games"] if game["id"] == 1)["source_unavailable"]
+        assert all(game["results"] for game in stale["games"] if game["id"] != 1)
+        for _ in range(3):
+            protection_worker.run(games_db, "fixture_a", None)
+        assert not next(game for game in cache["state"]["games"] if game["id"] == 1)["results"]
+        games_db.connection.execute(
+            "UPDATE pipeline_stages SET status='complete' WHERE game_id=1 AND stage='analysis'"
+        )
+        games_db.connection.commit()
+        for _ in range(3):
+            protection_worker.run(games_db, "fixture_a", None)
+        assert next(game for game in cache["state"]["games"] if game["id"] == 1)["results"]
+
+        # A new frontier interrupted during selection retains only unconsumed games.
+        ingest_pgn(games_db, pgn(3, "Qg1"))
+        assert (
+            run_analysis(
+                games_db, 4, game_input(games_db, 4), config, engine_identity(sys.executable)
+            )["status"]
+            == "complete"
+        )
+        select = protection_worker.select
+
+        def select_partial_protection(db, learner, games, state, deadline, **kwargs):
+            ticks = iter((0, 0, float("inf")))
+            with patch.context() as limited:
+                limited.setattr(selection, "time", SimpleNamespace(monotonic=lambda: next(ticks)))
+                select(db, learner, games, state, deadline, **kwargs)
+
+        patch.setattr(protection_worker, "select", select_partial_protection)
+        protection_worker.run(games_db, "fixture_a", None)
+        assert protection_worker.valid(cache["state"], "fixture")
+        assert cache["state"]["retained"] and not cache["state"]["selection_complete"]
+        patch.setattr(protection_worker, "select", select)
+        protection_worker.run(games_db, "fixture_a", None)
+        assert cache["state"]["selection_complete"]
+        assert (
+            sum(bool(game["results"]) for game in cache["state"]["games"] if game["id"] <= 3) == 3
+        )
+        games_db.close()
+
+    # Exact linked material review and analysis changes invalidate their game.
+    from chess_coach.evidence_review import review_evidence
+    from chess_coach.material_detector import process_decision
+    from chess_coach.protection_game_review import binding as protection_review
+    from chess_coach.protection_game_source import binding as protection_analysis
+    from tests.test_material_pipeline import LEARNER, make_protection_game
+
+    with monkeypatch.context() as patch:
+        material_db = make_protection_game(":memory:", patch, played="d4d5")
+        evidence = process_decision(material_db, 1, LEARNER)["evidence_ids"][0]
+        before, blocked = protection_review(material_db, 1, LEARNER)
+        assert not blocked
+        checked = {
+            "id": 1,
+            "analysis": protection_analysis(material_db, 1),
+            "review": before,
+            "results": [[1, "protected", None]],
+        }
+        assert protection_current._game(material_db, LEARNER, checked)
+        review_evidence(material_db, evidence, decision="reject", actor="fixture")
+        assert protection_review(material_db, 1, LEARNER)[1] == {1}
+        assert not protection_current._game(material_db, LEARNER, checked)
+        material_db.close()
 
     # A complete rotation visits every game and returns to the newest one.
     cursor = 0

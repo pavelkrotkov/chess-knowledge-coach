@@ -48,7 +48,7 @@ def _retained_results(old, signature, identity, turns):
     return old["results"] if [row[0] for row in old["results"]] == expected else []
 
 
-def _item(source, signature, retained):
+def _item(source, signature, retained, *, retain_fields=()):
     turns = [context for context, _ in source["pairs"] if context["subject"]]
     item = {
         "id": source["game_id"],
@@ -61,16 +61,18 @@ def _item(source, signature, retained):
     old = retained.get(str(source["game_id"]))
     # A changed input or a different independent game invalidates every old outcome.
     item["results"] = _retained_results(old, signature, item["identity"], turns)
+    if item["results"]:
+        item.update({field: old.get(field) for field in retain_fields})
     return item
 
 
-def _add(db, learner, game, state, seen):
+def _add(db, learner, game, state, seen, *, retain_fields=(), prepare_game=prepare):
     game_id = game["id"]
     # Record unavailable and duplicate rows too: either can later change the boundary.
     signature = source_signature(db, game)
     state["checked"].append([game_id, signature])
     try:
-        source = prepare(db, learner, game_id)
+        source = prepare_game(db, learner, game_id)
         recheck(db, learner, source)
         if fingerprint(source["signature"]) != signature:
             raise ValueError("game changed")
@@ -81,18 +83,26 @@ def _add(db, learner, game, state, seen):
             retained = state["retained"]
             if state.get("prior"):
                 retained = {str(item["id"]): item for item in state["prior"]["games"]}
-            state["games"].append(_item(source, signature, retained))
+            state["games"].append(_item(source, signature, retained, retain_fields=retain_fields))
     except (ValueError, TypeError, IndexError):
         state["unavailable"] += 1
 
 
-def select(db, learner, games, state, deadline):
+def select(db, learner, games, state, deadline, *, retain_fields=(), prepare_game=prepare):
     seen = {item["identity"] for item in state["games"]}
     # The extra independent game verifies the edge of the two samples.
     while state["index"] < len(games) and len(state["games"]) < 41:
         if time.monotonic() >= deadline:
             return
-        _add(db, learner, games[state["index"]][0], state, seen)
+        _add(
+            db,
+            learner,
+            games[state["index"]][0],
+            state,
+            seen,
+            retain_fields=retain_fields,
+            prepare_game=prepare_game,
+        )
         state["index"] += 1
     state["selection_complete"] = True
     state["retained"] = {}
