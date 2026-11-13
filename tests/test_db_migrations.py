@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sqlite3
+
 import pytest
 
 from chess_coach import db_migrations
@@ -57,7 +59,7 @@ def schema_columns(db: Database) -> dict[str, dict[str, tuple]]:
 
 @pytest.mark.parametrize("observation_column", [False, True])
 def test_populated_legacy_upgrade_is_repeatable_and_preserves_history(
-    observation_column: bool,
+    observation_column: bool, tmp_path
 ) -> None:
     db = legacy_database(observation_column=observation_column)
     preserved = {
@@ -84,6 +86,56 @@ def test_populated_legacy_upgrade_is_repeatable_and_preserves_history(
     fresh = Database(":memory:")
     fresh.initialize()
     assert schema_columns(db) == schema_columns(fresh)
+    _current_schema_contention(tmp_path)
+
+
+def _current_schema_contention(tmp_path):
+    from chess_coach.db_versioning import CURRENT_VERSION
+
+    path = tmp_path / "current.sqlite"
+    db = Database(path)
+    db.initialize()
+    db.connection.execute("PRAGMA busy_timeout=0")
+    reader = sqlite3.connect(path, timeout=0)
+    reader.execute("BEGIN")
+    reader.execute("SELECT count(*) FROM sqlite_schema").fetchone()
+    statements = []
+    db.connection.set_trace_callback(statements.append)
+    db.initialize()
+    assert not db.connection.in_transaction
+    assert not any(sql.upper().startswith(("BEGIN", "COMMIT")) for sql in statements)
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == CURRENT_VERSION
+
+    db.connection.execute("BEGIN")
+    with pytest.raises(RuntimeError, match="existing transaction"):
+        db.initialize()
+    assert db.connection.in_transaction
+    db.connection.rollback()
+    reader.rollback()
+
+    reader.execute("BEGIN IMMEDIATE")
+    db.initialize()
+    assert not db.connection.in_transaction
+    reader.rollback()
+    reader.close()
+
+    db.connection.execute(f"PRAGMA user_version={CURRENT_VERSION - 1}")
+    db.connection.commit()
+    statements.clear()
+    db.initialize()
+    statements = [sql.upper() for sql in statements]
+    begin = statements.index("BEGIN IMMEDIATE")
+    assert statements[:begin].count("PRAGMA USER_VERSION") == 1
+    assert "PRAGMA USER_VERSION" in statements[begin + 1 :]
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == CURRENT_VERSION
+
+    db.connection.execute(f"PRAGMA user_version={CURRENT_VERSION + 1}")
+    db.connection.commit()
+    with pytest.raises(RuntimeError, match="unsupported schema version"):
+        db.initialize()
+    assert not db.connection.in_transaction
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == CURRENT_VERSION + 1
+    db.close()
 
 
 def test_failed_upgrade_rolls_back_schema_and_data(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -14,6 +14,8 @@ def upgrade(connection: sqlite3.Connection, schema: str) -> None:
 
     if connection.in_transaction:
         raise RuntimeError("cannot initialize during an existing transaction")
+    if connection.execute("PRAGMA user_version").fetchone()[0] == CURRENT_VERSION:
+        return
     try:
         connection.execute("BEGIN IMMEDIATE")
         version = connection.execute("PRAGMA user_version").fetchone()[0]
