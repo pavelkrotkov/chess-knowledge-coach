@@ -1,7 +1,7 @@
 """Validate the bounded tactical preview contract before source verification."""
 
 from .course_preview import preview_hash
-from .tactical_course import LEGACY_VERSION, VERSION
+from .tactical_course import LEGACY_VERSION, PREVIOUS_VERSION, VERSION
 from .tactical_course_patterns import MAX_PATTERNS
 from .tactical_export_selection import selection
 
@@ -15,7 +15,11 @@ def _bounds(body):
 
 
 def validate(envelope, corpus):
-    if not isinstance(envelope, dict) or envelope.get("kind") not in {LEGACY_VERSION, VERSION}:
+    if not isinstance(envelope, dict) or envelope.get("kind") not in {
+        LEGACY_VERSION,
+        PREVIOUS_VERSION,
+        VERSION,
+    }:
         raise ValueError("unsupported preview")
     body = envelope.get("preview")
     if not isinstance(body, dict) or body.get("kind") != envelope["kind"]:

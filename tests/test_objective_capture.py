@@ -242,7 +242,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
 
         with monkeypatch.context() as patch:
             patch.setattr("chess_coach.tactical_course_budget.SLICE_SECONDS", 0.01)
-            patch.setattr("chess_coach.tactical_course_resolve.unfamiliar", slow_match)
+            patch.setattr("chess_coach.tactical_course_resolve.with_reason", slow_match)
             item, reason = related(
                 db,
                 LEARNER,
@@ -259,7 +259,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
 
         with monkeypatch.context() as patch:
             patch.setattr("chess_coach.tactical_course_budget.SLICE_SECONDS", 0.01)
-            patch.setattr("chess_coach.tactical_course_resolve.unfamiliar", slow_sql)
+            patch.setattr("chess_coach.tactical_course_resolve.with_reason", slow_sql)
             item, reason = related(db, LEARNER, "capture", choice, Budget(db))
         assert item is None and reason == "related matching deferred: time budget"
         assert not db.connection.in_transaction
@@ -273,7 +273,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
 
         with monkeypatch.context() as patch:
             patch.setattr("chess_coach.tactical_course_budget.SLICE_SECONDS", 0.2)
-            patch.setattr("chess_coach.tactical_course_resolve.unfamiliar", concurrent_slow)
+            patch.setattr("chess_coach.tactical_course_resolve.with_reason", concurrent_slow)
             with pytest.raises(PreviewUnavailable, match="changed"):
                 related(db, LEARNER, "capture", choice, Budget(db))
     db.close()

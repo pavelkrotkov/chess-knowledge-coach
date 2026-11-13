@@ -5,11 +5,13 @@ from .related_protection_features import protection_features, same_mechanism
 from .related_protection_screen import plausible
 
 
-def matches(item, source, baseline, budget, prompt, key, lines):
+def matches(item, source, baseline, budget, prompt, key, lines, *, accept=None):
     found = []
     for index, line in enumerate(lines):
         if not plausible(prompt, line.split(), source):
             continue
+        if accept is not None and not accept(key):
+            break
         if budget["checked"] >= budget["limit"]:
             budget["truncated"] = True
             break

@@ -8,14 +8,14 @@ from .related_fork_lines import bind_lines
 from .related_protection_proofs import matches
 
 
-def scorer(budget):
+def scorer(budget, accept=None):
     def candidate(item, source, seen, baseline):
-        return _candidate(item, source, seen, baseline, budget)
+        return _candidate(item, source, seen, baseline, budget, accept)
 
     return candidate
 
 
-def _candidate(item, source, seen, baseline, budget):
+def _candidate(item, source, seen, baseline, budget, accept):
     try:
         prompt, lines = _prompt(item)
     except (ValueError, TypeError, KeyError):
@@ -23,7 +23,7 @@ def _candidate(item, source, seen, baseline, budget):
     key = prompt_key(prompt)
     if key in seen:
         return None
-    matched = matches(item, source, baseline, budget, prompt, key, lines)
+    matched = matches(item, source, baseline, budget, prompt, key, lines, accept=accept)
     if not matched:
         return None
     best = min(matched, key=lambda entry: entry[0]["order"])[0]

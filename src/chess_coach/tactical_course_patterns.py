@@ -18,7 +18,7 @@ def _pattern(group, choice, bindings):
         "supporting_sources": bindings,
         "inspected_misses": group["misses"],
         "review_states": [item["review"] for item in lesson["examples"]],
-        "local_challenge": challenge(choice),
+        "local_challenge": challenge(choice, protection=True),
     }
 
 

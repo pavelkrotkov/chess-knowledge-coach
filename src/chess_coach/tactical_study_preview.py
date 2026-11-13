@@ -3,14 +3,23 @@
 import re
 
 from .course_preview import preview_hash
-from .tactical_course import LEGACY_POLICY, LEGACY_VERSION, POLICY, VERSION
+from .tactical_course import (
+    LEGACY_POLICY,
+    LEGACY_VERSION,
+    POLICY,
+    PREVIOUS_POLICY,
+    PREVIOUS_VERSION,
+    VERSION,
+)
 from .tactical_export import LEGACY_VERSION as LEGACY_EXPORT_VERSION
+from .tactical_export import PREVIOUS_VERSION as PREVIOUS_EXPORT_VERSION
 from .tactical_export import VERSION as EXPORT_VERSION
 
 
 def preview(envelope, expected):
     contracts = {
         LEGACY_EXPORT_VERSION: (LEGACY_VERSION, LEGACY_POLICY),
+        PREVIOUS_EXPORT_VERSION: (PREVIOUS_VERSION, PREVIOUS_POLICY),
         EXPORT_VERSION: (VERSION, POLICY),
     }
     contract = contracts.get(envelope.get("kind"))

@@ -1,13 +1,16 @@
 """Validate saved preview selection and coverage policy."""
 
-from .tactical_course import LEGACY_POLICY, LEGACY_VERSION, POLICY, VERSION
+from .tactical_course import CONTRACTS, VERSION
 from .tactical_course_budget import SLICE_SECONDS
 from .tactical_course_patterns import MAX_PATTERNS
-from .tactical_course_selection import CURRENT_PAIRS, PAIRS, PER_PAIR
+from .tactical_course_protection import PER_BAND
+from .tactical_course_selection import PER_PAIR
 from .tactical_export_coverage import coverage
 
 
-def _omissions(selection, pairs):
+def _omissions(selection, pairs, modern):
+    if modern and selection.get("protection_per_band") != PER_BAND:
+        raise ValueError("protection scan bound changed")
     omitted = selection["unexamined_ranked_groups"]
     if type(omitted) is not int or not 0 <= omitted <= len(pairs):
         raise ValueError("invalid preview ranking coverage")
@@ -19,8 +22,7 @@ def _omissions(selection, pairs):
 
 def selection(body, corpus):
     selection = body["selection"]
-    contracts = {LEGACY_VERSION: (LEGACY_POLICY, PAIRS), VERSION: (POLICY, CURRENT_PAIRS)}
-    contract = contracts.get(body.get("kind"))
+    contract = CONTRACTS.get(body.get("kind"))
     if contract is None or body.get("policy") != contract[0]:
         raise ValueError("unsupported preview policy")
     pairs = contract[1]
@@ -48,5 +50,5 @@ def selection(body, corpus):
     if actual != expected:
         raise ValueError("preview selection or bounds changed")
     coverage(selection["coverage"], pairs)
-    _omissions(selection, pairs)
+    _omissions(selection, pairs, body["kind"] == VERSION)
     return pairs
