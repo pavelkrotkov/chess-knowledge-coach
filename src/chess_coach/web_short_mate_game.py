@@ -10,6 +10,8 @@ from .learner_identity import normalize_identity
 from .protection_game_report import report as protection_trend_report
 from .short_mate_game_report import report
 from .short_mate_trend_report import report as trend_report
+from .skewer_game_report import report as skewer_report
+from .web_board import board_rows
 from .web_db import database
 
 short_mate_game_views = Blueprint("short_mate_game_views", __name__)
@@ -72,3 +74,14 @@ def _samples(report_func, template):
         return render_template("error.html", message="Learner identity is unavailable."), 400
     result = report_func(database(), subject, current_app.config["PROJECT_ROOT"])
     return render_template(template, report=result)
+
+
+@short_mate_game_views.get("/decisions/<int:position_id>/skewer")
+def skewer(position_id):
+    try:
+        result = skewer_report(database(), current_app.config["SUBJECT"], position_id)
+    except (ValueError, TypeError, IndexError):
+        return render_template(
+            "error.html", message="This owned analyzed decision is unavailable."
+        ), 400
+    return render_template("skewer_game.html", result=result, board=board_rows(result["fen"]))
