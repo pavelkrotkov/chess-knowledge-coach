@@ -32,5 +32,5 @@ def _ordered(selected, boundary):
     times = [_time(row["started_at"]) for row in selected[:3]]
     if any(a <= b for a, b in pairwise(times)):
         raise ValueError("harder capture ordering unavailable")
-    if boundary is not None and times[-1] <= _time(boundary):
+    if boundary is not None and times[1] <= _time(boundary):
         raise ValueError("harder capture ordering unavailable")

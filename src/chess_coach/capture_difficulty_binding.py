@@ -1,24 +1,33 @@
 """Bind harder search candidates and admissions to their verified context."""
 
 import json
+from functools import partial
 
 from .fact_fingerprint import canonical, digest
+from .related_capture_match import candidate
 
 
 def difficulty_scope(selection, difficulty):
     if difficulty is None or selection is None:
         return selection
     scope = digest(canonical([selection[4], "capture-harder-v1", difficulty]))
-    items = [
-        item
-        for item in selection[3]
-        if item["type"] == "corpus" and item["fen"].split()[1] == difficulty["side"][0]
-    ]
-    return (*selection[:3], items, scope, selection[5])
+    return (*selection[:4], scope, selection[5])
+
+
+def _score(raw, source, seen, baseline, *, side):
+    if raw["type"] != "corpus":
+        return None
+    item = candidate(raw, source, seen, baseline)
+    return item if item and item["fen"].split()[1] == side[0] else None
 
 
 def options(difficulty):
-    return {"rating_bounds": (difficulty["band"], difficulty["band"] + 199)} if difficulty else {}
+    if difficulty is None:
+        return {}
+    return {
+        "rating_bounds": (difficulty["band"], difficulty["band"] + 199),
+        "score": partial(_score, side=difficulty["side"]),
+    }
 
 
 def progression(binding, version, difficulty):
@@ -33,15 +42,3 @@ def progression(binding, version, difficulty):
         "policy": "capture-harder-v1",
         "prior_attempts": [difficulty["earlier"], difficulty["attempt"]],
     }
-
-
-def decorate(result, expected, difficulty):
-    result["items"][0]["assessment_available"] = True
-    result["items"][0]["assessment_proved"] = True
-    result["certified"] = True
-    result["matched"] = expected is not None
-    if difficulty:
-        result.update(
-            harder=True, harder_attempt=difficulty["attempt"], difficulty_band=difficulty["band"]
-        )
-    return result

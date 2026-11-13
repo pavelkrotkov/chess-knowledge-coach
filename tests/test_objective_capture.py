@@ -856,6 +856,36 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
                 "SELECT * FROM unified_sessions WHERE attempt_id=?", (attempt,)
             ).fetchone()
         )
+        # Screen side before same-game deduplication for the harder search.
+        from chess_coach.capture_difficulty_binding import options as difficulty_options
+        from chess_coach.capture_difficulty_history import _ordered
+        from chess_coach.related_capture_rank import rank
+        from chess_coach.related_capture_source import source_for_position
+
+        setup = chess.Board("4k3/4p3/8/8/3q4/8/8/3RK3 b - - 0 1")
+        shared = {
+            "type": "corpus",
+            "version": "capture",
+            "game": "same-game",
+            "opening": None,
+            "rating": 1400,
+            "rating_deviation": 80,
+        }
+        pool = [
+            dict(shared, key="a", fen=setup.mirror().fen(), solution="e2e3 d8d5"),
+            dict(shared, key="z", fen=setup.fen(), solution="e7e6 d1d4"),
+        ]
+        owned = source_for_position(db, LEARNER, 1)
+        assert rank(owned, pool, set(), 1400)[0]["key"] == "a"
+        score = difficulty_options({"side": "white", "band": 1400})["score"]
+        assert rank(owned, pool, set(), 1400, score=score)[0]["key"] == "z"
+        dated = [{"started_at": f"2026-01-01T00:00:0{x}+00:00"} for x in (3, 2, 1)]
+        _ordered(dated, dated[2]["started_at"])
+        with pytest.raises(ValueError):
+            _ordered(dated, dated[1]["started_at"])
+        with pytest.raises(ValueError):
+            _ordered([dated[0], dated[1], dated[1]], dated[2]["started_at"])
+
         # Use the two real verified results while isolating this control from
         # unrelated later incomplete fixture attempts.
         import chess_coach.capture_difficulty_history as difficulty_history

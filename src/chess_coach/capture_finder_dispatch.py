@@ -39,3 +39,15 @@ def finish(found, position, attempt, difficulty):
             "status": "No compatible unfamiliar capture was found in the bounded search",
         },
     )
+
+
+def decorate(result, expected, difficulty):
+    result["items"][0]["assessment_available"] = True
+    result["items"][0]["assessment_proved"] = True
+    result["certified"] = True
+    result["matched"] = expected is not None
+    if difficulty:
+        result.update(
+            harder=True, harder_attempt=difficulty["attempt"], difficulty_band=difficulty["band"]
+        )
+    return result

@@ -1,7 +1,7 @@
 """Search current ranked sources for a proved unfamiliar capture."""
 
-from .capture_difficulty_binding import decorate, difficulty_scope, options
-from .capture_finder_dispatch import accept_options
+from .capture_difficulty_binding import difficulty_scope, options
+from .capture_finder_dispatch import accept_options, decorate
 from .capture_finder_proof import prove
 from .capture_plan_sources import witnesses
 from .related_capture import _selection, present
