@@ -6,7 +6,7 @@ from .related_capture import VERSION as RANK_VERSION
 from .related_capture_assessment import HISTORY, PROOF_VERSION, VERSION
 
 
-def signature(context, corpus):
+def signature(context, corpus, *, rating_start=None):
     if not valid(context):
         raise ValueError("capture context unavailable")
     baseline = context["ranking_baseline"]
@@ -28,7 +28,7 @@ def signature(context, corpus):
         context["same_material"],
         context["material_distance"],
         None if baseline is None else baseline // 200,
-        context["content_rating"] // 200,
+        (context["content_rating"] if rating_start is None else rating_start) // 200,
         context["content_deviation"] // 100,
     ]
     return canonical(signature)

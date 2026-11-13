@@ -19,6 +19,8 @@ def page():
         position = options.get("position")
         if attempt is not None:
             options["attempt"] = attempt
+        if request.args.get("harder") == "1":
+            options["harder"] = True
         found = find(
             database(),
             current_app.config["SUBJECT"],

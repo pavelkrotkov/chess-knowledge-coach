@@ -32,6 +32,7 @@
 <p>The checked first move did not capture the named target{% if history.assistance != "unassisted" %}; assistance was used{% endif %}.</p>
 {% endif %}
 {% if history.limited and history.status != "none" %}<p>Only the 100 most recent subject sessions were inspected.</p>{% endif %}
+{% if history.harder %}<p><a href="{{ url_for('related_capture.find_verified', position=report.source.position_id, attempt=history.attempt_id) }}">Find a comparable unfamiliar capture assessment</a>.</p><p><a href="{{ url_for('related_capture.find_verified', position=report.source.position_id, attempt=history.attempt_id, harder=1) }}">Find a harder unfamiliar capture assessment</a>. The next 200-point content-rating band may have no match.</p>{% endif %}
 <p>This is feedback on one prompt. Comparisons need more comparable first attempts. Supplied-line rehearsal and assisted attempts are separate from an unassisted assessment.</p>
 <p><a href="{{ url_for('related_capture.show', position=report.source.position_id) }}">{% if history.status in ["correct", "incorrect"] and history.assistance == "unassisted" %}Explore another unfamiliar capture example{% else %}Find related capture practice{% endif %}</a></p>
 {% endif %}
