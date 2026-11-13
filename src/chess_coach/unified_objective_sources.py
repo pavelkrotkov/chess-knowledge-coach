@@ -2,6 +2,8 @@
 
 from .discovery_defense_contract import PRACTICE as DISCOVERY_DEFENSE_VERSION
 from .discovery_defense_practice import resolve as resolve_discovery_defense
+from .discovery_material_contract import PRACTICE as DISCOVERY_MATERIAL_VERSION
+from .discovery_material_practice import resolve as resolve_discovery_material
 from .objective_defense_source import VERSION as DEFENSE_VERSION
 from .objective_defense_source import resolve as resolve_defense
 from .objective_fork_avoidance_contract import VERSION as FORK_AVOIDANCE_VERSION
@@ -22,6 +24,7 @@ from .objective_short_source import VERSION as SHORT_VERSION
 from .objective_short_source import resolve as resolve_short
 
 OBJECTIVE_RESOLVERS = {
+    DISCOVERY_MATERIAL_VERSION: resolve_discovery_material,
     DISCOVERY_DEFENSE_VERSION: resolve_discovery_defense,
     FORK_VERSION: resolve_fork,
     FORK_DEFENSE_VERSION: resolve_fork_defense,

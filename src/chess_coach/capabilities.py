@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.82.0"
+REGISTRY_VERSION = "1.83.0"
 
 CAPABILITIES = (
     {
@@ -172,7 +172,7 @@ CAPABILITIES = (
         "area": "Skill coverage",
         "name": "Bounded discovered-attack execution",
         "status": "observation-only",
-        "details": "Owned legal decisions may show a newly revealed slider line with immediate mate or a target capture after every legal defense. A separate bounded missed-defense slice checks a discovered mate, a legal positional witness and an immediate-mate defense. Other consequences remain unresolved. Grounded lessons and provisional own-game practice do not establish mastery; independent qualification is pending.",
+        "details": "Owned legal decisions may show a newly revealed slider line with immediate mate or a target capture after every legal defense. Bounded missed-defense slices check a discovered mate or a recorded material exposure, together with a verified named alternative. Other consequences remain unresolved. Grounded lessons and provisional own-game practice do not establish mastery; independent qualification is pending.",
     },
     {
         "id": "mate_one_alternative_verification",

@@ -1,0 +1,9 @@
+{% if evidence.discovery_material_currentness %}
+<p>Discovered-material defense source is {{ evidence.discovery_material_currentness }}. This is a provisional recorded-choice observation.</p>
+{% if evidence.discovery_material_currentness == "current" %}{% set d = evidence.discovery_material_observation %}
+{% if d.threat %}
+<p>After the recorded move {{ d.played.san[0] }}, the analyzed reply {{ d.threat.san }} reveals the slider on {{ d.threat.slider }} toward {{ d.threat.target }}. Every one of {{ d.threat.legal_replies }} supported immediate replies has a tested target capture gaining at least {{ d.threat.minimum_gain }} material points.</p>
+<p>The checked alternative {{ d.defense.san }} prevents this named discovery and every immediate opposing checkmate. The origin of the threat, other material threats and later consequences remain unknown.</p>
+{% if evidence.review_status not in ["rejected", "revoked"] %}<form method="post" action="{{ url_for('unified_practice.begin') }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="source_type" value="own-game"><input type="hidden" name="version" value="discovery-material-defense-own-v1"><input type="hidden" name="key" value="{{ evidence.id }}"><button>Replay this material defense</button></form>{% endif %}
+{% else %}<p>The recorded-choice material defense remains unresolved ({{ d.reason | replace("_", " ") }}).</p>{% endif %}
+{% endif %}{% endif %}

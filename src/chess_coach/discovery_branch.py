@@ -3,18 +3,24 @@
 from .fork_branch import defense_witness
 
 
-def witness(board, reply, item, color, initial):
+def witness(board, reply, item, color, initial, *, check=None):
+    tick = check or (lambda: None)
+    tick()
     after = board.copy()
     after.push(reply)
     if unclear(after):
         return None
-    witness = defense_witness(board, reply, item["slider"], [item["target"]], color, initial)
+    witness = defense_witness(
+        board, reply, item["slider"], [item["target"]], color, initial, check=check
+    )
+    tick()
     if witness is None:
         return None
     after.push_uci(witness["capture"])
     if unclear(after):
         return None
     for response in after.legal_moves:
+        tick()
         child = after.copy()
         child.push(response)
         if unclear(child):
