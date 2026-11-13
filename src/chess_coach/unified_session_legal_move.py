@@ -1,8 +1,8 @@
 """Route a legal practice move through a certified or supplied branch."""
 
 from .objective_promotion_routing import needs_verification
-from .related_discovery_contract import is_source as discovery_mate
 from .unified_session_branch import advance, move_state
+from .unified_session_mate import immediate as discovery_mate
 from .unified_session_unmatched import short_assessment
 from .unified_session_unmatched import unmatched as _unmatched
 

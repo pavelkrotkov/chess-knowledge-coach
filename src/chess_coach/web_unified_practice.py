@@ -34,6 +34,7 @@ def begin():
             source_type=request.form.get("source_type", ""),
             version=request.form.get("version", ""),
             key=request.form.get("key", ""),
+            goal=request.form.get("goal") or None,
         )
     except ValueError:
         return render_template("error.html", message="That practice source is unavailable."), 400
