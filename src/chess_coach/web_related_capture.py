@@ -51,6 +51,7 @@ def begin(position):
             reference=reference,
             assessment=request.form.get("assessment") == "1",
             secret=current_app.secret_key,
+            harder_attempt=request.form.get("harder_attempt") or None,
         )
     except ValueError:
         return render_template(

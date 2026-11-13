@@ -17,6 +17,19 @@ def report(db, subject, corpus, *, check=None):
         if result["source"]
         else None
     )
+    if check is None and result["source"] and result["history"]:
+        _optional(db, subject, corpus, result["source"]["position_id"], result["history"])
     if db.connection.execute("PRAGMA data_version").fetchone()[0] != before:
         raise ValueError("capture sources changed")
     return result
+
+
+def _optional(db, subject, corpus, position, history):
+    if history.get("status") == "correct" and history.get("assistance") == "unassisted":
+        from .capture_difficulty import eligible
+
+        try:
+            eligible(db, subject, corpus, position, history["attempt_id"])
+            history["harder"] = True
+        except (ValueError, TypeError, KeyError, IndexError):
+            pass

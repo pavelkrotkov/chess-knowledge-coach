@@ -175,6 +175,26 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         db.connection.execute(
             "INSERT INTO puzzle_themes VALUES(?,?,'hangingPiece',1200)", (corpus, key)
         )
+    if mode == "correct":
+        for file in ("d", "e"):
+            harder_board = chess.Board("4k3/8/8/8/3q4/8/8/3RK3 b - - 0 1")
+            harder_board.set_piece_at(
+                chess.parse_square(file + "7"), chess.Piece(chess.PAWN, chess.BLACK)
+            )
+            db.connection.execute(
+                """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,rating_deviation,themes_json,objective)
+                VALUES(?,?,?,'https://example.invalid',?,1400,80,'["hangingPiece"]','unknown')""",
+                (
+                    "harder-fixture-" + file,
+                    corpus,
+                    harder_board.fen(),
+                    file + "7" + file + "6 d1d4",
+                ),
+            )
+            db.connection.execute(
+                "INSERT INTO puzzle_themes VALUES(?,?,'hangingPiece',1400)",
+                (corpus, "harder-fixture-" + file),
+            )
     no_reset = chess.Board("4k3/8/8/8/3q4/8/8/3RK3 b - - 0 1")
     db.connection.execute(
         """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,rating_deviation,themes_json,objective)
@@ -272,8 +292,12 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
     )
     assert page.status_code == 200 and b"Check my capture choice" in page.data
     assert b"private-fixture" not in page.data and b"b7b6 d1d4" not in page.data
-    forms = re.findall(r"<form\b.*?</form>", page.get_data(as_text=True), re.DOTALL)
-    assessment_form = next(form for form in forms if 'name="assessment"' in form)
+    sections = re.findall(r"<section>.*?</section>", page.get_data(as_text=True), re.DOTALL)
+    assessment_form = next(
+        section
+        for section in sections
+        if "content rating 1200" in section and 'name="assessment"' in section
+    )
     match = re.search(r'name="reference" value="([^"]+)"', assessment_form)
     assert match
     reference = match.group(1)
@@ -583,6 +607,35 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         next_context = json.loads(canonical(admitted_again[3]["assessment"]["context"]))
         assert signature(next_context, "capture") == signature(context, "capture")
 
+        second_post = client.post(
+            "/decisions/1/related-captures/start",
+            base_url="https://coach.invalid",
+            headers=headers | {"Origin": "https://coach.invalid"},
+            data={
+                "csrf": token(matched_page, "csrf"),
+                "reference": matched_reference,
+                "assessment": "1",
+            },
+        )
+        assert second_post.status_code == 303
+        second_shown = client.get(
+            second_post.headers["Location"], base_url="https://coach.invalid", headers=headers
+        )
+        second_attempt = token(second_shown, "attempt")
+        second_move = client.post(
+            "/unified/move",
+            base_url="https://coach.invalid",
+            headers=headers | {"Origin": "https://coach.invalid"},
+            data={
+                "csrf": token(second_shown, "csrf"),
+                "attempt": second_attempt,
+                "event": token(second_shown, "event"),
+                "move": "d1d4",
+            },
+        )
+        assert second_move.status_code == 303
+        assert process(db, LEARNER)["outcomes"] == {"correct": 1}
+
         def no_match(*args):
             context = original_context(*args)
             context["content_rating"] += 200
@@ -648,7 +701,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
     assert b"View first-encounter capture history" in adaptive.data
     assert b"Capture choices in your games" in adaptive.data
     count_text = {
-        "correct": b"1 correct without assistance",
+        "correct": b"2 correct without assistance",
         "assisted": b"1 assisted",
         "incorrect": b"1 incorrect without assistance",
         "unresolved": b"1 ungraded",
@@ -684,8 +737,14 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         next_page = client.get(
             "/decisions/1/related-captures", base_url="https://coach.invalid", headers=headers
         )
-        forms = re.findall(r"<form\b.*?</form>", next_page.get_data(as_text=True), re.DOTALL)
-        next_form = next(form for form in forms if 'name="assessment"' in form)
+        sections = re.findall(
+            r"<section>.*?</section>", next_page.get_data(as_text=True), re.DOTALL
+        )
+        next_form = next(
+            section
+            for section in sections
+            if "content rating 1200" in section and 'name="assessment"' in section
+        )
         next_match = re.search(r"name=\"reference\" value=\"([^\"]+)\"", next_form)
         assert next_match
         next_ref = next_match.group(1)
@@ -714,7 +773,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         with monkeypatch.context() as patch:
             patch.setattr(source_module, "source_for_position", counted_source)
             assessed = first_history(db, LEARNER, "capture")
-        assert assessed["counts"]["unassisted_correct"] == 1
+        assert assessed["counts"]["unassisted_correct"] == 2
         assert assessed["counts"]["incomplete"] == 1 and len(checks) == 1
         assert {entry["rating"] for entry in assessed["items"]} == {None, 1200}
         from chess_coach.capture_history_first import HistoryDeadline
@@ -770,7 +829,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         reference = next(
             value["reference"]
             for value in second_source["items"]
-            if value.get("assessment_available")
+            if value.get("assessment_available") and value.get("rating") == 1200
         )
         start_related(
             db,
@@ -783,7 +842,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
             secret=app.secret_key,
         )
         across_sources = first_history(db, LEARNER, "capture")
-        assert across_sources["counts"]["unassisted_correct"] == 1
+        assert across_sources["counts"]["unassisted_correct"] == 2
         assert across_sources["counts"]["incomplete"] == 2
         # Two synthetic nonoverlapping, matched cohorts exercise the comparison
         # gates without creating or publishing any learner attempts.
@@ -797,6 +856,88 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
                 "SELECT * FROM unified_sessions WHERE attempt_id=?", (attempt,)
             ).fetchone()
         )
+        # Screen side before same-game deduplication for the harder search.
+        from chess_coach.capture_difficulty_binding import options as difficulty_options
+        from chess_coach.capture_difficulty_history import _ordered
+        from chess_coach.related_capture_rank import rank
+        from chess_coach.related_capture_source import source_for_position
+
+        setup = chess.Board("4k3/4p3/8/8/3q4/8/8/3RK3 b - - 0 1")
+        shared = {
+            "type": "corpus",
+            "version": "capture",
+            "game": "same-game",
+            "opening": None,
+            "rating": 1400,
+            "rating_deviation": 80,
+        }
+        pool = [
+            dict(shared, key="a", fen=setup.mirror().fen(), solution="e2e3 d8d5"),
+            dict(shared, key="z", fen=setup.fen(), solution="e7e6 d1d4"),
+        ]
+        owned = source_for_position(db, LEARNER, 1)
+        assert rank(owned, pool, set(), 1400)[0]["key"] == "a"
+        score = difficulty_options({"side": "white", "band": 1400})["score"]
+        assert rank(owned, pool, set(), 1400, score=score)[0]["key"] == "z"
+        dated = [{"started_at": f"2026-01-01T00:00:0{x}+00:00"} for x in (3, 2, 1)]
+        _ordered(dated, dated[2]["started_at"])
+        with pytest.raises(ValueError):
+            _ordered(dated, dated[1]["started_at"])
+        with pytest.raises(ValueError):
+            _ordered([dated[0], dated[1], dated[1]], dated[2]["started_at"])
+
+        # Use the two real verified results while isolating this control from
+        # unrelated later incomplete fixture attempts.
+        import chess_coach.capture_difficulty_history as difficulty_history
+        import chess_coach.capture_finder as difficulty_finder
+        import chess_coach.capture_finder_search as difficulty_search
+        from chess_coach.capture_difficulty import eligible
+
+        pair = [
+            dict(
+                db.connection.execute(
+                    "SELECT * FROM unified_sessions WHERE attempt_id=?", (value,)
+                ).fetchone()
+            )
+            for value in (second_attempt, attempt)
+        ]
+        with monkeypatch.context() as patch:
+            patch.setattr(difficulty_history, "_rows", lambda *_: pair)
+            assert eligible(db, LEARNER, "capture", 1, second_attempt)["band"] == 1400
+            with pytest.raises(ValueError):
+                eligible(db, LEARNER, "capture", 1, attempt)
+            patch.setattr(
+                difficulty_finder,
+                "_groups",
+                lambda *_: ({("capture", "v"): [{"position_id": 1}]}, False, 1),
+            )
+            patch.setattr(
+                difficulty_search, "witnesses", lambda *_args, **_kwargs: iter([{"position_id": 1}])
+            )
+            harder = client.get(
+                f"/plan/captures/find-verified?position=1&attempt={second_attempt}&harder=1",
+                base_url="https://coach.invalid",
+                headers=headers,
+            )
+            assert b"1400" in harder.data and b"Check my capture choice" in harder.data
+            started = client.post(
+                "/decisions/1/related-captures/start",
+                base_url="https://coach.invalid",
+                headers=headers | {"Origin": "https://coach.invalid"},
+                data={
+                    "csrf": token(harder, "csrf"),
+                    "reference": token(harder, "reference"),
+                    "assessment": "1",
+                    "harder_attempt": second_attempt,
+                },
+            )
+            assert started.status_code == 303
+            binding = json.loads(
+                db.connection.execute(
+                    "SELECT provenance_json FROM unified_sessions ORDER BY rowid DESC LIMIT 1"
+                ).fetchone()[0]
+            )["related_capture"]
+            assert binding["progression"]["prior_attempts"] == [attempt, second_attempt]
         synthetic = []
         for index in range(20):
             position_board = chess.Board.empty()
@@ -1128,7 +1269,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
     from chess_coach.capture_history_first import report as first_report
 
     expected_stale = (
-        2 + int(form_action.group(1).startswith("/decisions/1/")) if mode == "correct" else 1
+        4 + int(form_action.group(1).startswith("/decisions/1/")) if mode == "correct" else 1
     )
     assert first_report(db, LEARNER, "capture")["counts"]["stale"] == expected_stale
     if mode == "correct":
