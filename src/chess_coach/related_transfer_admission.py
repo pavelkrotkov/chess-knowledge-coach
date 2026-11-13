@@ -35,10 +35,19 @@ def _binding(source, version, motif, item):
         "rank_version": version,
         "motif": motif,
         "operation": "prevent"
-        if motif in {"protection", "fork_prevention", "fork_avoidance", "backrank_defense"}
+        if motif
+        in {
+            "protection",
+            "fork_prevention",
+            "fork_avoidance",
+            "backrank_defense",
+            "created_exposure",
+        }
         else "execute",
         "pattern_cued": True,
     }
+
+    _created_binding(binding, motif, item)
 
     if motif == "protection":
         binding["objective_target"] = item["objective_target"]
@@ -71,6 +80,7 @@ def _binding(source, version, motif, item):
 
     if motif in {
         "fork",
+        "created_exposure",
         "protection",
         "fork_prevention",
         "fork_avoidance",
@@ -85,3 +95,10 @@ def _binding(source, version, motif, item):
             source_lines_hash=item["source_lines_hash"],
         )
     return binding
+
+
+def _created_binding(binding, motif, item):
+    # Keep the witness in the private bound session, not the preview.
+    if motif == "created_exposure":
+        binding["created_witness"] = item["created_witness"]
+        binding["source_game"] = item.get("game")

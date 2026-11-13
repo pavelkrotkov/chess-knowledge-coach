@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Unfamiliar material practice — Chess coach{% endblock %}
+{% block content %}
+<h2>Practice avoiding an exposed piece</h2>
+<p>{{ result.status }}. Choose a move that keeps your piece safe from an immediate capture. Your move is ungraded; the checked contrast follows your first legal answer.</p>
+{% if result.created_scan %}<details><summary>Search coverage</summary><p>Checked {{ result.scanned }} corpus records and {{ result.public_scanned }} public tasks. Tested {{ result.created_scan.roots }} of {{ result.created_scan.root_limit }} candidate roots and {{ result.created_scan.lines }} of {{ result.created_scan.line_limit }} lines. {% if result.pool_limited %}The indexed corpus window was limited.{% endif %}</p></details>{% endif %}
+{% for item in result["items"] %}
+<section><h3>Unfamiliar position</h3>
+<p>You play {{ "white" if " w " in item.fen else "black" }}.</p>
+{% set board = item.board %}{% set board_label = "Unfamiliar position; side to move at the bottom" %}{% include "board.html" %}
+<form method="post" action="{{ url_for('related_created.begin', evidence_id=evidence_id) }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="reference" value="{{ item.reference }}"><button>Start this example</button></form></section>
+{% endfor %}
+{% if result.next_cursor %}<p><a href="{{ url_for('related_created.show', evidence_id=evidence_id, cursor=result.next_cursor) }}">More examples</a></p>{% endif %}
+{% endblock %}
