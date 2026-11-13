@@ -9,7 +9,7 @@ from .deep_execution_identity import comparable_engine
 
 def stability(db, selection, position, board, result, config):
     row = db.connection.execute(
-        "SELECT config_json FROM analysis_runs WHERE id=? AND game_id=?",
+        "SELECT config_json FROM analysis_runs_read WHERE id=? AND game_id=?",
         (selection["cheap_run_id"], selection["game_id"]),
     ).fetchone()
     if row is None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -144,8 +145,57 @@ def test_failed_engine_run_rolls_back_before_later_commit(monkeypatch):
 
 def test_merge_preserves_decision_provenance(monkeypatch):
     source, target = database(), database()
-    run_fake(monkeypatch, source, FakeEngine())
-    assert merge_analysis_outputs(target, source) == 2
+    first = run_fake(monkeypatch, source, FakeEngine())
+    legacy = dict(
+        source.connection.execute("SELECT * FROM analysis_runs WHERE id=?", (first,)).fetchone()
+    )
+    assert (
+        dict(
+            source.connection.execute(
+                "SELECT * FROM analysis_runs_read WHERE id=?", (first,)
+            ).fetchone()
+        )
+        == legacy
+    )
+    source.connection.execute("UPDATE analysis_provenance_settings SET compact=1 WHERE id=1")
+    source.connection.commit()
+    second = run_fake(monkeypatch, source, FakeEngine())
+    third = run_fake(monkeypatch, source, FakeEngine())
+    assert source.connection.execute("SELECT COUNT(*) FROM analysis_provenance").fetchone()[0] == 1
+    assert (
+        source.connection.execute("SELECT COUNT(*) FROM analysis_run_provenance").fetchone()[0] == 2
+    )
+    raw = source.connection.execute(
+        "SELECT config_json,nnue,compatibility_json FROM analysis_runs WHERE id=?", (second,)
+    ).fetchone()
+    assert tuple(raw) == ("", "", "")
+    fields = "config_json,nnue,compatibility_json"
+    exact = tuple(
+        source.connection.execute(
+            f"SELECT {fields} FROM analysis_runs_read WHERE id=?", (first,)
+        ).fetchone()
+    )
+    assert all(
+        tuple(
+            source.connection.execute(
+                f"SELECT {fields} FROM analysis_runs_read WHERE id=?", (run,)
+            ).fetchone()
+        )
+        == exact
+        for run in (second, third)
+    )
+    from chess_coach.fork_miss_source import _runs
+    from chess_coach.material_source_rows import runs
+
+    assert _runs(source.connection, {"output_id": first}, None)[0] == legacy
+    assert runs(source.connection, [second])[0]["config_json"] == exact[0]
+    with pytest.raises(sqlite3.IntegrityError, match="immutable"):
+        source.connection.execute("UPDATE analysis_provenance SET nnue='changed'")
+    source.connection.rollback()
+    target.connection.execute("UPDATE analysis_provenance_settings SET compact=1 WHERE id=1")
+    target.connection.commit()
+    assert merge_analysis_outputs(target, source) == 6
+    assert target.connection.execute("SELECT COUNT(*) FROM analysis_provenance").fetchone()[0] == 1
     assert [
         tuple(row)
         for row in source.connection.execute(
@@ -157,6 +207,18 @@ def test_merge_preserves_decision_provenance(monkeypatch):
             "SELECT decision_fen, score_pov FROM engine_outputs ORDER BY id"
         )
     ]
+    assert [
+        tuple(row)
+        for row in source.connection.execute(f"SELECT {fields} FROM analysis_runs_read ORDER BY id")
+    ] == [
+        tuple(row)
+        for row in target.connection.execute(f"SELECT {fields} FROM analysis_runs_read ORDER BY id")
+    ]
+    # A shared source without its compatibility view is not interpreted as inline.
+    source.connection.execute("DROP VIEW analysis_runs_read")
+    source.connection.commit()
+    with pytest.raises(ValueError, match="provenance view unavailable"):
+        merge_analysis_outputs(target, source)
 
 
 @pytest.mark.skipif(not Path("/usr/games/stockfish").is_file(), reason="Stockfish not installed")

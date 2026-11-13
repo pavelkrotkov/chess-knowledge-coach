@@ -14,7 +14,7 @@ def _runs(connection, stage, deep):
         dict(row)
         for run_id in ids
         if run_id is not None
-        for row in connection.execute("SELECT * FROM analysis_runs WHERE id=?", (run_id,))
+        for row in connection.execute("SELECT * FROM analysis_runs_read WHERE id=?", (run_id,))
     ]
 
 
@@ -53,7 +53,7 @@ def configuration(db, prepared):
     provenance = prepared["provenance"]
     row = db.connection.execute(
         "SELECT engine,engine_version,config_json,binary_version,nnue,compatibility_json "
-        "FROM analysis_runs WHERE id=?",
+        "FROM analysis_runs_read WHERE id=?",
         (provenance["run_id"],),
     ).fetchone()
     if row is None or not row["engine"] or not row["engine_version"]:

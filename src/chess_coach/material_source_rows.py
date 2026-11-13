@@ -30,7 +30,7 @@ def runs(connection, ids):
     return [
         dict(
             connection.execute(
-                "SELECT id,game_id,config_json FROM analysis_runs WHERE id=?", (i,)
+                "SELECT id,game_id,config_json FROM analysis_runs_read WHERE id=?", (i,)
             ).fetchone()
         )
         for i in ids

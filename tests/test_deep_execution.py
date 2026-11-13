@@ -106,6 +106,8 @@ def test_bounded_execution_preserves_cheap_and_shared_work(tmp_path, monkeypatch
     played_move = inspect_decision(db, first["position_id"], learner=LEARNER)["played_move"]
     engine = DeepEngine(db, include_root=played_move)
     use_engine(monkeypatch, engine)
+    db.connection.execute("UPDATE analysis_provenance_settings SET compact=1 WHERE id=1")
+    db.connection.commit()
     result = run_deep(db, selection_id, learner=LEARNER, options=options())
     assert result["status"] == "partial" and len(result["processed"]) == 1
     assert result["counts"]["pending"] == 2 and result["counts"]["complete"] == 1
@@ -118,6 +120,16 @@ def test_bounded_execution_preserves_cheap_and_shared_work(tmp_path, monkeypatch
     assert inspect_decision(db, first["position_id"], learner="default")["deep"] is None
     deep = report["deep"]
     assert deep["status"] == "complete" and len(deep["result"]["alternatives"]) == 3
+    deep_run = deep["result"]["run_id"]
+    assert db.connection.execute(
+        "SELECT 1 FROM analysis_run_provenance WHERE run_id=?", (deep_run,)
+    ).fetchone()
+    assert (
+        db.connection.execute(
+            "SELECT config_json FROM analysis_runs WHERE id=?", (deep_run,)
+        ).fetchone()[0]
+        == ""
+    )
     assert deep["result"]["best_work"]["nodes"] == 103
     assert deep["result"]["best_work"]["shared_search"] is True
     assert deep["result"]["played_work"]["nodes"] == 200

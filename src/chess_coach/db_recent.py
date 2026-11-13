@@ -3,6 +3,7 @@
 import sqlite3
 
 from .analysis_comparison_schema import add_comparison_lines
+from .analysis_provenance_schema import add_analysis_provenance
 from .classification_schema import add_classification_lineage
 from .curriculum_schema import add_curriculum_index
 from .deep_execution_schema import add_deep_execution
@@ -62,6 +63,7 @@ def upgrade_recent(connection: sqlite3.Connection, version: int) -> None:
         (30, add_style_schedule),
         (31, add_protection_schedule),
         (32, add_recognition),
+        (33, add_analysis_provenance),
     )
     for target, apply_upgrade in upgrades:
         if version < target:

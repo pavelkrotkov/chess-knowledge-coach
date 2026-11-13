@@ -364,7 +364,7 @@ def _check_neutral_recognition(monkeypatch):
     db.connection.rollback()
     db.connection.execute("PRAGMA user_version=31")
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 32
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 33
     assert db.connection.execute("SELECT COUNT(*) FROM recognition_events").fetchone()[0] == count
     db.close()
 

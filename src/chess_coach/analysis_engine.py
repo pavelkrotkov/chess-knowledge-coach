@@ -10,6 +10,8 @@ import chess.engine
 
 from .analysis_comparison import comparison_line
 from .analysis_output import line_fields
+from .analysis_provenance import attach
+from .analysis_provenance import values as provenance_values
 
 
 def create_run(
@@ -27,6 +29,12 @@ def create_run(
     }
     config["nnue_options"] = nnue
     config["engine_id"] = dict(info)
+    config_json, nnue_json, compatibility_json, provenance_id = provenance_values(
+        connection,
+        json.dumps(config, sort_keys=True),
+        json.dumps(nnue, sort_keys=True),
+        json.dumps(config["compatibility"], sort_keys=True),
+    )
     run = connection.execute(
         """INSERT INTO analysis_runs
         (game_id, engine, engine_version, config_json, binary_path, binary_version, nnue, compatibility_json)
@@ -35,15 +43,16 @@ def create_run(
             game_id,
             info.get("name", "unknown"),
             info.get("name", info.get("unicode", "unknown")),
-            json.dumps(config, sort_keys=True),
+            config_json,
             str(binary),
             info.get("name", info.get("unicode", "unknown")),
-            json.dumps(nnue, sort_keys=True),
-            json.dumps(config["compatibility"], sort_keys=True),
+            nnue_json,
+            compatibility_json,
         ),
     )
     if run.lastrowid is None:
         raise RuntimeError("SQLite did not return an analysis run id")
+    attach(connection, run.lastrowid, provenance_id)
     return run.lastrowid
 
 

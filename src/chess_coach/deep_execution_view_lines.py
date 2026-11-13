@@ -9,7 +9,7 @@ def run_view(db, attempt, position_id, board, played):
     run_id = attempt["analysis_run_id"]
     if run_id is None:
         return None
-    run = db.connection.execute("SELECT * FROM analysis_runs WHERE id=?", (run_id,)).fetchone()
+    run = db.connection.execute("SELECT * FROM analysis_runs_read WHERE id=?", (run_id,)).fetchone()
     if run is None:
         return None
     config = _decode(run["config_json"])

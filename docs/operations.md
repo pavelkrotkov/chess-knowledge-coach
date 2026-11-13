@@ -206,6 +206,13 @@ authorization for external links and manager updates. Keep the old release,
 units, database, and backup. If older code cannot safely read a newer schema,
 restore the prior verified backup to a *new* database path and update private
 `CHESS_DB` for both services. Never overwrite the original to force rollback.
+Schema 33 leaves the `analysis_runs` table shape and inline provenance intact
+while compact storage is disabled. A header reset alone is not a general rollback
+procedure: it is only potentially compatible when compact writes are off and no
+run-to-provenance bindings exist. Once any binding exists, older code cannot read
+those compact rows without verified materialization. Keep compact writes disabled
+until a separately reviewed downgrade procedure is available; follow the backup
+and restore procedure above for deployment and rollback.
 After authorization, relink the previously reviewed units, reload and restart,
 and verify browser status and logs.
 
