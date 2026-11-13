@@ -26,7 +26,7 @@ def guard(db, expires):
         db.set_progress_handler(lambda: int(time.monotonic() >= expires), 1000)
 
 
-def lookup(path, parent, move, *, expires=None):
+def lookup(path, parent, move, *, expires=None, extended=False):
     db = sqlite3.connect(path.as_uri() + "?mode=ro&immutable=1", uri=True, timeout=1)
     try:
         guard(db, expires)
@@ -42,6 +42,10 @@ def lookup(path, parent, move, *, expires=None):
         from .opening_profile_summary import summarize
 
         summary = summarize(db, rows[:MAX_GAMES])
+        if extended:
+            from .opening_profile_extended import summarize as extended_summary
+
+            summary.update(extended_summary(db, rows[:MAX_GAMES]))
         return {
             **summary,
             "center": center_summary(db, rows[:MAX_GAMES], parent, move),

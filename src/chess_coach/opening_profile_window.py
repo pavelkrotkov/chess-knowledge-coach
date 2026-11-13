@@ -3,11 +3,11 @@
 import json
 
 from .named_structures import definitions
-from .opening_profile_play import WINDOW_PLIES
+from .opening_profile_play import STORED_PLIES, WINDOW_PLIES
 
 
-def shapes(rows, first, total):
-    expected = min(WINDOW_PLIES, total - first + 1)
+def shapes(rows, first, total, *, limit=WINDOW_PLIES):
+    expected = min(limit, total - first + 1, STORED_PLIES - first + 1)
     if expected < 1 or len(rows) != expected:
         raise ValueError("ordered profile window unavailable")
     known = definitions()
