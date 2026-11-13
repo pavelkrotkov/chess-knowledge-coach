@@ -5,6 +5,7 @@ import time
 
 from .capture_game_trend_current import _dates
 from .capture_game_trend_validate import matches_frontier
+from .dated_game_controls import reason as control_reason
 from .protection_game_cache import binding, location, valid
 from .protection_game_review import binding as review_binding
 from .protection_game_source import binding as analysis_binding
@@ -54,6 +55,11 @@ def _recheck(db, learner, games, deadline):
     return time.monotonic() < deadline
 
 
+def _deadline(deadline):
+    if time.monotonic() >= deadline:
+        raise ValueError("time-control check timed out")
+
+
 def _fresh(db, learner, state, deadline):
     before = db.connection.execute("PRAGMA data_version").fetchone()[0]
     games, coverage, frontier, signatures = snapshot(
@@ -68,7 +74,16 @@ def _fresh(db, learner, state, deadline):
     state.pop("prior", None)
     if not _recheck(db, learner, state["games"][:40], deadline):
         return None
+    _controls(state, games, deadline)
+    _deadline(deadline)
     return state if db.connection.execute("PRAGMA data_version").fetchone()[0] == before else None
+
+
+def _controls(state, games, deadline):
+    if state["selection_complete"] and len(state["games"]) >= 40:
+        state["time_control_reason"] = control_reason(
+            state["games"], games, check=lambda: _deadline(deadline)
+        )
 
 
 def current(db, learner, root):

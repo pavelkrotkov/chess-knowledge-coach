@@ -148,6 +148,7 @@ def test_result_contradicting_checkmate_is_unavailable(tmp_path):
 
 def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monkeypatch):
     # A real bounded in-memory cohort resumes and withholds only a changed game.
+    import sqlite3
     import sys
     from copy import deepcopy
     from types import SimpleNamespace
@@ -315,8 +316,33 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
             },
             "duplicates": 0,
             "unavailable": 0,
+            "time_control_reason": None,
         }
         with patch.context() as comparisons:
+            from types import SimpleNamespace
+
+            from chess_coach.dated_game_controls import reason as control_reason
+
+            controls = sqlite3.connect(":memory:")
+            controls.row_factory = sqlite3.Row
+            controls.execute(
+                "CREATE TABLE games(id INTEGER PRIMARY KEY, time_control TEXT, pgn TEXT)"
+            )
+            for index in range(41):
+                value = "600+0" if index % 20 < 10 else "0+3"
+                controls.execute(
+                    "INSERT INTO games VALUES(?,?,?)",
+                    (index + 1, value, f'[TimeControl "{value}"]\n\n*'),
+                )
+
+            def selected_controls():
+                return [
+                    (row, "white") for row in controls.execute("SELECT * FROM games ORDER BY id")
+                ]
+
+            assert control_reason(sample_games, selected_controls()) is None
+            controls.execute("UPDATE games SET time_control=NULL WHERE id=41")
+            assert control_reason(sample_games, selected_controls()) is None
             comparisons.setattr(protection_report, "current", lambda *_: sample_state)
             sample_result = protection_report.report(games_db, "fixture_a", None)
             assert sample_result["newer"]["unknown"] == 1
@@ -329,6 +355,29 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
             )
             assert b"/decisions/" in protection_page.data
             assert b"lower in the more recent sample" in protection_page.data
+            for value, header, expected in (
+                ("300+0", "300+0", "time_control_mismatch"),
+                (None, None, "time_control_unknown"),
+                ("600+0", "300+0", "time_control_source"),
+            ):
+                controls.execute(
+                    "UPDATE games SET time_control=?, pgn=? WHERE id=1",
+                    (value, f'[TimeControl "{header}"]\n\n*'),
+                )
+                sample_state["time_control_reason"] = control_reason(
+                    sample_games, selected_controls()
+                )
+                assert sample_state["time_control_reason"] == expected
+                blocked = protection_report.report(games_db, "fixture_a", None)
+                assert blocked["bounds"]["status"] == "incomparable"
+                assert blocked["newer"]["opportunities"] == sample_result["newer"]["opportunities"]
+                page = protection_client.get(
+                    "/game-samples/protection", base_url="https://coach.invalid"
+                )
+                assert b"A rate comparison is unavailable" in page.data
+                assert b"Conservative missed-opportunity ranges" not in page.data
+            controls.close()
+            sample_state["time_control_reason"] = None
             for index in range(23, 30):
                 sample_games[index]["results"] = [
                     [index * 2 + 1, "protected", None],
@@ -403,9 +452,15 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
     path = data / "games.sqlite"
     db = Database(path)
     db.initialize()
+
+    def timed_game(index, move, **kwargs):
+        return pgn(index, move, **kwargs).replace(
+            '[Result "1-0"]', '[TimeControl "600+0"]\n[Result "1-0"]'
+        )
+
     for index in range(41):
-        ingest_pgn(db, pgn(index, "Qg1" if index % 2 else "Qg7#"))
-    ingest_pgn(db, pgn(40, "Qg7#", event="Duplicate import"))
+        ingest_pgn(db, timed_game(index, "Qg1" if index % 2 else "Qg7#"))
+    ingest_pgn(db, timed_game(40, "Qg7#", event="Duplicate import"))
     before = db.connection.total_changes
     monkeypatch.setattr(scan, "TURN_LIMIT", 4)
     monkeypatch.setattr(turns, "classify", lambda *args: ("missed", None))
@@ -487,6 +542,20 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
         == 20
     )
     assert capture_complete["newer"]["played"] == capture_complete["newer"]["other"] == 10
+    # Cached counts remain visible when the stored control is missing or contradicts its PGN.
+    for value, expected in ((None, "time_control_unknown"), ("300+0", "time_control_source")):
+        db.connection.execute("UPDATE games SET time_control=? WHERE id=2", (value,))
+        current_capture = capture_report(db, "fixture_a", root)
+        assert current_capture["comparable_reason"] == expected
+        assert (
+            not current_capture["qualified"]
+            and current_capture["bounds"]["status"] == "incomparable"
+        )
+        assert current_capture["newer"]["played"] == capture_complete["newer"]["played"]
+    db.connection.execute("UPDATE games SET time_control='600+0' WHERE id=2")
+    db.connection.commit()
+    before = db.connection.total_changes
+    assert capture_report(db, "fixture_a", root)["qualified"]
     assert read(location(db, root), binding(db, "fixture_a")) == mate_before
     assert old_capture_cache.read_bytes() == b"synthetic prior capture cache"
     capture_cache = capture_location(db, root)
@@ -683,6 +752,9 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
     for gate, explanation in (
         ("selection_pending", b"still selecting independent games"),
         ("source_unavailable", b"dates, ownership records or source checks could not be verified"),
+        ("time_control_unknown", b"some game time controls are missing or unsupported"),
+        ("time_control_source", b"a stored time control does not match"),
+        ("time_control_mismatch", b"the two samples have different time-control distributions"),
         ("too_few_games", b"each sample needs 20 independent games"),
         ("between_tie", b"either side of the sample boundary share a start time"),
         ("frontier_tie", b"older sample and its boundary game share a start time"),

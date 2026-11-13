@@ -50,6 +50,8 @@ def report(db, learner, root):
                 state["coverage"],
                 state["unavailable"],
             )
+            if reason is None:
+                reason = state.get("time_control_reason", "time_control_unknown")
         return {
             "newer": newer,
             "earlier": earlier,

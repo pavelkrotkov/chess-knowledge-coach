@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.103.0"
+REGISTRY_VERSION = "1.104.0"
 
 CAPABILITIES = (
     {
@@ -417,7 +417,7 @@ CAPABILITIES = (
         "area": "Progress",
         "name": "Recurring patterns and improvement",
         "status": "observation-only",
-        "details": "A bounded quick coaching preview and an explicit complete view show source-linked recurring patterns with sampling limits. Game capture progress includes supported checking captures under the same bounded evasion proof. A separate dated protection view reports bounded verified opportunities, unresolved and unchecked coverage, and source decisions. Practice and game progress remain separate.",
+        "details": "A bounded quick coaching preview and an explicit complete view show source-linked recurring patterns with sampling limits. Game capture progress includes supported checking captures under the same bounded evasion proof. A separate dated protection view reports bounded verified opportunities, unresolved and unchecked coverage, and source decisions. Capture and protection rate comparisons require matching known game time controls. Practice and game progress remain separate.",
     },
     {
         "id": "explanation_adapter",
