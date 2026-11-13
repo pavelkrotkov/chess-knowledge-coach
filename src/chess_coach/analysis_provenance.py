@@ -1,9 +1,12 @@
 """Store exact shared analysis settings only when the database opts in."""
 
+from .analysis_provenance_schema import legacy
 from .fact_fingerprint import canonical, digest
 
 
 def values(connection, config, nnue, compatibility):
+    if legacy(connection):
+        return config, nnue, compatibility, None
     setting = connection.execute(
         "SELECT compact FROM analysis_provenance_settings WHERE id=1"
     ).fetchone()

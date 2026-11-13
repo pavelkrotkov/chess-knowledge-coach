@@ -26,3 +26,35 @@ def add_analysis_provenance(connection: sqlite3.Connection) -> None:
         r.created_at FROM analysis_runs r
         LEFT JOIN analysis_run_provenance link ON link.run_id=r.id
         LEFT JOIN analysis_provenance p ON p.id=link.provenance_id""")
+
+
+def legacy(connection):
+    if connection.execute("PRAGMA user_version").fetchone()[0] >= 33:
+        return False
+    objects = dict(
+        connection.execute(
+            "SELECT name,type FROM sqlite_master WHERE name IN (?,?,?,?)",
+            (
+                "analysis_provenance",
+                "analysis_provenance_settings",
+                "analysis_run_provenance",
+                "analysis_runs_read",
+            ),
+        ).fetchall()
+    )
+    if not objects:
+        return True
+    if objects != {
+        "analysis_provenance": "table",
+        "analysis_provenance_settings": "table",
+        "analysis_run_provenance": "table",
+        "analysis_runs_read": "view",
+    }:
+        raise ValueError("analysis provenance schema unavailable")
+    setting = connection.execute(
+        "SELECT compact FROM analysis_provenance_settings WHERE id=1"
+    ).fetchone()
+    links = connection.execute("SELECT 1 FROM analysis_run_provenance LIMIT 1").fetchone()
+    if setting is None or setting[0] or links:
+        raise ValueError("analysis provenance schema unavailable")
+    return True

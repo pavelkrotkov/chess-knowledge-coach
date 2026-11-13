@@ -214,6 +214,41 @@ def test_merge_preserves_decision_provenance(monkeypatch):
         tuple(row)
         for row in target.connection.execute(f"SELECT {fields} FROM analysis_runs_read ORDER BY id")
     ]
+    # The guarded header-only rollback can still use the new code before reinitialization.
+    rollback = database()
+    rollback.connection.execute("PRAGMA user_version=32")
+    rollback.connection.commit()
+    run_fake(monkeypatch, rollback, FakeEngine())
+    rollback.initialize()
+    assert rollback.connection.execute("PRAGMA user_version").fetchone()[0] == 33
+
+    # A genuine pre-33 target accepts compact imports and direct engine runs inline.
+    old = database()
+    old.connection.execute("DROP VIEW analysis_runs_read")
+    for table in ("analysis_run_provenance", "analysis_provenance_settings", "analysis_provenance"):
+        old.connection.execute(f"DROP TABLE {table}")
+    old.connection.execute("PRAGMA user_version=32")
+    old.connection.commit()
+    assert merge_analysis_outputs(old, source) == 6
+    assert [
+        tuple(row)
+        for row in old.connection.execute(f"SELECT {fields} FROM analysis_runs ORDER BY id")
+    ] == [exact] * 3
+    run_fake(monkeypatch, old, FakeEngine())
+    assert (
+        tuple(
+            old.connection.execute(
+                f"SELECT {fields} FROM analysis_runs ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+        )
+        == exact
+    )
+    old.connection.execute("CREATE TABLE analysis_provenance_settings (id, compact)")
+    old.connection.commit()
+    with pytest.raises(ValueError, match="provenance schema unavailable"):
+        merge_analysis_outputs(old, source)
+    assert old.connection.execute("SELECT COUNT(*) FROM analysis_runs").fetchone()[0] == 4
+
     # A shared source without its compatibility view is not interpreted as inline.
     source.connection.execute("DROP VIEW analysis_runs_read")
     source.connection.commit()
