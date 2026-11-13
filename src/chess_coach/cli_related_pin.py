@@ -12,16 +12,21 @@ def configure(sub):
     listing.add_argument("--evidence", required=True, type=int)
     listing.add_argument("--corpus", required=True)
     listing.add_argument("--cursor")
+    listing.add_argument("--mechanism", choices=("slide",))
     begin = sub.add_parser("start-related-pin")
     begin.add_argument("--subject", required=True)
     begin.add_argument("--evidence", required=True, type=int)
     begin.add_argument("--corpus", required=True)
     begin.add_argument("--attempt", required=True)
     begin.add_argument("--reference", required=True)
+    begin.add_argument("--mechanism", choices=("slide",))
 
 
 def listing(db, args):
-    print(json.dumps(preview(db, args.subject, args.evidence, args.corpus, args.cursor), indent=2))
+    result = preview(
+        db, args.subject, args.evidence, args.corpus, args.cursor, mechanism=args.mechanism
+    )
+    print(json.dumps(result, indent=2))
 
 
 def begin(db, args):
@@ -32,6 +37,7 @@ def begin(db, args):
         evidence_id=args.evidence,
         corpus_version=args.corpus,
         reference=args.reference,
+        mechanism=args.mechanism,
     )
     result.pop("source_key", None)
     print(json.dumps(result, indent=2))
