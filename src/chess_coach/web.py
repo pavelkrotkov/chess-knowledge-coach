@@ -29,6 +29,7 @@ from .web_recurrence import recurrence_views
 from .web_related_backrank import related_backrank
 from .web_related_capture import related_capture
 from .web_related_created import related_created
+from .web_related_discovery import related_discovery
 from .web_related_fork import related_fork
 from .web_related_fork_avoidance import related_fork_avoidance
 from .web_related_fork_prevention import related_fork_prevention
@@ -74,15 +75,19 @@ def create_app(
         FORK_AVOIDANCE_VERSION=FORK_AVOIDANCE_VERSION,
     )
     install_security(app, login, origin, host if backend_host is None else backend_host)
-    app.register_blueprint(related_backrank)
-    app.register_blueprint(related_capture)
-    app.register_blueprint(related_created)
-    app.register_blueprint(related_fork)
-    app.register_blueprint(related_fork_prevention)
-    app.register_blueprint(related_fork_avoidance)
-    app.register_blueprint(related_mate)
-    app.register_blueprint(related_pin)
-    app.register_blueprint(related_protection)
+    for related in (
+        related_backrank,
+        related_capture,
+        related_created,
+        related_discovery,
+        related_fork,
+        related_fork_prevention,
+        related_fork_avoidance,
+        related_mate,
+        related_pin,
+        related_protection,
+    ):
+        app.register_blueprint(related)
     app.register_blueprint(views)
     app.register_blueprint(coaching_views)
     app.register_blueprint(assessment_history_views)

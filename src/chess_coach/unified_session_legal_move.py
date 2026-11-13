@@ -1,6 +1,7 @@
 """Route a legal practice move through a certified or supplied branch."""
 
 from .objective_promotion_routing import needs_verification
+from .related_discovery_contract import is_source as discovery_mate
 from .unified_session_branch import advance, move_state
 from .unified_session_unmatched import short_assessment
 from .unified_session_unmatched import unmatched as _unmatched
@@ -9,6 +10,11 @@ from .unified_session_unmatched import unmatched as _unmatched
 def apply(row, board, lines, candidates, move):
     board.push(move)
     index = row["next_index"]
+    if discovery_mate(row):
+        mate = board.is_checkmate()
+        feedback = "objective_verified" if mate else "incorrect"
+        status = "objective_verified" if mate else "line_completed"
+        return move_state(board, feedback, status, index + 1, candidates)
     final = _short_final(row, board, index, candidates)
     if final is not None:
         return final

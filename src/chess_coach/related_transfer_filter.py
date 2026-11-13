@@ -9,10 +9,12 @@ from . import (
     related_pin_contract,
 )
 from .related_created_contract import FILTER_VERSION as CREATED_FILTER
+from .related_discovery_contract import FILTER_VERSION as DISCOVERY_FILTER
 from .related_protection_contract import FILTER_VERSION as PROTECTION_FILTER
 
 _FIXED = {
     "created_exposure": CREATED_FILTER,
+    "discovery_mate": DISCOVERY_FILTER,
     "backrank_attack": related_backrank_contract.FILTER_VERSION,
     "protection": PROTECTION_FILTER,
     "fork_avoidance": related_fork_avoidance_contract.FILTER_VERSION,
