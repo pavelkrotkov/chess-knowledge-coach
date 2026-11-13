@@ -48,3 +48,10 @@ def needs_fork(choice, capture, assessment):
     return selected is None or (
         rotated_from is None and _success(selected, capture, assessment, None)
     )
+
+
+def repeats_success(focus):
+    """A selected family repeats only if no unresolved family was rotated in."""
+    if not focus or not focus.get("selected") or focus.get("rotated_from"):
+        return False
+    return _success(focus["selected"], focus["capture"], focus["assessment"], focus["fork"])

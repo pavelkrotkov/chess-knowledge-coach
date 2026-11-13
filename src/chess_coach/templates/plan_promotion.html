@@ -1,5 +1,9 @@
 <section>
-<h3>Optional promotion practice</h3>
+<h3>{% if promotion_priority %}Next focus: promotion practice{% else %}Optional promotion practice{% endif %}</h3>
+{% if promotion_priority %}
+{% set verified_evidence = focus.assessment.evidence_id if focus.selected == "protection" else focus[focus.selected].source.evidence_id %}
+<p>A current {{ focus.selected }} assessment from <a href="{{ url_for('views.evidence_detail', evidence_id=verified_evidence) }}">this source</a> was verified correct without assistance. The recurring choice would otherwise repeat that family, so this separately checked promotion exercise adds variety. It does not establish mastery.</p>
+{% endif %}
 {% if promotion.status == "ready" %}
 <p>Play {{ promotion.color|capitalize }}. {% if promotion.objective == "promote_now" %}Promote a pawn now.{% else %}Force a promotion within two moves.{% endif %}</p>
 <form method="post" action="{{ url_for('unified_practice.begin') }}">
