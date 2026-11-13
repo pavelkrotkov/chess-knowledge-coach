@@ -27,6 +27,9 @@ def _reject_between_course_slices(db, path, subject, group, monkeypatch):
         if len(slices) == 1:
             with sqlite3.connect(path) as writer:
                 writer.execute("UPDATE games SET event=event WHERE id=1")
+            from chess_coach.tactical_course_deadline import PreviewDeadline
+
+            raise PreviewDeadline()
 
     with monkeypatch.context() as patch:
         patch.setattr(budget, "scope", changed_scope)
@@ -242,6 +245,7 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
 
     # The same source can form a private worked course and a source-bound
     # unfamiliar chapter, without creating any training or Study records.
+    import json
     from copy import deepcopy
 
     from chess_coach.tactical_course import build as tactical_preview
@@ -286,7 +290,7 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
     db.connection.commit()
     before_course = db.connection.total_changes
     course = tactical_preview(db, LEARNER, "test")
-    assert course["kind"] == "local-tactical-course-v3"
+    assert course["kind"] == "local-tactical-course-v4"
     pattern = course["preview"]["patterns"][0]
     assert pattern["kind"] == "fork" and pattern["independent_games"] == 2
     assert pattern["local_challenge"].endswith("/related-forks/find-verified")
@@ -297,7 +301,7 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
     assert own["orientation"] == "white" and "attacks two valuable targets" in own["pgn"]
     assert "Worked example, ungraded" in related["pgn"] and "CC0" in related["pgn"]
     exported = tactical_export(db, LEARNER, "test", course, Budget(db))
-    assert exported["kind"] == "local-tactical-course-export-v3"
+    assert exported["kind"] == "local-tactical-course-export-v4"
     assert study_preview(exported, exported["export_sha256"]) == course
     monkeypatch.setenv("CHESS_SUBJECT", LEARNER)
     monkeypatch.setenv("CHESS_CORPUS", "test")
@@ -461,6 +465,71 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
     groups, coverage = candidates(db, LEARNER, Budget(db))
     capture_group = next(g for g in groups if g["lesson"]["skill"] == "hanging_piece")
     fork_group = next(g for g in groups if g["lesson"]["skill"] == "fork")
+
+    # The selected snapshot is reused only inside its original read transaction.
+    from chess_coach import coaching_practice_source, tactical_course_chapters
+
+    resolve_source = coaching_practice_source.resolve_source
+    resolutions = []
+
+    def counted_resolution(*args, **kwargs):
+        assert args[0].connection.in_transaction
+        resolutions.append(1)
+        return resolve_source(*args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(coaching_practice_source, "resolve_source", counted_resolution)
+        patch.setattr(
+            tactical_course_chapters,
+            "resolve_source",
+            lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("duplicate source resolution")),
+        )
+        assert tactical_course_chapters.owned(db, LEARNER, capture_group)
+        assert len(resolutions) == 1
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            tactical_course, "candidates", lambda *_a: ([fork_group, capture_group], coverage)
+        )
+        original_owned = tactical_course_resolve.owned
+
+        def deferred_one(db, subject, group, **kwargs):
+            if group["lesson"]["skill"] == "fork":
+                raise PreviewDeadline()
+            return original_owned(db, subject, group, **kwargs)
+
+        patch.setattr(tactical_course_resolve, "owned", deferred_one)
+        deferred = tactical_preview(db, LEARNER, "test")
+        assert [p["kind"] for p in deferred["preview"]["patterns"]] == ["capture"]
+        assert any(
+            item["reason"] == "owned source deferred: time budget"
+            for item in deferred["preview"]["selection"]["unavailable"]
+        )
+        deferred_export = tactical_export(db, LEARNER, "test", deferred, Budget(db))
+        assert study_preview(deferred_export, deferred_export["export_sha256"]) == deferred
+        previous_deferred = deepcopy(deferred)
+        previous_deferred["kind"] = previous_deferred["preview"]["kind"] = (
+            "local-tactical-course-v3"
+        )
+        previous_deferred["preview"]["policy"] = "provisional-recurring-tactics-v3"
+        previous_deferred["preview_sha256"] = preview_hash(previous_deferred["preview"])
+        with pytest.raises(ValueError):
+            tactical_export(db, LEARNER, "test", previous_deferred, Budget(db))
+
+        from chess_coach import ops_tactical_course
+
+        patch.setattr(ops_tactical_course, "paths", lambda _root, output: (path, output))
+        patch.setenv("CHESS_SUBJECT", LEARNER)
+        patch.setenv("CHESS_CORPUS", "test")
+        output = tmp_path / "deferred-course.json"
+        ops_tactical_course.prepare(tmp_path, output)
+        assert json.loads(output.read_text()) == deferred
+        patch.setattr(
+            tactical_course_resolve,
+            "owned",
+            lambda *_a, **_k: (_ for _ in ()).throw(PreviewDeadline()),
+        )
+        with pytest.raises(PreviewUnavailable):
+            tactical_preview(db, LEARNER, "test")
     original_games = tactical_course_familiar._games
     scans = []
 
@@ -887,7 +956,7 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
     prepare(project, first_preview)
     first_content = first_preview.read_bytes()
     preview = json.loads(first_content)
-    assert preview["kind"] == "local-tactical-course-v3"
+    assert preview["kind"] == "local-tactical-course-v4"
     assert preview["preview_sha256"] == preview_hash(preview["preview"])
     assert [item["kind"] for item in preview["preview"]["patterns"]] == ["capture"]
     assert preview["preview"]["patterns"][0]["independent_games"] == 2
@@ -929,7 +998,7 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
     export_candidate(project, first_preview, preview["preview_sha256"], export_path)
     exported_bytes = export_path.read_bytes()
     exported = json.loads(exported_bytes)
-    assert exported["kind"] == "local-tactical-course-export-v3"
+    assert exported["kind"] == "local-tactical-course-export-v4"
     assert exported["export_sha256"] == preview_hash(exported["export"])
     assert exported["export"]["preview_sha256"] == preview["preview_sha256"]
     assert exported["export"]["chapters"] == preview["preview"]["chapters"]
@@ -951,6 +1020,16 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
         "preview_sha256": preview_hash(legacy_body),
     }
     legacy_export = build_export(db, LEARNER, "test", legacy, Budget(db))
+    previous = json.loads(first_content)["preview"]
+    previous["kind"] = "local-tactical-course-v3"
+    previous["policy"] = "provisional-recurring-tactics-v3"
+    previous_preview = {
+        "kind": previous["kind"],
+        "preview": previous,
+        "preview_sha256": preview_hash(previous),
+    }
+    previous_export = build_export(db, LEARNER, "test", previous_preview, Budget(db))
+    assert study_preview(previous_export, previous_export["export_sha256"]) == previous_preview
     expected = {
         **exported["export"],
         "kind": "local-tactical-course-export-v1",

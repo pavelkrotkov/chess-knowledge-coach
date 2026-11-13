@@ -2,13 +2,13 @@
 
 from .course_preview import preview_hash
 from .learner_identity import normalize_identity
-from .tactical_course import LEGACY_VERSION as LEGACY_PREVIEW_VERSION
-from .tactical_course import PREVIOUS_VERSION as PREVIOUS_PREVIEW_VERSION
+from .tactical_course import PROTECTION_VERSION as PROTECTION_PREVIEW_VERSION
 from .tactical_course import VERSION as PREVIEW_VERSION
 from .tactical_export_chapters import verify
+from .tactical_export_contract import contract as _contract
 from .tactical_export_contract import validate
 from .tactical_export_coverage import selected as covered
-from .tactical_export_gaps import OWN, omissions, selected
+from .tactical_export_gaps import OWN_REASONS, omissions, selected
 from .tactical_export_selection import selection
 from .tactical_export_sources import lesson
 
@@ -16,8 +16,10 @@ LEGACY_VERSION = "local-tactical-course-export-v1"
 LEGACY_POLICY = "tactical-export-verification-v1"
 PREVIOUS_VERSION = "local-tactical-course-export-v2"
 PREVIOUS_POLICY = "tactical-export-verification-v2"
-VERSION = "local-tactical-course-export-v3"
-POLICY = "tactical-export-verification-v3"
+PROTECTION_VERSION = "local-tactical-course-export-v3"
+PROTECTION_POLICY = "tactical-export-verification-v3"
+VERSION = "local-tactical-course-export-v4"
+POLICY = "tactical-export-verification-v4"
 
 
 def _chapters(chapters, index):
@@ -29,14 +31,6 @@ def _chapters(chapters, index):
     return chapters[index:end], end
 
 
-def _contract(body):
-    return {
-        LEGACY_PREVIEW_VERSION: (LEGACY_VERSION, LEGACY_POLICY),
-        PREVIOUS_PREVIEW_VERSION: (PREVIOUS_VERSION, PREVIOUS_POLICY),
-        PREVIEW_VERSION: (VERSION, POLICY),
-    }[body["kind"]]
-
-
 def build(db, subject, corpus, envelope, budget):
     subject = normalize_identity(subject)
     if not subject:
@@ -45,8 +39,13 @@ def build(db, subject, corpus, envelope, budget):
         body = validate(envelope, corpus)
     pairs = selection(body, corpus)
     index, seen = 0, set()
-    modern = body["kind"] == PREVIEW_VERSION
-    gaps = omissions(body["selection"], pairs=pairs, modern=modern)
+    modern = body["kind"] in {PROTECTION_PREVIEW_VERSION, PREVIEW_VERSION}
+    gaps = omissions(
+        body["selection"],
+        pairs=pairs,
+        modern=modern,
+        owned_deadline=body["kind"] == PREVIEW_VERSION,
+    )
     for pattern in body["patterns"]:
         pair = (pattern["skill"], pattern["operation"])
         if pair in seen:
@@ -57,7 +56,7 @@ def build(db, subject, corpus, envelope, budget):
         selected(pattern, group, gaps, modern=modern)
         current = lesson(db, subject, pattern, budget, pairs=pairs)
         verify(db, subject, corpus, pattern, current, group, budget, modern=modern)
-    if any(reason != OWN and pair not in seen for pair, reason in gaps.items()):
+    if any(reason not in OWN_REASONS and pair not in seen for pair, reason in gaps.items()):
         raise ValueError("related omission has no selected pattern")
     if index != len(body["chapters"]):
         raise ValueError("unexpected chapter order")

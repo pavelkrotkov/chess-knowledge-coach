@@ -1,6 +1,6 @@
 """Choose current practice examples for a coaching preview."""
 
-from .coaching_practice_source import resolve_example
+from .coaching_practice_source import available, resolve_example
 from .coaching_rehearsal import keys as mate_keys
 from .coaching_rehearsal import rehearsed_sources
 from .coaching_short_rehearsal import rehearsed_sources as short_rehearsed_sources
@@ -28,21 +28,11 @@ def _choice(db, subject, lesson, rehearsed, short_rehearsed, adaptive):
     if adaptive and lesson["skill"] == "mate_in_one":
         examples = sorted(examples, key=lambda example: _rank(example, rehearsed))
     examples = order_short(lesson, examples, short_rehearsed, adaptive)
-    result = next(_available(db, subject, lesson, examples), None)
+    result = next(available(db, subject, lesson, examples, resolve_example), None)
     if result and adaptive and result["kind"] == "mate":
         result["rehearsed"] = result["key"] in rehearsed
     mark_short(result, examples, short_rehearsed, adaptive)
     return result
-
-
-def _available(db, subject, lesson, examples):
-    for example in examples:
-        try:
-            result = resolve_example(db, subject, lesson, example)
-        except (ValueError, KeyError, TypeError, IndexError):
-            continue
-        if result:
-            yield result
 
 
 def _rank(example, rehearsed):

@@ -56,3 +56,15 @@ def attribution(db, source_type, version, snapshot):
     if row and row[0].startswith("https://database.lichess.org/"):
         return "Source: Lichess open puzzle database, CC0."
     return "Source: practice puzzle library."
+
+
+def challenge(choice, *, protection=False):
+    if choice["kind"] == "protection" and protection:
+        return "/plan/protection/finder"
+    if choice["kind"] == "capture":
+        return f"/decisions/{choice['position_id']}/related-captures"
+    if choice["kind"] == "fork":
+        return f"/evidence/{choice['evidence_id']}/related-forks/find-verified"
+    if choice["kind"] in {"mate", "short_mate"}:
+        return f"/evidence/{choice['evidence_id']}/related-mates"
+    return None

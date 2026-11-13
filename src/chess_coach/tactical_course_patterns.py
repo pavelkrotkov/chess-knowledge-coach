@@ -1,7 +1,7 @@
 """Revalidate and assemble a small ordered set of tactical patterns."""
 
+from .course_guidance import challenge
 from .tactical_course_budget import PreviewUnavailable
-from .tactical_course_chapters import challenge
 from .tactical_course_resolve import own, related
 
 MAX_PATTERNS = 3
@@ -28,12 +28,12 @@ def assemble(db, subject, corpus, groups, budget):
         if len(patterns) >= MAX_PATTERNS:
             return patterns, chapters, unavailable, len(groups) - index
         result = own(db, subject, group, budget)
-        if result is None:
+        if result is None or isinstance(result, str):
             unavailable.append(
                 {
                     "skill": group["lesson"]["skill"],
                     "operation": group["lesson"]["operation"],
-                    "reason": "owned source unavailable",
+                    "reason": result or "owned source unavailable",
                 }
             )
             continue

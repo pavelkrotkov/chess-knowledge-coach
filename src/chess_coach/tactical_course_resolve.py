@@ -24,6 +24,9 @@ def own(db, subject, group, budget):
                 bindings = independent(db, subject, group)
         with budget.scope(snapshot=True):
             return owned(db, subject, group, bindings=bindings)
+    except PreviewDeadline:
+        budget.check()
+        return "owned source deferred: time budget"
     except (ValueError, KeyError, TypeError, IndexError):
         raise PreviewUnavailable("lesson source changed") from None
 

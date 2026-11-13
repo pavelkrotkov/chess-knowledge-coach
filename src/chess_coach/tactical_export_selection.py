@@ -1,6 +1,6 @@
 """Validate saved preview selection and coverage policy."""
 
-from .tactical_course import CONTRACTS, VERSION
+from .tactical_course import CONTRACTS, PROTECTION_VERSION, VERSION
 from .tactical_course_budget import SLICE_SECONDS
 from .tactical_course_patterns import MAX_PATTERNS
 from .tactical_course_protection import PER_BAND
@@ -50,5 +50,5 @@ def selection(body, corpus):
     if actual != expected:
         raise ValueError("preview selection or bounds changed")
     coverage(selection["coverage"], pairs)
-    _omissions(selection, pairs, body["kind"] == VERSION)
+    _omissions(selection, pairs, body["kind"] in {PROTECTION_VERSION, VERSION})
     return pairs
