@@ -3,7 +3,7 @@
 {% block content %}
 <p><a href="{{ url_for('related_protection.finder') }}">Find an unfamiliar protection exercise</a> · A separate optional source check.</p>
 <h2>Piece-protection rehearsal</h2>
-<p><a href="{{ url_for('views.plan') }}">Back to the daily plan</a></p>
+<p><a href="{{ url_for('views.plan') }}">Back to the daily plan</a> - <a href="{{ url_for('short_mate_game_views.protection_samples') }}">View piece-protection observations in your games</a></p>
 {% if report %}
 <p>Checked up to {{ report.scanned }} recent prevention markers. {{ report.groups }} same-version groups contained markers from at least two independent candidate games. Checked {{ report.checked }} prepared source candidates, up to five; {{ report.unavailable }} checked source{% if report.unavailable != 1 %}s were{% else %} was{% endif %} unavailable or ineligible. {% if report.limited %}More markers remain outside this bounded scan.{% endif %} {% if report.partial %}Some candidates were not checked for a replay.{% endif %}</p>
 <p>These counts describe provisional candidate games. {% if report.source %}The selected replay is checked separately.{% else %}Prepared replay checks are separate.{% endif %}</p>
