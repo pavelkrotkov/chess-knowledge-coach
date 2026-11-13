@@ -5,7 +5,7 @@ import sqlite3
 from flask import Blueprint, current_app, render_template
 
 from .fork_plan_action import recommendation as fork_recommendation
-from .next_focus_select import choose
+from .next_focus_select import choose, needs_fork
 from .objective_protection_contract import VERSION as PROTECTION_VERSION
 from .plan_capture_action import admissible
 from .protection_plan import report
@@ -37,21 +37,54 @@ def show():
 def next_focus():
     db = database()
     subject = current_app.config["SUBJECT"]
-    capture = admissible(db, subject, current_app.config["CORPUS"])
+    context = current_focus(db, subject, current_app.config["CORPUS"])
+
+    return render_template(
+        "next_focus.html",
+        **context,
+        protection_version=PROTECTION_VERSION,
+    )
+
+
+def current_focus(db, subject, corpus, *, include_optional=True):
+    try:
+        return _current_focus(db, subject, corpus, include_optional)
+    except sqlite3.Error:
+        return _unavailable()
+
+
+def _current_focus(db, subject, corpus, include_optional):
+    # Independent family checks must describe one unchanged database generation.
+    version = db.connection.execute("PRAGMA data_version").fetchone()[0]
+    capture = admissible(db, subject, corpus)
     try:
         protection = report(db, subject)
     except (sqlite3.Error, ValueError, TypeError, KeyError, IndexError, PreviewUnavailable):
         protection = None
-    fork = fork_recommendation(db, subject, current_app.config["CORPUS"])
-    assessment = protection_history(db, subject, current_app.config["CORPUS"], protection)
+    assessment = protection_history(db, subject, corpus, protection)
+    initial = choose(capture, protection, assessment, None)
+    fork = None
+    if include_optional or needs_fork(initial, capture, assessment):
+        fork = fork_recommendation(db, subject, corpus)
+    if db.connection.execute("PRAGMA data_version").fetchone()[0] != version:
+        return _unavailable()
     selected, rotated_from = choose(capture, protection, assessment, fork)
-    return render_template(
-        "next_focus.html",
-        capture=capture,
-        protection=protection,
-        selected=selected,
-        rotated_from=rotated_from,
-        fork=fork,
-        assessment=assessment,
-        protection_version=PROTECTION_VERSION,
-    )
+    return {
+        "capture": capture,
+        "protection": protection,
+        "fork": fork,
+        "assessment": assessment,
+        "selected": selected,
+        "rotated_from": rotated_from,
+    }
+
+
+def _unavailable():
+    return {
+        "capture": None,
+        "protection": None,
+        "fork": None,
+        "assessment": {"status": "unknown"},
+        "selected": None,
+        "rotated_from": None,
+    }

@@ -367,11 +367,20 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
             patch.setattr(
                 "chess_coach.capture_plan.choose",
                 lambda *_, **_kwargs: {
-                    "source": {"position_id": 1, "evidence_id": evidence, "games": 2},
+                    "source": {
+                        "position_id": 1,
+                        "evidence_id": evidence,
+                        "games": 2,
+                        "version": "material-own-v2",
+                        "key": f"1:material_capture:{evidence}",
+                    },
                     "limited": False,
                     "scanned": 2,
                 },
             )
+            patch.setattr("chess_coach.plan_capture_action.resolve_source", lambda *_a, **_k: {})
+            patch.setattr("chess_coach.web_protection_plan.report", lambda *_: None)
+            patch.setattr("chess_coach.web_protection_plan.fork_recommendation", lambda *_: None)
             return client.get("/plan", base_url="https://coach.invalid", headers=headers)
 
     def focus_page(protection_games=2, *, unavailable=False, capture_unavailable=False):
@@ -1279,10 +1288,23 @@ def test_capture_plan_uses_independent_current_sources_and_is_lazy(tmp_path, mon
     repeated = report(db, LEARNER, "legacy")
     assert repeated["source"]["games"] == 2
     assert repeated["source"]["observations"] == 2
+    import chess_coach.capture_plan as capture_plan
+
+    original_report = capture_plan.report
+    calls = []
+
+    def counted(*args, **kwargs):
+        calls.append(True)
+        return original_report(*args, **kwargs)
+
     with monkeypatch.context() as patch:
         patch.setattr("chess_coach.capture_finder.find", forbidden)
+        patch.setattr(capture_plan, "report", counted)
         daily = client.get("/plan", base_url="https://coach.invalid", headers=headers)
+    assert calls == [True]
     assert b"<h3>Capture practice</h3>" in daily.data
+    assert b"Replay the prepared capture" in daily.data
+    assert f'name="key" value="{repeated["source"]["key"]}"'.encode() in daily.data
     assert b"Find a verified unfamiliar capture" in daily.data
     assert b"Compare matched capture assessments" in daily.data
     with monkeypatch.context() as patch:
@@ -1343,12 +1365,22 @@ def test_capture_plan_uses_independent_current_sources_and_is_lazy(tmp_path, mon
                         "due": None,
                         "corpus_version": "legacy",
                         "puzzle_id": "fixture",
-                    }
+                    },
+                    {
+                        "objective": "Fixture new puzzle",
+                        "kind": "new",
+                        "reason": "",
+                        "due": None,
+                        "corpus_version": "legacy",
+                        "puzzle_id": "new-fixture",
+                    },
                 ],
+                "scan": {"due_incomplete": False},
                 "evidence": {"state": "fixture"},
                 "corpus_status": "fixture",
                 "diagnostic": None,
-                "next_cursor": None,
+                "next_cursor": "fixture-cursor",
+                "continuation_reason": "corpus_scan_incomplete",
             },
         )
         scheduled = client.get("/plan", base_url="https://coach.invalid", headers=headers)
@@ -1358,7 +1390,44 @@ def test_capture_plan_uses_independent_current_sources_and_is_lazy(tmp_path, mon
     assert scheduled.data.index(b"Fixture scheduled review") < scheduled.data.index(
         b"Check your next non-mate practice focus"
     )
+    assert scheduled.data.index(b"<h3>Capture practice</h3>") < scheduled.data.index(
+        b"Fixture new puzzle"
+    )
+    assert scheduled.data.count(b"<h3>Capture practice</h3>") == 1
+    assert b"cursor=fixture-cursor" in scheduled.data
     assert b"Check your next non-mate practice focus" not in continuation.data
+
+    # Incomplete or full due coverage never triggers the added source check.
+    from chess_coach.plan_page import _room_after_due
+
+    due = {
+        "objective": "Due",
+        "kind": "due",
+        "reason": "",
+        "due": None,
+        "corpus_version": "legacy",
+        "puzzle_id": "fixture",
+    }
+    assert not _room_after_due({"scan": {"due_incomplete": True}, "items": [due]})
+    assert not _room_after_due({"scan": {"due_incomplete": False}, "items": [due] * 10})
+    with monkeypatch.context() as patch:
+        patch.setattr("chess_coach.plan_page.current_focus", forbidden)
+        for result in (
+            {"scan": {"due_incomplete": True}, "items": [due]},
+            {"scan": {"due_incomplete": False}, "items": [due] * 10},
+        ):
+            page_data = {
+                **result,
+                "evidence": {"state": "fixture"},
+                "corpus_status": "fixture",
+                "diagnostic": None,
+                "next_cursor": None,
+            }
+            patch.setattr(
+                "chess_coach.web_views.daily_plan", lambda *_, page_data=page_data, **_k: page_data
+            )
+            page = client.get("/plan", base_url="https://coach.invalid", headers=headers)
+            assert page.status_code == 200 and b"<h3>Capture practice</h3>" not in page.data
     from chess_coach.tactical_course_budget import PreviewUnavailable
 
     with monkeypatch.context() as patch:
