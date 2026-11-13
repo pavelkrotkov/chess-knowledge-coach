@@ -1060,6 +1060,63 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
     assert b"Prepared tactical course" in shown.data and b"Show the supplied line" in shown.data
     assert b"View the source decision" in shown.data and b"ungraded" in shown.data
     assert b"Recorded omissions" in shown.data and db.connection.total_changes == before_course_page
+    chapter_count = len(exported["export"]["chapters"])
+    assert f"{chapter_count} chapter".encode() in shown.data
+    version = exported["export_sha256"]
+    download_url = course_url + "?download=1&version=" + version
+    assert b"Download this version as PGN" in shown.data
+    assert course_client.get(download_url, base_url="https://coach.invalid").status_code == 403
+    before_files = {
+        p: p.read_bytes() if p.exists() else None
+        for p in (
+            offer_slot,
+            planning / "tactical-study-request.json",
+            planning / "tactical-course-request.json",
+        )
+    }
+    with monkeypatch.context() as patch:
+
+        def forbidden(*_args, **_kwargs):
+            raise AssertionError("download must not prepare, publish or read publication status")
+
+        patch.setattr("chess_coach.tactical_export.build", forbidden)
+        patch.setattr("chess_coach.web_tactical_course.status", forbidden)
+        patch.setattr("chess_coach.web_tactical_course.preparation", forbidden)
+        download = course_client.get(
+            download_url + "&chapter=bad&line=bad&status=bad",
+            base_url="https://coach.invalid",
+            headers=course_headers,
+        )
+    expected_pgn = "\n\n".join(c["pgn"] for c in exported["export"]["chapters"]) + "\n"
+    assert download.status_code == 200 and download.get_data(as_text=True) == expected_pgn
+    assert download.mimetype == "application/x-chess-pgn"
+    assert download.headers["Content-Disposition"] == 'attachment; filename="tactical-course.pgn"'
+    assert download.headers["Cache-Control"] == "no-store"
+    assert db.connection.total_changes == before_course_page
+    assert all(
+        (p.read_bytes() if p.exists() else None) == value for p, value in before_files.items()
+    )
+    for query in ("?download=1", "?download=1&version=" + "0" * 64):
+        assert (
+            course_client.get(
+                course_url + query, base_url="https://coach.invalid", headers=course_headers
+            ).status_code
+            == 409
+        )
+    # Distinct chapters exercise ordering even when this private fixture has one chapter.
+    with monkeypatch.context() as patch:
+        from chess_coach import web_tactical_course
+
+        original_offered = web_tactical_course.offered
+        item, course = original_offered(project, path, LEARNER, "test")
+        chapters = [{"pgn": "first"}, {"pgn": "second"}]
+        patch.setattr(
+            web_tactical_course, "offered", lambda *_: (item, {**course, "chapters": chapters})
+        )
+        ordered = course_client.get(
+            download_url, base_url="https://coach.invalid", headers=course_headers
+        )
+        assert ordered.get_data(as_text=True) == "first\n\nsecond\n"
     assert (
         course_client.get(
             course_url + "?version=" + "0" * 64,
@@ -1095,6 +1152,12 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
         in course_client.get(
             course_url, base_url="https://coach.invalid", headers=course_headers
         ).data
+    )
+    assert (
+        course_client.get(
+            download_url, base_url="https://coach.invalid", headers=course_headers
+        ).status_code
+        == 404
     )
     export_path.write_bytes(exported_bytes)
     export_path.chmod(0o400)

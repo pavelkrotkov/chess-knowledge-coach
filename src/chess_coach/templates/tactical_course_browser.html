@@ -13,6 +13,7 @@
 <p>No current prepared course is available.</p>
 {% else %}
 <p>Prepared {{ offer.prepared_at }}. This is the exact exported version <code>{{ offer.hash }}</code>. Sources were checked when it was prepared; this page does not recheck them.</p>
+<p>{{ course.chapters|length }} chapter{% if course.chapters|length != 1 %}s{% endif %} · <a href="{{ url_for('tactical_course_views.show', download=1, version=offer.hash) }}">Download this version as PGN</a>.</p>
 <p>These are ungraded worked examples. Study publication is a separate action.</p>
 {% if study.receipt %}<p><a href="{{ study.receipt.url }}">Open the verified private Study</a> · verified {{ study.receipt.verified_at }}.</p>{% else %}
 {% if study.state == "queued" %}<p>Publication is queued for the scheduled worker.</p>
