@@ -200,12 +200,16 @@ def test_automatic_worker_records_provisional_material_and_browser_explains(tmp_
 
     from chess_coach.material_worker import process_material
 
-    def add_fixture_game(target, label, second):
+    def add_fixture_game(target, label, second, *, extended=False):
         pgn = target.connection.execute("SELECT pgn FROM games WHERE id=1").fetchone()[0]
         parsed = chess.pgn.read_game(io.StringIO(pgn))
         assert parsed is not None
         parsed.headers["Event"] = label
         parsed.headers["UTCTime"] = f"12:00:{second:02}"
+        if extended:
+            node = parsed.end()
+            node = node.add_variation(chess.Move.from_uci("f1e1"))
+            node.add_variation(chess.Move.from_uci("f8e8"))
         ingest_pgn(target, str(parsed))
 
     recent_db = make_game(tmp_path / "recent-material.sqlite", monkeypatch)
@@ -259,15 +263,173 @@ def test_automatic_worker_records_provisional_material_and_browser_explains(tmp_
             == 1
         )
         process_material(recent_db, recent_config)
-        third = process_material(recent_db, recent_config)
+        for _ in range(4):
+            third = process_material(recent_db, recent_config)
+            if third["recent"]["replayed"] and third["recent"]["source_unavailable"]:
+                break
         assert third["recent"]["source_unavailable"] >= 1
         assert third["recent"]["status"] == "unavailable"
-        assert third["status"] == "complete"
+        assert third["status"] == (
+            "partial" if third["capped"] or third["unavailable"] else "complete"
+        )
         assert third["recent"]["replayed"] == 1 and third["recent"]["observed"] == 1
     assert (
         recent_db.connection.execute("SELECT COUNT(*) FROM engine_outputs").fetchone()[0]
         == before_outputs
     )
+
+    # A new game can become analyzed while the old recent rotation is in flight.
+    from chess_coach.material_recent_cursor import load as recent_state
+    from chess_coach.material_worker_cursor import scan as archive_scan
+
+    fresh_path = tmp_path / "fresh-material.sqlite"
+    fresh_db = make_game(fresh_path, monkeypatch)
+    add_fixture_game(fresh_db, "Older analyzed", 2)
+    minimal = PipelineConfig(
+        learner=LEARNER,
+        engine_path=sys.executable,
+        nodes=100,
+        material_max_scan=1,
+        material_max_decisions=1,
+    )
+    run_analysis(fresh_db, 2, game_input(fresh_db, 2), minimal, engine_identity(sys.executable))
+    assert process_material(fresh_db, minimal)["recent"]["pending"] is None
+    rotated = process_material(fresh_db, minimal)
+    assert rotated["recent"]["processed"] == 1 and recent_state(fresh_db, LEARNER)["within"]
+    rotation_before = recent_state(fresh_db, LEARNER)
+    add_fixture_game(fresh_db, "Newly analyzed", 3, extended=True)
+    archive_before = archive_scan(fresh_db, LEARNER, 1)[1][0]["id"]
+    assert process_material(fresh_db, minimal)["recent"]["pending"] is None
+    assert archive_scan(fresh_db, LEARNER, 1)[1][0]["id"] > archive_before
+    run_analysis(fresh_db, 3, game_input(fresh_db, 3), minimal, engine_identity(sys.executable))
+    output_count = fresh_db.connection.execute("SELECT COUNT(*) FROM engine_outputs").fetchone()[0]
+    fresh_db.close()
+    fresh_db = Database(fresh_path)
+    archive_resume = archive_scan(fresh_db, LEARNER, 1)[1][0]["id"]
+    fresh = process_material(fresh_db, minimal)
+    assert fresh["recent"]["game_window"] == 10 and fresh["recent"]["processed"] == 1
+    assert fresh["examined"] <= 1 and fresh["processed"] <= 1
+    assert recent_state(fresh_db, LEARNER)["after"] == rotation_before["after"]
+    assert recent_state(fresh_db, LEARNER)["ply"] == rotation_before["ply"]
+    new_position = fresh_db.connection.execute(
+        "SELECT id FROM positions WHERE game_id=3 ORDER BY ply LIMIT 1"
+    ).fetchone()[0]
+    new_runs = fresh_db.connection.execute(
+        "SELECT COUNT(*) FROM detector_runs WHERE position_id=?", (new_position,)
+    ).fetchone()[0]
+    assert new_runs == 1
+    for _ in range(4):
+        cycle = process_material(fresh_db, minimal)
+        assert cycle["examined"] <= 1 and cycle["processed"] <= 1
+    rotation_after = recent_state(fresh_db, LEARNER)
+    assert not rotation_after["within"] or rotation_after["after"] != rotation_before["after"]
+    assert archive_scan(fresh_db, LEARNER, 1)[1][0]["id"] > archive_resume
+    assert (
+        fresh_db.connection.execute(
+            "SELECT COUNT(*) FROM detector_runs WHERE position_id=?", (new_position,)
+        ).fetchone()[0]
+        == new_runs
+    )
+    assert (
+        fresh_db.connection.execute("SELECT COUNT(*) FROM engine_outputs").fetchone()[0]
+        == output_count
+    )
+    # Exact replays stay unchanged; changed cheap lines refresh the active result.
+    from collections import Counter
+
+    from chess_coach.material_fresh import work as fresh_work
+    from chess_coach.material_fresh_turn import load as fresh_state
+    from chess_coach.material_fresh_turn import save as save_fresh_state
+    from chess_coach.material_worker import _recent_report
+
+    def tick(target):
+        report = {"examined": 0, "processed": 0, "replayed": 0, "unavailable": 0}
+        recent = _recent_report()
+        used = fresh_work(
+            target,
+            minimal,
+            engine_identity(sys.executable),
+            report,
+            Counter(),
+            recent,
+            1,
+            1,
+            fresh_state(target, LEARNER),
+        )
+        assert report["examined"] <= 1 and report["processed"] <= 1
+        return used, report, recent
+
+    state = fresh_state(fresh_db, LEARNER)
+    save_fresh_state(
+        fresh_db,
+        LEARNER,
+        {**state, "positions": [item for item in state["positions"] if item[0] != 3]},
+    )
+    used, _report, recent = tick(fresh_db)
+    assert new_position in used and recent["replayed"] == 1
+    fresh_db.connection.execute(
+        "UPDATE decision_analysis_lines SET score_value=score_value+1 WHERE position_id=? AND role=?",
+        (new_position, "best"),
+    )
+    fresh_db.connection.commit()
+    state = fresh_state(fresh_db, LEARNER)
+    save_fresh_state(
+        fresh_db,
+        LEARNER,
+        {**state, "positions": [item for item in state["positions"] if item[0] != 3]},
+    )
+    used, _report, recent = tick(fresh_db)
+    assert new_position in used and recent["processed"] == 1
+    assert (
+        fresh_db.connection.execute(
+            "SELECT COUNT(*) FROM detector_runs WHERE position_id=?", (new_position,)
+        ).fetchone()[0]
+        == new_runs + 1
+    )
+
+    # An unavailable newest decision advances and wraps, even after reopening.
+    import chess_coach.material_recent_observe as fresh_observe
+
+    real_process = fresh_observe.process_item
+
+    def unavailable(target, position, subject, report, outcomes):
+        if position == new_position:
+            report["unavailable"] += 1
+            return None
+        return real_process(target, position, subject, report, outcomes)
+
+    state = fresh_state(fresh_db, LEARNER)
+    save_fresh_state(
+        fresh_db,
+        LEARNER,
+        {**state, "positions": [item for item in state["positions"] if item[0] != 3]},
+    )
+    with monkeypatch.context() as patch:
+        patch.setattr(fresh_observe, "process_item", unavailable)
+        used, report, _recent = tick(fresh_db)
+        assert new_position in used and report["unavailable"] == 1
+        fresh_db.close()
+        fresh_db = Database(fresh_path)
+        used, _report, recent = tick(fresh_db)
+        assert new_position not in used and recent["replayed"] == 1
+    tick(fresh_db)
+    used, _report, recent = tick(fresh_db)
+    assert new_position not in used and recent["processed"] == 1
+    tick(fresh_db)
+    tick(fresh_db)
+    used, _report, recent = tick(fresh_db)
+    assert new_position in used and recent["replayed"] == 1
+    # A previously imported older game is prioritized when analysis completes.
+    add_fixture_game(fresh_db, "Already imported", 1)
+    _used, _report, recent = tick(fresh_db)
+    assert recent["source_unavailable"] >= 1
+    run_analysis(fresh_db, 4, game_input(fresh_db, 4), minimal, engine_identity(sys.executable))
+    older_position = fresh_db.connection.execute(
+        "SELECT id FROM positions WHERE game_id=4 ORDER BY ply LIMIT 1"
+    ).fetchone()[0]
+    used, _report, recent = tick(fresh_db)
+    assert older_position in used and recent["processed"] == 1
+    fresh_db.close()
 
     duplicate_db = make_game(tmp_path / "duplicate-material.sqlite", monkeypatch)
     duplicate = process_material(duplicate_db, recent_config)
@@ -283,7 +445,6 @@ def test_automatic_worker_records_provisional_material_and_browser_explains(tmp_
     )
 
     import chess_coach.material_recent_observe as recent_observe
-    from chess_coach.material_worker_cursor import scan as archive_scan
 
     def interrupt(*_args, **_kwargs):
         raise KeyboardInterrupt()
@@ -329,6 +490,7 @@ def test_automatic_worker_records_provisional_material_and_browser_explains(tmp_
         assert positions[0]["id"] == expected_next
         next_recent = process_material(single_db, one)
         assert next_recent["recent"]["processed"] == 1
+        assert next_recent["recent"]["game_window"] == 10
         assert next_recent["recent"]["observed"] == 1
         assert next_recent["examined"] <= scan_limit and next_recent["processed"] <= decision_limit
         _key, positions = archive_scan(single_db, LEARNER, 1)
