@@ -842,6 +842,26 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         "1. e4 e6 2. d4 d5 3. e5 c5 4. Nf3 Nc6 5. Ng1 Nb8 6. Nf3 Nc6 7. Nc3 Bd7",
     )
     black_french = game("Public G", "Public H", "1. e3 e5 2. d4 d5 3. c4 e4")
+    late_french = game(
+        "Later",
+        "Opponent",
+        "1. e4 e6 2. Nf3 Nf6 3. Ng1 Ng8 4. Nf3 Nf6 5. Ng1 Ng8 6. Nf3 Nf6 7. d4 d5 8. e5 c5",
+    )
+    frontier_game = chess.pgn.Game()
+    frontier_game.headers.update(White="Frontier", Black="Opponent", Result="1-0")
+    frontier_board, frontier_node = chess.Board(), frontier_game
+    frontier_node = frontier_node.add_variation(frontier_board.parse_uci("g1f3"))
+    frontier_board.push_uci("g1f3")
+    for index in range(59):
+        choices = []
+        for move in sorted(frontier_board.legal_moves, key=lambda value: value.uci()):
+            after = frontier_board.copy()
+            after.push(move)
+            if after.outcome(claim_draw=False) is None:
+                choices.append(move)
+        move = choices[(17 * index + 7) % len(choices)]
+        frontier_node = frontier_node.add_variation(move)
+        frontier_board.push(move)
     repeated = game("Repeater", "Public I", "1. Nf3 Nf6 2. Ng1 Ng8 3. Nf3 Nf6 4. g3")
     french_copy = french.replace('[Event "Fixture"]', '[Event "Other event"]')
     center_game = game("Central", "Capture", "1. d4 d5 2. e4 dxe4")
@@ -869,6 +889,10 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         + "\n"
         + black_french
         + "\n"
+        + late_french
+        + "\n"
+        + str(frontier_game)
+        + "\n\n"
         + repeated
         + "\n"
         + center_game
@@ -900,7 +924,7 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         patch.setattr(reference_source, "_decode", lambda file: (profile_sample.encode(), False))
         patch.setattr(profile_index, "moves_for", one_inconsistent)
         ordered_coverage = build_profile(tmp_path, "learner")
-        assert (ordered_coverage["accepted"], ordered_coverage["duplicates"]) == (19, 3), (
+        assert (ordered_coverage["accepted"], ordered_coverage["duplicates"]) == (21, 3), (
             ordered_coverage["accepted"],
             ordered_coverage["duplicates"],
             ordered_coverage["examined"],
@@ -2294,13 +2318,40 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     experiment_db.close()
 
     start_key = position_key(chess.Board())
-    white_profile = read_profile(tmp_path, "learner", start_key, "e2e4")
-    assert white_profile["games"] == 1
+    legacy_profile = read_profile(tmp_path, "learner", start_key, "e2e4")
+    assert "extended" not in legacy_profile and "min_span" not in legacy_profile
+    assert all("later_only" not in shape for shape in legacy_profile["families"])
+    assert all("extended_positions" not in example for example in legacy_profile["examples"])
+    white_profile = read_profile(tmp_path, "learner", start_key, "e2e4", extended=True)
+    assert {
+        key: value
+        for key, value in white_profile.items()
+        if key not in {"extended", "min_span", "max_span", "examples"}
+    } == {key: value for key, value in legacy_profile.items() if key != "examples"}
+    assert [
+        {
+            key: value
+            for key, value in item.items()
+            if key not in {"extended_positions", "later_only"}
+        }
+        for item in white_profile["examples"]
+    ] == legacy_profile["examples"]
+    assert white_profile["games"] == 2
     assert any(
         shape["family"] == "french_advance" and shape["color"] == "white" and shape["count"] == 1
         for shape in white_profile["families"]
     )
-    assert white_profile["short_windows"] == 0 and white_profile["window_cutoffs"] == 1
+    assert white_profile["short_windows"] == 0 and white_profile["window_cutoffs"] == 2
+    late_shape = next(
+        shape
+        for shape in white_profile["extended"]["families"]
+        if shape["family"] == "french_advance" and shape["color"] == "white"
+    )
+    assert (late_shape["count"], late_shape["later_only"]) == (2, 1)
+    later_example = next(
+        item for item in white_profile["examples"] if item["context"]["White"] == "Later"
+    )
+    assert ("french_advance", "white") in later_example["later_only"]
     black_profile = read_profile(tmp_path, "learner", start_key, "e2e3")
     assert black_profile["games"] == 1 and black_profile["short_windows"] == 1
     assert any(
@@ -2318,7 +2369,30 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
             "SELECT ply FROM moves WHERE game_id=? AND parent=? AND uci=? ORDER BY ply",
             (repeater_id, start_key, "g1f3"),
         ).fetchall()
+        frontier_id = next(
+            row[0]
+            for row in ordered.execute("SELECT id,context FROM games")
+            if json.loads(row[1])["White"] == "Frontier"
+        )
+        assert (
+            ordered.execute(
+                "SELECT COUNT(*) FROM moves WHERE game_id=?", (frontier_id,)
+            ).fetchone()[0]
+            == 52
+        )
+        frontier_parent, frontier_move = ordered.execute(
+            "SELECT parent,uci FROM moves WHERE game_id=? AND ply=40", (frontier_id,)
+        ).fetchone()
     assert occurrences == [(1,), (5,)]
+    boundary_profile = read_profile(
+        tmp_path, "learner", frontier_parent, frontier_move, extended=True
+    )
+    boundary_example = next(
+        item for item in boundary_profile["examples"] if item["context"]["White"] == "Frontier"
+    )
+    assert boundary_example["first_ply"] == 40
+    assert boundary_example["extended_positions"] == 13
+    assert boundary_profile["extended"]["frontier_windows"] >= 1
     repeated_profile = read_profile(tmp_path, "learner", start_key, "g1f3")
     assert repeated_profile["games"] == 10 and repeated_profile["more_matches"]
     assert (
@@ -2407,6 +2481,8 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     )
     assert profile_lookup.SOURCE_SHA256.encode() in profile_page.data
     assert b"Among 2 complete, legally consistent four-ply windows" in profile_page.data
+    assert b"Extended window: up to 36 positions" in profile_page.data
+    assert b"First seen later" in profile_page.data
     assert b"1 contained a central pawn-on-pawn capture" in profile_page.data
     assert b"1 had inconsistent ordered moves" in profile_page.data
     assert b"had a shorter valid window" in profile_page.data

@@ -29,11 +29,13 @@ def show(game_id: int, position_id: int):
         abort(404)
     root, subject = current_app.config["PROJECT_ROOT"], current_app.config["SUBJECT"]
     parent = decision["catalog"]["parent"]
-    played = profile(root, subject, parent, decision["played_uci"])
+    played = profile(root, subject, parent, decision["played_uci"], extended=True)
     items = decision["catalog"]["items"]
     selected = request.args.get("alternative")
     alternative = _alternative(items, selected)
-    other = profile(root, subject, parent, alternative["uci"]) if alternative else None
+    other = (
+        profile(root, subject, parent, alternative["uci"], extended=True) if alternative else None
+    )
     measured = comparison(db, root, subject, decision, alternative) if alternative else None
     if db.connection.execute("PRAGMA data_version").fetchone()[0] != version:
         abort(409)
