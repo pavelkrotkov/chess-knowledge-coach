@@ -1258,7 +1258,7 @@ def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch):
     duplicate_db = Database(":memory:")
     duplicate_db.initialize()
 
-    def padded_game(event, prefix):
+    def padded_game(event, prefix, length=120):
         game = chess.pgn.Game()
         game.headers.update(
             {
@@ -1271,8 +1271,8 @@ def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch):
             }
         )
         board, node = game.board(), game
-        moves = prefix + ["g8f6", "g1f3", "f6g8", "f3g1"] * 30
-        for text in moves[:120]:
+        moves = prefix + ["g8f6", "g1f3", "f6g8", "f3g1"] * 34
+        for text in moves[:length]:
             move = board.parse_uci(text)
             node = node.add_variation(move)
             board.push(move)
@@ -1380,6 +1380,78 @@ def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch):
         )
         assert duplicates == 0 and reconstructed == 2 and exhausted and budget["used"] == 500
     duplicate_db.close()
+
+    # Reuse only the verified in-process boards, so both jobs fit the old 2,000-unit cap.
+    from contextlib import nullcontext
+
+    from chess_coach import purpose_worker
+    from chess_coach.purpose_request import create as request_purpose
+
+    budget_db = Database(":memory:")
+    budget_db.initialize()
+    prefix = ["e2e4", "d7d5", "e4d5", "d8d5", "b1c3", "d5e5", "f1e2"]
+    for size in (135, 18):
+        ingest_pgn(budget_db, padded_game(f"budget-{size}", prefix, size))
+    decisions = [
+        budget_db.connection.execute(
+            "SELECT id FROM positions WHERE game_id=? AND ply=3", (game_id,)
+        ).fetchone()[0]
+        for game_id in (1, 2)
+    ]
+
+    def configuration(*_args, **kwargs):
+        return None, {
+            "engine_path": "fixture",
+            "purpose_policy": kwargs.get("policy", "candidate-comparison-v1"),
+        }
+
+    def execute(_db, snapshot, _config, _deadline):
+        snapshot["board"].push(next(iter(snapshot["board"].legal_moves)))
+        return "complete", "comparable", {}
+
+    with monkeypatch.context() as patch:
+        patch.setattr("chess_coach.purpose_request.configuration", configuration)
+        patch.setattr("chess_coach.purpose_current.configuration", configuration)
+        patch.setattr(purpose_worker, "deep_lock", lambda *_: nullcontext())
+        patch.setattr(purpose_worker, "execute", execute)
+        with history_budget() as budget:
+            budget["used"] = 888
+            target = request_purpose(budget_db, decisions[0], LEARNER)
+            assert (
+                purpose_worker.run(budget_db, target["request_id"], LEARNER)["status"] == "complete"
+            )
+            assert budget["used"] == 1428
+            control = request_purpose(budget_db, decisions[1], LEARNER, policy=EARLY_CENTER)
+            assert (
+                purpose_worker.run(budget_db, control["request_id"], LEARNER)["status"]
+                == "complete"
+            )
+            assert budget["used"] == 1500
+
+        first = budget_db.connection.execute(
+            "SELECT id FROM positions WHERE game_id=2 AND ply=1"
+        ).fetchone()[0]
+        stale = request_purpose(budget_db, first, LEARNER)
+
+        def changed(db, _snapshot, _config, _deadline):
+            db.connection.execute("UPDATE positions SET uci='d2d4' WHERE game_id=2 AND ply=1")
+            db.connection.commit()
+            return "complete", "comparable", {}
+
+        patch.setattr(purpose_worker, "execute", changed)
+        assert purpose_worker.run(budget_db, stale["request_id"], LEARNER)["status"] == "stale"
+
+        def changed_during_create(db, _snapshot, _engine_path, policy):
+            db.connection.execute("UPDATE positions SET uci='d2d4' WHERE game_id=1 AND ply=1")
+            db.connection.commit()
+            return configuration(policy=policy)[1]
+
+        patch.setattr("chess_coach.purpose_request.configured", changed_during_create)
+        import pytest
+
+        with pytest.raises(ValueError, match="verified source changed"):
+            request_purpose(budget_db, decisions[0], LEARNER)
+    budget_db.close()
     _opening_fit_route(monkeypatch)
 
 

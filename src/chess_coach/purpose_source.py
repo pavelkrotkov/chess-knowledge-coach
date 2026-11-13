@@ -6,7 +6,7 @@ from .style_history import selected_boards
 from .style_history_lines import history_safe
 
 
-def source(db, position_id, learner):
+def inputs(db, position_id, learner):
     key = learner_key(learner)
     position = db.connection.execute(
         "SELECT * FROM positions WHERE id=?", (position_id,)
@@ -19,6 +19,11 @@ def source(db, position_id, learner):
     ).fetchall()
     if len(rows) > MAX_DECISIONS:
         raise ValueError("game exceeds the decision limit")
+    return key, position, game, color, rows
+
+
+def source(db, position_id, learner):
+    key, position, game, color, rows = inputs(db, position_id, learner)
     board = selected_boards(db, game["id"], {position_id}).get(position_id)
     if board is None:
         raise ValueError("verified standard-start history is unavailable")

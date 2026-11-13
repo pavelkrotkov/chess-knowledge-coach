@@ -15,14 +15,14 @@ def record(db, row, status, detail, result):
     )
 
 
-def finish(db, request_id, learner, status, detail, result):
+def finish(db, request_id, learner, status, detail, result, *, verified=None):
     try:
         db.connection.execute("BEGIN IMMEDIATE")
         row = owned(db, request_id, learner)
         if row["status"] != "running":
             raise ValueError("purpose claim is no longer current")
         try:
-            current(db, row, learner)
+            current(db, row, learner, verified=verified)
         except ValueError:
             status, detail = "stale", "source_changed"
         record(db, row, status, detail, result)

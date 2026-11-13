@@ -3,6 +3,8 @@
 from .fact_fingerprint import canonical, digest
 from .purpose_config import EARLY_CENTER, PURPOSE, VERSION, configuration
 from .purpose_source import source
+from .purpose_source_recheck import recheck
+from .recurrence_snapshot import read_snapshot
 
 
 def fingerprint(snapshot, config):
@@ -26,12 +28,13 @@ def create(db, position_id, learner, *, engine_path="/usr/games/stockfish", poli
         raise ValueError("invalid decision identifier")
     if db.connection.in_transaction:
         raise RuntimeError("purpose request requires an idle database")
-    snapshot = source(db, position_id, learner)
+    with read_snapshot(db):
+        snapshot = source(db, position_id, learner)
     config = configured(db, snapshot, engine_path, policy)
     key = fingerprint(snapshot, config)
     try:
         db.connection.execute("BEGIN IMMEDIATE")
-        fresh = source(db, position_id, learner)
+        fresh = recheck(db, position_id, learner, snapshot)
         if fingerprint(fresh, config) != key:
             raise ValueError("source changed while creating request")
         db.connection.execute(
