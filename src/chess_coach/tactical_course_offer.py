@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from .deep_selection_source import learner_key
+from .opening_queue_files import read
 from .opening_queue_location import location
 from .opening_queue_write import staged, sync
 
@@ -24,6 +25,15 @@ def offer(root, database, subject, output, export, budget, *, enabled):
         "hash": export["export_sha256"],
         "prepared_at": datetime.now(UTC).isoformat(),
     }
-    with staged(directory / SLOT, item) as temporary, budget.publication():
-        os.replace(temporary, directory / SLOT)
+    slot = directory / SLOT
+    if slot.exists() or slot.is_symlink():
+        previous = read(slot)
+        if (
+            not isinstance(previous, dict)
+            or previous.get("version") != VERSION
+            or set(previous) != set(item)
+        ):
+            raise ValueError("existing course offer has an unexpected format")
+    with staged(slot, item) as temporary, budget.publication():
+        os.replace(temporary, slot)
     sync(directory)

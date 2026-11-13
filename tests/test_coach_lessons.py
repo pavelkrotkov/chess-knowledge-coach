@@ -995,8 +995,36 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
     assert preview["preview"]["selection"]["corpus_version"] == "test"
 
     export_path = planning / "tactical-export.json"
+    offer_slot = planning / "tactical-course-offer.json"
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            "chess_coach.ops_tactical_export.build",
+            lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("reserved export was built")),
+        )
+        for offered_flag in (False, True):
+            with pytest.raises(ValueError):
+                export_candidate(
+                    project,
+                    first_preview,
+                    preview["preview_sha256"],
+                    offer_slot,
+                    offer=offered_flag,
+                )
+    with pytest.raises(ValueError):
+        prepare(project, offer_slot)
+    assert not offer_slot.exists()
     export_candidate(project, first_preview, preview["preview_sha256"], export_path, offer=True)
     exported_bytes = export_path.read_bytes()
+    original_offer = offer_slot.read_bytes()
+    for index, existing in enumerate((exported_bytes, b"null")):
+        offer_slot.write_bytes(existing)
+        refused_output = planning / f"refused-offer-{index}.json"
+        with pytest.raises(ValueError):
+            export_candidate(
+                project, first_preview, preview["preview_sha256"], refused_output, offer=True
+            )
+        assert offer_slot.read_bytes() == existing and refused_output.exists()
+    offer_slot.write_bytes(original_offer)
     exported = json.loads(exported_bytes)
     assert exported["kind"] == "local-tactical-course-export-v4"
     assert exported["export_sha256"] == preview_hash(exported["export"])
