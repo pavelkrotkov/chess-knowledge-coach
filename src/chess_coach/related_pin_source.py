@@ -2,6 +2,7 @@
 
 import chess
 
+from .evidence_review_state import _summary, evidence_row
 from .objective_pin_contract import VERSION
 from .objective_pin_source import resolve
 from .puzzle_session_validate import legal_move
@@ -11,6 +12,10 @@ from .related_pin_shape import features
 
 
 def source_for_evidence(db, subject, evidence_id):
+    if _summary(evidence_row(db, evidence_id))["operation"] == "prevent":
+        from .related_pin_prevent_source import source_for_evidence as prevention
+
+        return prevention(db, subject, evidence_id)
     reservation = {
         "root_proofs": SOURCE_ROOT_PROOF_RESERVATION,
         "pin_geometry_limit": PIN_GEOMETRY_LIMIT,

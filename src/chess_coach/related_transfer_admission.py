@@ -2,6 +2,7 @@
 
 from .fact_fingerprint import canonical, digest
 from .related_backrank_binding import add_fields as add_backrank_fields
+from .related_pin_contract import operation as pin_operation
 from .related_transfer_filter import filter_version
 from .unified_source_current import snapshot_hash
 
@@ -60,7 +61,9 @@ def _binding(source, version, motif, item):
         )
 
     if motif == "pin":
-        binding["candidate_certificates"] = item["candidate_certificates"]
+        binding.update(
+            candidate_certificates=item["candidate_certificates"], operation=pin_operation(version)
+        )
 
     if motif == "mate":
         binding["mate_timing"] = source["objective"]
@@ -76,7 +79,7 @@ def _binding(source, version, motif, item):
         "backrank_attack",
     }:
         binding.update(
-            line_filter_version=filter_version(motif),
+            line_filter_version=filter_version(motif, version),
             selected_line_indices=item["matching_line_indices"],
             source_lines_hash=item["source_lines_hash"],
         )

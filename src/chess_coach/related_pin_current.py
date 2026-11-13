@@ -24,16 +24,18 @@ def _recheck(db, row, snapshot_hash, binding):
     source = source_for_evidence(db, row["subject"], binding["evidence_id"])
     if snapshot_hash(source) != binding["source_snapshot_hash"]:
         raise ValueError
+    version = contract.transfer_version(source)
+    operation = "prevent" if version == contract.PREVENT_VERSION else "execute"
     if (binding["rank_version"], binding["motif"], binding["operation"]) != (
-        contract.VERSION,
+        version,
         "pin",
-        "execute",
+        operation,
     ):
         raise ValueError
     candidate = resolve_source(
         db, row["source_type"], row["source_version"], row["source_key"], subject=row["subject"]
     )
-    select_lines(candidate, binding, expected_version=contract.FILTER_VERSION)
+    select_lines(candidate, binding, expected_version=contract.filter_version(version))
     candidate["objective"] = "legal_line"
     candidate["provenance"]["related_pin"] = binding
     if snapshot_hash(candidate) != row["snapshot_hash"]:
