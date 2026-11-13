@@ -23,7 +23,7 @@ def search(engine, board, position, deadline):
     if timeout is None:
         return result, "worker_deadline"
     engine.timeout = timeout
-    result["final"], issue = final(engine, board, position, nominee)
+    result["final"], issue = final(engine, board, position, nominee, deadline)
     if time.monotonic() >= deadline:
         return result, "worker_deadline"
     return result, issue
