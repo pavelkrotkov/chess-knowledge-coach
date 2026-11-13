@@ -664,6 +664,53 @@ def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch):
     )
     first = {**chosen, "game_id": 1, "position_id": positions[0][0], "_game_key": "a"}
     second = {**chosen, "game_id": 2, "position_id": positions[1][0], "_game_key": "b"}
+    # Ambiguous evidence must not consume the single protection nomination;
+    # a success/failure row is only a nomination, not proof of a current source.
+    from chess_coach.learner_identity import normalize_identity
+    from chess_coach.material_policy import MAPPER
+    from chess_coach.style_protection_schedule_budget import resolution_budget
+    from chess_coach.style_protection_schedule_discover import discover
+    from chess_coach.style_schedule_budget import history_budget
+
+    subject = normalize_identity(LEARNER)
+    for position_id, outcome in (
+        (first["position_id"], "ambiguous"),
+        (second["position_id"], "failure"),
+    ):
+        run = fresh_db.connection.execute(
+            """INSERT INTO mapping_runs
+            (producer,position_id,subject,operation,scope_key,mapper_version,input_json,
+             input_hash,output_hash,created_at,status)
+            VALUES(?,?,?,'prevent','fixture','1','{}',?,'fixture','2026-01-01','active')""",
+            (MAPPER, position_id, subject, str(position_id)),
+        )
+        fresh_db.connection.execute(
+            """INSERT INTO evidence_mappings
+            (position_id,skill,operation,outcome,confidence,subject,mapping_run_id)
+            VALUES(?,'hanging_piece','prevent',?,1,?,?)""",
+            (position_id, outcome, subject, run.lastrowid),
+        )
+    fresh_db.connection.commit()
+    with monkeypatch.context() as patch, resolution_budget() as proofs, history_budget() as work:
+        patch.setattr(
+            "chess_coach.style_protection_schedule_rotation.rank",
+            lambda _key, _kind, game, position: (game, position),
+        )
+        assert discover(fresh_db, LEARNER, key, [first], [], work) == (
+            None,
+            None,
+            "no_evidence_candidate",
+            0,
+        )
+        selected_protection, binding, reason, _ = discover(
+            fresh_db, LEARNER, key, [first, second], [], work
+        )
+        assert (selected_protection, binding, reason) == (
+            second,
+            None,
+            "source_or_proof_unavailable",
+        )
+        assert proofs["used"] == 1
     identities = {1: "a", 2: "b"}
     selected, targeted, nominated = style_schedule_control.select(
         fresh_db, key, 5, [first, second], None, identities=identities
