@@ -2,6 +2,7 @@
 
 import chess
 
+from .capture_compare_chronology import answer_end
 from .mate_assessment_compare import SAMPLE, comparable
 
 
@@ -49,5 +50,6 @@ def group(scope, items, limited):
         **result,
         "earlier": first,
         "later": last,
+        "answer_end": answer_end(items[:SAMPLE] + items[-SAMPLE:]),
         "direction": "more" if b > a else "fewer" if b < a else "equal",
     }

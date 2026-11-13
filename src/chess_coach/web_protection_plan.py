@@ -10,7 +10,7 @@ from .objective_protection_contract import VERSION as PROTECTION_VERSION
 from .plan_capture_action import admissible
 from .protection_plan import report
 from .protection_plan_history import optional as protection_history
-from .protection_progress import report as progress_report
+from .protection_progress_game import report as progress_report
 from .tactical_course_budget import PreviewUnavailable
 from .web_db import database
 
@@ -36,10 +36,13 @@ def show():
 
 @protection_plan.get("/plan/protection/progress")
 def progress():
-    result = progress_report(
-        database(), current_app.config["SUBJECT"], current_app.config["CORPUS"]
+    result, games = progress_report(
+        database(),
+        current_app.config["SUBJECT"],
+        current_app.config["CORPUS"],
+        current_app.config["PROJECT_ROOT"],
     )
-    return render_template("protection_progress.html", report=result)
+    return render_template("protection_progress.html", report=result, games=games)
 
 
 @protection_plan.get("/plan/next-focus")

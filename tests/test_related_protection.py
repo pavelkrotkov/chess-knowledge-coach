@@ -561,6 +561,13 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
             entry for entry in progress_history["items"] if entry["attempt"] == assessment_attempt
         )
         assert progress_entry["status"] == ("correct" if color == "white" else "unavailable")
+        if color == "white":
+            answered = db.connection.execute(
+                "SELECT e.created_at FROM objective_requests q JOIN unified_session_events e "
+                "ON e.attempt_id=q.attempt_id AND e.event_id=q.event_id WHERE q.attempt_id=?",
+                (assessment_attempt,),
+            ).fetchone()
+            assert progress_entry["answered_at"] == answered["created_at"]
         assert client.get("/plan/protection/progress").status_code == 403
         progress_page = client.get(
             "/plan/protection/progress", base_url="https://coach.invalid", headers=headers
@@ -1121,6 +1128,62 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
         for i in range(20)
     ]
     assert progress_group(progress_scope, progress_checks, False)["direction"] == "fewer"
+    from chess_coach import protection_progress_game
+
+    qualified = progress_group(progress_scope, progress_checks, False)
+    assert qualified["answer_end"] == "2026-01-01T00:19:30+00:00"
+    sample = {
+        "games": 20,
+        "eligible": 40,
+        "oldest": "2026-01-02T00:00:00+00:00",
+        "newest": "2026-01-03T00:00:00+00:00",
+        "opportunities": 5,
+        "played": 3,
+        "other": 2,
+        "opportunity_unresolved": 0,
+        "unknown": 1,
+        "unchecked": 0,
+        "withheld_games": 0,
+        "withheld_turns": 0,
+    }
+    games = {
+        "comparable_reason": None,
+        "bounds": {"status": "available"},
+        "earlier": sample,
+        "newer": sample,
+    }
+    progress_data = {"groups": [qualified], "items": [], "limited": False}
+    with monkeypatch.context() as patch:
+        patch.setattr(protection_progress_game, "practice_report", lambda *_: progress_data)
+        patch.setattr(protection_progress_game, "game_report", lambda *_: games)
+        page = client.get(
+            "/plan/protection/progress", base_url="https://coach.invalid", headers=headers
+        )
+        assert b"Both comparable game windows start after" in page.data
+        assert (
+            b"5 proved opportunities" in page.data
+            and b"unresolved opportunity status: 1" in page.data
+        )
+        games["earlier"] = {**sample, "oldest": qualified["answer_end"]}
+        page = client.get(
+            "/plan/protection/progress", base_url="https://coach.invalid", headers=headers
+        )
+        assert b"The more recent game window starts after" in page.data
+        games["newer"] = {**sample, "oldest": qualified["answer_end"]}
+        page = client.get(
+            "/plan/protection/progress", base_url="https://coach.invalid", headers=headers
+        )
+        assert b"game windows overlap, precede or tie" in page.data
+        games["newer"] = {**sample, "oldest": None}
+        page = client.get(
+            "/plan/protection/progress", base_url="https://coach.invalid", headers=headers
+        )
+        assert b"required date could not be verified" in page.data
+        games["comparable_reason"] = "time_control_mismatch"
+        page = client.get(
+            "/plan/protection/progress", base_url="https://coach.invalid", headers=headers
+        )
+        assert b"sources and time controls are comparable" in page.data
     assert progress_group(progress_scope, progress_checks, True)["reason"]
     assert progress_group((*progress_scope[:-1], None), progress_checks, False)["reason"]
     progress_checks[9]["answered_at"] = progress_checks[10]["started_at"]

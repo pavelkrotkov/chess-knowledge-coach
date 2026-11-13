@@ -1,5 +1,14 @@
 {% extends "base.html" %}
-{% block title %}Unfamiliar protection assessments - Chess coach{% endblock %}
+{% block title %}Unfamiliar protection assessments - Chess coach<h3>Independent protection-game windows</h3>
+<p>Practice and game results are separate observations; their timing cannot establish a training effect. A missed choice is a narrow observation, not a complete assessment of the move.</p>
+{% if games %}
+{% if games.comparable_reason %}<p>Game windows are not comparable: {{ games.comparable_reason | replace("_", " ") }}.</p>{% elif games.bounds.status != "available" %}<p>A game-rate comparison is unavailable {% if games.bounds.status == "pending" %}while checks are pending{% elif games.bounds.status == "sparse" %}because resolved opportunities are sparse{% else %}under the existing coverage thresholds{% endif %}.</p>{% endif %}
+{% for label, sample in (("Earlier", games.earlier), ("More recent", games.newer)) %}
+<p>{{ label }}: {{ sample.games }} games, {{ sample.oldest or "date unavailable" }} to {{ sample.newest or "date unavailable" }}; {{ sample.opportunities }} proved opportunities, {{ sample.played }} protected, {{ sample.other }} missed, {{ sample.opportunity_unresolved }} unresolved choices. Of {{ sample.eligible }} eligible turns, unresolved opportunity status: {{ sample.unknown }}; unchecked: {{ sample.unchecked }}. {{ sample.withheld_games }} games have {{ sample.withheld_turns }} previously checked turns withheld after source changes.</p>
+{% endfor %}
+{% else %}<p>Cached game windows are pending or unavailable.</p>{% endif %}
+<p><a href="{{ url_for('short_mate_game_views.protection_samples') }}">Open protection-game windows and coverage</a></p>
+{% endblock %}
 {% block content %}
 <h2>Unfamiliar protection assessments</h2>
 <p>These are source-checked first encounters in unfamiliar protection exercises. Practice results and game observations are independent. The checks cannot establish whether a position was familiar outside recorded history.</p>
@@ -22,10 +31,26 @@
 <p>{{ label }} checks started {{ sample.start }} to {{ sample.end }}: {{ sample.correct }} correct and {{ sample.size - sample.correct }} incorrect out of {{ sample.size }}.</p>
 {% endfor %}
 <p>{% if group.direction == "equal" %}These samples have equal correct counts.{% else %}The later sample has {{ group.direction }} correct answers.{% endif %} This does not establish improvement or a cause.</p>
+{% if group.relation == "later" %}<p>Both comparable game windows start after the last verified answer in these practice samples ({{ group.answer_end }}). Game outcomes remain independent observations.</p>
+{% elif group.relation == "newer_only" %}<p>The more recent game window starts after the last verified practice answer ({{ group.answer_end }}). The earlier window starts on or before that answer, so the pair is not a fully later comparison.</p>
+{% elif group.relation == "practice_unavailable" %}<p>A temporal comparison is unavailable because the practice answer times are incomplete, tied or overlapping.</p>
+{% elif group.relation == "games_incomplete" %}<p>A temporal comparison is unavailable while game turns remain unchecked.</p>
+{% elif group.relation == "dates_unavailable" %}<p>A temporal comparison is unavailable because a required date could not be verified.</p>
+{% elif group.relation == "overlap" %}<p>A temporal comparison is unavailable because game windows overlap, precede or tie these practice answers.</p>
+{% else %}<p>A temporal comparison is unavailable until both game windows and their sources and time controls are comparable.</p>{% endif %}
 {% endif %}
 </section>
 {% else %}<p>No current checks with a comparable recorded context are available yet.</p>{% endfor %}
 {% if report["items"] %}<h3>Recorded assessments</h3>
 <ul>{% for entry in report["items"] %}<li>{{ entry.started_at }} - {% if entry.status == "correct" %}Correct{% elif entry.status == "incorrect" %}Incorrect{% else %}Unfinished, assisted, repeated, stale or unavailable{% endif %}. <a href="{{ url_for('unified_practice.show_page', attempt=entry.attempt) }}">Open assessment</a></li>{% endfor %}</ul>{% endif %}
 {% endif %}
+<h3>Independent protection-game windows</h3>
+<p>Practice and game results are separate observations; their timing cannot establish a training effect. A missed choice is a narrow observation, not a complete assessment of the move.</p>
+{% if games %}
+{% if games.comparable_reason %}<p>Game windows are not comparable: {{ games.comparable_reason | replace("_", " ") }}.</p>{% elif games.bounds.status != "available" %}<p>A game-rate comparison is unavailable {% if games.bounds.status == "pending" %}while checks are pending{% elif games.bounds.status == "sparse" %}because resolved opportunities are sparse{% else %}under the existing coverage thresholds{% endif %}.</p>{% endif %}
+{% for label, sample in (("Earlier", games.earlier), ("More recent", games.newer)) %}
+<p>{{ label }}: {{ sample.games }} games, {{ sample.oldest or "date unavailable" }} to {{ sample.newest or "date unavailable" }}; {{ sample.opportunities }} proved opportunities, {{ sample.played }} protected, {{ sample.other }} missed, {{ sample.opportunity_unresolved }} unresolved choices. Of {{ sample.eligible }} eligible turns, unresolved opportunity status: {{ sample.unknown }}; unchecked: {{ sample.unchecked }}. {{ sample.withheld_games }} games have {{ sample.withheld_turns }} previously checked turns withheld after source changes.</p>
+{% endfor %}
+{% else %}<p>Cached game windows are pending or unavailable.</p>{% endif %}
+<p><a href="{{ url_for('short_mate_game_views.protection_samples') }}">Open protection-game windows and coverage</a></p>
 {% endblock %}
