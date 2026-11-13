@@ -4,12 +4,15 @@ import json
 
 from .objective_promotion_admission import admit as admit_promotion
 from .related_session_filter import apply_filter
+from .unified_corpus_mate import apply as apply_goal
+from .unified_corpus_mate import check_existing, validate_goal
 from .unified_session_state import now, session_row, view
 from .unified_source_current import require_current, snapshot_hash
 from .unified_sources import resolve_source
 
 
-def start(db, *, attempt_id, subject, source_type, version, key):
+def start(db, *, attempt_id, subject, source_type, version, key, goal=None):
+    validate_goal(source_type, goal)
     if not all(
         isinstance(v, str) and 0 < len(v) <= 256
         for v in (attempt_id, subject, source_type, version, key)
@@ -30,9 +33,11 @@ def start(db, *, attempt_id, subject, source_type, version, key):
                 key,
             ):
                 raise ValueError("attempt ID belongs to another source")
+            # An attempt ID remains bound to its original announced goal.
+            check_existing(old, goal)
             require_current(db, old)
         else:
-            _create(db, attempt_id, subject, source_type, version, key)
+            _create(db, attempt_id, subject, source_type, version, key, goal=goal)
         row = session_row(db, attempt_id, subject)
         result = view(row)
         db.connection.commit()
@@ -52,8 +57,10 @@ def _create(
     provenance=None,
     provenance_key="related_capture",
     line_filter=None,
+    goal=None,
 ):
     snapshot = resolve_source(db, source_type, version, key, subject=subject)
+    apply_goal(db, snapshot, source_type, version, key, goal)
     apply_filter(snapshot, provenance, provenance_key, line_filter)
     if source_type == "public":
         admit_promotion(snapshot)

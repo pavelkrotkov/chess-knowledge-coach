@@ -14,7 +14,7 @@
 <h3>{{ corpus.version }}</h3>
 <p>State: {{ corpus.state }} · Available rows: {{ corpus.imported_rows }}</p>
 {% for item in corpus.practice_tasks %}<form method="post" action="{{ url_for('unified_practice.begin') }}">
-<input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="source_type" value="corpus"><input type="hidden" name="version" value="{{ corpus.version }}"><input type="hidden" name="key" value="{{ item.puzzle_id }}"><button>Practice {{ item.puzzle_id }}</button></form>{% endfor %}
+<input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="source_type" value="corpus"><input type="hidden" name="version" value="{{ corpus.version }}"><input type="hidden" name="key" value="{{ item.puzzle_id }}"><button>Practice {{ item.puzzle_id }}</button></form>{% if item.mate_in_one %}<form method="post" action="{{ url_for('unified_practice.begin') }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="source_type" value="corpus"><input type="hidden" name="version" value="{{ corpus.version }}"><input type="hidden" name="key" value="{{ item.puzzle_id }}"><input type="hidden" name="goal" value="mate_in_one"><button>Practice mate in one</button></form>{% endif %}{% endfor %}
 {% if corpus.selection %}
 <p>Declared source-order prefix: {{ corpus.selection.selected_count }} of {{ corpus.selection.fullsource_count }} source records; this selection is not representative.</p>
 <p>Parent decoded CSV SHA-256: {{ corpus.selection.parent_csv_sha256 }}</p>

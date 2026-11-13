@@ -43,6 +43,7 @@ def configure(sub):
     begin.add_argument("--source", required=True, choices=("corpus", "public", "own-game"))
     begin.add_argument("--version", required=True)
     begin.add_argument("--key", required=True)
+    begin.add_argument("--goal", choices=("mate_in_one",))
     for name in ("show-unified", "move-unified", "hint-unified"):
         parser = sub.add_parser(name)
         parser.add_argument("--attempt", required=True)
@@ -63,6 +64,7 @@ def handle_start(db, args):
                 source_type=args.source,
                 version=args.version,
                 key=args.key,
+                goal=getattr(args, "goal", None),
             ),
             indent=2,
         )

@@ -9,7 +9,7 @@ import pytest
 from chess_coach.db import Database
 from chess_coach.puzzle_sessions import show_attempt as show_legacy
 from chess_coach.puzzle_sessions import start_attempt as start_legacy
-from chess_coach.unified_session_events import hint, show, submit
+from chess_coach.unified_session_events import hint, reveal, show, submit
 from chess_coach.unified_sessions import start
 from chess_coach.web import create_app
 from chess_coach.web_board import board_rows
@@ -744,8 +744,52 @@ def token(response, name):
     return match.group(1)
 
 
-def test_private_browser_starts_and_completes_direct_prompt(tmp_path):
+def test_private_browser_starts_and_completes_direct_prompt(tmp_path, capsys):
     db = fixture_db(tmp_path / "coach.sqlite")
+    corpus = db.connection.execute(
+        "INSERT INTO puzzle_corpora(version,source,checksum,state) VALUES('ready-mate','fixture','mate-hash','staging')"
+    ).lastrowid
+    db.connection.executemany(
+        """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,rating_deviation,themes_json,objective)
+        VALUES(?,?,?,'fixture',?,1200,80,'[]','unknown')""",
+        [
+            ("ready-mate", corpus, "7k/1p6/6K1/2Q5/8/8/8/8 b - - 17 14", "b7b6 c5f8"),
+            ("no-reset", corpus, FEN, "g8h8 c5f8"),
+        ],
+    )
+    db.connection.execute("UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus,))
+    db.connection.commit()
+    from chess_coach.cli_parser import build_parser
+    from chess_coach.cli_unified_practice import handle_start
+
+    args = build_parser().parse_args(
+        [
+            "start-unified",
+            "--attempt",
+            "cli-mate",
+            "--subject",
+            "learner",
+            "--source",
+            "corpus",
+            "--version",
+            "ready-mate",
+            "--key",
+            "ready-mate",
+            "--goal",
+            "mate_in_one",
+        ]
+    )
+    handle_start(db, args)
+    assert json.loads(capsys.readouterr().out)["objective"] == "corpus_mate_in_one"
+    assert hint(db, "cli-mate", "learner", event_id="hint")["feedback"] == "hint"
+    assert reveal(db, "cli-mate", "learner", event_id="reveal")["feedback"] == "revealed"
+    assisted = submit(db, "cli-mate", "learner", event_id="mate", move="c5c8")
+    assert assisted["status"] == "objective_verified" and assisted["hints_used"] == 2
+    assert submit(db, "cli-mate", "learner", event_id="mate", move="c5c8") == assisted
+    source = dict(subject="learner", source_type="corpus", version="ready-mate", key="ready-mate")
+    assert start(db, attempt_id="ordinary-mate", **source)["objective"] == "legal_line"
+    with pytest.raises(ValueError, match="another goal"):
+        start(db, attempt_id="cli-mate", **source)
     db.close()
     app = create_app(
         db_path=tmp_path / "coach.sqlite",
@@ -759,7 +803,43 @@ def test_private_browser_starts_and_completes_direct_prompt(tmp_path):
     headers = {"Tailscale-User-Login": "fixture"}
     library = client.get("/library", base_url="https://coach.invalid", headers=headers)
     assert library.status_code == 200 and b"Practice mate" in library.data
+    assert library.data.count(b"Practice mate in one") == 1
     csrf = token(library, "csrf")
+    goal_data = dict(
+        csrf=csrf, source_type="corpus", version="ready-mate", key="ready-mate", goal="mate_in_one"
+    )
+    post_headers = headers | {"Origin": "https://coach.invalid"}
+
+    def post(url, data):
+        return client.post(url, base_url="https://coach.invalid", headers=post_headers, data=data)
+
+    def follow(response):
+        assert response.status_code == 303
+        return client.get(
+            response.headers["Location"], base_url="https://coach.invalid", headers=headers
+        )
+
+    goal_page = follow(post("/unified/start", goal_data))
+    assert b"Find checkmate in one move" in goal_page.data and b"c5f8" not in goal_page.data
+    move_data = dict(
+        csrf=csrf, attempt=token(goal_page, "attempt"), event=token(goal_page, "event"), move="c5c5"
+    )
+    goal_page = follow(post("/unified/move", move_data))
+    assert b"not legal" in goal_page.data and b"In progress" in goal_page.data
+    move_data.update(event=token(goal_page, "event"), move="c5c8")
+    assert b"first legal move gave checkmate" in follow(post("/unified/move", move_data)).data
+    nonmate_page = follow(post("/unified/start", goal_data))
+    move_data.update(
+        attempt=token(nonmate_page, "attempt"), event=token(nonmate_page, "event"), move="c5c4"
+    )
+    assert (
+        b"Incorrect: this legal move did not give checkmate"
+        in follow(post("/unified/move", move_data)).data
+    )
+    for version, key in (("ready-mate", "no-reset"), ("legacy", "old")):
+        assert (
+            post("/unified/start", {**goal_data, "version": version, "key": key}).status_code == 400
+        )
     posted = client.post(
         "/unified/start",
         base_url="https://coach.invalid",
@@ -849,6 +929,22 @@ def test_private_browser_starts_and_completes_direct_prompt(tmp_path):
     assert b"Status: In progress" in page.data
     library = client.get("/library", base_url="https://coach.invalid", headers=headers)
     assert b"Ungraded" in library.data
+    # A changed ready source invalidates both resume and immutable event replay.
+    db = Database(tmp_path / "coach.sqlite")
+    db.connection.execute("DROP TRIGGER immutable_ready_corpus_update")
+    db.connection.execute("UPDATE puzzle_corpora SET checksum='changed' WHERE version='ready-mate'")
+    db.connection.commit()
+    with pytest.raises(ValueError, match="stale"):
+        show(db, "cli-mate", "learner")
+    with pytest.raises(ValueError, match="stale"):
+        submit(db, "cli-mate", "learner", event_id="mate", move="c5c8")
+    assert (
+        db.connection.execute(
+            "SELECT COUNT(*) FROM objective_requests WHERE attempt_id='cli-mate'"
+        ).fetchone()[0]
+        == 0
+    )
+    db.close()
 
 
 def test_black_orientation_and_subject_bound_idempotency(tmp_path):
