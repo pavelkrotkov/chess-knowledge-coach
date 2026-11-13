@@ -729,6 +729,22 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
                 assert b"independent candidate games" in daily.data
                 assert f'name="key" value="{source["key"]}"'.encode() in daily.data
 
+                def plan_data(path="/plan", client=client, headers=headers):
+                    return client.get(path, base_url="https://coach.invalid", headers=headers).data
+
+                assert (
+                    f"/evidence/{source['evidence_id']}/related-protections".encode() in daily.data
+                )
+                assert f'href="/evidence/{evidence}"'.encode() in daily.data
+                assert b"separate from this selected rehearsal" in daily.data
+                assert b"Matched protection assessment progress" in daily.data
+                assert b"Protection choices in your games" in daily.data
+                assert b"Find a harder unfamiliar protection assessment" not in daily.data
+                plan["scan"]["due_incomplete"] = True
+                assert b"Next focus: protect a piece" not in plan_data()
+                plan["scan"]["due_incomplete"] = False
+                assert b"Next focus: protect a piece" not in plan_data("/plan?cursor=next")
+
                 capture = {
                     "source": {
                         "games": 1,
@@ -781,6 +797,46 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
                 assert b"Next focus: find captures" in full.data
                 assert b"Optional practice: finding forks" in full.data and fork_calls == [True]
                 patch.setattr(plan_web, "fork_recommendation", lambda *_: None)
+
+                # Only an exact-source verified result may advance this card.
+                same_result = {
+                    **history,
+                    "evidence_id": source["evidence_id"],
+                    "attempt": assessment_attempt,
+                    "harder": True,
+                }
+                patch.setattr(plan_web, "admissible", lambda *_: None)
+                patch.setattr(
+                    plan_web, "protection_history", lambda *_, same_result=same_result: same_result
+                )
+                exact_daily = plan_data()
+                exact_path = f"/evidence/{source['evidence_id']}/related-protections?followup={assessment_attempt}"
+                assert exact_path.encode() in exact_daily
+                assert (exact_path + "&amp;harder=1").encode() in exact_daily
+                same_result.update(status="incorrect", target="d4")
+                missed_daily = plan_data()
+                assert (
+                    b"verified miss" in missed_daily
+                    and b"threatened piece was on d4" in missed_daily
+                )
+                assert exact_path.encode() not in missed_daily
+                same_result.update(evidence_id=evidence, status="incorrect")
+                other_miss = plan_data()
+                assert b"separate from this selected rehearsal" in other_miss
+                assert b"In that assessment the threatened piece was on d4" in other_miss
+                assert (
+                    f"/evidence/{source['evidence_id']}/related-protections".encode() in other_miss
+                )
+                assert b"Find a harder unfamiliar protection assessment" not in other_miss
+                same_result["status"] = "unknown"
+                unknown_daily = plan_data()
+                assert b"No current unassisted assessment result" in unknown_daily
+                assert b"Find a harder unfamiliar protection assessment" not in unknown_daily
+                assert (
+                    f"/evidence/{source['evidence_id']}/related-protections".encode()
+                    in unknown_daily
+                )
+                patch.setattr(plan_web, "admissible", lambda *_, capture=capture: capture)
 
                 same_origin = {**history, "evidence_id": evidence + 1}
                 patch.setattr(
@@ -884,6 +940,18 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
                 assert (
                     b"verified miss" in only_fork.data and b"Rehearse this fork" in only_fork.data
                 )
+                missed_fork = plan_data()
+                assert b"verified miss" in missed_fork and b"name both targets" in missed_fork
+                assert f"/evidence/{evidence}/related-forks/find-verified".encode() in missed_fork
+                assert b"Matched fork assessment progress" in missed_fork
+                assert b"Knight forks in your games" in missed_fork
+                fork["assessment"] = {"status": "correct", "attempt": "fork-result"}
+                correct_fork = plan_data()
+                assert b"/plan/forks/next?attempt=fork-result" in correct_fork
+                fork["assessment"] = {"status": "unknown"}
+                unknown_fork = plan_data()
+                assert b"No current unassisted assessment result" in unknown_fork
+                assert b"/plan/forks/next?attempt=" not in unknown_fork
                 patch.setattr(plan_web, "fork_recommendation", lambda *_: None)
                 fallback = client.get("/plan", base_url="https://coach.invalid", headers=headers)
                 assert b"Due review" in fallback.data and b"New puzzle" in fallback.data
