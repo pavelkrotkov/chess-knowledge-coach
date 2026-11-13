@@ -10,7 +10,7 @@ def current_result(
     db, prepared, *, producer=PRODUCER, version=VERSION, fact_type="fork_opportunity", mapper=MAPPER
 ):
     row = db.connection.execute(
-        "SELECT id,input_json FROM detector_runs WHERE position_id=? AND producer=? AND detector_version=? AND status=?",
+        "SELECT id,input_json FROM detector_runs_read WHERE position_id=? AND producer=? AND detector_version=? AND status=?",
         (prepared["position_id"], producer, version, "active"),
     ).fetchone()
     if row is None or not _same_inputs(row, prepared):

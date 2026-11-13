@@ -108,6 +108,27 @@ def test_wal_online_backup_and_restore_preserve_all_history(tmp_path, monkeypatc
     expected_run = tuple(
         db.connection.execute("SELECT * FROM analysis_runs_read WHERE id=?", (run,)).fetchone()
     )
+    db.connection.execute("UPDATE detector_input_settings SET compact=1 WHERE id=1")
+    db.connection.commit()
+    compact = record_fact_run(
+        db,
+        position_id=1,
+        producer="compact-fixture",
+        detector_version="v1",
+        input_data={"source": "fixture"},
+        facts=[{"fact_type": "pin", "payload": {}}],
+    )
+    expected_detector = tuple(
+        db.connection.execute(
+            "SELECT * FROM detector_runs_read WHERE id=?", (compact["run_id"],)
+        ).fetchone()
+    )
+    assert (
+        db.connection.execute(
+            "SELECT input_json FROM detector_runs WHERE id=?", (compact["run_id"],)
+        ).fetchone()[0]
+        == ""
+    )
     assert Path(str(source) + "-wal").stat().st_size > 0
     # File-only checks do not create the missing SQLite shared index.
     from shutil import copyfile
@@ -174,6 +195,8 @@ def test_wal_online_backup_and_restore_preserve_all_history(tmp_path, monkeypatc
         "analysis_run_provenance",
         "analysis_provenance_settings",
         "detector_runs",
+        "detector_inputs",
+        "detector_input_settings",
         "detector_facts",
         "mapping_runs",
         "evidence_mappings",
@@ -233,6 +256,12 @@ def test_wal_online_backup_and_restore_preserve_all_history(tmp_path, monkeypatc
             assert (
                 copy.execute("SELECT * FROM analysis_runs_read WHERE id=?", (run,)).fetchone()
                 == expected_run
+            )
+            assert (
+                copy.execute(
+                    "SELECT * FROM detector_runs_read WHERE id=?", (compact["run_id"],)
+                ).fetchone()
+                == expected_detector
             )
             assert {
                 name: copy.execute(f"SELECT * FROM {name}").fetchall() for name in tables

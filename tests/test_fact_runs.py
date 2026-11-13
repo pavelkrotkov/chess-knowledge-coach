@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from datetime import UTC, datetime
 
 import pytest
@@ -74,6 +75,64 @@ def test_exact_replay_has_stable_ids_and_utc_provenance():
     assert [row["id"] for row in facts] == first["fact_ids"]
     assert all(row["run_id"] == first["run_id"] and row["fact_key"] for row in facts)
     assert all(row["produced_at"] == run["produced_at"] for row in facts)
+
+    from chess_coach.detector_input_schema import add_detector_inputs
+    from chess_coach.fact_fingerprint import canonical, digest
+    from chess_coach.pipeline_generation_state import superseded
+    from chess_coach.tactical_opportunities import PRODUCER
+
+    add_detector_inputs(db.connection)
+    db.connection.commit()
+    inline = produce(db, producer="legacy-after-install")
+    assert (
+        db.connection.execute(
+            "SELECT input_json FROM detector_runs WHERE id=?", (inline["run_id"],)
+        ).fetchone()[0]
+        == run["input_json"]
+    )
+    assert db.connection.execute("SELECT COUNT(*) FROM detector_inputs").fetchone()[0] == 0
+    db.connection.execute("UPDATE detector_input_settings SET compact=1 WHERE id=1")
+    db.connection.commit()
+    shared = produce(db, producer="shared-one")
+    second = produce(db, producer="shared-two")
+    assert produce(db, producer="shared-one") == {**shared, "replayed": True}
+    assert db.connection.execute("SELECT COUNT(*) FROM detector_inputs").fetchone()[0] == 1
+    assert (
+        db.connection.execute(
+            "SELECT input_json FROM detector_runs WHERE id=?", (shared["run_id"],)
+        ).fetchone()[0]
+        == ""
+    )
+    for run_id in (first["run_id"], inline["run_id"], shared["run_id"], second["run_id"]):
+        saved = db.connection.execute(
+            "SELECT input_json,input_hash FROM detector_runs_read WHERE id=?", (run_id,)
+        ).fetchone()
+        assert saved["input_json"] == run["input_json"]
+        assert digest(saved["input_json"]) == saved["input_hash"]
+    inputs = {"pipeline_generation": 7}
+    produce(db, producer=PRODUCER, inputs=inputs, facts=[])
+    produce(db, producer=PRODUCER, version="v2", inputs=inputs, facts=[])
+    assert superseded(db.connection, 1, "tactical", 7)
+    collision = canonical({"position_fen": "fen-one", "detector_input": {"collision": True}})
+    db.connection.execute(
+        "INSERT INTO detector_inputs(input_hash,input_json) VALUES(?,?)",
+        (digest(collision), "different"),
+    )
+    db.connection.commit()
+    with pytest.raises(ValueError, match="identity conflict"):
+        produce(db, producer="conflict", inputs={"collision": True})
+    assert not db.connection.execute(
+        "SELECT 1 FROM detector_runs WHERE producer='conflict'"
+    ).fetchone()
+    # A damaged dictionary must not turn a superseded run into a negative result.
+    generation_hash = digest(canonical({"position_fen": "fen-one", "detector_input": inputs}))
+    db.connection.execute("DROP TRIGGER detector_inputs_no_delete")
+    db.connection.execute("DELETE FROM detector_inputs WHERE input_hash=?", (generation_hash,))
+    db.connection.commit()
+    with pytest.raises(ValueError, match="identity conflict"):
+        produce(db, producer=PRODUCER, inputs=inputs, facts=[])
+    with pytest.raises(sqlite3.OperationalError, match="malformed JSON"):
+        superseded(db.connection, 1, "tactical", 7)
 
 
 def test_new_versions_supersede_only_scope_and_preserve_older_fact_ids():

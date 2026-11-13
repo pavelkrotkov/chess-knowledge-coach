@@ -9,7 +9,7 @@ from .pawn_coach_contract import FACT_TYPE, PRODUCER, VERSION
 def fact_run(db, prepared):
     position_id, inputs, fact = prepared["position"]["id"], prepared["inputs"], prepared["fact"]
     active = db.connection.execute(
-        "SELECT input_json FROM detector_runs WHERE position_id=? AND producer=? AND status='active'",
+        "SELECT input_json FROM detector_runs_read WHERE position_id=? AND producer=? AND status='active'",
         (position_id, PRODUCER),
     ).fetchone()
     if active:

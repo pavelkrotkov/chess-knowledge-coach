@@ -5,7 +5,7 @@ import json
 
 def load_source(db, detector_run_id):
     record = db.connection.execute(
-        "SELECT input_json FROM detector_runs WHERE id=?", (detector_run_id,)
+        "SELECT input_json FROM detector_runs_read WHERE id=?", (detector_run_id,)
     ).fetchone()
     if record is None:
         raise ValueError("material opportunity unavailable")

@@ -17,7 +17,7 @@ def fact_run(
     fact_type="fork_opportunity",
 ):
     active = db.connection.execute(
-        "SELECT input_json FROM detector_runs WHERE position_id=? AND producer=? AND status=?",
+        "SELECT input_json FROM detector_runs_read WHERE position_id=? AND producer=? AND status=?",
         (position_id, producer, "active"),
     ).fetchone()
     if active:

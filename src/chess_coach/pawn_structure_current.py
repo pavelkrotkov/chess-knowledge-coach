@@ -28,7 +28,8 @@ def currentness(db, evidence, *, _history=None):
             db, evidence["position_id"], evidence["subject"], _history=_history
         )
         row = db.connection.execute(
-            "SELECT input_json FROM detector_runs WHERE id=?", (facts[0]["detector_run_id"],)
+            "SELECT input_json FROM detector_runs_read WHERE id=?",
+            (facts[0]["detector_run_id"],),
         ).fetchone()
         saved = json.loads(row[0])["detector_input"]
         saved.pop("reactivation", None)

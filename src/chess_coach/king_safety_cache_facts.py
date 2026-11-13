@@ -10,7 +10,7 @@ from .king_safety_publish import PRODUCER
 
 def detector(db, position_id):
     row = db.connection.execute(
-        "SELECT * FROM detector_runs WHERE position_id=? AND producer=? AND status='active'",
+        "SELECT * FROM detector_runs_read WHERE position_id=? AND producer=? AND status='active'",
         (position_id, PRODUCER),
     ).fetchone()
     if (

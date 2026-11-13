@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from .db import Database
+from .detector_input_schema import legacy
+from .detector_input_storage import values
 from .fact_fingerprint import canonical, digest
 from .fact_storage import insert_fact, insert_run, previous_run, replay_result
 from .mapping_invalidation import supersede_detector_mappings
@@ -26,8 +28,10 @@ def persist_run(
         raise ValueError(f"unknown position id: {position_id}")
     input_json = canonical({"position_fen": position["fen"], "detector_input": input_data})
     input_hash = digest(input_json)
+    old_schema = legacy(db.connection)
+    table = "detector_runs" if old_schema else "detector_runs_read"
     existing = db.connection.execute(
-        """SELECT * FROM detector_runs
+        f"""SELECT * FROM {table}
         WHERE producer = ? AND position_id = ? AND detector_version = ? AND input_hash = ?""",
         (producer, position_id, version, input_hash),
     ).fetchone()
@@ -43,12 +47,13 @@ def persist_run(
             "UPDATE detector_runs SET status = 'superseded' WHERE id = ?", (prior_id,)
         )
     produced_at = datetime.now(UTC).isoformat()
+    stored_input = values(db.connection, input_hash, input_json, legacy=old_schema)
     run_id = insert_run(
         db.connection,
         producer=producer,
         position_id=position_id,
         version=version,
-        input_json=input_json,
+        input_json=stored_input,
         input_hash=input_hash,
         output_hash=output_hash,
         produced_at=produced_at,

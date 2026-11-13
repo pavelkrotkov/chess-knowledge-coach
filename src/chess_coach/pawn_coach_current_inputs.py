@@ -8,7 +8,8 @@ from .fact_fingerprint import canonical, digest
 
 def recorded_inputs(db, fact):
     stored = db.connection.execute(
-        "SELECT input_json FROM detector_runs WHERE id=?", (fact["detector_run_id"],)
+        "SELECT input_json FROM detector_runs_read WHERE id=?",
+        (fact["detector_run_id"],),
     ).fetchone()
     inputs = json.loads(stored["input_json"])["detector_input"]
     return {key: value for key, value in inputs.items() if key != "reactivation"}
