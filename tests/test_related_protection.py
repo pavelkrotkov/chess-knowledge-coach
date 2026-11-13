@@ -32,6 +32,20 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
         path = tmp_path / (color + ".sqlite")
         db = make_protection_game(path, monkeypatch, played="d4d5", color=color)
         evidence = process_decision(db, 1, LEARNER)["evidence_ids"][0]
+        from chess_coach.protection_game_review import binding as game_review
+
+        protection_marker, blocked = game_review(db, 1, LEARNER)
+        assert not blocked
+        db.connection.execute(
+            "UPDATE decision_analysis_lines SET score_value=score_value+1 WHERE position_id=1"
+        )
+        db.connection.commit()
+        assert game_review(db, 1, LEARNER)[1] == {1}
+        db.connection.execute(
+            "UPDATE decision_analysis_lines SET score_value=score_value-1 WHERE position_id=1"
+        )
+        db.connection.commit()
+        assert game_review(db, 1, LEARNER) == (protection_marker, set())
         db.connection.execute(
             "INSERT INTO puzzle_corpora(version,source,checksum,state) VALUES('test','fixture','checksum','staging')"
         )
@@ -111,6 +125,26 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
                 {},
             )
             assert verdict["status"] == status
+        from chess_coach.protection_game_proof import classify as protection_game
+
+        for move, expected in (
+            (moves[1], "protected"),
+            (wrong, "missed"),
+            (uncertain, "opportunity_unresolved"),
+        ):
+            assert (
+                protection_game(candidate_board, move, time.monotonic() + 5, time.monotonic)[0]
+                == expected
+            )
+        assert protection_game(chess.Board(), "e2e4", time.monotonic() + 5, time.monotonic) == (
+            "no_opportunity",
+            None,
+        )
+        assert protection_game(candidate_board, moves[1], 0, time.monotonic) == (
+            "unknown",
+            "deadline",
+        )
+
         from chess_coach.related_protection_assessment import valid as certificate_valid
 
         candidate_board, _, fingerprint = assessment_setup(db, "test", "z-match")
@@ -891,6 +925,7 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
                 reference=reference,
             )
         review_evidence(db, evidence, decision="reject", actor="fixture")
+        assert game_review(db, 1, LEARNER)[1] == {1}
         with pytest.raises(ValueError):
             show(db, assessment_attempt, LEARNER)
         with pytest.raises(ValueError):
