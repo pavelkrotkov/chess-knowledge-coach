@@ -6,7 +6,7 @@ from .deep_selection_source import learner_key
 from .deep_selection_views import list_selections, show_selection
 from .fact_fingerprint import digest
 from .pipeline_deep_counts import selection_counts
-from .pipeline_deep_cursor import _record
+from .pipeline_deep_cursor_state import _record
 
 STATUS_SCAN_LIMIT = 25
 

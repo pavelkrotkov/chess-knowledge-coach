@@ -9,7 +9,9 @@ from .pipeline_deep_config import deep_options
 
 def needs_execution(db, selection_id, config):
     rows = db.connection.execute(
-        """SELECT j.status,j.config_json FROM deep_selection_items i
+        """SELECT j.status,j.config_json,
+        (SELECT a.detail FROM deep_analysis_attempts a WHERE a.job_id=j.id
+         ORDER BY a.attempt_number DESC LIMIT 1) AS last_detail FROM deep_selection_items i
         LEFT JOIN deep_analysis_current c ON c.selection_id=i.selection_id AND c.position_id=i.position_id
         LEFT JOIN deep_analysis_jobs j ON j.id=c.job_id WHERE i.selection_id=?""",
         (selection_id,),
@@ -19,6 +21,8 @@ def needs_execution(db, selection_id, config):
 
 def _pending(row, config):
     if row["config_json"] is None or row["status"] in {"pending", "running", "stale"}:
+        return True
+    if row["status"] == "insufficient" and row["last_detail"] == "worker_deadline":
         return True
     try:
         recorded = json.loads(row["config_json"])

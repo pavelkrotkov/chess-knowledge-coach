@@ -1,10 +1,8 @@
 """Run independently bounded selection and deep work after the cheap pipeline."""
 
-import time
-
 from .pipeline_deep_config import public_limits
-from .pipeline_deep_cursor import advance, scan
-from .pipeline_deep_game import process_game
+from .pipeline_deep_lane import work
+from .pipeline_deep_lane_state import claim
 from .pipeline_deep_limits import at_capacity, finish
 
 
@@ -14,6 +12,7 @@ def process_deep(db, config, *, deadline=None):
         "examined": 0,
         "selected_games": 0,
         "processed": 0,
+        "advanced": 0,
         "selected": 0,
         "pending": 0,
         "capped_out": 0,
@@ -21,19 +20,24 @@ def process_deep(db, config, *, deadline=None):
         "unstable": 0,
         "limits": public_limits(config),
         "capped": False,
+        "lanes": {"recent": 0, "archive": 0},
+        "recent_unavailable": 0,
+        "unavailable": 0,
+        "skipped_failures": 0,
     }
-    key, version, games = scan(db, config)
     if not config.deep_enabled:
         return report
     report["status"] = "complete"
-    for row in games[: config.deep_max_scan]:
-        if at_capacity(report, config) or (deadline is not None and time.monotonic() >= deadline):
-            report["capped"] = True
-            break
-        game_id = row["id"]
-        report["examined"] += 1
-        if not process_game(db, game_id, config, report, deadline=deadline):
-            report["status"] = "partial"
-            break
-        advance(db, key, version, game_id)
-    return finish(report, config, games)
+    lane, state = claim(db, config.learner, config.deep_per_game)
+    seen = {}
+    state, more = work(db, config, report, state, lane, seen, deadline)
+    if (
+        not report["capped"]
+        and report["pending"] == 0
+        and report["examined"] < config.deep_max_scan
+        and not at_capacity(report, config)
+    ):
+        other = "archive" if lane == "recent" else "recent"
+        state, other_more = work(db, config, report, state, other, seen, deadline)
+        more = more or other_more
+    return finish(report, config, more)

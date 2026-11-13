@@ -31,7 +31,8 @@ def persist_selection(db, source, learner, key, config, selected, coverage):
         selection_id = _insert_or_replay(db, source, key, config, coverage, selected, fingerprint)
         db.connection.execute(
             """INSERT INTO deep_selection_current(game_id,learner_key,selection_id) VALUES(?,?,?)
-            ON CONFLICT(game_id,learner_key) DO UPDATE SET selection_id=excluded.selection_id""",
+            ON CONFLICT(game_id,learner_key) DO UPDATE SET selection_id=excluded.selection_id
+            WHERE deep_selection_current.selection_id<>excluded.selection_id""",
             (source["game"]["id"], key, selection_id),
         )
         db.connection.commit()
