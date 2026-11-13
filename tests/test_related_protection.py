@@ -65,11 +65,15 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
         other = "a2a3" if color == "white" else "a7a6"
         pawn_from = "a2" if color == "white" else "a7"
         alternatives = []
-        for file in ("b", "c", "e", "g"):
+        for file in ("b", "c", "e", "g", "f", "h"):
             alternate = setup.copy()
             pawn = alternate.remove_piece_at(chess.parse_square(pawn_from))
             alternate.set_piece_at(chess.parse_square(file + pawn_from[1]), pawn)
             alternatives.append(alternate)
+        extra = setup.copy()
+        king_from = chess.H1 if color == "white" else chess.H8
+        king_to = chess.G2 if color == "white" else chess.G7
+        extra.set_piece_at(king_to, extra.remove_piece_at(king_from))
         nonzero = "e8f8" if color == "white" else "e1f1"
         records += [
             ("w-unknown-history", setup.fen(), f"{nonzero} {moves[1]}"),
@@ -80,6 +84,8 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
             ("z-third", alternatives[1].fen(), " ".join(moves)),
             ("z-fourth", alternatives[2].fen(), " ".join(moves)),
             ("z-fifth", alternatives[3].fen(), " ".join(moves)),
+            ("z-sixth", extra.fen(), " ".join(moves)),
+            ("z-seventh", alternatives[5].fen(), " ".join(moves)),
         ]
         db.connection.executemany(
             """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,rating_deviation,themes_json,objective)
@@ -90,12 +96,14 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
             "INSERT INTO puzzle_themes VALUES(?,?,'defensiveMove',1200)",
             [(corpus, key) for key, _, _ in records],
         )
+        db.connection.execute("UPDATE puzzles SET rating=1400 WHERE puzzle_id='z-second'")
+        db.connection.execute("UPDATE puzzle_themes SET rating=1400 WHERE puzzle_id='z-second'")
         db.connection.execute("UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus,))
         db.connection.commit()
         result = preview(db, LEARNER, evidence, "test")
         assert result["source_outcome"] == "success"
-        assert len(result["items"]) == 4 and result["scanned"] == 128
-        assert result["protection_scan"]["checked"] == 6
+        assert len(result["items"]) == 4 and result["scanned"] == 130
+        assert result["protection_scan"]["checked"] == 8
         assert all(item["assessment_available"] for item in result["items"])
         from chess_coach.related_protection_assessment import certificate
 
@@ -202,7 +210,7 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
         with pytest.raises(ValueError):
             certificate(db, "test", "z-match", chess.square_name(target), [wrong])
         assert json.dumps(moves[1]) not in json.dumps(result)
-        reference = result["items"][0]["reference"]
+        reference = next(item["reference"] for item in result["items"] if item["rating"] == 1200)
         with pytest.raises(ValueError):
             preview(db, "other", evidence, "test")
 
@@ -417,7 +425,7 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
             ],
         )
         main()
-        assert json.loads(capsys.readouterr().out)["items"][0]["reference"] == reference
+        assert reference in [item["reference"] for item in json.loads(capsys.readouterr().out)["items"]]
 
         app = create_app(
             db_path=path,
@@ -457,7 +465,7 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
         assert b"successful defense for rehearsal" in finder.data
         assert b"Start this example" in finder.data
         assert b"Check my first move" in finder.data
-        assert reference.encode() in finder.data
+        assert any(item["reference"].encode() in finder.data for item in result["items"])
         move = re.escape(moves[1].encode())
         move_token = rb"(?<![A-Za-z0-9_-])" + move + rb"(?![A-Za-z0-9_-])"
         assert not re.search(move_token, finder.data)
@@ -514,11 +522,12 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
         # A different still-unfamiliar candidate supports an independently checked first move.
         fresh = preview(db, LEARNER, evidence, "test")
         assert len(fresh["items"]) == 4 and fresh["items"][0]["assessment_available"]
+        fresh_item = next(item for item in fresh["items"] if item["rating"] == 1200)
         assessment = client.post(
             url,
             base_url="https://coach.invalid",
             headers=headers | {"Origin": "https://coach.invalid"},
-            data={"csrf": csrf, "reference": fresh["items"][0]["reference"], "assessment": "1"},
+            data={"csrf": csrf, "reference": fresh_item["reference"], "assessment": "1"},
         )
         assert assessment.status_code == 303
         with client.session_transaction(base_url="https://coach.invalid") as session:
@@ -565,6 +574,39 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
                 headers=headers,
             )
             assert page.status_code == 200 and b"200-point content-rating band" in page.data
+            from chess_coach.protection_difficulty import eligible as harder_eligible
+
+            with pytest.raises(ValueError):
+                harder_eligible(db, LEARNER, "test", evidence, assessment_attempt)
+            next_item = next(
+                item for item in preview(db, LEARNER, evidence, "test")["items"]
+                if item["rating"] == 1200
+            )
+            start_related(
+                db, attempt_id="second-correct", subject=LEARNER, evidence_id=evidence,
+                corpus_version="test", reference=next_item["reference"], assessment=True,
+                followup=assessment_attempt,
+            )
+            submit(db, "second-correct", LEARNER, event_id="answer", move=moves[1])
+            assert verify(db, LEARNER)["processed"] == 1
+            assessment_attempt = "second-correct"
+            history = assessment_history(db, LEARNER, "test", evidence)
+            assert harder_eligible(db, LEARNER, "test", evidence, assessment_attempt)[0][3] == 7
+            harder = client.get(
+                f"/evidence/{evidence}/related-protections?followup={assessment_attempt}&harder=1",
+                base_url="https://coach.invalid", headers=headers,
+            )
+            assert harder.status_code == 200 and b"1400" in harder.data
+            harder_ref = re.search(rb'name="reference" value="([^"]+)"', harder.data).group(1).decode()
+            started_harder = client.post(
+                url, base_url="https://coach.invalid",
+                headers=headers | {"Origin": "https://coach.invalid"},
+                data={"csrf": csrf, "reference": harder_ref, "assessment": "1",
+                      "followup": assessment_attempt, "harder": "1"},
+            )
+            assert started_harder.status_code == 303
+            with pytest.raises(ValueError):
+                harder_eligible(db, LEARNER, "test", evidence, assessment_attempt)
             import chess_coach.web_protection_plan as plan_web
 
             source = {
@@ -933,7 +975,7 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
             # Both exact current assessments contribute, while ineligible attempts stay separate.
             progress_history = protection_progress(db, LEARNER, "test")
             matched_group = next(
-                group for group in progress_history["groups"] if group["count"] == 2
+                group for group in progress_history["groups"] if group["count"] == 3
             )
             assert matched_group["reason"]
             assert {entry["status"] for entry in progress_history["items"]} == {
@@ -985,7 +1027,7 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
                 subject=LEARNER,
                 evidence_id=evidence,
                 corpus_version="test",
-                reference=fresh["items"][0]["reference"],
+                reference=fresh_item["reference"],
                 assessment=True,
             )
         with pytest.raises(ValueError):

@@ -4,7 +4,10 @@ from .related_protection import VERSION, selection
 from .related_transfer_admission import admit as admit_selection
 
 
-def admit(db, subject, evidence_id, corpus_version, reference):
-    return admit_selection(
-        selection(db, subject, evidence_id, corpus_version), reference, VERSION, "protection"
-    )
+def admit(db, subject, evidence_id, corpus_version, reference, *, harder_attempt=None):
+    chosen = selection(db, subject, evidence_id, corpus_version)
+    if harder_attempt and chosen is not None:
+        from .protection_difficulty import scope
+
+        chosen = (*chosen[:4], scope(chosen[4], evidence_id, harder_attempt), chosen[5])
+    return admit_selection(chosen, reference, VERSION, "protection")

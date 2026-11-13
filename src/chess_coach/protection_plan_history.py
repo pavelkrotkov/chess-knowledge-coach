@@ -72,6 +72,9 @@ def optional(db, subject, corpus, protection):
     if not protection or not protection["source"]:
         return {"status": "unknown"}
     try:
-        return report(db, subject, corpus, protection["source"]["evidence_id"])
+        from .protection_difficulty import decorate
+
+        result = report(db, subject, corpus, protection["source"]["evidence_id"])
+        return decorate(db, subject, corpus, result)
     except (sqlite3.Error, ValueError, TypeError, KeyError, IndexError, PreviewUnavailable):
         return {"status": "unknown"}

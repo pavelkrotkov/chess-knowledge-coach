@@ -9,6 +9,7 @@ from .tactical_course_budget import PreviewUnavailable
 from .unified_sources import resolve_source
 
 
+# Recheck the current result before admitting any explicit follow-up.
 def prior(db, subject, corpus, evidence, attempt):
     if not isinstance(attempt, str) or not attempt or len(attempt) > 128 or not attempt.isascii():
         raise ValueError("protection follow-up unavailable")
@@ -34,13 +35,18 @@ def prior(db, subject, corpus, evidence, attempt):
         raise ValueError("protection follow-up unavailable") from None
 
 
-def selected(db, subject, corpus, evidence, attempt, assessment, chosen):
+# The selected first move must still match the verified source context.
+def selected(db, subject, corpus, evidence, attempt, assessment, chosen, *, harder=False):
     if not assessment:
         raise ValueError("protection follow-up requires an assessment")
-    expected = prior(db, subject, corpus, evidence, attempt)
+    from .protection_followup_mode import expected_context
+
+    expected, side = expected_context(db, subject, corpus, evidence, attempt, harder)
     source_type, version, key, binding, lines = chosen
     if source_type != "corpus":
         raise ValueError("protection follow-up unavailable")
     prompt = resolve_source(db, source_type, version, key)["prompt_fen"]
+    if side is not None and prompt.split()[1] != side[0]:
+        raise ValueError("protection follow-up changed")
     if context(db, version, key, binding, prompt, lines[0]) != expected:
         raise ValueError("protection follow-up changed")
