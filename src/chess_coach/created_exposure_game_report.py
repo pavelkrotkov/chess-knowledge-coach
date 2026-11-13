@@ -29,7 +29,8 @@ def _reason(state, newer, earlier):
 
 
 # Timing and comparability answer different questions: a sparse window can
-# still have a valid date relationship to the verified practice answer.
+# still have a valid date relationship to the verified practice answer. Only
+# complete selections and full windows establish their eventual oldest date.
 def _report(db, learner, state, deadline):
     games = state["games"]
     newer, earlier = sample(games[:20]), sample(games[20:40])
@@ -38,7 +39,11 @@ def _report(db, learner, state, deadline):
     bound = bounds(contexts_match, bounded(earlier), bounded(newer))
     answer = first_answer(db, learner, state["profile"], deadline)
     relation = {
-        name: follows(window["oldest"], answer["answered_at"]) if answer else None
+        name: (
+            follows(window["oldest"], answer["answered_at"])
+            if answer and state["selection_complete"] and window["games"] == 20
+            else None
+        )
         for name, window in (("earlier", earlier), ("newer", newer))
     }
     return {

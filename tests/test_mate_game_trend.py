@@ -480,7 +480,44 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
             }
             result = exposure_report._report(None, "learner", state, time.monotonic() + 1)
             assert result["comparable_reason"] == "selection_pending"
-            assert result["relation"] == {"earlier": None, "newer": True}
+            assert result["relation"] == {"earlier": None, "newer": None}
+            state["selection_complete"] = True
+            state["coverage"] = {
+                "unknown_time_lower_bound": 0,
+                "unknown_ownership_global_lower_bound": 0,
+                "candidate_recheck_failed": 0,
+                "game_limit_reached": False,
+            }
+            result = exposure_report._report(None, "learner", state, time.monotonic() + 1)
+            assert result["relation"] == {"earlier": None, "newer": None}
+
+            from datetime import UTC, datetime, timedelta
+
+            last = datetime(2024, 2, 10, tzinfo=UTC)
+            state["games"] = [
+                {
+                    "id": i,
+                    "date": (last - timedelta(days=i)).isoformat(),
+                    "eligible": 0,
+                    "results": [],
+                }
+                for i in range(41)
+            ]
+            isolated.setattr(exposure_report, "matched", lambda *_: True)
+            result = exposure_report._report(None, "learner", state, time.monotonic() + 1)
+            assert result["bounds"]["status"] == "sparse"
+            assert result["relation"] == {"earlier": True, "newer": True}
+            answer_date = state["games"][39]["date"]
+            isolated.setattr(
+                exposure_report,
+                "first_answer",
+                lambda *_: {"attempt": "x", "answered_at": answer_date},
+            )
+            result = exposure_report._report(None, "learner", state, time.monotonic() + 1)
+            assert result["relation"] == {"earlier": False, "newer": True}
+            answer_date = state["games"][19]["date"]
+            result = exposure_report._report(None, "learner", state, time.monotonic() + 1)
+            assert result["relation"] == {"earlier": False, "newer": False}
 
         for move, expected in (
             ("d3d4", "missed"),
