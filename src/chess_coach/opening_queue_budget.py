@@ -38,3 +38,7 @@ class BrowserBudget(Budget):
             self.db.connection.execute("SELECT name FROM sqlite_master LIMIT 1").fetchone()
             self.check()
             yield
+
+
+def study_budget(db, *, browser):
+    return BrowserBudget(db) if browser else Budget(db)

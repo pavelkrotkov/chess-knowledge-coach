@@ -8,13 +8,18 @@ from .opening_experiment_current import current
 VERSION = "opening-revision-course-v1"
 
 
-def preview(db, root, learner, game_id, position_id, move):
+def preview(db, root, learner, game_id, position_id, move, *, deadline=None, with_identity=False):
     before = db.connection.execute("PRAGMA data_version").fetchone()[0]
     decision, choice, experiment, identity = current(
-        db, root, learner, game_id, position_id, move, with_identity=True
+        db, root, learner, game_id, position_id, move, with_identity=True, deadline=deadline
     )
     example, status = continuation(
-        root, learner, decision["catalog"]["parent"], move, experiment["alternative"]["uci"].split()
+        root,
+        learner,
+        decision["catalog"]["parent"],
+        move,
+        experiment["alternative"]["uci"].split(),
+        expires=deadline,
     )
     chapters = [owned(decision, choice, experiment)]
     if example is not None:
@@ -29,6 +34,7 @@ def preview(db, root, learner, game_id, position_id, move):
     if db.connection.execute("PRAGMA data_version").fetchone()[0] != before:
         raise ValueError("opening course changed")
     return {
+        **({"_identity": identity} if with_identity else {}),
         "version": version,
         "schema": VERSION,
         "chapters": chapters,

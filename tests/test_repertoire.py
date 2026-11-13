@@ -557,6 +557,7 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         assert failed.status_code == status
     partial_course = client.get(course_url, base_url="https://coach.invalid", headers=headers)
     assert partial_course.status_code == 200 and b"Partial preview" in partial_course.data
+    assert b"Request private Study" not in partial_course.data
     assert b"You play White" in partial_course.data and b'class="board"' in partial_course.data
     assert b"played 0 cp; alternative 120 cp" in partial_course.data
     assert b"Your worked comparison" in partial_course.data
@@ -1396,8 +1397,20 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         assert unfamiliar_provider.created == 0
         assert not (planning_dir / f"opening-study-{course_version}-intent.json").exists()
         # A browser request is exact, private, resumable, and never publishes on GET.
+        from concurrent.futures import ThreadPoolExecutor
+
         from chess_coach import opening_study_worker
         from chess_coach.pipeline_lock import pipeline_lock
+
+        def threaded_post(browser, target, data):
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                return pool.submit(
+                    browser.post,
+                    target,
+                    data=data,
+                    base_url="https://coach.invalid",
+                    headers={**headers, "Origin": "https://coach.invalid"},
+                ).result()
 
         study_path = course_path + "/study"
         with client_first.session_transaction(base_url="https://coach.invalid") as session:
@@ -1444,12 +1457,7 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
                 ).status_code
                 == 409
             )
-            assert (
-                client_first.post(
-                    study_path, data=form, base_url="https://coach.invalid", headers=post_headers
-                ).status_code
-                == 302
-            )
+            assert threaded_post(client_first, study_path, form).status_code == 302
             slot = planning_dir / "opening-study-request.json"
             queued = slot.read_bytes()
             assert (
@@ -2600,6 +2608,59 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
 
     with monkeypatch.context() as patch:
         patch.setattr(study_session.httpx, "Client", SyntheticStudyClient)
+        from chess_coach import opening_study_request, opening_study_view, opening_study_worker
+        from chess_coach.pipeline_lock import pipeline_lock
+
+        for module in (opening_study_request, opening_study_view, opening_study_worker):
+            patch.setattr(module, "SLOT", "revision-test-slot.json")
+        revision_slot = planning_dir / "revision-test-slot.json"
+        revision_path = course_url + "/study"
+        with client.session_transaction(base_url="https://coach.invalid") as session:
+            revision_csrf = session["csrf"]
+        revision_form = {"csrf": revision_csrf, "version": course_version}
+        assert (
+            threaded_post(client, revision_path, {**revision_form, "csrf": "wrong"}).status_code
+            == 403
+        )
+        assert (
+            threaded_post(
+                client, revision_path, {**revision_form, "version": partial_version}
+            ).status_code
+            == 409
+        )
+        assert threaded_post(client, revision_path, revision_form).status_code == 302
+        assert json.loads(revision_slot.read_text())["state"] == "queued"
+        queued_revision = revision_slot.read_bytes()
+        assert threaded_post(client, revision_path, revision_form).status_code == 302
+        assert revision_slot.read_bytes() == queued_revision and provider.created == 0
+        pending_revision = client.get(course_url, base_url="https://coach.invalid", headers=headers)
+        assert b"Publication is queued" in pending_revision.data
+        from chess_coach import opening_revision_course
+
+        real_continuation = opening_revision_course.continuation
+
+        def changed_during_preview(*args, **kwargs):
+            result = real_continuation(*args, **kwargs)
+            with sqlite3.connect(path) as other:
+                other.execute("UPDATE games SET event=event WHERE id=1")
+            return result
+
+        with monkeypatch.context() as concurrent:
+            concurrent.setattr(opening_revision_course, "continuation", changed_during_preview)
+            opening_study_worker.run(db, "learner", tmp_path)
+        assert json.loads(revision_slot.read_text())["state"] == "incomplete"
+        assert provider.created == 0
+        with pipeline_lock(path, sync=True):
+            opening_study_worker.run(db, "learner", tmp_path)
+        assert json.loads(revision_slot.read_text())["state"] == "incomplete"
+        assert provider.created == 0
+        incomplete_page = client.get(course_url, base_url="https://coach.invalid", headers=headers)
+        assert b"Publication is incomplete" in incomplete_page.data
+        with monkeypatch.context() as stale:
+            item = json.loads(revision_slot.read_text())
+            stale.setattr(opening_study_view, "read", lambda _path: {**item, "state": "stale"})
+            page = client.get(course_url, base_url="https://coach.invalid", headers=headers)
+            assert b"The requested preview changed" in page.data
         with pytest.raises(ValueError, match="version"):
             opening_study_session.publish_locked(tmp_path, 1, first_move, "g1f3", partial_version)
         assert provider.created == 0
@@ -2660,8 +2721,8 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
                     tmp_path, 1, first_move, "g1f3", course_version
                 )
         assert provider.created == 0
-        with pytest.raises(StudyError, match="unknown"):
-            opening_study_session.publish_locked(tmp_path, 1, first_move, "g1f3", course_version)
+        opening_study_worker.run(db, "learner", tmp_path)
+        assert json.loads(revision_slot.read_text())["state"] == "incomplete"
         intent = planning_dir / f"opening-study-{course_version}-intent.json"
         assert frozen.is_file() and frozen.stat().st_mode & 0o777 == 0o400
         assert intent.is_file() and provider.created == 1
@@ -2754,6 +2815,14 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         assert receipt["chapters"] == ["done", "done"] and len(receipt["chapter_ids"]) == 2
         assert receipt["empty_chapter"] == provider.empty_id
         assert len(engine_calls) == before_profile
+        opening_study_worker.run(db, "learner", tmp_path)
+        assert json.loads(revision_slot.read_text())["state"] == "complete"
+        verified_revision = client.get(
+            course_url, base_url="https://coach.invalid", headers=headers
+        )
+        assert b"Open verified private Study" in verified_revision.data
+        assert threaded_post(client, revision_path, revision_form).status_code == 302
+        assert provider.created == 1
 
         # Strict readback must retain both branches and the public attribution.
         original_owned = provider.uploaded[0]["pgn"]

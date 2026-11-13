@@ -7,13 +7,30 @@ from .opening_queue_files import read
 from .opening_queue_location import location
 from .opening_queue_lock import lock
 from .opening_queue_write import staged, sync
+from .opening_study_current import admitted as revision_admitted
 from .opening_study_receipt import verified
 from .opening_study_request_prior import unchanged
 from .opening_study_request_validate import credentials, valid
 from .opening_study_session import _paths
-from .opening_unfamiliar_study_current import admitted
+from .opening_unfamiliar_study_current import admitted as unfamiliar_admitted
 
 SLOT = "opening-study-request.json"
+
+
+def _admitted(database, directory, root, learner, version, selection):
+    if "game_id" in selection:
+        return revision_admitted(
+            database,
+            directory,
+            root,
+            learner,
+            selection["game_id"],
+            selection["position_id"],
+            selection["move"],
+            version,
+            browser=True,
+        )
+    return unfamiliar_admitted(database, directory, root, learner, version, selection, browser=True)
 
 
 def enqueue(db, root, learner, version, selection):
@@ -30,7 +47,7 @@ def enqueue(db, root, learner, version, selection):
     if not valid(item, database, learner):
         raise ValueError("Study selection unavailable")
     root, _, _, database_path = _paths(root, version)
-    with admitted(database_path, directory, root, learner, version, selection) as source:
+    with _admitted(database_path, directory, root, learner, version, selection) as source:
         course, budget, check = source
         with lock(directory):
             check()
