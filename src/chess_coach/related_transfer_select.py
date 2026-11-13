@@ -19,6 +19,7 @@ def select(
     include_objective=False,
     familiar_data=None,
     per_band=100,
+    rating_bounds=None,
     **matching,
 ):
     rating = baseline(db, source)
@@ -35,6 +36,7 @@ def select(
         all_lines=all_lines,
         include_objective=include_objective,
         per_band=per_band,
+        rating_bounds=rating_bounds,
     )
     if corpus is None:
         return None

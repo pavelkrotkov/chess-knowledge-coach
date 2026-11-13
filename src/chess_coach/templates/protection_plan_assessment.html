@@ -13,6 +13,7 @@
 </form>
 {% else %}
 <p><a href="{{ url_for('related_protection.show', evidence_id=assessment.evidence_id, followup=assessment.attempt) }}">Find a comparable unfamiliar protection assessment</a>. The bounded search may find no match.</p>
+{% if assessment.harder %}<p><a href="{{ url_for('related_protection.show', evidence_id=assessment.evidence_id, followup=assessment.attempt, harder=1) }}">Find a harder unfamiliar protection assessment</a>. The next content-rating band may have no match.</p>{% endif %}
 {% endif %}
 </section>
 {% endif %}

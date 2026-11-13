@@ -47,6 +47,7 @@ def show(evidence_id):
                 evidence_id,
                 followup,
                 request.args.get("cursor"),
+                harder=request.args.get("harder") == "1",
             )
         else:
             result = preview(
@@ -81,6 +82,7 @@ def begin(evidence_id):
             reference=request.form.get("reference", ""),
             assessment=request.form.get("assessment") == "1",
             followup=request.form.get("followup") or None,
+            harder=request.form.get("harder") == "1",
         )
     except ValueError:
         return render_template(

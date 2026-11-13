@@ -4,7 +4,7 @@ import sqlite3
 import time
 
 from .protection_followup_context import candidate
-from .protection_followup_prior import prior
+from .protection_followup_mode import expected_context
 from .related_capture import _assessment_options, present
 from .related_capture_assessment import setup
 from .related_protection import selection
@@ -31,9 +31,9 @@ def eligible(db, item, expected):
 
 
 # One data version covers prior validation, bounded selection and page construction.
-def find(db, subject, corpus, evidence, attempt, cursor):
+def find(db, subject, corpus, evidence, attempt, cursor, *, harder=False):
     version = db.connection.execute("PRAGMA data_version").fetchone()[0]
-    expected = prior(db, subject, corpus, evidence, attempt)
+    expected, side = expected_context(db, subject, corpus, evidence, attempt, harder)
     until = time.monotonic() + SECONDS
     db.connection.set_progress_handler(lambda: int(time.monotonic() >= until), 1000)
     try:
@@ -42,21 +42,25 @@ def find(db, subject, corpus, evidence, attempt, cursor):
             if time.monotonic() >= until:
                 raise ValueError("protection search timed out")
 
-        chosen = selection(db, subject, evidence, corpus, check=check)
+        options = {"difficulty": (expected[3], side)} if harder else {}
+        chosen = selection(db, subject, evidence, corpus, check=check, **options)
         if chosen is None:
             raise ValueError("protection search unavailable")
-        filtered = []
-        for item in chosen[3]:
-            check()
-            if eligible(db, item, expected):
-                filtered.append(item)
-        result = present((*chosen[:3], filtered, *chosen[4:]), cursor)
+        filtered = _filtered(db, chosen[3], expected, side, check)
+        base_scope = chosen[4]
+        if harder:
+            from .protection_difficulty import scope
+
+            base_scope = scope(base_scope, evidence, attempt)
+        result = present((*chosen[:3], filtered, base_scope, chosen[5]), cursor)
         _assessment_options(db, result["items"], filtered, cursor, result["scope"])
         result.update(
             source_outcome=chosen[0]["outcome"],
             protection_scan=chosen[2]["protection_scan"],
             corpus_limited=chosen[2]["limited"],
             followup_attempt=attempt,
+            harder=harder,
+            difficulty_band=(expected[3] * 200, expected[3] * 200 + 199),
         )
         check()
         if db.connection.execute("PRAGMA data_version").fetchone()[0] != version:
@@ -68,3 +72,12 @@ def find(db, subject, corpus, evidence, attempt, cursor):
         raise
     finally:
         db.connection.set_progress_handler(None, 0)
+
+
+def _filtered(db, items, expected, side, check):
+    result = []
+    for item in items:
+        check()
+        if eligible(db, item, expected) and (side is None or item["fen"].split()[1] == side[0]):
+            result.append(item)
+    return result
