@@ -65,6 +65,11 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
         )
         corpus = db.connection.execute("SELECT id FROM puzzle_corpora").fetchone()[0]
         setup = chess.Board("4k3/7p/8/2b5/3R4/8/P7/7K b - - 0 1")
+        from chess_coach.related_capture_familiar import _initial_prompt
+        from chess_coach.related_capture_position import prompt_key
+
+        assert _initial_prompt('[Event "standard"]\n\n*') == prompt_key(chess.STARTING_FEN)
+        assert _initial_prompt(f'[FEN "{setup.fen()}"]\n\n*') == prompt_key(setup.fen())
         moves = ["h7h6", "d4d5"]
         if color == "black":
             setup = setup.mirror()

@@ -11,6 +11,7 @@ from .related_capture_position import prompt_key
 from .related_capture_probe import position_probe
 
 LIMIT = 200000
+STANDARD_PROMPT = prompt_key(chess.STARTING_FEN)
 
 
 def familiarity(db, subject, *, check=lambda: None):
@@ -35,6 +36,9 @@ def _initial_prompt(pgn):
     headers = chess.pgn.read_headers(io.StringIO(pgn))
     if headers is None:
         raise ValueError("familiarity source unavailable")
+    # Explicit FEN and other variants retain the full python-chess validation.
+    if "FEN" not in headers and headers.get("Variant") in (None, "Standard"):
+        return STANDARD_PROMPT
     try:
         return prompt_key(headers.board().fen())
     except ValueError:
