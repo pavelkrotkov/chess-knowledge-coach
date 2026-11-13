@@ -11,7 +11,13 @@ from .related_pin_contract import PIN_GEOMETRY_LIMIT, SOURCE_ROOT_PROOF_RESERVAT
 from .related_pin_shape import features
 
 
-def source_for_evidence(db, subject, evidence_id):
+def source_for_evidence(db, subject, evidence_id, mechanism=None):
+    if mechanism == "slide":
+        from .related_pin_slide_source import source_slide
+
+        return source_slide(db, subject, evidence_id)
+    if mechanism is not None:
+        raise ValueError("pin mechanism unavailable")
     if _summary(evidence_row(db, evidence_id))["operation"] == "prevent":
         from .related_pin_prevent_source import source_for_evidence as prevention
 
