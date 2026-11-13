@@ -14,7 +14,10 @@ def show():
 
         try:
             report, items = group(
-                database(), current_app.config["PROJECT_ROOT"], current_app.config["SUBJECT"]
+                database(),
+                current_app.config["PROJECT_ROOT"],
+                current_app.config["SUBJECT"],
+                include_fit=True,
             )
         except (Exception, PreviewDeadline):
             return render_template(

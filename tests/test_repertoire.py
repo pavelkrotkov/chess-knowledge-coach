@@ -1197,10 +1197,25 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         patch.setattr(unfamiliar_guard, "_identity", changed_group_index)
         with pytest.raises(ValueError, match="index changed"):
             unfamiliar_options(experiment_db, tmp_path, "learner")
+    checked.clear()
+    with monkeypatch.context() as patch:
+        patch.setattr(unfamiliar_guard, "_identity", changed_group_index)
+        with pytest.raises(ValueError, match="index changed"):
+            unfamiliar_options(experiment_db, tmp_path, "learner", include_fit=True)
     choice_page = client_first.get(
         "/repertoire/unfamiliar?choices=1", base_url="https://coach.invalid", headers=headers
     )
     assert choice_page.status_code == 200 and b"Choose an exploratory opening" in choice_page.data
+    import chess_coach.opening_fit as opening_fit
+    from chess_coach.tactical_course_budget import PreviewUnavailable as FitUnavailable
+
+    with monkeypatch.context() as patch:
+        patch.setattr(opening_fit, "collect", lambda *_: (_ for _ in ()).throw(FitUnavailable()))
+        deferred = client_first.get(
+            "/repertoire/unfamiliar?choices=1", base_url="https://coach.invalid", headers=headers
+        )
+    assert deferred.status_code == 200 and b"All choices remain exploratory" in deferred.data
+    assert b"Exploratory:" in deferred.data and b"Learning opportunity fit" not in deferred.data
     selected_page = client_first.get(
         course_path, query_string=selected, base_url="https://coach.invalid", headers=headers
     )

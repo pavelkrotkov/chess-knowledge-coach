@@ -1,5 +1,7 @@
 """Cap source resolutions and material proofs across one report."""
 
+from .style_schedule_budget import consume
+
 MAX_WORK = 20
 
 
@@ -22,6 +24,7 @@ def create(*, limit=MAX_WORK):
 
 
 def take(budget, kind):
+    consume()
     if budget["used"] >= budget["limit"]:
         budget["skipped"] += 1
         return False
