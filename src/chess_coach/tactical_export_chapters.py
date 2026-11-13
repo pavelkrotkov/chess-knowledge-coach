@@ -1,6 +1,7 @@
 """Rebuild and compare the exact source-linked worked chapters."""
 
-from .tactical_course_chapters import challenge, owned_chapter
+from .course_guidance import challenge
+from .tactical_course_chapters import owned_chapter
 from .tactical_course_familiar import familiarity
 from .tactical_course_protection import source as teaching_source
 from .tactical_course_related import unfamiliar

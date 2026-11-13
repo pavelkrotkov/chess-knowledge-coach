@@ -11,11 +11,14 @@ LEGACY_VERSION = "local-tactical-course-v1"
 LEGACY_POLICY = "provisional-recurring-tactics-v1"
 PREVIOUS_VERSION = "local-tactical-course-v2"
 PREVIOUS_POLICY = "provisional-recurring-tactics-v2"
-VERSION = "local-tactical-course-v3"
-POLICY = "provisional-recurring-tactics-v3"
+PROTECTION_VERSION = "local-tactical-course-v3"
+PROTECTION_POLICY = "provisional-recurring-tactics-v3"
+VERSION = "local-tactical-course-v4"
+POLICY = "provisional-recurring-tactics-v4"
 CONTRACTS = {
     LEGACY_VERSION: (LEGACY_POLICY, PAIRS),
     PREVIOUS_VERSION: (PREVIOUS_POLICY, CURRENT_PAIRS),
+    PROTECTION_VERSION: (PROTECTION_POLICY, CURRENT_PAIRS),
     VERSION: (POLICY, CURRENT_PAIRS),
 }
 

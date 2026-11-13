@@ -13,6 +13,8 @@ from .tactical_course_related import (
 from .tactical_course_selection import CURRENT_PAIRS, PAIRS
 
 OWN = "owned source unavailable"
+OWN_DEFERRED = "owned source deferred: time budget"
+OWN_REASONS = {OWN, OWN_DEFERRED}
 UNSUPPORTED = "related matching unsupported"
 RELATED = {
     UNSUPPORTED,
@@ -39,13 +41,22 @@ def _valid_reason(pair, reason, pairs, modern):
     return pair != ("fork", "execute") or reason != GENERAL_EMPTY
 
 
-def omissions(selection, *, pairs=PAIRS, modern=False):
+def _allowed(pair, reason, pairs, seen, owned_deadline):
+    return (
+        pair in pairs
+        and pair not in seen
+        and reason in RELATED | OWN_REASONS
+        and (reason != OWN_DEFERRED or owned_deadline)
+    )
+
+
+def omissions(selection, *, pairs=PAIRS, modern=False, owned_deadline=False):
     result = {}
     coverage = {(row["skill"], row["operation"]): row for row in selection["coverage"]}
     for item in selection["unavailable"]:
         pair = (item["skill"], item["operation"])
         reason = item["reason"]
-        if pair not in pairs or pair in result or reason not in RELATED | {OWN}:
+        if not _allowed(pair, reason, pairs, result, owned_deadline):
             raise ValueError("invalid preview omission")
         if not _valid_reason(pair, reason, pairs, modern):
             raise ValueError("fork omission differs")
@@ -58,7 +69,7 @@ def omissions(selection, *, pairs=PAIRS, modern=False):
 def selected(pattern, chapters, gaps, *, modern=False):
     pair = (pattern["skill"], pattern["operation"])
     reason = gaps.get(pair)
-    if reason == OWN or (reason is None) != (len(chapters) == 2):
+    if reason in OWN_REASONS or (reason is None) != (len(chapters) == 2):
         raise ValueError("related chapter and omission differ")
     if (reason == UNSUPPORTED) != (pattern["kind"] == "protection" and not modern):
         raise ValueError("unsupported related pattern differs")
