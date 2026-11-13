@@ -12,14 +12,18 @@ def relation(practice, games):
         return "games_unavailable"
     if any(games[name]["unchecked"] for name in ("earlier", "newer")):
         return "games_incomplete"
-    return _dates(games["earlier"].get("oldest"), practice["answer_end"])
+    return _dates(
+        games["earlier"].get("oldest"), games["newer"].get("oldest"), practice["answer_end"]
+    )
 
 
-def _dates(game_start, practice_end):
-    start, end = parse_utc(game_start), parse_utc(practice_end)
-    if not start or not end:
+def _dates(earlier, newer, practice_end):
+    old, new, end = parse_utc(earlier), parse_utc(newer), parse_utc(practice_end)
+    if not old or not new or not end:
         return "dates_unavailable"
-    return "later" if start > end else "overlap"
+    if old > end and new > end:
+        return "later"
+    return "newer_only" if new > end else "overlap"
 
 
 def report(db, subject, corpus, root):

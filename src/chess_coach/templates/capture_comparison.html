@@ -27,6 +27,7 @@
 {% endfor %}
 {% else %}<p>Cached game windows are pending or unavailable.</p>{% endif %}
 {% if relation == "later" %}<p>Both comparable game windows start after the last verified answer in the matched practice samples ({{ report.answer_end }}). Game outcomes remain independent observations.</p>
+{% elif relation == "newer_only" %}<p>The more recent game window starts after the last verified practice answer ({{ report.answer_end }}). The earlier window starts on or before that answer, so the pair is not a fully later comparison.</p>
 {% elif relation == "practice_unavailable" %}<p>A temporal comparison is unavailable because the matched practice sample or its answer times are incomplete, tied or overlapping.</p>
 {% elif relation == "games_incomplete" %}<p>A temporal comparison is unavailable while game turns remain unchecked.</p>
 {% elif relation == "dates_unavailable" %}<p>A temporal comparison is unavailable because a required date could not be verified.</p>

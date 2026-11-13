@@ -1054,7 +1054,18 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
             assert b"Both comparable game windows start after" in page.data
             assert b"5 proved opportunities" in page.data
             games["earlier"] = {**sample, "oldest": "2026-01-01T00:00:19.500000+00:00"}
+            assert relation(matched, games) == "newer_only"
+            page = client.get(
+                "/plan/captures/comparison", base_url="https://coach.invalid", headers=headers
+            )
+            assert b"The more recent game window starts after" in page.data
+            assert b"pair is not a fully later comparison" in page.data
+            games["newer"] = {**sample, "oldest": "2026-01-01T00:00:19+00:00"}
             assert relation(matched, games) == "overlap"
+            assert (
+                relation(matched, {**games, "newer": {**sample, "oldest": None}})
+                == "dates_unavailable"
+            )
             assert (
                 answer_end(
                     [
