@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Library — Chess coach{% endblock %}
 {% block content %}
+<p><a href="{{ url_for('recognition_views.index') }}">Recognition check</a></p>
 <h2>Recent practice</h2>
 {% for attempt in recent_attempts %}<p><a href="{{ url_for('unified_practice.show_page', attempt=attempt.attempt_id) }}">{% if attempt.status == "active" %}Resume{% else %}View{% endif %} {{ attempt.source_type }}{% if attempt.source_key is defined %}: {{ attempt.source_key }}{% endif %}</a> · {{ "Ungraded" if attempt.status == "ungraded" else "Checkmate reached" if attempt.status == "checkmate_reached" else attempt.status }}</p>{% else %}<p>No direct-source attempts yet.</p>{% endfor %}
 <h2>Practice from your games</h2>

@@ -23,6 +23,7 @@ from .web_practice_tools import practice_tools
 from .web_probes import probe_views
 from .web_protection_plan import protection_plan
 from .web_purpose import purpose_views
+from .web_recognition import recognition_views
 from .web_recurrence import recurrence_views
 from .web_related_backrank import related_backrank
 from .web_related_capture import related_capture
@@ -96,6 +97,7 @@ def create_app(
     app.register_blueprint(pin_plan)
     app.register_blueprint(opening_experiments)
     app.register_blueprint(recurrence_views)
+    app.register_blueprint(recognition_views)
     app.register_blueprint(short_mate_game_views)
     app.register_blueprint(style_views)
 

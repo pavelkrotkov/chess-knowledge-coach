@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.94.0"
+REGISTRY_VERSION = "1.95.0"
 
 CAPABILITIES = (
     {
@@ -436,9 +436,9 @@ CAPABILITIES = (
     {
         "id": "lesson_diagnostic_probes",
         "area": "Training",
-        "name": "Cued lesson probes",
+        "name": "Recognition and lesson probes",
         "status": "observation-only",
-        "details": "Cited fork and mate recognition and pawn-ending choices record bounded responses separately from moves. Familiar, assisted and ungraded answers do not establish causality or mastery; scheduling remains unchanged.",
+        "details": "Cued lesson probes and separate uncued unfamiliar capture and immediate-mate checks record bounded responses. No results change mastery or scheduling; assisted and uncertain responses remain visible.",
     },
     {
         "id": "opening_classification",
