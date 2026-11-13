@@ -394,6 +394,182 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
             )
         games_db.close()
 
+    # A source-qualified created-exposure scan resumes without writing game data.
+    from chess_coach import created_exposure_game_current as exposure_current
+    from chess_coach import created_exposure_game_selection as exposure_selection
+    from chess_coach import created_exposure_game_worker as exposure_worker
+    from chess_coach.created_exposure_game_cache import valid as exposure_valid
+    from chess_coach.created_exposure_game_proof import classify as exposure_classify
+    from chess_coach.evidence_review import review_evidence
+    from chess_coach.material_detector import process_decision
+    from tests import test_material_pipeline as material_fixture
+
+    with monkeypatch.context() as patch:
+        import time
+
+        import chess
+        import chess.engine
+
+        board = chess.Board("4k3/7p/8/2b5/P4q2/3R4/rP6/7K b - - 0 1")
+        board.push_uci("h7h6")
+        profile = {"mover": chess.ROOK, "target": chess.BISHOP, "geometry": (0, 1)}
+        # Both independent windows advance, while the 41st game remains a boundary.
+        seen = []
+        patch.setattr(
+            exposure_worker,
+            "inspect",
+            lambda _db, _learner, item, _deadline, _quota, **_kw: seen.append(item["id"]) or 1,
+        )
+        window = {
+            "selection_complete": True,
+            "profile": {},
+            "games": [{"id": i, "results": [], "eligible": 1} for i in range(41)],
+        }
+        exposure_worker._scan(None, learner=None, state=window, deadline=time.monotonic() + 10)
+        assert seen[:4] == [0, 20, 1, 21] and 40 not in seen
+        patch.undo()
+
+        from chess_coach import created_exposure_game_contrast as exposure_contrast
+        from chess_coach import created_exposure_game_report as exposure_report
+        from chess_coach.created_exposure_game_answer import follows
+        from chess_coach.created_exposure_game_context import _same
+        from chess_coach.created_exposure_game_counts import sample as exposure_sample
+
+        assert follows("2024-01-02T00:00:00Z", "2024-01-01T00:00:00Z") is True
+        assert follows("2024-01-01T00:00:00Z", "2024-01-01T00:00:00Z") is False
+        assert follows(None, "2024-01-01T00:00:00Z") is None
+        assert _same({("white", "rapid", "middlegame"): 2}, {("white", "rapid", "middlegame"): 1})
+        assert not _same(
+            {("white", "rapid", "middlegame"): 1}, {("black", "rapid", "middlegame"): 1}
+        )
+        sample = exposure_sample(
+            [
+                {
+                    "id": 1,
+                    "date": "2024-01-02",
+                    "eligible": 1,
+                    "results": [[1, "opportunity_unresolved", '["white","middlegame","deadline"]']],
+                }
+            ]
+        )
+        assert sample["examples"][0]["reason"] == "deadline"
+        with patch.context() as isolated:
+            isolated.setattr(
+                exposure_contrast,
+                "nominations",
+                lambda *_: [
+                    (chess.Move.from_uci("d3d4"), chess.Move.from_uci("c5d4")),
+                    (chess.Move.from_uci("b2b3"), chess.Move.from_uci("a2b2")),
+                ],
+            )
+            assert exposure_classify(
+                board, "d3d4", profile, time.monotonic() + 1, time.monotonic
+            ) == ("unknown", "ambiguous_target")
+            isolated.setattr(
+                exposure_report,
+                "first_answer",
+                lambda *_: {"attempt": "x", "answered_at": "2024-01-01T00:00:00Z"},
+            )
+            state = {
+                "games": [{"id": 1, "date": "2024-01-02T00:00:00Z", "eligible": 0, "results": []}],
+                "selection_complete": False,
+                "profile": {},
+                "coverage": {},
+                "duplicates": 0,
+                "unavailable": 0,
+            }
+            result = exposure_report._report(None, "learner", state, time.monotonic() + 1)
+            assert result["comparable_reason"] == "selection_pending"
+            assert result["relation"] == {"earlier": None, "newer": True}
+
+        for move, expected in (
+            ("d3d4", "missed"),
+            ("d3d5", "protected"),
+            ("b2b3", "opportunity_unresolved"),
+        ):
+            assert (
+                exposure_classify(board, move, profile, time.monotonic() + 1, time.monotonic)[0]
+                == expected
+            )
+        assert (
+            exposure_classify(board, "d3d4", profile, time.monotonic() - 1, time.monotonic)[0]
+            == "unknown"
+        )
+
+        original_ingest = material_fixture.ingest_pgn
+
+        def finished_ingest(db, text):
+            return original_ingest(
+                db, text.replace('[Result "*"]', '[Result "1-0"]').replace(" *", " 1-0")
+            )
+
+        patch.setattr(material_fixture, "ingest_pgn", finished_ingest)
+        db = material_fixture.make_protection_game(":memory:", patch, created=True)
+        learner = material_fixture.LEARNER
+        evidence = process_decision(db, 1, learner)["evidence_ids"][0]
+        original = db.connection.execute("SELECT pgn FROM games WHERE id=1").fetchone()[0]
+        ingest_pgn(db, original.replace('[Event "?"]', '[Event "Cosmetic duplicate"]'))
+        patch.setattr(chess.engine.SimpleEngine, "popen_uci", lambda _: FakeEngine())
+        for index in range(3):
+            ingest_pgn(db, pgn(index, "Qg1").replace("fixture_a", learner))
+            game_id = index + 3
+            config = PipelineConfig(learner=learner, engine_path=sys.executable, nodes=100)
+            assert (
+                run_analysis(
+                    db, game_id, game_input(db, game_id), config, engine_identity(sys.executable)
+                )["status"]
+                == "complete"
+            )
+        cache = {}
+        for module in (exposure_selection, exposure_current):
+            patch.setattr(module, "binding", lambda *_: "fixture-exposure")
+            patch.setattr(module, "read", lambda *_args, **_kwargs: deepcopy(cache.get("state")))
+        for module in (exposure_worker, exposure_current):
+            patch.setattr(module, "location", lambda *_: "in-memory")
+        patch.setattr(
+            exposure_worker, "write", lambda _path, state: cache.update(state=deepcopy(state))
+        )
+        patch.setattr(scan, "TURN_LIMIT", 1)
+        changes = db.connection.total_changes
+        for expected in (1, 2, 3):
+            exposure_worker.run(db, learner, None)
+            assert sum(len(game["results"]) for game in cache["state"]["games"]) == expected
+        state = cache["state"]
+        assert exposure_valid(state, "fixture-exposure")
+        assert state["profile"]["evidence_id"] == evidence and state["duplicates"] == 1
+        assert all(game["id"] != state["profile"]["game_id"] for game in state["games"])
+        assert exposure_current.current(db, learner, None) is not None
+        assert db.connection.total_changes == changes
+
+        patch.setattr(protection_web, "database", lambda: db)
+        app = create_app(
+            db_path=":memory:",
+            subject=learner,
+            actor="operator",
+            corpus="test",
+            login="fixture",
+            origin="https://coach.invalid",
+        )
+        client = app.test_client()
+        assert (
+            client.get(
+                "/game-samples/created-exposure", base_url="https://coach.invalid"
+            ).status_code
+            == 403
+        )
+        page = client.get(
+            "/game-samples/created-exposure",
+            base_url="https://coach.invalid",
+            headers={"Tailscale-User-Login": "fixture"},
+        )
+        assert page.status_code == 200 and b"3 independent games" in page.data
+        assert b"A comparison is unavailable" in page.data
+        assert page.data.count(b"<h3>More recent games</h3>") == 1
+        assert page.data.count(b"<h3>Earlier games</h3>") == 1
+        review_evidence(db, evidence, decision="reject", actor="fixture")
+        assert exposure_current.current(db, learner, None) is None
+        db.close()
+
     # Exact linked material review and analysis changes invalidate their game.
     from chess_coach.evidence_review import review_evidence
     from chess_coach.material_detector import process_decision

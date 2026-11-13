@@ -88,8 +88,20 @@ def _add(db, learner, game, state, seen, *, retain_fields=(), prepare_game=prepa
         state["unavailable"] += 1
 
 
-def select(db, learner, games, state, deadline, *, retain_fields=(), prepare_game=prepare):
-    seen = {item["identity"] for item in state["games"]}
+def select(
+    db,
+    learner,
+    games,
+    state,
+    deadline,
+    *,
+    retain_fields=(),
+    prepare_game=prepare,
+    exclude_identity=None,
+):
+    # Exclude another import of the selected source game, not only its row ID.
+    seen = {exclude_identity}
+    seen.update(item["identity"] for item in state["games"])
     # The extra independent game verifies the edge of the two samples.
     while state["index"] < len(games) and len(state["games"]) < 41:
         if time.monotonic() >= deadline:
