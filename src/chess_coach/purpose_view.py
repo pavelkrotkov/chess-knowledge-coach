@@ -3,18 +3,19 @@
 import json
 
 from .deep_selection_source import learner_key
+from .purpose_config import EARLY_CENTER
 from .purpose_current import current, owned
 from .purpose_view_lines import final_view, scout_view
 from .recurrence_snapshot import read_snapshot
 
 
-def _attempt(row, snapshot):
+def _attempt(row, snapshot, policy):
     try:
         result = json.loads(row["result_json"])
         if not isinstance(result, dict):
             raise ValueError("invalid attempt")
         final = final_view(
-            result, snapshot["board"], snapshot["position"]["uci"], snapshot["position"]
+            result, snapshot["board"], snapshot["position"]["uci"], snapshot["position"], policy
         )
         if row["status"] == "complete" and (final is None or final["comparison_issue"] is not None):
             return {
@@ -44,6 +45,7 @@ def _attempt(row, snapshot):
 def show(db, request_id, learner, *, snapshot=None):
     with read_snapshot(db):
         row = owned(db, request_id, learner)
+        # Show the request's own candidate scope without implying a global ranking.
         base = {
             "request_id": row["id"],
             "game_id": row["game_id"],
@@ -51,7 +53,11 @@ def show(db, request_id, learner, *, snapshot=None):
             "purpose": row["purpose"],
             "policy": row["policy_version"],
             "status": row["status"],
-            "scope": "played move and scout nominee only; not a global-best ranking",
+            "scope": (
+                "played move and a scout nominee from the opposite central pawn-capture category"
+                if row["policy_version"] == EARLY_CENTER
+                else "played move and scout nominee only; not a global-best ranking"
+            ),
             "boundary": "Diagnostic only; no evidence, review, mastery or defense qualification is established.",
         }
         try:
@@ -90,7 +96,7 @@ def show(db, request_id, learner, *, snapshot=None):
             **base,
             "source_state": "current",
             "limits": {key: config.get(key) for key in keys},
-            "attempts": [_attempt(item, snapshot) for item in rows],
+            "attempts": [_attempt(item, snapshot, row["policy_version"]) for item in rows],
         }
 
 

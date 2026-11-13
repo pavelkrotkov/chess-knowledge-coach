@@ -7,11 +7,21 @@ from .purpose_config import SCOUT_NODES, SCOUT_SECONDS
 from .purpose_lines import native, roots, valid_pair, work
 
 
-def scout(engine, board, position):
-    raw, error = analyse(
-        engine, board, chess.engine.Limit(nodes=SCOUT_NODES, time=SCOUT_SECONDS), 2
-    )
+def scout(engine, board, position, candidates=None):
+    limit = chess.engine.Limit(nodes=SCOUT_NODES, time=SCOUT_SECONDS)
+    if candidates is None:
+        raw, error = analyse(engine, board, limit, 2)
+    else:
+        raw, error = analyse(engine, board, limit, min(2, len(candidates)), candidates)
     items, invalid = native(position, board, raw)
+    if candidates is not None:
+        from .purpose_scout_center import choose
+
+        return choose(board, position, candidates, raw, error, items, invalid)
+    return ordinary(position, raw, error, items, invalid)
+
+
+def ordinary(position, raw, error, items, invalid):
     moves = roots(items)
     result = {"lines": items, "work": work(raw, SCOUT_NODES)}
     if error or invalid or not valid_pair(items):

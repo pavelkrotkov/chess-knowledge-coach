@@ -152,6 +152,13 @@ def _check_retained_purpose_iterations():
         result, issue = final(engine, board, position, "d2d4", time.monotonic() + 2)
         assert result["retained_depth"] == 6 and issue == "no_similar_alternative"
 
+        bounded = info(1, 4, first)
+        bounded["upperbound"] = True
+        protocol.events = [bounded, info(2, 4, second)]
+        assert (
+            final(engine, board, position, "d2d4", time.monotonic() + 2)[1]
+            == "no_complete_iteration"
+        )
         protocol.events = [info(1, 4, first)]
         assert (
             final(engine, board, position, "d2d4", time.monotonic() + 2)[1]
@@ -475,6 +482,133 @@ def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch):
     quiet = {**capture, "uci": "g1f3"}
     assert candidate(capture, root)["early_center"] and candidate(quiet, root)["early_center"]
     assert not candidate({**capture, "ply": 21}, root)["early_center"]
+
+    # The scheduled scout searches only the opposite legal category.
+    import time
+
+    from chess_coach import purpose_search
+    from chess_coach.purpose_config import EARLY_CENTER
+    from chess_coach.purpose_lines import native
+    from chess_coach.purpose_view_binding import matches as matches_purpose
+
+    class ScoutEngine:
+        def __init__(self):
+            self.calls = []
+
+        def analyse(self, board, limit, multipv, root_moves=None):
+            self.calls.append((multipv, root_moves))
+            assert root_moves and multipv == min(2, len(root_moves))
+            return [
+                {
+                    "pv": [move],
+                    "score": chess.engine.PovScore(chess.engine.Cp(0), board.turn),
+                    "depth": 5,
+                    "nodes": 100,
+                }
+                for move in root_moves[:multipv]
+            ]
+
+    final_calls = []
+
+    def final(engine, board, position, nominee, deadline):
+        final_calls.append((position["uci"], nominee))
+        moves = [board.parse_uci(position["uci"]), board.parse_uci(nominee)]
+        lines, invalid = native(
+            position,
+            board,
+            [
+                {
+                    "pv": [move],
+                    "score": chess.engine.PovScore(chess.engine.Cp(0), board.turn),
+                    "depth": 5,
+                    "nodes": 100,
+                }
+                for move in moves
+            ],
+        )
+        assert not invalid
+        return {"lines": lines, "roots": [move.uci() for move in moves]}, None
+
+    with monkeypatch.context() as patch:
+        patch.setattr(purpose_search, "final", final)
+        for position in (capture, quiet):
+            engine = ScoutEngine()
+            result, issue = purpose_search.search(
+                engine, root, position, time.monotonic() + 10, policy=EARLY_CENTER
+            )
+            assert issue is None and len(engine.calls) == 1
+            assert matches_purpose(
+                result, position["uci"], board=root, position=position, policy=EARLY_CENTER
+            )
+            offered = [move.uci() for move in engine.calls[0][1]]
+            if position is quiet:
+                assert engine.calls[0][0] == 1 and offered == ["e4d5"]
+            else:
+                assert "e4d5" not in offered and "g1f3" in offered
+                assert matches_purpose(result, position["uci"])
+            result["scout"]["lines"][0]["line"]["root_move"] = position["uci"]
+            assert not matches_purpose(
+                result, position["uci"], board=root, position=position, policy=EARLY_CENTER
+            )
+
+        class PartialScout(ScoutEngine):
+            def __init__(self, missing):
+                super().__init__()
+                self.missing = missing
+
+            def analyse(self, *args, **kwargs):
+                lines = super().analyse(*args, **kwargs)
+                lines[0].pop(self.missing)
+                return lines
+
+        for missing in ("pv", "score", "depth"):
+            partial, issue = purpose_search.search(
+                PartialScout(missing), root, capture, time.monotonic() + 10, policy=EARLY_CENTER
+            )
+            assert issue is None and partial["scout"]["lines"][0]["rank"] == 2
+            assert matches_purpose(
+                partial, capture["uci"], board=root, position=capture, policy=EARLY_CENTER
+            )
+            from copy import deepcopy
+
+            for field, value in (
+                ("decision_fen", chess.Board().fen()),
+                ("pv", partial["scout"]["lines"][0]["line"]["root_move"] + " a1a8"),
+                ("score_value", None),
+                ("depth", None),
+            ):
+                corrupt = deepcopy(partial)
+                corrupt["scout"]["lines"][0]["line"][field] = value
+                assert not matches_purpose(
+                    corrupt, capture["uci"], board=root, position=capture, policy=EARLY_CENTER
+                )
+
+        class BoundedScout(ScoutEngine):
+            def __init__(self, bound):
+                super().__init__()
+                self.bound = bound
+
+            def analyse(self, *args, **kwargs):
+                lines = super().analyse(*args, **kwargs)
+                lines[0][self.bound + "bound"] = True
+                return lines
+
+        for bound in ("upper", "lower"):
+            bounded, issue = purpose_search.search(
+                BoundedScout(bound), root, quiet, time.monotonic() + 10, policy=EARLY_CENTER
+            )
+            assert issue is None and bounded["scout"]["lines"][0]["line"]["score_bound"] == bound
+            assert matches_purpose(
+                bounded, quiet["uci"], board=root, position=quiet, policy=EARLY_CENTER
+            )
+        patch.setattr(purpose_search, "final", lambda *_: ({}, "no_similar_alternative"))
+        assert (
+            purpose_search.search(
+                ScoutEngine(), root, capture, time.monotonic() + 10, policy=EARLY_CENTER
+            )[1]
+            == "no_similar_alternative"
+        )
+    assert len(final_calls) == 7
     chosen = candidate(capture, root)
     fallback = {"game_id": 2, "position_id": 4, "early_center": False}
     with monkeypatch.context() as patch:
@@ -576,9 +710,10 @@ def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch):
 
     dispatch_db = Database(":memory:")
     dispatch_db.initialize()
-    ingest_pgn(dispatch_db, PGN)
+    center_pgn = PGN.split("\n\n")[0] + "\n\n1. e4 d5 2. exd5 Qxd5 *"
+    ingest_pgn(dispatch_db, center_pgn)
     position = dispatch_db.connection.execute(
-        "SELECT id FROM positions WHERE game_id=1 ORDER BY ply LIMIT 1"
+        "SELECT id FROM positions WHERE game_id=1 AND ply=3"
     ).fetchone()[0]
     for sequence, coverage_json in (
         (0, "{}"),
@@ -616,24 +751,53 @@ def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch):
         return {"status": "insufficient", "detail": "fixture"}
 
     with monkeypatch.context() as patch:
-        patch.setattr(
-            "chess_coach.purpose_request.configuration",
-            lambda *_args: (None, {"fixture": "no-engine"}),
-        )
+
+        def stub_configuration(*_args, **kwargs):
+            return None, {
+                "engine_path": "fixture",
+                "fixture": "no-engine",
+                "purpose_policy": kwargs.get("policy", "candidate-comparison-v1"),
+            }
+
+        patch.setattr("chess_coach.purpose_request.configuration", stub_configuration)
+        patch.setattr("chess_coach.purpose_current.configuration", stub_configuration)
         patch.setattr(style_schedule_standard_worker, "run", finish_ordinary)
         config = PipelineConfig(learner=LEARNER)
         ordinary = style_schedule_standard_worker.process_standard(
             dispatch_db, config, slots[0], None
         )
+        targeted = style_schedule_standard_worker.process_standard(
+            dispatch_db, config, slots[1], None
+        )
         reused = style_schedule_standard_worker.process_standard(
             dispatch_db, config, slots[1], None
         )
-    assert ordinary["status"] == "insufficient"
+        from chess_coach.purpose_current import current, owned
+
+        row = owned(dispatch_db, targeted["request_id"], LEARNER)
+        _, stored_config = current(dispatch_db, row, LEARNER)
+        assert stored_config["purpose_policy"] == EARLY_CENTER
+        from chess_coach.purpose_view import show as show_purpose
+
+        assert (
+            "opposite central pawn-capture category"
+            in show_purpose(dispatch_db, targeted["request_id"], LEARNER)["scope"]
+        )
+    assert ordinary["status"] == targeted["status"] == "insufficient"
+    assert ordinary["request_id"] != targeted["request_id"]
     assert reused["detail"] == "terminal_request_reused" and reused["status"] == "unknown"
     row = dispatch_db.connection.execute(
         "SELECT request_id,status FROM style_schedule_slots WHERE id=?", (slots[1]["id"],)
     ).fetchone()
-    assert row["request_id"] is None and row["status"] == "unknown"
+    assert row["request_id"] == targeted["request_id"] and row["status"] == "unknown"
+
+    assert (
+        dispatch_db.connection.execute(
+            "SELECT policy_version FROM purpose_analysis_requests WHERE id=?",
+            (targeted["request_id"],),
+        ).fetchone()[0]
+        == EARLY_CENTER
+    )
     dispatch_db.close()
 
     played = line("e4d5 d8d5 b1c3 d5e5")

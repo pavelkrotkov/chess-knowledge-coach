@@ -7,12 +7,12 @@ from .purpose_view_binding import matches
 FIELDS = ("root_move", "score_kind", "score_value", "score_bound", "depth", "pv", "san", "status")
 
 
-def final_view(result, board, played, position):
+def final_view(result, board, played, position, policy=None):
     final = result.get("final")
     if not isinstance(final, dict) or not isinstance(final.get("lines"), list):
         return None
     try:
-        if not matches(result, played):
+        if not matches(result, played, board=board, position=position, policy=policy):
             return None
         lines = viewed(final["lines"], board, played)
         issue = grade(board, position, final["lines"])

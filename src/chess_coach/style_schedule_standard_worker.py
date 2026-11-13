@@ -12,8 +12,9 @@ def process_standard(db, config, slot, deadline):
     request_id = slot["request_id"]
     try:
         if request_id is None:
+            options = request_options(slot)
             request = create(
-                db, slot["position_id"], config.learner, engine_path=config.engine_path
+                db, slot["position_id"], config.learner, engine_path=config.engine_path, **options
             )
             if slot.get("early_center_target") and request["status"] in (
                 "complete",
@@ -53,3 +54,11 @@ def process_standard(db, config, slot, deadline):
         "request_id": request_id,
         "work": new_work(db, request_id, before),
     }
+
+
+def request_options(slot):
+    if slot.get("early_center_target"):
+        from .purpose_config import EARLY_CENTER
+
+        return {"policy": EARLY_CENTER}
+    return {}

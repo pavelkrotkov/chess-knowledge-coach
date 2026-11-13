@@ -1,7 +1,7 @@
 """Run a single engine with bounded cleanup and source configuration."""
 
 from .deep_execution_engine import start_engine, stop_engine
-from .purpose_config import configuration
+from .purpose_config import EARLY_CENTER, configuration
 from .purpose_deadline import cleanup_timeout, startup_timeout
 from .purpose_search import search
 
@@ -9,7 +9,7 @@ from .purpose_search import search
 def execute(db, snapshot, config, deadline):
     if snapshot["board"].legal_moves.count() < 2:
         return "insufficient", "forced_move", {}
-    binary, fresh = configuration(db, snapshot["game_id"], config["engine_path"])
+    binary, fresh = configured(db, snapshot["game_id"], config)
     if fresh != config:
         return "insufficient", "engine_configuration_changed", {}
     timeout = startup_timeout(deadline)
@@ -18,7 +18,7 @@ def execute(db, snapshot, config, deadline):
     runtime_config = dict(config)
     engine, metadata = start_engine(binary, runtime_config, timeout=timeout)
     try:
-        result, issue = search(engine, snapshot["board"], snapshot["position"], deadline)
+        result, issue = search_for_policy(engine, snapshot, config, deadline)
         result["engine"] = dict(metadata.id)
         result["runtime_engine"] = {
             key: runtime_config.get(key)
@@ -37,7 +37,19 @@ def execute(db, snapshot, config, deadline):
 
 def unchanged(db, game_id, config):
     try:
-        _, after = configuration(db, game_id, config["engine_path"])
+        _, after = configured(db, game_id, config)
     except (RuntimeError, OSError, ValueError):
         return False
     return after == config
+
+
+def configured(db, game_id, config):
+    if config["purpose_policy"] == EARLY_CENTER:
+        return configuration(db, game_id, config["engine_path"], policy=EARLY_CENTER)
+    return configuration(db, game_id, config["engine_path"])
+
+
+# Keep the unrestricted scout's existing call shape and policy.
+def search_for_policy(engine, snapshot, config, deadline):
+    options = {"policy": EARLY_CENTER} if config["purpose_policy"] == EARLY_CENTER else {}
+    return search(engine, snapshot["board"], snapshot["position"], deadline, **options)
