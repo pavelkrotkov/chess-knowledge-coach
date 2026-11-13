@@ -28,6 +28,21 @@
 <input type="hidden" name="key" value="{{ source.key }}">
 <button>{% if focus.selected == "protection" %}Replay the prepared defensive line{% else %}Rehearse this fork{% endif %}</button>
 </form>
+{% if focus.selected == "protection" %}
+{% set assessment = focus.assessment %}
+{% if assessment.status in ("correct", "incorrect") and assessment.evidence_id == source.evidence_id %}
+{% if assessment.status == "correct" %}<p>Your current first-encounter protection assessment was verified correct without assistance. <a href="{{ url_for('related_protection.show', evidence_id=source.evidence_id, followup=assessment.attempt) }}">Find a comparable unfamiliar protection assessment</a>.{% if assessment.harder %} <a href="{{ url_for('related_protection.show', evidence_id=source.evidence_id, followup=assessment.attempt, harder=1) }}">Find a harder unfamiliar protection assessment</a>.{% endif %}</p>
+{% else %}<p>Your current first-encounter assessment found a verified miss. The threatened piece was on {{ assessment.target }}; identify the threat and check the opponent's immediate captures before moving.</p>{% endif %}
+{% elif assessment.status in ("correct", "incorrect") %}<p>A current assessment was verified {{ "correct" if assessment.status == "correct" else "as a miss" }} without assistance. Its <a href="{{ url_for('views.evidence_detail', evidence_id=assessment.evidence_id) }}">assessment source</a> is separate from this selected rehearsal.{% if assessment.status == "incorrect" %} In that assessment the threatened piece was on {{ assessment.target }}; identify the threat and check the opponent's immediate captures before moving.{% endif %}</p>
+{% else %}<p>No current unassisted assessment result is available for this source.</p>{% endif %}
+<p><a href="{{ url_for('related_protection.show', evidence_id=source.evidence_id, from_plan=1) }}">Check whether this source supports an unfamiliar protection assessment</a>. The <a href="{{ url_for('related_protection.finder') }}">general finder</a> checks other sources; either bounded search may find no match.</p>
+<p><a href="{{ url_for('protection_plan.progress') }}">Matched protection assessment progress</a> · <a href="{{ url_for('short_mate_game_views.protection_samples') }}">Protection choices in your games</a></p>
+{% else %}
+{% if choice.assessment.status == "correct" %}<p>Your current first-encounter fork assessment was verified correct without assistance. <a href="{{ url_for('related_fork.find_next', attempt=choice.assessment.attempt) }}">Find a comparable follow-up fork assessment</a>. The bounded search may find no match.</p>
+{% elif choice.assessment.status == "incorrect" %}<p>Your current first-encounter assessment found a verified miss. Before committing to a move, name both targets.</p>{% else %}<p>No current unassisted assessment result is available for this source.</p>{% endif %}
+<p><a href="{{ url_for('related_fork.find_verified', evidence_id=source.evidence_id) }}">Find an unfamiliar fork assessment for this source</a>. The bounded search may find no match.</p>
+<p><a href="{{ url_for('related_fork.progress') }}">Matched fork assessment progress</a> · <a href="{{ url_for('short_mate_game_views.fork_samples') }}">Knight forks in your games</a></p>
+{% endif %}
 {% endif %}
 <p><a href="{{ url_for('protection_plan.next_focus') }}">Check your next non-mate practice focus</a> for the full source check and other options.</p>
 </section>
