@@ -14,6 +14,7 @@ from .pipeline_cooldown import utc_now
 from .pipeline_health import finish_run, start_run
 from .pipeline_lock import pipeline_lock
 from .pipeline_run import run_pipeline as _run_pipeline
+from .protection_game_worker import after_pipeline as protection_after_pipeline
 from .short_mate_trend_scan import after_pipeline
 
 
@@ -45,6 +46,7 @@ def process_pipeline(
         if result["status"] != "failed":
             after_pipeline(db, config.learner, started)
             capture_after_pipeline(db, config.learner, started)
+            protection_after_pipeline(db, config.learner, started)
             opening_after_pipeline(db, config, started)
             fork_after_pipeline(db, config.learner, started)
             fork_miss_after_pipeline(db, config.learner, started)

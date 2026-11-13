@@ -22,7 +22,13 @@ def _next(cursor, size):
     return cursor + 20 if cursor < 20 else (cursor - 19) % 20
 
 
-def _inspect(db, learner, state, deadline, *, inspector=None, turn_seconds=None):
+def _needed(item, recheck_complete):
+    return recheck_complete or len(item["results"]) < item["eligible"]
+
+
+def _inspect(
+    db, learner, state, deadline, *, inspector=None, turn_seconds=None, recheck_complete=False
+):
     if inspector is None:
         inspector = inspect
     if turn_seconds is None:
@@ -37,7 +43,7 @@ def _inspect(db, learner, state, deadline, *, inspector=None, turn_seconds=None)
         if time.monotonic() + turn_seconds >= deadline:
             break
         item = games[cursor]
-        if len(item["results"]) < item["eligible"]:
+        if _needed(item, recheck_complete):
             used += inspector(db, learner, item, deadline, min(4, TURN_LIMIT - used))
         cursor = _next(cursor, len(games))
         visited += 1
