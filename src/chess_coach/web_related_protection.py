@@ -60,12 +60,17 @@ def show(evidence_id):
         for item in result["items"]:
             item["board"] = board_rows(item["fen"])
     except ValueError:
+        optional = request.args.to_dict(flat=False) == {"from_plan": ["1"]}
         return render_template(
             "error.html",
-            message="This protection source is unsupported, unavailable, or changed.",
+            message=(
+                "This source is unavailable for an unfamiliar protection check."
+                if optional
+                else "This protection source is unsupported, unavailable, or changed."
+            ),
             back_url=url_for("related_protection.finder"),
             back_label="Search other protection sources",
-        ), 400
+        ), 200 if optional else 400
     return render_template("related_protection.html", result=result, evidence_id=evidence_id)
 
 

@@ -740,6 +740,37 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
                 assert b"Matched protection assessment progress" in daily.data
                 assert b"Protection choices in your games" in daily.data
                 assert b"Find a harder unfamiliar protection assessment" not in daily.data
+                source_url = f"/evidence/{source['evidence_id']}/related-protections"
+                assert (source_url + "?from_plan=1").encode() in daily.data
+                with patch.context() as unavailable:
+
+                    def unknown_history(*_args, **_kwargs):
+                        raise ValueError("protection history unavailable")
+
+                    unavailable.setattr(
+                        "chess_coach.web_related_protection.preview", unknown_history
+                    )
+                    check = client.get(
+                        source_url + "?from_plan=1",
+                        base_url="https://coach.invalid",
+                        headers=headers,
+                    )
+                    assert check.status_code == 200 and b"This source is unavailable" in check.data
+                    assert b'href="/plan/protection/finder"' in check.data
+                    assert (
+                        client.get(
+                            source_url, base_url="https://coach.invalid", headers=headers
+                        ).status_code
+                        == 400
+                    )
+                    assert (
+                        client.get(
+                            source_url + "?from_plan=1&cursor=bad",
+                            base_url="https://coach.invalid",
+                            headers=headers,
+                        ).status_code
+                        == 400
+                    )
                 plan["scan"]["due_incomplete"] = True
                 assert b"Next focus: protect a piece" not in plan_data()
                 plan["scan"]["due_incomplete"] = False
