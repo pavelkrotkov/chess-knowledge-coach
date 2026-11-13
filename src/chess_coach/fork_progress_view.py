@@ -4,15 +4,20 @@ import sqlite3
 
 from flask import current_app, render_template
 
-from .fork_progress_report import report
+from .fork_progress_game import report
 from .web_db import database
 
 
 def show():
     try:
-        result = report(database(), current_app.config["SUBJECT"], current_app.config["CORPUS"])
+        result, games, timing = report(
+            database(),
+            current_app.config["SUBJECT"],
+            current_app.config["CORPUS"],
+            current_app.config["PROJECT_ROOT"],
+        )
     except (sqlite3.Error, ValueError, TypeError, KeyError, IndexError):
         return render_template(
             "error.html", message="Fork progress is unavailable or changed."
         ), 400
-    return render_template("fork_progress.html", report=result)
+    return render_template("fork_progress.html", report=result, games=games, relation=timing)

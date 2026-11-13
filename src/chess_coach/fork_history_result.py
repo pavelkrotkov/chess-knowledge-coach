@@ -8,12 +8,16 @@ from .objective_history_dispatch import replay
 
 
 def result(db, row, *, check, cache=None):
+    return details(db, row, check=check, cache=cache)[0]
+
+
+def details(db, row, *, check, cache=None):
     requests = db.connection.execute(
         "SELECT * FROM objective_requests WHERE attempt_id=? ORDER BY rowid LIMIT 2",
         (row["attempt_id"],),
     ).fetchall()
     if len(requests) != 1:
-        return "stale"
+        return "stale", None
     request = requests[0]
     session, events = current(db, request, related_check=check, related_cache=cache)
     board, move = replay(db, session, events, request)
@@ -22,6 +26,8 @@ def result(db, row, *, check, cache=None):
         (row["attempt_id"], request["event_id"]),
     ).fetchone()
     if record is None:
-        return "pending"
+        return "pending", None
     stored = json.loads(record["result_json"])
-    return stored["status"] if valid(stored, request, events, board, move, session) else "stale"
+    if not valid(stored, request, events, board, move, session):
+        return "stale", None
+    return stored["status"], events[-1]["created_at"]
