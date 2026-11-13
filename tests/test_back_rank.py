@@ -119,10 +119,11 @@ def test_back_rank_practice_ownership_reveal_and_safe_line(tmp_path, monkeypatch
 
     db.close()
     for black in (False, True):
-        _related_defense_workflow(monkeypatch, black)
+        for created in (False, True):
+            _related_defense_workflow(monkeypatch, black, created)
 
 
-def _related_defense_workflow(monkeypatch, black):
+def _related_defense_workflow(monkeypatch, black, created):
     import contextlib
     import io
     import json
@@ -144,7 +145,8 @@ def _related_defense_workflow(monkeypatch, black):
     from chess_coach.web import create_app
 
     with monkeypatch.context() as patch:
-        fen = chess.Board(DEFENSE).mirror().fen() if black else DEFENSE
+        position = "r5k1/8/8/8/N7/8/5PPP/6K1 w - - 0 1" if created else DEFENSE
+        fen = chess.Board(position).mirror().fen() if black else position
         subject, bad = ("fixture_b", "Nb3") if black else ("fixture_a", "Nb6")
         db = owned_game(":memory:", patch, fen=fen, move=bad)
         process_mate(db, 1, subject)
@@ -162,14 +164,15 @@ def _related_defense_workflow(monkeypatch, black):
             ("test", "fixture", "checksum", "staging"),
         )
         corpus = db.connection.execute("SELECT id FROM puzzle_corpora").fetchone()[0]
-        board = chess.Board(DEFENSE)
+        board = chess.Board(position)
         board.turn = chess.BLACK
         board.set_piece_at(chess.H7, chess.Piece(chess.PAWN, chess.BLACK))
         if black:
             board = board.mirror()
-        setup, good, wrong = ("h2h3", "g7g6", "c5b3") if black else ("h7h6", "g2g3", "c4b6")
+        setup, good = ("h2h3", "g7g6") if black else ("h7h6", "g2g3")
+        wrong = ("a5b3" if black else "a4b6") if created else ("c5b3" if black else "c4b6")
         candidates = [("good", good, board, setup), ("wrong", wrong, board, setup)]
-        exact = chess.Board(DEFENSE)
+        exact = chess.Board(position)
         exact.turn = chess.BLACK
         exact.remove_piece_at(chess.A8)
         exact.set_piece_at(chess.A7, chess.Piece(chess.ROOK, chess.BLACK))
@@ -222,6 +225,30 @@ def _related_defense_workflow(monkeypatch, black):
             )
         transfer = preview(db, subject, evidence, "test")
         assert len(transfer["items"]) == 1 and transfer["defense_scan"]["proofs"] == 2
+        assert transfer["threat_origin"] == ("newly_allowed" if created else "anchored_preexisting")
+        if created:
+            assert transfer["source_contrast"]["san"] == bad
+            from chess_coach.back_rank_defense import observe
+            from chess_coach.related_backrank_defense_proof import _new_mates
+
+            prompt = board.copy()
+            prompt.push_uci(setup)
+            outcome = observe(prompt, prompt.parse_uci(good), include_candidates=True)
+            bad_choice = next(row for row in outcome["alternatives"] if row["move"]["uci"] == wrong)
+            assert _new_mates(bad_choice, outcome["pre_move_candidates"])
+            assert not _new_mates(bad_choice, [bad_choice["back_rank"][0]["move"]["uci"]])
+            mixed = chess.Board("rq4k1/8/8/8/N7/8/5PPP/6K1 w - - 0 1")
+            if black:
+                mixed = mixed.mirror()
+            mixed_result = observe(mixed, mixed.parse_uci(good), include_candidates=True)
+            mixed_bad = "a5c4" if black else "a4c5"
+            mixed_choice = next(
+                row for row in mixed_result["alternatives"] if row["move"]["uci"] == mixed_bad
+            )
+            mates = {mate["move"]["uci"] for mate in mixed_choice["back_rank"]}
+            before = set(mixed_result["pre_move_candidates"])
+            assert mates & before and mates - before
+            assert not _new_mates(mixed_choice, before)
         assert transfer["defense_scan"]["familiar"] == 4
         assert transfer["defense_scan"]["exact_source"] == 1
         assert not transfer["defense_scan"]["truncated"]
@@ -251,6 +278,10 @@ def _related_defense_workflow(monkeypatch, black):
         assert client.get(url).status_code == 403
         page = client.get(url, base_url="https://coach.invalid", headers=headers)
         assert page.status_code == 200 and b"Practice this defense" in page.data
+        if created:
+            assert (
+                bad.encode() in page.data and b"absent from the bounded pre-move probe" in page.data
+            )
         assert not re.search(
             rb"(?<![A-Za-z0-9_-])" + good.encode() + rb"(?![A-Za-z0-9_-])", page.data
         )
@@ -304,6 +335,14 @@ def _related_defense_workflow(monkeypatch, black):
             attempt = response.location.rsplit("/", 1)[-1]
         state = show(db, attempt, subject)
         assert state["status"] == "active" and "backrank_defense_witness" not in state
+        assert state["related_backrank_defense_origin"] == transfer["threat_origin"]
+        from chess_coach.related_backrank_contract import CREATED_DEFENSE_VERSION, DEFENSE_VERSION
+
+        row = db.connection.execute(
+            "SELECT provenance_json FROM unified_sessions WHERE attempt_id=?", (attempt,)
+        ).fetchone()
+        binding = json.loads(row[0])["related_backrank_defense"]
+        assert binding["rank_version"] == (CREATED_DEFENSE_VERSION if created else DEFENSE_VERSION)
         done = submit(db, attempt, subject, event_id="answer", move=good)
         assert done["status"] == "line_completed" and "backrank_defense_witness" in done
         review_evidence(db, evidence, decision="reject", actor="fixture")

@@ -1,8 +1,8 @@
-"""Retrieve a bounded unfamiliar response to an anchored back-rank threat."""
+"""Retrieve bounded unfamiliar defenses for supported back-rank origins."""
 
 from .fact_fingerprint import canonical, digest
 from .recurrence_snapshot import read_snapshot
-from .related_backrank_contract import DEFENSE_FILTER_VERSION, DEFENSE_VERSION
+from .related_backrank_contract import defense_filter, defense_version
 from .related_backrank_defense_match import PROOF_LIMIT, scorer
 from .related_backrank_defense_source import UnsupportedDefense, source_for_evidence
 from .related_capture import present
@@ -23,12 +23,13 @@ def selection(db, subject, evidence_id, corpus_version):
             "exact_source": 0,
         }
         familiar_data = familiarity(db, subject)
+        version = defense_version(source)
         chosen = select(
             db,
             subject,
             source,
             corpus_version,
-            DEFENSE_VERSION,
+            version,
             theme="defensiveMove",
             all_lines=True,
             include_objective=True,
@@ -40,7 +41,7 @@ def selection(db, subject, evidence_id, corpus_version):
             return None
         source, rating, corpus, ordered, scope, diagnostics = chosen
         corpus["defense_scan"] = budget
-        scope = digest(canonical([scope, DEFENSE_VERSION, DEFENSE_FILTER_VERSION, budget, ordered]))
+        scope = digest(canonical([scope, version, defense_filter(version), budget, ordered]))
         return source, rating, corpus, ordered, scope, diagnostics
 
 
@@ -54,6 +55,9 @@ def preview(db, subject, evidence_id, corpus_version, cursor=None):
         item.pop("defense_witness", None)
     if chosen is not None:
         result["defense_scan"] = chosen[2]["defense_scan"]
+        result["threat_origin"] = chosen[0].get("threat_origin", "anchored_preexisting")
+        if result["threat_origin"] == "newly_allowed":
+            result["source_contrast"] = chosen[0]["created_contrast"]
     return result
 
 
@@ -62,7 +66,10 @@ def start_related(db, *, attempt_id, subject, evidence_id, corpus_version, refer
         raise RuntimeError("cannot start during an existing transaction")
     version = db.connection.execute("PRAGMA data_version").fetchone()[0]
     chosen = selection(db, subject, evidence_id, corpus_version)
-    selected = admit(chosen, reference, DEFENSE_VERSION, "backrank_defense")
+    # A missing selection cannot supply a version-bound admission.
+    if chosen is None:
+        raise ValueError("transfer selection unavailable or stale")
+    selected = admit(chosen, reference, defense_version(chosen[0]), "backrank_defense")
 
     def current_selection():
         if db.connection.execute("PRAGMA data_version").fetchone()[0] != version:

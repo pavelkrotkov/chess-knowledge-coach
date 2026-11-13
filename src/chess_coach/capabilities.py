@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.102.0"
+REGISTRY_VERSION = "1.103.0"
 
 CAPABILITIES = (
     {
@@ -158,7 +158,7 @@ CAPABILITIES = (
         "area": "Training",
         "name": "Owned immediate-mate defense alternatives",
         "status": "observation-only",
-        "details": "Current owned back-rank prevention sources offer an explicit one-move objective: prevent every legal immediate opposing checkmate. A bounded worker checks alternative moves and retains a separate result. Selected anchored misses also support matching unfamiliar reset-history defense rehearsal; broader safety, a win, and mastery remain unknown.",
+        "details": "Current owned back-rank prevention sources offer an explicit one-move objective: prevent every legal immediate opposing checkmate. A bounded worker checks alternative moves and retains a separate result. Selected anchored misses and newly allowed back-rank mates support distinct matching unfamiliar reset-history rehearsals; broader safety, a win, and mastery remain unknown.",
     },
     {
         "id": "short_mate_alternative_verification",

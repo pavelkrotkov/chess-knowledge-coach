@@ -46,7 +46,9 @@ def _other(snapshot, provenance, provenance_key, line_filter):
             "related_mate": related_mate.FILTER_VERSION,
             "related_pin": related_pin_contract.bound_filter(provenance_key, provenance, None),
             "related_backrank_attack": related_backrank_contract.FILTER_VERSION,
-            "related_backrank_defense": related_backrank_contract.DEFENSE_FILTER_VERSION,
+            "related_backrank_defense": related_backrank_contract.bound_defense_filter(
+                provenance_key, provenance
+            ),
         }.get(provenance_key)
         select_lines(snapshot, provenance, expected_version=version)
         if snapshot["lines"] != line_filter:

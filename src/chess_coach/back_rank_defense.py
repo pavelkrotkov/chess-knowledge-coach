@@ -10,7 +10,12 @@ VERSION = "back-rank-defense-v1"
 MAX_NODES = 6000
 
 
-def observe(board, played, *, node_limit=MAX_NODES):
+def _retain_candidates(result, candidates, include):
+    if include:
+        result["pre_move_candidates"] = None if candidates is None else sorted(candidates)
+
+
+def observe(board, played, *, node_limit=MAX_NODES, include_candidates=False):
     if not 1 <= node_limit <= MAX_NODES:
         raise ValueError("invalid back-rank proof budget")
     if played not in board.legal_moves or board.outcome(claim_draw=False):
@@ -26,6 +31,7 @@ def observe(board, played, *, node_limit=MAX_NODES):
     if len(alternatives) > MAX_MOVES:
         return {**result, "status": "unknown", "reason": "alternative_limit", "nodes": 0}
     candidates = proposal(board, budget)
+    _retain_candidates(result, candidates, include_candidates)
     items = choices(board, alternatives, budget)
     result.update({"nodes": budget.nodes, "alternatives": items, "played": played.uci()})
     if any(item["status"] == "unknown" for item in items):

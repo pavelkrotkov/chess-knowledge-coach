@@ -7,3 +7,5 @@ def add_fields(binding, source, motif, item):
         binding["root_move"] = source["provenance"]["selected_root"]
     if motif == "backrank_defense":
         binding["defense_witness"] = item["defense_witness"]
+        if source.get("threat_origin") == "newly_allowed":
+            binding["threat_origin"] = "newly_allowed"
