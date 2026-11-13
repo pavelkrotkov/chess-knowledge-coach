@@ -14,7 +14,8 @@ def _evidence_positions(db, learner, candidates):
         f"""SELECT DISTINCT e.position_id FROM evidence_mappings e
         JOIN mapping_runs r ON r.id=e.mapping_run_id
         WHERE e.position_id IN ({placeholders}) AND e.subject=? AND r.producer=?
-        AND r.status='active' AND e.skill='hanging_piece' AND e.operation='prevent'""",
+        AND r.status='active' AND e.skill='hanging_piece' AND e.operation='prevent'
+        AND e.outcome IN ('success','failure')""",
         (*ids, normalize_identity(learner), MAPPER),
     )
     return {row[0] for row in rows}
