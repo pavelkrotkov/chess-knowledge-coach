@@ -7,6 +7,7 @@ from .related_pin_created_line import candidate_line as created_line
 from .related_pin_line import candidate_line
 from .related_pin_prevent_line import candidate_line as prevention_line
 from .related_pin_public import lines as public_lines
+from .related_pin_slide_line import candidate_line as slide_line
 
 
 def prompt(item):
@@ -27,10 +28,11 @@ def prompt(item):
 def matches(board, lines, source, budget):
     found = []
     for index, text in enumerate(lines):
-        if source.get("origin") == "counterfactual":
-            matcher = created_line
-        else:
-            matcher = prevention_line if source.get("operation") == "prevent" else candidate_line
+        matcher = {
+            "slide": slide_line,
+            "counterfactual": created_line,
+            "prevent": prevention_line,
+        }.get(source.get("origin") or source.get("operation"), candidate_line)
         result = matcher(board, text.split(), source, budget)
         if result is not None:
             found.append((index, result))

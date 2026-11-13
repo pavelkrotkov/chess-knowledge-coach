@@ -9,11 +9,18 @@ def _source(result, chosen):
         return
     result["operation"] = "prevent"
     result["pin_kind"] = chosen[0]["features"]["pin_kind"]
+    if chosen[0]["features"].get("origin") == "slide":
+        result["pin_origin"] = "slide"
     if chosen[0]["features"].get("origin") == "counterfactual":
         result["pin_origin"] = "counterfactual"
 
 
 def _text(result):
+    if result.get("pin_origin") == "slide":
+        return (
+            "The owned exposure and supplied slide are rechecked. The named rear capture "
+            "is blocked; other threats, compensation and later play remain unknown."
+        )
     if result.get("pin_origin") == "counterfactual":
         return (
             "The owned contrast and candidate lines are independently checked with bounded "

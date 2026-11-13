@@ -6,6 +6,8 @@ PREVENT_VERSION = "pin-pinner-capture-transfer-v1"
 PREVENT_FILTER_VERSION = "pin-pinner-capture-lines-v1"
 CREATED_VERSION = "pin-counterfactual-transfer-v1"
 CREATED_FILTER_VERSION = "pin-counterfactual-lines-v1"
+SLIDE_VERSION = "pin-relative-slide-transfer-v1"
+SLIDE_FILTER_VERSION = "pin-relative-slide-lines-v1"
 LINE_LIMIT = 64
 ROOT_PROOF_LIMIT = 64
 PIN_GEOMETRY_LIMIT = 8
@@ -13,6 +15,8 @@ SOURCE_ROOT_PROOF_RESERVATION = 2
 
 
 def filter_version(version):
+    if version == SLIDE_VERSION:
+        return SLIDE_FILTER_VERSION
     if version == CREATED_VERSION:
         return CREATED_FILTER_VERSION
     return PREVENT_FILTER_VERSION if version == PREVENT_VERSION else FILTER_VERSION
@@ -20,13 +24,15 @@ def filter_version(version):
 
 def transfer_version(source):
     features = source["features"]
+    if features.get("origin") == "slide":
+        return SLIDE_VERSION
     if features.get("origin") == "counterfactual":
         return CREATED_VERSION
     return PREVENT_VERSION if features.get("operation") == "prevent" else VERSION
 
 
 def operation(version):
-    return "prevent" if version in {PREVENT_VERSION, CREATED_VERSION} else "execute"
+    return "prevent" if version in {PREVENT_VERSION, CREATED_VERSION, SLIDE_VERSION} else "execute"
 
 
 class UnsupportedPinTransfer(ValueError):

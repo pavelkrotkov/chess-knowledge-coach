@@ -10,13 +10,13 @@ from .related_pin_source import source_for_evidence
 from .related_transfer_select import select
 
 
-def selection(db, subject, evidence_id, corpus_version):
+def selection(db, subject, evidence_id, corpus_version, mechanism=None):
     with read_snapshot(db):
-        return _selection(db, subject, evidence_id, corpus_version)
+        return _selection(db, subject, evidence_id, corpus_version, mechanism)
 
 
-def _selection(db, subject, evidence_id, corpus_version):
-    source = source_for_evidence(db, subject, evidence_id)
+def _selection(db, subject, evidence_id, corpus_version, mechanism):
+    source = source_for_evidence(db, subject, evidence_id, mechanism)
     budget = create()
     version = contract.transfer_version(source)
     chosen = select(
@@ -39,12 +39,16 @@ def _selection(db, subject, evidence_id, corpus_version):
     return source, rating, corpus, ordered, scope, diagnostics
 
 
-def preview(db, subject, evidence_id, corpus_version, cursor=None):
+def preview(db, subject, evidence_id, corpus_version, cursor=None, mechanism=None):
     try:
-        chosen = selection(db, subject, evidence_id, corpus_version)
+        chosen = selection(db, subject, evidence_id, corpus_version, mechanism)
     except contract.UnsupportedPinTransfer:
         return {
-            "status": "This source has no supported capture or pin-prevention contrast.",
+            "status": (
+                "This source has no supported relative-pin slide."
+                if mechanism == "slide"
+                else "This source has no supported capture or pin-prevention contrast."
+            ),
             "items": [],
         }
     result = present(chosen, cursor)

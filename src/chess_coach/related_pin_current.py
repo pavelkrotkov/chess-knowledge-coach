@@ -21,7 +21,8 @@ def require_current(db, row, snapshot_hash):
 
 
 def _recheck(db, row, snapshot_hash, binding):
-    source = source_for_evidence(db, row["subject"], binding["evidence_id"])
+    mechanism = "slide" if binding["rank_version"] == contract.SLIDE_VERSION else None
+    source = source_for_evidence(db, row["subject"], binding["evidence_id"], mechanism)
     if snapshot_hash(source) != binding["source_snapshot_hash"]:
         raise ValueError
     version = contract.transfer_version(source)
