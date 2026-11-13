@@ -1858,27 +1858,172 @@ def test_protection_lesson_offers_only_a_current_bounded_line_replay(tmp_path, m
                 from chess_coach.related_created import preview as created_preview
                 from chess_coach.unified_session_events import hint, reveal, show, submit
 
-                created_db.connection.execute(
-                    "INSERT INTO puzzle_corpora(version,source,checksum,state) VALUES('test','fixture','checksum','staging')"
-                )
-                corpus = created_db.connection.execute("SELECT id FROM puzzle_corpora").fetchone()[
-                    0
-                ]
                 fen = "4k3/7p/8/2b5/8/3R4/1P6/7K b - - 0 1"
-                created_db.connection.execute(
-                    """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,
-                    rating_deviation,themes_json,objective) VALUES(
-                    'sample',?,?,'https://example.invalid','h7h6 d3d5 e8f8 d5d6',
-                    1200,80,'[]','unknown')""",
-                    (corpus, fen),
+
+                def add_sample(db, *, fen=fen):
+                    db.connection.execute(
+                        "INSERT INTO puzzle_corpora(version,source,checksum,state) VALUES('test','fixture','checksum','staging')"
+                    )
+                    corpus = db.connection.execute("SELECT id FROM puzzle_corpora").fetchone()[0]
+                    db.connection.execute(
+                        """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,
+                        rating_deviation,themes_json,objective) VALUES(
+                        'sample',?,?,'https://example.invalid','h7h6 d3d5 e8f8 d5d6',
+                        1200,80,'[]','unknown')""",
+                        (corpus, fen),
+                    )
+                    db.connection.execute(
+                        "INSERT INTO puzzle_themes VALUES(?,'sample','defensiveMove',1200)",
+                        (corpus,),
+                    )
+                    db.connection.execute(
+                        "UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus,)
+                    )
+                    db.connection.commit()
+
+                add_sample(created_db)
+                # A separate in-memory encounter verifies a non-supplied safe move.
+                from chess_coach.objective_created_judge import judge as created_judge
+                from chess_coach.objective_worker import process as verify_objectives
+                from chess_coach.related_capture_assessment import setup as assessment_setup
+
+                assessed = make_protection_game(Path(":memory:"), patch, created=True)
+                assessed_id = material_decision(assessed, 1, LEARNER)["evidence_ids"][0]
+                add_sample(assessed)
+                import time
+
+                import chess
+
+                assessment_board, _, _ = assessment_setup(assessed, "test", "sample")
+                for root, expected in (
+                    ("d3d2", "correct"),
+                    ("d3d4", "incorrect"),
+                    ("d3d8", "unresolved"),
+                ):
+                    checked = created_judge(
+                        assessment_board,
+                        assessment_board.parse_uci(root),
+                        chess.D3,
+                        time.monotonic,
+                        time.monotonic(),
+                        5,
+                        {},
+                    )
+                    assert checked["status"] == expected
+                for mate_fen, answer in (
+                    ("4k3/7p/1P6/2b5/b7/3R4/1P3q2/7K b - - 0 1", "d3d5"),
+                    ("4k3/7p/8/2b5/P4q2/3R4/rP6/7K b - - 0 1", "b2b3"),
+                ):
+                    mate_board = chess.Board(mate_fen)
+                    mate_board.push_uci("h7h6")
+                    mate_result = created_judge(
+                        mate_board,
+                        mate_board.parse_uci(answer),
+                        chess.D3,
+                        time.monotonic,
+                        time.monotonic(),
+                        5,
+                        {},
+                    )
+                    assert (mate_result["status"], mate_result["reason"]) == (
+                        "unresolved",
+                        "opponent_immediate_mate",
+                    )
+                checking_board = chess.Board("4k3/8/7p/2b5/8/3R4/1P6/3n3K w - - 0 2")
+                move = checking_board.parse_uci("d3d5")
+                child = checking_board.copy()
+                child.push(move)
+                assert any(child.gives_check(reply) for reply in child.legal_moves)
+                assert (
+                    created_judge(
+                        checking_board, move, chess.D3, time.monotonic, time.monotonic(), 5, {}
+                    )["status"]
+                    == "correct"
                 )
-                created_db.connection.execute(
-                    "INSERT INTO puzzle_themes VALUES(?,'sample','defensiveMove',1200)", (corpus,)
+                assessment_app = create_app(
+                    db_path=":memory:",
+                    subject=LEARNER,
+                    actor="fixture",
+                    corpus="test",
+                    login="login",
+                    origin="https://coach.invalid",
                 )
-                created_db.connection.execute(
-                    "UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus,)
-                )
-                created_db.connection.commit()
+                with patch.context() as assessment_patch:
+                    assessment_patch.setattr(
+                        "chess_coach.web_related_created.database", lambda db=assessed: db
+                    )
+                    assessment_patch.setattr(
+                        "chess_coach.web_unified_practice.database", lambda db=assessed: db
+                    )
+                    assessment_patch.setattr(
+                        "chess_coach.web_unified_actions.database", lambda db=assessed: db
+                    )
+                    assessment_client = assessment_app.test_client()
+                    assessment_headers = {"Tailscale-User-Login": "login"}
+                    assessment_preview = assessment_client.get(
+                        f"/evidence/{assessed_id}/related-created-exposure",
+                        base_url="https://coach.invalid",
+                        headers=assessment_headers,
+                    )
+                    assert b"Check my first move" in assessment_preview.data
+                    begun = assessment_client.post(
+                        f"/evidence/{assessed_id}/related-created-exposure/start",
+                        base_url="https://coach.invalid",
+                        headers=assessment_headers | {"Origin": "https://coach.invalid"},
+                        data={
+                            "csrf": token(assessment_preview, "csrf"),
+                            "reference": token(assessment_preview, "reference"),
+                            "assessment": "1",
+                        },
+                    )
+                    assert begun.status_code == 303
+                    assessment_page = assessment_client.get(
+                        begun.headers["Location"],
+                        base_url="https://coach.invalid",
+                        headers=assessment_headers,
+                    )
+                    assert b"rook on d3" in assessment_page.data
+                    assert all(
+                        text not in assessment_page.data for text in (b"Rd5", b"Rd4", b"Bxd4")
+                    )
+                    attempt = begun.headers["Location"].rsplit("/", 1)[-1]
+                    answered = assessment_client.post(
+                        "/unified/move",
+                        base_url="https://coach.invalid",
+                        headers=assessment_headers | {"Origin": "https://coach.invalid"},
+                        data={
+                            "csrf": token(assessment_page, "csrf"),
+                            "attempt": attempt,
+                            "event": token(assessment_page, "event"),
+                            "move": "d3d2",
+                        },
+                    )
+                    assert answered.status_code == 303
+                    assert (
+                        assessed.connection.execute(
+                            "SELECT count(*) FROM objective_requests"
+                        ).fetchone()[0]
+                        == 1
+                    )
+                    assert verify_objectives(assessed, LEARNER)["outcomes"] == {"correct": 1}
+                    import json
+
+                    stored = assessed.connection.execute(
+                        "SELECT result_json FROM objective_results"
+                    ).fetchone()[0]
+                    assert json.loads(stored)["learning_eligible"] is False
+                    result_page = assessment_client.get(
+                        answered.headers["Location"],
+                        base_url="https://coach.invalid",
+                        headers=assessment_headers,
+                    )
+                    assert b"Verified correct" in result_page.data
+                    assert (
+                        show(assessed, attempt, LEARNER)["verification"]["assistance"]
+                        == "unassisted"
+                    )
+                assessed.close()
+
                 found = created_preview(created_db, LEARNER, created_id, "test")
                 assert len(found["items"]) == 1 and not found["created_scan"]["truncated"]
                 assert "created_witness" not in found["items"][0]

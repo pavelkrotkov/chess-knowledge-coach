@@ -4,6 +4,8 @@ import json
 
 from .objective_capture_contract import GAIN_OBJECTIVE, TARGET_OBJECTIVE
 from .objective_capture_judge import verify as verify_capture
+from .objective_created_contract import OBJECTIVE as CREATED_OBJECTIVE
+from .objective_created_verify import verify as verify_created
 from .objective_defense_judge import verify as verify_defense
 from .objective_defense_source import OBJECTIVE as DEFENSE_OBJECTIVE
 from .objective_fork_avoidance_contract import OBJECTIVE as FORK_AVOIDANCE_OBJECTIVE
@@ -28,7 +30,9 @@ from .objective_short_source import OBJECTIVE as SHORT_OBJECTIVE
 
 
 def verify(board, move, request, events, clock, start, seconds, base, session):
+    # Named objectives verify the recorded legal answer, not the supplied line.
     named = {
+        CREATED_OBJECTIVE: verify_created,
         PIN_OBJECTIVE: verify_pin,
         PIN_PREVENT_OBJECTIVE: verify_pin_prevent,
         FORK_OBJECTIVE: verify_fork,

@@ -8,6 +8,7 @@ from . import (
     related_mate,
     related_pin_contract,
 )
+from .related_created_objective import apply_filter as apply_created
 from .related_fork_lines import select_lines
 from .related_protection_contract import FILTER_VERSION as PROTECTION_FILTER
 from .related_protection_objective import apply_filter as apply_protection
@@ -64,6 +65,8 @@ def _other(snapshot, provenance, provenance_key, line_filter):
             related_created_contract.KEY,
         }:
             snapshot["objective"] = "legal_line"
+        # Only an independently certified assessment changes the created-exposure goal.
+        apply_created(snapshot, provenance, provenance_key)
         if provenance_key in {"related_mate", "related_backrank_attack"}:
             snapshot["objective"] = "checkmate"
         if provenance_key == "related_mate" and provenance.get("assessment"):

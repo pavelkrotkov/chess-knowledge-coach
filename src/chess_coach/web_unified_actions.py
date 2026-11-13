@@ -51,9 +51,12 @@ def move():
         )
     except ValueError:
         return render_template("error.html", message="The practice attempt has changed."), 400
+    # A queued assessment remains distinct from an ungraded rehearsal.
     session["unified_notice"] = (
         "This legal move is ungraded."
-        if result.get("created_exposure") and result["feedback"] == "needs_verification"
+        if result.get("created_exposure")
+        and not result.get("created_assessment")
+        and result["feedback"] == "needs_verification"
         else move_notice(result["feedback"], result.get("objective"))
     )
     return redirect(url_for("unified_practice.show_page", attempt=attempt), code=303)

@@ -7,6 +7,7 @@ from .objective_binding_scope import owned_source
 from .objective_events import prefix, prefix_hash
 from .objective_promotion_contract import OBJECTIVES as PROMOTION_OBJECTIVES
 from .related_capture_objective import is_source as capture_assessment
+from .related_created_objective import is_source as created_assessment
 from .related_fork_assessment_scope import is_source as fork_assessment
 from .related_protection_objective import is_source as protection_assessment
 from .unified_session_state import now
@@ -47,6 +48,7 @@ def _supported(session):
         return session["objective"] in PROMOTION_OBJECTIVES
     return (
         capture_assessment(session)
+        or created_assessment(session)
         or fork_assessment(session)
         or protection_assessment(session)
         or owned_source(session)

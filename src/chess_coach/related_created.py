@@ -57,6 +57,9 @@ def preview(db, subject, evidence_id, corpus, cursor=None):
     for item in result["items"]:
         item.pop("created_witness", None)
     if chosen is not None:
+        from .related_created_assessment_options import annotate
+
+        annotate(db, result, chosen, cursor)
         result["created_scan"] = chosen[2]["created_scan"]
         result["pool_limited"] = chosen[2]["limited"]
         if result["created_scan"]["truncated"]:
@@ -64,12 +67,21 @@ def preview(db, subject, evidence_id, corpus, cursor=None):
     return result
 
 
-def start_related(db, *, attempt_id, subject, evidence_id, corpus_version, reference):
+def start_related(
+    db, *, attempt_id, subject, evidence_id, corpus_version, reference, assessment=False
+):
     if db.connection.in_transaction:
         raise RuntimeError("cannot start during an existing transaction")
     chosen = selection(db, subject, evidence_id, corpus_version)
     selected = admit(chosen, reference, VERSION, "created_exposure")
     selected[3]["game_watermark"], selected[3]["legacy_watermark"] = chosen[2]["frontier"]
+    if assessment:
+        from .related_created_assessment import certificate
+
+        source_type, version, key, binding, lines = selected
+        if source_type != "corpus":
+            raise ValueError("created exposure assessment unavailable")
+        binding["assessment"] = certificate(db, version, key, lines, binding["created_witness"])
 
     return start_selected(
         db,
