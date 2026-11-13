@@ -1,5 +1,6 @@
 """Bounded restartable game processing without automatic human review."""
 
+import sqlite3
 import time
 
 from .capture_game_trend_scan import after_pipeline as capture_after_pipeline
@@ -25,13 +26,21 @@ def process_pipeline(
     if db.connection.in_transaction:
         raise RuntimeError("pipeline requires an idle database connection")
     with pipeline_lock(db.path):
-        start_run(db)
+        health_error = _health(start_run, db)
+        if health_error:
+            return _failure("start", health_error)
+        phase = {"name": "initializing"}
         try:
-            result = _run_pipeline(db, config, token, transport, clock)
-        except Exception:
-            finish_run(db, "failed")
-            return {"status": "failed", "detail": "processing_failed"}
-        finish_run(db, result["status"])
+            result = _run_pipeline(db, config, token, transport, clock, phase)
+        except Exception as error:
+            failure = _failure(phase["name"], _category(error))
+            health_error = _health(finish_run, db, "failed")
+            if health_error:
+                failure["health_error_category"] = health_error
+            return failure
+        health_error = _health(finish_run, db, result["status"])
+        if health_error:
+            return _failure("finish", health_error)
         if result["status"] != "failed":
             after_pipeline(db, config.learner, started)
             capture_after_pipeline(db, config.learner, started)
@@ -39,3 +48,31 @@ def process_pipeline(
             fork_after_pipeline(db, config.learner, started)
             fork_miss_after_pipeline(db, config.learner, started)
         return result
+
+
+# Classify failures without exposing exception messages, SQL, or private sources.
+def _category(error):
+    if isinstance(error, sqlite3.Error):
+        if getattr(error, "sqlite_errorcode", 0) & 255 == sqlite3.SQLITE_BUSY:
+            return "sqlite_busy"
+        return "sqlite_error"
+    return "unexpected_error"
+
+
+def _failure(phase, category):
+    return {
+        "status": "failed",
+        "detail": "processing_failed",
+        "phase": phase,
+        "error_category": category,
+    }
+
+
+# Health writes are transactional. A SQLite failure is reported without
+# replacing an earlier processing diagnosis or exposing the exception text.
+def _health(action, *args):
+    try:
+        action(*args)
+    except sqlite3.Error as error:
+        return _category(error)
+    return None

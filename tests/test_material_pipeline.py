@@ -140,9 +140,13 @@ def test_atomic_publication_rejects_changed_source(tmp_path, monkeypatch):
 
 
 def test_automatic_worker_records_provisional_material_and_browser_explains(tmp_path, monkeypatch):
+    import sqlite3
+
     import httpx
 
     from chess_coach import material_detector
+    from chess_coach.material_worker_archive import advance
+    from chess_coach.material_worker_cursor import scan
     from chess_coach.pipeline import process_pipeline
     from chess_coach.web import create_app
 
@@ -162,10 +166,39 @@ def test_automatic_worker_records_provisional_material_and_browser_explains(tmp_
         engine_path=sys.executable,
         nodes=100,
         deep_enabled=False,
+        material_max_scan=1,
         material_max_decisions=1,
     )
     network = httpx.MockTransport(lambda request: httpx.Response(200, text=""))
-    result = process_pipeline(db, config, transport=network)
+    key, _ = scan(db, LEARNER, 1)
+    assert (
+        db.connection.execute(
+            "SELECT 1 FROM pipeline_cursors WHERE account_key=?", (key,)
+        ).fetchone()
+        is None
+    )
+    db.connection.execute("PRAGMA busy_timeout=10")
+
+    def block_commit(database, account, position):
+        reader = sqlite3.connect(database.path)
+        try:
+            reader.execute("BEGIN")
+            reader.execute("SELECT * FROM pipeline_cursors").fetchall()
+            return advance(database, account, position)
+        finally:
+            reader.close()
+
+    with monkeypatch.context() as patch:
+        patch.setattr("chess_coach.material_worker_archive.advance", block_commit)
+        result = process_pipeline(db, config, transport=network)
+    assert result["status"] == "partial"
+    assert result["material"]["detail"] == "cursor_busy" and result["material"]["capped"]
+    assert (
+        db.connection.execute(
+            "SELECT 1 FROM pipeline_cursors WHERE account_key=?", (key,)
+        ).fetchone()
+        is None
+    )
     assert calls and result["material"]["processed"] == 1
     assert result["material"]["outcomes"]["failure"] == 1
     row = db.connection.execute(
