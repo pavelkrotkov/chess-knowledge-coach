@@ -2,7 +2,7 @@
 <p>Study credentials {% if study.credentials %}are available{% else %}are unavailable{% endif %}.</p>
 {% if study.link %}<p><a href="{{ study.link }}">Open verified private Study</a>.</p>
 {% else %}<p>{{ study.message }}</p>{% endif %}
-{% if study.credentials and not study.link %}<form method="post" action="{{ url_for('repertoire_views.unfamiliar_study') }}">
+{% if study.credentials and not study.link and study.request_allowed|default(true) %}<form method="post" action="{{ url_for('repertoire_views.unfamiliar_study') }}">
 <input type="hidden" name="csrf" value="{{ csrf }}">
 <input type="hidden" name="version" value="{{ course.version }}">
 {% for key in ('color', 'parent', 'move') %}<input type="hidden" name="{{ key }}" value="{{ course.selection[key] }}">{% endfor %}

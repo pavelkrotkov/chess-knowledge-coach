@@ -4,8 +4,8 @@ import re
 
 from .course_preview import preview_hash
 from .fact_fingerprint import canonical, digest
-from .opening_unfamiliar_course import SELECTED_VERSION, VERSION
-from .opening_unfamiliar_selected_validate import validate_content
+from .opening_unfamiliar_course import MEASURED_VERSION, SELECTED_VERSION, VERSION
+from .opening_unfamiliar_selected_validate import validate_content, validate_measurement
 from .opening_unfamiliar_study_lesson import lesson
 from .study_inventory import named
 
@@ -17,6 +17,9 @@ def _version(current, expected):
     if "selection" in current:
         payload.update(schema=SELECTED_VERSION, selection=current["selection"])
         validate_content(current)
+    if "measurement" in current:
+        validate_measurement(current)
+        payload.update(schema=MEASURED_VERSION, measurement=current["measurement"])
     if any(
         (
             not re.fullmatch(r"[0-9a-f]{64}", expected),

@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.92.0"
+REGISTRY_VERSION = "1.93.0"
 
 CAPABILITIES = (
     {
@@ -445,7 +445,7 @@ CAPABILITIES = (
         "area": "Repertoire",
         "name": "Opening classification",
         "status": "observation-only",
-        "details": "A pinned CC0 opening dataset supports source-linked repertoire and structure observations. Exact opening alternatives can link to a qualified worked experiment and a private preview paired with a bounded public continuation. A small checked group of unfamiliar first turns can each open an exploratory, versioned private course and request its exact private Study with a verified receipt. A bounded early-center opportunity comparison can suggest a learning fit when current owned choices and public branch coverage qualify. Broader style fit and recommendations remain planned.",
+        "details": "A pinned CC0 opening dataset supports source-linked repertoire and structure observations. Exact opening alternatives can link to a qualified worked experiment and a private preview paired with a bounded public continuation. A small checked group of unfamiliar first turns can each open an exploratory, versioned private course and request its exact private Study with a verified receipt. A current exact two-root comparison may be shown beside the licensed course line. A bounded early-center opportunity comparison can suggest a learning fit when current owned choices and public branch coverage qualify. Broader style fit and recommendations remain planned.",
     },
     {
         "id": "style_choices",

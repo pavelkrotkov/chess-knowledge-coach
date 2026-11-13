@@ -32,9 +32,11 @@ def _select(db, root, subject, dataset, board, color, budget):
     return None
 
 
-def prepare(db, learner):
+def prepare(db, learner, *, deadline=None):
     budget = BrowserBudget(db)
     budget.expires = min(budget.expires, time.monotonic() + 25)
+    if deadline is not None:
+        budget.expires = min(budget.expires, deadline)
     subject = normalize_identity(learner)
     db.connection.create_function(
         "normalized_opening_owner", 1, normalize_identity, deterministic=True

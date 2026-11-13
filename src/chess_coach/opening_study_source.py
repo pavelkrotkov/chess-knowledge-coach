@@ -42,3 +42,12 @@ def inputs(directory, identity, root):
 
 def fingerprint(paths):
     return [_stat(path) for path in paths]
+
+
+def pin_inputs(directory, root, paths, before, identity):
+    if not identity:
+        return before
+    if fingerprint(paths) != before:
+        raise ValueError("opening source changed")
+    paths.extend(inputs(directory, identity, root))
+    return fingerprint(paths)
