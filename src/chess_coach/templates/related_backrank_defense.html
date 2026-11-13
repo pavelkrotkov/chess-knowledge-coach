@@ -5,7 +5,7 @@
 <p>The source is a missed defense with a separately witnessed immediate back-rank threat. These examples match the checked mating geometry and a supplied defensive move. The supplied line is rehearsal, not a grade of every move.</p>
 <p><a href="{{ url_for('views.evidence_detail', evidence_id=evidence_id) }}">Return to the source evidence</a></p>
 {% if result.defense_scan is defined %}
-<p>{{ result.status }}. Candidate proofs checked: {{ result.defense_scan.proofs }} of {{ result.defense_scan.proof_limit }}{% if result.defense_scan.truncated %}; additional candidates remain unchecked{% endif %}. The search examines {{ result.scanned }} corpus records in a bounded rating range. Later danger and other defenses remain unknown.</p>
+<p>{{ result.status }}. Candidate proofs checked: {{ result.defense_scan.proofs }} of {{ result.defense_scan.proof_limit }}{% if result.defense_scan.truncated %}; additional candidates remain unchecked{% endif %}. The search examines {{ result.scanned }} corpus records in a bounded rating range and screens out {{ result.defense_scan.familiar }} familiar candidate records and {{ result.defense_scan.exact_source }} exact-source records before proof. Later danger and other defenses remain unknown.</p>
 {% else %}<p>{{ result.status }}</p>{% endif %}
 {% for item in result["items"] %}
 <section><h3>Unfamiliar defense {{ loop.index }}</h3>

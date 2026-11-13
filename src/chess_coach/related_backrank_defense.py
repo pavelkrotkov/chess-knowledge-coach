@@ -6,6 +6,7 @@ from .related_backrank_contract import DEFENSE_FILTER_VERSION, DEFENSE_VERSION
 from .related_backrank_defense_match import PROOF_LIMIT, scorer
 from .related_backrank_defense_source import UnsupportedDefense, source_for_evidence
 from .related_capture import present
+from .related_capture_familiar import familiarity
 from .related_session_start import start_selected
 from .related_transfer_admission import admit
 from .related_transfer_select import select
@@ -14,7 +15,14 @@ from .related_transfer_select import select
 def selection(db, subject, evidence_id, corpus_version):
     with read_snapshot(db):
         source = source_for_evidence(db, subject, evidence_id)
-        budget = {"proofs": 0, "proof_limit": PROOF_LIMIT, "truncated": False}
+        budget = {
+            "proofs": 0,
+            "proof_limit": PROOF_LIMIT,
+            "truncated": False,
+            "familiar": 0,
+            "exact_source": 0,
+        }
+        familiar_data = familiarity(db, subject)
         chosen = select(
             db,
             subject,
@@ -25,7 +33,8 @@ def selection(db, subject, evidence_id, corpus_version):
             all_lines=True,
             include_objective=True,
             feature=lambda _prompt, _line: dict(source["features"]),
-            score=scorer(source, budget),
+            score=scorer(source, budget, familiar_data),
+            familiar_data=familiar_data,
         )
         if chosen is None:
             return None

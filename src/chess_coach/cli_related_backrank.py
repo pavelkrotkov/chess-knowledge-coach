@@ -41,11 +41,11 @@ def defense_commands(sub):
 
 
 def defenses(db, args):
-    print(
-        json.dumps(
-            defense_preview(db, args.subject, args.evidence, args.corpus, args.cursor), indent=2
-        )
-    )
+    try:
+        result = defense_preview(db, args.subject, args.evidence, args.corpus, args.cursor)
+    except ValueError:
+        raise SystemExit("Back-rank source or preview is unavailable or stale.") from None
+    print(json.dumps(result, indent=2))
 
 
 def begin_defense(db, args):

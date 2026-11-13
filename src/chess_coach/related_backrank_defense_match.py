@@ -7,6 +7,7 @@ from .puzzle_session_validate import CORPUS_PLIES_LIMIT, legal_move, solution_mo
 from .related_backrank_defense_proof import proof
 from .related_capture_match import _scored
 from .related_capture_position import _features, prompt_key
+from .related_capture_rank import _excluded
 from .related_fork_lines import bind_lines
 
 PROOF_LIMIT = 4
@@ -31,7 +32,10 @@ def _prompt(item, source):
     return board, moves
 
 
-def scorer(source, budget):
+def scorer(source, budget, familiar_data):
+    familiar, _, is_familiar = familiar_data
+    source_key = prompt_key(source["prompt_fen"])
+
     def score(item, source_features, seen, baseline):
         try:
             candidate = _prompt(item, source)
@@ -40,6 +44,10 @@ def scorer(source, budget):
             board, moves = candidate
             key = prompt_key(board.fen())
             if key in seen:
+                return None
+            exclusion = _excluded(key, source_key, familiar, is_familiar)
+            if exclusion:
+                budget[exclusion] += 1
                 return None
             # Charge full replay and legal proof only after the cheap geometry screen.
             if budget["proofs"] >= PROOF_LIMIT:
