@@ -3,7 +3,7 @@
 import json
 
 from .recurrence_snapshot import read_snapshot
-from .related_backrank_contract import DEFENSE_FILTER_VERSION, DEFENSE_VERSION
+from .related_backrank_contract import defense_filter, defense_version
 from .related_backrank_defense_proof import proof
 from .related_backrank_defense_source import source_for_evidence
 from .related_capture_assessment import setup
@@ -15,8 +15,9 @@ def _recheck(db, row, snapshot_hash, binding):
     source = source_for_evidence(db, row["subject"], binding["evidence_id"])
     if snapshot_hash(source) != binding["source_snapshot_hash"]:
         raise ValueError("back-rank source changed")
+    version = defense_version(source)
     if (binding["rank_version"], binding["motif"], binding["operation"], row["source_type"]) != (
-        DEFENSE_VERSION,
+        version,
         "backrank_defense",
         "prevent",
         "corpus",
@@ -25,7 +26,7 @@ def _recheck(db, row, snapshot_hash, binding):
     candidate = resolve_source(
         db, row["source_type"], row["source_version"], row["source_key"], subject=row["subject"]
     )
-    select_lines(candidate, binding, expected_version=DEFENSE_FILTER_VERSION)
+    select_lines(candidate, binding, expected_version=defense_filter(version))
     board, _, _ = setup(db, row["source_version"], row["source_key"])
     if board.fen() != candidate["prompt_fen"]:
         raise ValueError("back-rank prompt changed")

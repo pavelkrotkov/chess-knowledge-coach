@@ -10,5 +10,8 @@ def add_fields(result, row):
     defense = data.get("related_backrank_defense")
     if defense is not None:
         result["related_backrank_defense"] = True
+        result["related_backrank_defense_origin"] = defense.get(
+            "threat_origin", "anchored_preexisting"
+        )
         if row["status"] == "line_completed":
             result["backrank_defense_witness"] = defense["defense_witness"]
