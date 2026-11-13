@@ -4,6 +4,7 @@
 <h2>Decision analysis</h2>
 <p>Game {{ decision.game_id }}, ply {{ decision.ply }}. Played: {{ decision.played_san }}. Score perspective: {{ decision.score_pov }}.</p>
 {% include "board.html" %}
+<p><a href="{{ url_for('short_mate_game_views.skewer', position_id=decision.position_id) }}">Inspect this decision for a royal skewer</a></p>
 <p>{{ decision.note }} Limits apply to each of the two searches; comparing both can approximately double scan work. Status: {{ decision.status }}.</p>
 {% if decision.run %}<p>Run {{ decision.run.id }}: {{ decision.run.engine }}. Configuration: {% for name, value in decision.run.config.items() %}{{ name }}: {{ value }}{% if not loop.last %}; {% endif %}{% endfor %}.</p>{% else %}<p>No analysis run is available.</p>{% endif %}
 {% for role in ("best", "played") %}{% set line = decision[role] %}

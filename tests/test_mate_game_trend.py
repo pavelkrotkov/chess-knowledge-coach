@@ -191,6 +191,84 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
                 )["status"]
                 == "complete"
             )
+        # A real owned analyzed decision proves a royal skewer without a miss claim.
+        skewer_db = Database(":memory:")
+        skewer_db.initialize()
+        skewer_pgn = """[Event "Skewer"]
+[White "fixture_a"]
+[Black "fixture_b"]
+[UTCDate "2026.01.01"]
+[UTCTime "00:00:00"]
+[SetUp "1"]
+[FEN "4q3/8/8/4k3/8/8/R7/7K w - - 0 1"]
+[Result "1-0"]
+
+1. Re2+ Kd6 1-0
+"""
+        ingest_pgn(skewer_db, skewer_pgn)
+        assert (
+            run_analysis(
+                skewer_db, 1, game_input(skewer_db, 1), config, engine_identity(sys.executable)
+            )["status"]
+            == "complete"
+        )
+        with patch.context() as skewer_patch:
+            skewer_patch.setattr(protection_web, "database", lambda: skewer_db)
+            app = create_app(
+                db_path=":memory:",
+                subject="fixture_a",
+                actor="operator",
+                corpus="test",
+                login="fixture",
+                origin="https://coach.invalid",
+            )
+            client = app.test_client()
+            url = "/decisions/1/skewer"
+            assert client.get(url, base_url="https://coach.invalid").status_code == 403
+            client.environ_base["HTTP_TAILSCALE_USER_LOGIN"] = "fixture"
+            before = skewer_db.connection.total_changes
+            page = client.get(url, base_url="https://coach.invalid")
+            assert page.status_code == 200 and b"Your recorded move Re2+" in page.data
+            assert b"queen on e8" in page.data and b"Rxe8" in page.data
+            assert b"6 legal replies" in page.data and b"not a verdict" in page.data
+            assert skewer_db.connection.total_changes == before
+            from chess_coach import skewer_game_report as skewer_report
+
+            ticks = [0]
+            recheck = skewer_report.recheck
+
+            def slow_recheck(*args):
+                recheck(*args)
+                ticks[0] = 4
+
+            with skewer_patch.context() as timing:
+                timing.setattr(skewer_report, "recheck", slow_recheck)
+                late = skewer_report.report(skewer_db, "fixture_a", 1, clock=lambda: ticks[0])
+                assert late["proof"] is None and late["reason"] == "time limit"
+            app.config["SUBJECT"] = "fixture_b"
+            assert client.get(url, base_url="https://coach.invalid").status_code == 400
+            app.config["SUBJECT"] = "fixture_a"
+            skewer_db.connection.execute(
+                "UPDATE pipeline_stages SET status='failed' WHERE game_id=1 AND stage='analysis'"
+            )
+            skewer_db.connection.commit()
+            assert client.get(url, base_url="https://coach.invalid").status_code == 400
+        import time
+
+        import chess
+
+        from chess_coach.skewer_game_proof import inspect as inspect_skewer
+
+        harmless = chess.Board("8/8/8/4k3/8/8/R7/7K w - - 0 1")
+        assert inspect_skewer(harmless, "a2e2", time.monotonic() + 1, time.monotonic)[0] is None
+        block = chess.Board("4q3/8/3n4/4k3/8/8/R7/7K w - - 0 1")
+        assert inspect_skewer(block, "a2e2", time.monotonic() + 1, time.monotonic)[0] is None
+        alternative = chess.Board("4q3/8/8/4k3/8/8/R7/7K w - - 0 1")
+        assert not inspect_skewer(alternative, "h1g1", time.monotonic() + 1, time.monotonic)[0][
+            "played"
+        ]
+        skewer_db.close()
+
         cache = {}
         for module in (protection_worker, protection_current):
             patch.setattr(module, "location", lambda *_: "in-memory")

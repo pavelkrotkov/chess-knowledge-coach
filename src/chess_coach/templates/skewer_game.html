@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Royal skewer inspection — Chess coach{% endblock %}
+{% block content %}
+<h2>Royal skewer inspection</h2>
+<p><a href="{{ url_for('views.decision_detail', position_id=result.position_id) }}">Return to the source decision</a></p>
+{% set board_label = "Position before your recorded move" %}{% include "board.html" %}
+{% if result.proof %}{% set item = result.proof %}
+<p>{{ "Your recorded move" if item.played else "An alternative move" }} {{ item.root }} checks the king in front of the {{ item.target }} on {{ item.square }}.</p>
+<p>Every one of {{ item.replies }} legal replies allowed a checked capture with a net gain of at least three material points within the bounded exchange. One legal example: {{ item.root }} {{ item.reply }} {{ item.capture }}.</p>
+<p>This shows the immediate capture, not a verdict on the recorded move or later compensation.</p>
+{% else %}<p>No supported skewer proof was found: {{ result.reason }}. This does not establish that no opportunity existed.</p>{% endif %}
+<p>The check covers at most 16 legal checking moves, 64 replies per move, and bounded immediate material exchanges. Checking counterplay and unsupported histories remain unresolved.</p>
+{% endblock %}
