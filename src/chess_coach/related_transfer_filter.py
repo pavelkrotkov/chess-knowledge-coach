@@ -14,6 +14,8 @@ from .related_protection_contract import FILTER_VERSION as PROTECTION_FILTER
 def filter_version(motif, version=None):
     if motif == "backrank_attack":
         return related_backrank_contract.FILTER_VERSION
+    if motif == "backrank_defense":
+        return related_backrank_contract.DEFENSE_FILTER_VERSION
     if motif == "protection":
         return PROTECTION_FILTER
     if motif == "fork_avoidance":

@@ -35,7 +35,7 @@ def _binding(source, version, motif, item):
         "rank_version": version,
         "motif": motif,
         "operation": "prevent"
-        if motif in {"protection", "fork_prevention", "fork_avoidance"}
+        if motif in {"protection", "fork_prevention", "fork_avoidance", "backrank_defense"}
         else "execute",
         "pattern_cued": True,
     }
@@ -67,7 +67,7 @@ def _binding(source, version, motif, item):
 
     if motif == "mate":
         binding["mate_timing"] = source["objective"]
-    add_backrank_fields(binding, source, motif)
+    add_backrank_fields(binding, source, motif, item)
 
     if motif in {
         "fork",
@@ -77,6 +77,7 @@ def _binding(source, version, motif, item):
         "mate",
         "pin",
         "backrank_attack",
+        "backrank_defense",
     }:
         binding.update(
             line_filter_version=filter_version(motif, version),

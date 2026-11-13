@@ -3,6 +3,8 @@
 import json
 
 from .related_backrank_attack import preview
+from .related_backrank_defense import preview as defense_preview
+from .related_backrank_defense import start_related as start_defense
 from .related_backrank_source import roots
 from .related_backrank_start import start_related
 
@@ -22,6 +24,41 @@ def configure(sub):
         else:
             parser.add_argument("--attempt", required=True)
             parser.add_argument("--reference", required=True)
+    defense_commands(sub)
+
+
+def defense_commands(sub):
+    for name in ("related-backrank-defenses", "start-related-backrank-defense"):
+        parser = sub.add_parser(name)
+        parser.add_argument("--subject", required=True)
+        parser.add_argument("--evidence", required=True, type=int)
+        parser.add_argument("--corpus", required=True)
+        if name == "related-backrank-defenses":
+            parser.add_argument("--cursor")
+        else:
+            parser.add_argument("--attempt", required=True)
+            parser.add_argument("--reference", required=True)
+
+
+def defenses(db, args):
+    try:
+        result = defense_preview(db, args.subject, args.evidence, args.corpus, args.cursor)
+    except ValueError:
+        raise SystemExit("Back-rank source or preview is unavailable or stale.") from None
+    print(json.dumps(result, indent=2))
+
+
+def begin_defense(db, args):
+    result = start_defense(
+        db,
+        attempt_id=args.attempt,
+        subject=args.subject,
+        evidence_id=args.evidence,
+        corpus_version=args.corpus,
+        reference=args.reference,
+    )
+    result.pop("source_key", None)
+    print(json.dumps(result, indent=2))
 
 
 def list_roots(db, args):

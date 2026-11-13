@@ -116,3 +116,210 @@ def test_back_rank_practice_ownership_reveal_and_safe_line(tmp_path, monkeypatch
     db.connection.commit()
     with pytest.raises(ValueError):
         show(db, "own", "fixture_a")
+
+    db.close()
+    for black in (False, True):
+        _related_defense_workflow(monkeypatch, black)
+
+
+def _related_defense_workflow(monkeypatch, black):
+    import contextlib
+    import io
+    import json
+    import re
+
+    import chess
+    import chess.pgn
+
+    from chess_coach import web_related_backrank as web
+    from chess_coach.cli_parser import build_parser
+    from chess_coach.cli_related_commands import COMMANDS
+    from chess_coach.evidence_review import inspect_evidence
+    from chess_coach.ingest import ingest_pgn
+    from chess_coach.lesson_mechanisms import describe
+    from chess_coach.lesson_source import source
+    from chess_coach.related_backrank_defense import preview, start_related
+    from chess_coach.unified_session_events import show, submit
+    from chess_coach.unified_sessions import start as start_corpus
+    from chess_coach.web import create_app
+
+    with monkeypatch.context() as patch:
+        fen = chess.Board(DEFENSE).mirror().fen() if black else DEFENSE
+        subject, bad = ("fixture_b", "Nb3") if black else ("fixture_a", "Nb6")
+        db = owned_game(":memory:", patch, fen=fen, move=bad)
+        process_mate(db, 1, subject)
+        process_decision(db, 1, subject)
+        evidence = db.connection.execute(
+            "SELECT id FROM evidence_mappings WHERE skill=? AND operation=?",
+            ("back_rank", "prevent"),
+        ).fetchone()[0]
+        assert inspect_evidence(db, evidence)["backrank_defense_transfer"]
+        assert describe(source(db, subject, {"id": evidence, "position_id": 1}))[
+            "backrank_defense_transfer"
+        ]
+        db.connection.execute(
+            "INSERT INTO puzzle_corpora(version,source,checksum,state) VALUES(?,?,?,?)",
+            ("test", "fixture", "checksum", "staging"),
+        )
+        corpus = db.connection.execute("SELECT id FROM puzzle_corpora").fetchone()[0]
+        board = chess.Board(DEFENSE)
+        board.turn = chess.BLACK
+        board.set_piece_at(chess.H7, chess.Piece(chess.PAWN, chess.BLACK))
+        if black:
+            board = board.mirror()
+        setup, good, wrong = ("h2h3", "g7g6", "c5b3") if black else ("h7h6", "g2g3", "c4b6")
+        candidates = [("good", good, board, setup), ("wrong", wrong, board, setup)]
+        exact = chess.Board(DEFENSE)
+        exact.turn = chess.BLACK
+        exact.remove_piece_at(chess.A8)
+        exact.set_piece_at(chess.A7, chess.Piece(chess.ROOK, chess.BLACK))
+        exact.set_piece_at(chess.A8, chess.Piece(chess.KNIGHT, chess.WHITE))
+        if black:
+            exact = exact.mirror()
+        candidates.append(("00-exact", good, exact, "a2a1" if black else "a7a8"))
+        for index, file in enumerate("bcde"):
+            familiar_board = board.copy()
+            square = chess.parse_square(file + ("2" if black else "7"))
+            familiar_board.set_piece_at(square, chess.Piece(chess.PAWN, board.turn))
+            candidates.append((f"00-seen-{index}", good, familiar_board, setup))
+            if index == 0:
+                indexed_board = familiar_board
+        for key, move, candidate_board, candidate_setup in candidates:
+            db.connection.execute(
+                """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,
+                rating_deviation,themes_json,objective) VALUES(?,?,?,?,?,?,?,?,?)""",
+                (
+                    key,
+                    corpus,
+                    candidate_board.fen(),
+                    "https://example.invalid",
+                    candidate_setup + " " + move,
+                    1200,
+                    80,
+                    "[]",
+                    "unknown",
+                ),
+            )
+            db.connection.execute(
+                "INSERT INTO puzzle_themes VALUES(?,?,?,?)", (corpus, key, "defensiveMove", 1200)
+            )
+        db.connection.execute("UPDATE puzzle_corpora SET state=?", ("ready",))
+        db.connection.commit()
+        indexed_game = chess.pgn.Game()
+        indexed_game.setup(indexed_board)
+        indexed_game.headers["White"] = subject if not black else "fixture_opponent"
+        indexed_game.headers["Black"] = subject if black else "fixture_opponent"
+        indexed_game.add_variation(indexed_board.parse_uci(setup))
+        ingest_pgn(db, str(indexed_game))
+        for index in range(1, 4):
+            start_corpus(
+                db,
+                attempt_id=f"seen-{index}",
+                subject=subject,
+                source_type="corpus",
+                version="test",
+                key=f"00-seen-{index}",
+            )
+        transfer = preview(db, subject, evidence, "test")
+        assert len(transfer["items"]) == 1 and transfer["defense_scan"]["proofs"] == 2
+        assert transfer["defense_scan"]["familiar"] == 4
+        assert transfer["defense_scan"]["exact_source"] == 1
+        assert not transfer["defense_scan"]["truncated"]
+        assert "defense_witness" not in transfer["items"][0]
+        with pytest.raises(ValueError):
+            start_related(
+                db,
+                attempt_id="bad",
+                subject=subject,
+                evidence_id=evidence,
+                corpus_version="test",
+                reference="tampered",
+            )
+
+        patch.setattr(web, "database", lambda: db)
+        app = create_app(
+            db_path=":memory:",
+            subject=subject,
+            actor="fixture",
+            corpus="test",
+            login="fixture",
+            origin="https://coach.invalid",
+        )
+        client = app.test_client()
+        headers = {"Tailscale-User-Login": "fixture"}
+        url = f"/evidence/{evidence}/related-backrank-defenses"
+        assert client.get(url).status_code == 403
+        page = client.get(url, base_url="https://coach.invalid", headers=headers)
+        assert page.status_code == 200 and b"Practice this defense" in page.data
+        assert not re.search(
+            rb"(?<![A-Za-z0-9_-])" + good.encode() + rb"(?![A-Za-z0-9_-])", page.data
+        )
+        parser = build_parser()
+        args = parser.parse_args(
+            [
+                "related-backrank-defenses",
+                "--subject",
+                subject,
+                "--evidence",
+                str(evidence),
+                "--corpus",
+                "test",
+            ]
+        )
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            COMMANDS[args.command](db, args)
+        listing = json.loads(output.getvalue())
+        assert len(listing["items"]) == 1
+
+        if black:
+            args = parser.parse_args(
+                [
+                    "start-related-backrank-defense",
+                    "--subject",
+                    subject,
+                    "--evidence",
+                    str(evidence),
+                    "--corpus",
+                    "test",
+                    "--attempt",
+                    "cli-defense",
+                    "--reference",
+                    listing["items"][0]["reference"],
+                ]
+            )
+            with contextlib.redirect_stdout(io.StringIO()):
+                COMMANDS[args.command](db, args)
+            attempt = "cli-defense"
+        else:
+            with client.session_transaction(base_url="https://coach.invalid") as session:
+                csrf = session["csrf"]
+            response = client.post(
+                url + "/start",
+                base_url="https://coach.invalid",
+                headers=headers | {"Origin": "https://coach.invalid"},
+                data={"csrf": csrf, "reference": transfer["items"][0]["reference"]},
+            )
+            assert response.status_code == 303
+            attempt = response.location.rsplit("/", 1)[-1]
+        state = show(db, attempt, subject)
+        assert state["status"] == "active" and "backrank_defense_witness" not in state
+        done = submit(db, attempt, subject, event_id="answer", move=good)
+        assert done["status"] == "line_completed" and "backrank_defense_witness" in done
+        review_evidence(db, evidence, decision="reject", actor="fixture")
+        with pytest.raises(ValueError):
+            show(db, attempt, subject)
+        args = parser.parse_args(
+            [
+                "related-backrank-defenses",
+                "--subject",
+                subject,
+                "--evidence",
+                str(evidence),
+                "--corpus",
+                "test",
+            ]
+        )
+        with pytest.raises(SystemExit, match="unavailable or stale"):
+            COMMANDS[args.command](db, args)
+        db.close()
