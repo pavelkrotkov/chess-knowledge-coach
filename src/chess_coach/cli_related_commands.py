@@ -9,6 +9,8 @@ from . import cli_related_protection as protection
 
 COMMANDS = {
     "related-backrank-roots": backrank.list_roots,
+    "related-backrank-defenses": backrank.defenses,
+    "start-related-backrank-defense": backrank.begin_defense,
     "related-backrank-attacks": backrank.listing,
     "start-related-backrank-attack": backrank.begin,
     "related-captures": capture.listing,

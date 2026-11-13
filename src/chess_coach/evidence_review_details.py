@@ -21,6 +21,7 @@ from .pawn_coach_explanation import explain as explain_pawn
 from .pawn_structure_current import currentness as structure_currentness
 from .pin_evidence import current_pin
 from .pin_explanation import explain as explain_pin
+from .related_backrank_defense_display import available as backrank_defense_available
 from .related_pin_created_display import available as pin_created_available
 from .related_pin_prevent_display import available as pin_capture_available
 from .rook_plan_current import currentness as rook_currentness
@@ -53,6 +54,8 @@ def inspect_evidence(db: Database, evidence_id: int, *, _history=None, _fork_che
     if pawn:
         result["decision_fen"] = pawn["report"]["decision_fen"]
     result["back_rank_source_currentness"] = back_rank_currentness(db, result)
+    # The transfer entry follows this same current, reviewed evidence.
+    result["backrank_defense_transfer"] = backrank_defense_available(result)
 
     result["king_safety_currentness"] = king_safety_currentness(db, result, _history=_history)
     result["pawn_structure_currentness"] = structure_currentness(db, result, _history=_history)

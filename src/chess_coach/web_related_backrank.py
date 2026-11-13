@@ -6,6 +6,8 @@ from flask import Blueprint, current_app, redirect, render_template, request, se
 
 from .recurrence_snapshot import read_snapshot
 from .related_backrank_attack import preview
+from .related_backrank_defense import preview as defense_preview
+from .related_backrank_defense import start_related as start_defense
 from .related_backrank_source import roots
 from .related_backrank_start import start_related
 from .web_board import board_rows
@@ -57,6 +59,45 @@ def begin(evidence_id):
             evidence_id=evidence_id,
             corpus_version=current_app.config["CORPUS"],
             root_move=request.form.get("root", ""),
+            reference=request.form.get("reference", ""),
+        )
+    except (ValueError, TypeError, KeyError, IndexError):
+        return render_template(
+            "error.html", message="This back-rank preview is unavailable or changed."
+        ), 400
+    session["unified_attempt"] = attempt
+    return redirect(url_for("unified_practice.show_page", attempt=attempt), code=303)
+
+
+@related_backrank.get("/evidence/<int:evidence_id>/related-backrank-defenses")
+def defense(evidence_id):
+    try:
+        result = defense_preview(
+            database(),
+            current_app.config["SUBJECT"],
+            evidence_id,
+            current_app.config["CORPUS"],
+            request.args.get("cursor"),
+        )
+        for item in result["items"]:
+            item["board"] = board_rows(item["fen"])
+    except (ValueError, TypeError, KeyError, IndexError):
+        return render_template(
+            "error.html", message="This back-rank source is unavailable or changed."
+        ), 400
+    return render_template("related_backrank_defense.html", result=result, evidence_id=evidence_id)
+
+
+@related_backrank.post("/evidence/<int:evidence_id>/related-backrank-defenses/start")
+def begin_defense(evidence_id):
+    attempt = secrets.token_urlsafe(24)
+    try:
+        start_defense(
+            database(),
+            attempt_id=attempt,
+            subject=current_app.config["SUBJECT"],
+            evidence_id=evidence_id,
+            corpus_version=current_app.config["CORPUS"],
             reference=request.form.get("reference", ""),
         )
     except (ValueError, TypeError, KeyError, IndexError):
