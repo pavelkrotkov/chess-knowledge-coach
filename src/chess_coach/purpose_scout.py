@@ -17,7 +17,7 @@ def scout(engine, board, position, candidates=None):
     if candidates is not None:
         from .purpose_scout_center import choose
 
-        return choose(candidates, raw, error, items, invalid)
+        return choose(board, position, candidates, raw, error, items, invalid)
     return ordinary(position, raw, error, items, invalid)
 
 

@@ -12,7 +12,7 @@ def checked(position, board, info, bounds):
     if not isinstance(moves, list) or not bounds[0] <= len(moves) <= bounds[1]:
         return None
     item, invalid = line(position, board, "best", info)
-    if invalid or item is None or not _structural(item):
+    if invalid or item is None or not structural(item):
         return None
     item["role"] = "candidate"
     return {"line": item}
@@ -26,7 +26,7 @@ def paired(first, second, roots):
     return (first, second) if same_depth and moves == roots else None
 
 
-def _structural(item):
+def structural(item):
     return (
         item["root_move"] is not None
         and item["score_kind"] in {"cp", "mate"}

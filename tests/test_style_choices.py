@@ -545,18 +545,36 @@ def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch):
             )
 
         class PartialScout(ScoutEngine):
+            def __init__(self, missing):
+                super().__init__()
+                self.missing = missing
+
             def analyse(self, *args, **kwargs):
                 lines = super().analyse(*args, **kwargs)
-                lines[0]["pv"] = []
+                lines[0].pop(self.missing)
                 return lines
 
-        partial, issue = purpose_search.search(
-            PartialScout(), root, capture, time.monotonic() + 10, policy=EARLY_CENTER
-        )
-        assert issue is None and partial["scout"]["lines"][0]["rank"] == 2
-        assert matches_purpose(
-            partial, capture["uci"], board=root, position=capture, policy=EARLY_CENTER
-        )
+        for missing in ("pv", "score", "depth"):
+            partial, issue = purpose_search.search(
+                PartialScout(missing), root, capture, time.monotonic() + 10, policy=EARLY_CENTER
+            )
+            assert issue is None and partial["scout"]["lines"][0]["rank"] == 2
+            assert matches_purpose(
+                partial, capture["uci"], board=root, position=capture, policy=EARLY_CENTER
+            )
+            from copy import deepcopy
+
+            for field, value in (
+                ("decision_fen", chess.Board().fen()),
+                ("pv", partial["scout"]["lines"][0]["line"]["root_move"] + " a1a8"),
+                ("score_value", None),
+                ("depth", None),
+            ):
+                corrupt = deepcopy(partial)
+                corrupt["scout"]["lines"][0]["line"][field] = value
+                assert not matches_purpose(
+                    corrupt, capture["uci"], board=root, position=capture, policy=EARLY_CENTER
+                )
         patch.setattr(purpose_search, "final", lambda *_: ({}, "no_similar_alternative"))
         assert (
             purpose_search.search(
@@ -564,7 +582,7 @@ def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch):
             )[1]
             == "no_similar_alternative"
         )
-    assert len(final_calls) == 3
+    assert len(final_calls) == 5
     chosen = candidate(capture, root)
     fallback = {"game_id": 2, "position_id": 4, "early_center": False}
     with monkeypatch.context() as patch:
