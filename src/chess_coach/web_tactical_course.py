@@ -27,8 +27,6 @@ def _index(name, count):
 @tactical_course_views.get("/coaching/tactical-course")
 def show():
     """Read the prepared offer and request status without running preparation."""
-    # Reading the status does not build or write a course.
-    prep = preparation()
     try:
         item, course = offered(
             current_app.config["PROJECT_ROOT"],
@@ -47,7 +45,9 @@ def show():
             "evidence_id"
         )
     except (OSError, ValueError, TypeError, KeyError, IndexError, AttributeError):
-        return render_template("tactical_course_browser.html", course=None, preparation=prep), 200
+        return render_template(
+            "tactical_course_browser.html", course=None, preparation=preparation()
+        ), 200
     db = SimpleNamespace(path=Path(current_app.config["DB_PATH"]))
     study = status(
         db,
@@ -57,13 +57,14 @@ def show():
         item,
         course,
     )
+    # Only a validated current offer can confirm completion after interruption.
     return render_template(
         "tactical_course_browser.html",
         course=course,
         offer=item,
         shown=shown,
         study=study,
-        preparation=prep,
+        preparation=preparation(item),
     )
 
 

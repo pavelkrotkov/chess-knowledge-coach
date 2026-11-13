@@ -17,6 +17,12 @@ def claim(directory, database, learner, corpus):
             return None
         # The expensive build runs without holding the shared planning lock.
         old_offer = read(directory / SLOT)
+        if "offer" in item:
+            if old_offer == item["offer"]:
+                return None
+            if old_offer != item.get("previous_offer"):
+                write(slot, {**item, "state": "unavailable"})
+                return None
         write(slot, {**item, "state": "running"})
         return item, old_offer
 
@@ -31,8 +37,13 @@ def finish(directory, database, learner, corpus, requested, old_offer, result, p
         # A concurrent manual offer wins; never silently replace a newer course.
         if read(directory / SLOT) != old_offer:
             raise ValueError("course offer changed")
-        _offer_locked(directory, offer_item(database, learner, path, result), budget)
-        write(slot, {**current, "state": "complete"})
+        intended = offer_item(database, learner, path, result)
+        if intended == old_offer:
+            raise ValueError("course offer identity is unchanged")
+        pending = {**current, "offer": intended, "previous_offer": old_offer}
+        write(slot, pending)
+        _offer_locked(directory, intended, budget)
+        write(slot, {**pending, "state": "complete"})
 
 
 def failed(directory, database, learner, corpus, requested):
@@ -40,4 +51,6 @@ def failed(directory, database, learner, corpus, requested):
         slot = directory / PREPARE_SLOT
         current = read(slot)
         if valid(current, database, learner, corpus) and current["id"] == requested["id"]:
+            if current.get("offer") and read(directory / SLOT) == current["offer"]:
+                return
             write(slot, {**current, "state": "unavailable"})

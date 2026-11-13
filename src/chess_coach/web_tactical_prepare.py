@@ -22,11 +22,12 @@ def prepare():
     return redirect(url_for("tactical_course_views.show"), code=303)
 
 
-def preparation():
+def preparation(offered=None):
     db = SimpleNamespace(path=Path(current_app.config["DB_PATH"]))
     return status(
         db,
         current_app.config["PROJECT_ROOT"],
         current_app.config["SUBJECT"],
         current_app.config["CORPUS"],
+        offered,
     )

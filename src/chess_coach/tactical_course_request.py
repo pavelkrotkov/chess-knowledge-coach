@@ -8,7 +8,7 @@ from .opening_queue_files import read
 from .opening_queue_location import location
 from .opening_queue_lock import lock
 from .opening_queue_write import write
-from .tactical_course_offer import PREPARE_SLOT
+from .tactical_course_offer import PREPARE_SLOT, SLOT
 
 VERSION = "tactical-course-request-v1"
 
@@ -35,11 +35,11 @@ def enqueue(db, root, learner, corpus):
         slot = directory / PREPARE_SLOT
         old = read(slot)
         # An invalid or legacy slot may contain user data; never replace it.
-        if old is not None or slot.exists() or slot.is_symlink():
+        if slot.exists() or slot.is_symlink():
             if not valid(old, database, learner, corpus):
                 raise ValueError("course request unavailable")
             # Multiple clicks represent one pending preparation, not more jobs.
-            if old["state"] in {"queued", "running"}:
+            if old["state"] in {"queued", "running"} and _pending(old, directory):
                 return
         write(
             slot,
@@ -54,13 +54,30 @@ def enqueue(db, root, learner, corpus):
         )
 
 
-def status(db, root, learner, corpus):
+def _pending(item, directory):
+    return "offer" not in item or read(directory / SLOT) == item.get("previous_offer")
+
+
+def status(db, root, learner, corpus, offered=None):
     """Read status without opening the learner database or rebuilding a course."""
     try:
         directory, database = location(db, root, learner)
         item = read(directory / PREPARE_SLOT)
         if item is None:
             return None
-        return item["state"] if valid(item, database, learner, corpus) else "unavailable"
+        if not valid(item, database, learner, corpus):
+            return "unavailable"
+        if offered is not None and read(directory / SLOT) != offered:
+            return "unavailable"
+        return _state(item, offered)
     except (OSError, ValueError, TypeError, KeyError):
         return "unavailable"
+
+
+def _state(item, offered):
+    if item.get("offer"):
+        if offered == item["offer"]:
+            return "complete"
+        if item["state"] == "complete" or offered != item.get("previous_offer"):
+            return "superseded" if offered else "unavailable"
+    return item["state"]
