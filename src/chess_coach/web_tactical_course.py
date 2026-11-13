@@ -3,7 +3,7 @@
 from pathlib import Path
 from types import SimpleNamespace
 
-from flask import Blueprint, abort, current_app, render_template, request
+from flask import Blueprint, Response, abort, current_app, render_template, request
 
 from .tactical_course_display import chapter as display
 from .tactical_course_offer_read import offered
@@ -35,6 +35,10 @@ def show():
             current_app.config["CORPUS"],
         )
         expected = request.args.get("version")
+        if request.args.get("download") == "1":
+            if expected != item["hash"]:
+                abort(409, "The offered course changed. Return to Coaching.")
+            return _download(course)
         if expected is not None and expected != item["hash"]:
             abort(409, "The offered course changed. Return to Coaching.")
         index = _index("chapter", len(course["chapters"]))
@@ -45,6 +49,8 @@ def show():
             "evidence_id"
         )
     except (OSError, ValueError, TypeError, KeyError, IndexError, AttributeError):
+        if request.args.get("download") == "1":
+            abort(404, "No valid offered course is available.")
         return render_template(
             "tactical_course_browser.html", course=None, preparation=preparation()
         ), 200
@@ -65,6 +71,17 @@ def show():
         shown=shown,
         study=study,
         preparation=preparation(item),
+    )
+
+
+def _download(course):
+    document = "\n\n".join(chapter["pgn"] for chapter in course["chapters"]) + "\n"
+    return Response(
+        document,
+        mimetype="application/x-chess-pgn",
+        headers={
+            "Content-Disposition": 'attachment; filename="tactical-course.pgn"',
+        },
     )
 
 
