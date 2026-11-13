@@ -17,6 +17,9 @@ def add_fields(result, row):
     if waiting(row, binding):
         result["created_waiting"] = True
         return
+    evidence = binding.get("evidence_id")
+    if result.get("created_assessment") and type(evidence) is int and 0 < evidence < 2**63:
+        result["created_source_evidence"] = evidence
     try:
         result["created_contrast"] = _describe(row, binding)
     except (ValueError, TypeError, KeyError, IndexError):
