@@ -12,7 +12,7 @@ def _capture(after, reply, slider, target, piece, color, initial):
     board = after.copy()
     reply_san = board.san(reply)
     board.push(reply)
-    if board.piece_at(target) != piece:
+    if board.is_game_over(claim_draw=True) or board.piece_at(target) != piece:
         return None
     capture = chess.Move(slider, target)
     if capture not in board.legal_moves:
@@ -29,8 +29,10 @@ def _capture(after, reply, slider, target, piece, color, initial):
 
 
 def witness(board, move, after, target, piece, deadline, clock):
+    if after.is_game_over(claim_draw=True):
+        return None
     replies = sorted(after.legal_moves, key=lambda reply: reply.uci())
-    if not replies or len(replies) > MAX_REPLIES:
+    if not 0 < len(replies) <= MAX_REPLIES:
         return None
     initial, line = material(board, board.turn), None
     for reply in replies:

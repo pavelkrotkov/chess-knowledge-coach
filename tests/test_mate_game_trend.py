@@ -257,7 +257,21 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
 
         import chess
 
+        from chess_coach.skewer_game_geometry import rear as skewer_rear
+        from chess_coach.skewer_game_line import witness as skewer_witness
         from chess_coach.skewer_game_proof import inspect as inspect_skewer
+
+        # The defender can claim a draw by choosing a 100th halfmove.
+        draw_board = chess.Board("4q3/8/8/4k3/8/8/R7/7K w - - 98 1")
+        checking = chess.Move.from_uci("a2e2")
+        after, (target, piece) = skewer_rear(draw_board, checking)
+        assert after.halfmove_clock == 99 and after.can_claim_fifty_moves()
+        assert (
+            skewer_witness(
+                draw_board, checking, after, target, piece, time.monotonic() + 1, time.monotonic
+            )
+            is None
+        )
 
         harmless = chess.Board("8/8/8/4k3/8/8/R7/7K w - - 0 1")
         assert inspect_skewer(harmless, "a2e2", time.monotonic() + 1, time.monotonic)[0] is None
