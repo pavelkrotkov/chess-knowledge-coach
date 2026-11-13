@@ -231,6 +231,87 @@ def test_related_short_mate_assessment_workflow(tmp_path, monkeypatch, mode):
         show(db, "assessment", SUBJECT)
     db.close()
 
+    if mode == "unassisted":
+        # An unfamiliar immediate-mate source may have more than one mating move.
+        mate_path = tmp_path / "immediate.sqlite"
+        mate_db = owned_game(
+            mate_path, monkeypatch, fen="7k/8/6K1/8/8/Q7/8/8 w - - 0 1", move="Qa8"
+        )
+        monkeypatch.setattr("chess_coach.mate_auto.short_candidate", lambda *_: False)
+        process_decision(mate_db, 1, SUBJECT)
+        mate_evidence = mate_db.connection.execute(
+            "SELECT id FROM evidence_mappings WHERE skill='mate_in_one' AND operation='execute'"
+        ).fetchone()[0]
+        mate_source = source_for_evidence(mate_db, SUBJECT, mate_evidence)
+        supplied = mate_source["lines"][0].split()[0]
+        board = chess.Board("7k/1p6/6K1/8/8/Q7/8/8 b - - 0 1")
+        mate_db.connection.execute(
+            "INSERT INTO puzzle_corpora(version,source,checksum,state) VALUES('mate-one','fixture','checksum','staging')"
+        )
+        corpus_id = mate_db.connection.execute("SELECT id FROM puzzle_corpora").fetchone()[0]
+        mate_db.connection.execute(
+            """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,rating_deviation,themes_json,objective)
+            VALUES('mate',?,?,'https://example.invalid',?,1200,80,'["mateIn1"]','unknown')""",
+            (corpus_id, board.fen(), "b7b6 " + supplied),
+        )
+        mate_db.connection.execute(
+            "INSERT INTO puzzle_themes VALUES(?, 'mate', 'mateIn1', 1200)", (corpus_id,)
+        )
+        mate_db.connection.execute(
+            "UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus_id,)
+        )
+        mate_db.connection.commit()
+        choice = preview(mate_db, SUBJECT, mate_evidence, "mate-one")
+        assert choice["mate_timing"] == "mate_in_one" and len(choice["items"]) == 1
+        reference = choice["items"][0]["reference"]
+        start_related(
+            mate_db,
+            attempt_id="alternative",
+            subject=SUBJECT,
+            evidence_id=mate_evidence,
+            corpus_version="mate-one",
+            reference=reference,
+        )
+        prompt = chess.Board(show(mate_db, "alternative", SUBJECT)["fen"])
+        alternative = next(
+            move for move in prompt.legal_moves if move.uci() != supplied and _mate(prompt, move)
+        )
+        result = submit(mate_db, "alternative", SUBJECT, event_id="answer", move=alternative.uci())
+        assert result["status"] == result["feedback"] == "objective_verified"
+        assert (
+            submit(mate_db, "alternative", SUBJECT, event_id="answer", move=alternative.uci())
+            == result
+        )
+        nonmate = next(move for move in prompt.legal_moves if not _mate(prompt, move))
+        from chess_coach.unified_session_unmatched import unmatched
+
+        row = mate_db.connection.execute(
+            "SELECT * FROM unified_sessions WHERE attempt_id='alternative'"
+        ).fetchone()
+        prompt.push(nonmate)
+        assert unmatched(row, prompt, 0, [])["status"] == "needs_verification"
+        assert (
+            mate_db.connection.execute("SELECT COUNT(*) FROM objective_requests").fetchone()[0] == 0
+        )
+        mate_app = create_app(
+            db_path=mate_path,
+            subject=SUBJECT,
+            actor="fixture",
+            corpus="mate-one",
+            login="fixture",
+            origin="https://coach.invalid",
+        )
+        mate_page = mate_app.test_client().get(
+            "/unified/alternative",
+            base_url="https://coach.invalid",
+            headers={"Tailscale-User-Login": "fixture"},
+        )
+        assert b"The stated checkmate objective was verified" in mate_page.data
+        review_evidence(mate_db, mate_evidence, decision="reject", actor="fixture_reviewer")
+        with pytest.raises(ValueError):
+            show(mate_db, "alternative", SUBJECT)
+        mate_db.close()
+
 
 def _mate(board, move):
     board.push(move)
