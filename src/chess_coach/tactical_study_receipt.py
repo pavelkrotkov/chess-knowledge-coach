@@ -3,8 +3,11 @@
 import re
 from datetime import datetime
 
+from .deep_selection_source import learner_key
+from .opening_queue_files import read
+from .opening_study_receipt import _chapter
 from .tactical_export_input import _read
-from .tactical_study_receipt_binding import valid
+from .tactical_study_receipt_binding import timestamp, valid
 from .tactical_study_receipt_chapters import entry
 from .web_study_status import _link
 
@@ -27,3 +30,14 @@ def verified(path, expected_learner):
         return None
     link = _link(state.get("study"), chapter, when)
     return (moment, link) if link else None
+
+
+def exact(directory, learner, version, course):
+    state = read(directory / f"tactical-study-{version}-intent.json")
+    if not isinstance(state, dict) or not valid(state, version, learner_key(learner)):
+        return None
+    chapter = _chapter(state, course["chapters"])
+    when = state.get("verified_at")
+    if chapter is None or not timestamp(when):
+        return None
+    return _link(state.get("study"), chapter, when)

@@ -1,8 +1,5 @@
 """Run at most one explicitly requested private Study after local work."""
 
-import os
-import time
-
 from .opening_queue_files import read
 from .opening_queue_location import location
 from .opening_queue_lock import lock
@@ -32,13 +29,4 @@ def run(db, learner, root):
             write(slot, {**item, "state": "incomplete"})
         else:
             write(slot, {**item, "state": "complete"})
-
-
-def after_pipeline(db, learner, started):
-    # Reserve the 60-second job and one minute of shutdown time within the 30-minute unit.
-    if time.monotonic() - started > 28 * 60:
-        return
-    try:
-        run(db, learner, os.environ.get("CHESS_PROJECT_ROOT"))
-    except (Exception, PreviewDeadline):
-        return
+        return True
