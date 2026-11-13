@@ -1860,7 +1860,7 @@ def test_protection_lesson_offers_only_a_current_bounded_line_replay(tmp_path, m
 
                 fen = "4k3/7p/8/2b5/8/3R4/1P6/7K b - - 0 1"
 
-                def add_sample(db, *, fen=fen):
+                def add_sample(db, *, fen=fen, second=False):
                     db.connection.execute(
                         "INSERT INTO puzzle_corpora(version,source,checksum,state) VALUES('test','fixture','checksum','staging')"
                     )
@@ -1876,6 +1876,18 @@ def test_protection_lesson_offers_only_a_current_bounded_line_replay(tmp_path, m
                         "INSERT INTO puzzle_themes VALUES(?,'sample','defensiveMove',1200)",
                         (corpus,),
                     )
+                    if second:
+                        db.connection.execute(
+                            """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,
+                            rating_deviation,themes_json,objective) SELECT 'sample2',corpus_id,?,
+                            source,solution,rating,rating_deviation,themes_json,objective
+                            FROM puzzles WHERE puzzle_id='sample' AND corpus_id=?""",
+                            ("4k3/7p/8/2b5/8/3R4/PP6/7K b - - 0 1", corpus),
+                        )
+                        db.connection.execute(
+                            "INSERT INTO puzzle_themes VALUES(?,'sample2','defensiveMove',1200)",
+                            (corpus,),
+                        )
                     db.connection.execute(
                         "UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus,)
                     )
@@ -1889,7 +1901,7 @@ def test_protection_lesson_offers_only_a_current_bounded_line_replay(tmp_path, m
 
                 assessed = make_protection_game(Path(":memory:"), patch, created=True)
                 assessed_id = material_decision(assessed, 1, LEARNER)["evidence_ids"][0]
-                add_sample(assessed)
+                add_sample(assessed, second=True)
                 import time
 
                 import chess
@@ -1960,10 +1972,12 @@ def test_protection_lesson_offers_only_a_current_bounded_line_replay(tmp_path, m
                     )
                     assessment_client = assessment_app.test_client()
                     assessment_headers = {"Tailscale-User-Login": "login"}
-                    assessment_preview = assessment_client.get(
-                        f"/evidence/{assessed_id}/related-created-exposure",
-                        base_url="https://coach.invalid",
-                        headers=assessment_headers,
+
+                    def assessment_get(path, client=assessment_client, headers=assessment_headers):
+                        return client.get(path, base_url="https://coach.invalid", headers=headers)
+
+                    assessment_preview = assessment_get(
+                        f"/evidence/{assessed_id}/related-created-exposure"
                     )
                     assert b"Check my first move" in assessment_preview.data
                     begun = assessment_client.post(
@@ -1977,12 +1991,11 @@ def test_protection_lesson_offers_only_a_current_bounded_line_replay(tmp_path, m
                         },
                     )
                     assert begun.status_code == 303
-                    assessment_page = assessment_client.get(
-                        begun.headers["Location"],
-                        base_url="https://coach.invalid",
-                        headers=assessment_headers,
-                    )
+                    assessment_page = assessment_get(begun.headers["Location"])
                     assert b"rook on d3" in assessment_page.data
+                    followup_url = f"/evidence/{assessed_id}/related-created-exposure"
+                    followup_text = b"Find another unfamiliar example with this exposure pattern"
+                    assert followup_text not in assessment_page.data
                     assert all(
                         text not in assessment_page.data for text in (b"Rd5", b"Rd4", b"Bxd4")
                     )
@@ -2005,6 +2018,9 @@ def test_protection_lesson_offers_only_a_current_bounded_line_replay(tmp_path, m
                         ).fetchone()[0]
                         == 1
                     )
+                    pending_page = assessment_get(answered.headers["Location"])
+                    assert b"Verification is queued" in pending_page.data
+                    assert followup_text not in pending_page.data
                     assert verify_objectives(assessed, LEARNER)["outcomes"] == {"correct": 1}
                     import json
 
@@ -2012,17 +2028,90 @@ def test_protection_lesson_offers_only_a_current_bounded_line_replay(tmp_path, m
                         "SELECT result_json FROM objective_results"
                     ).fetchone()[0]
                     assert json.loads(stored)["learning_eligible"] is False
-                    result_page = assessment_client.get(
-                        answered.headers["Location"],
-                        base_url="https://coach.invalid",
-                        headers=assessment_headers,
-                    )
+                    result_page = assessment_get(answered.headers["Location"])
                     assert b"Verified correct" in result_page.data
+                    assert (
+                        followup_text in result_page.data
+                        and followup_url.encode() in result_page.data
+                    )
                     assert (
                         show(assessed, attempt, LEARNER)["verification"]["assistance"]
                         == "unassisted"
                     )
+                    before = assessed.connection.total_changes
+                    followup = assessment_get(followup_url)
+                    assert followup.status_code == 200 and b"Replay this example" in followup.data
+                    assert assessed.connection.total_changes == before
+                    next_start = assessment_client.post(
+                        f"{followup_url}/start",
+                        base_url="https://coach.invalid",
+                        headers=assessment_headers | {"Origin": "https://coach.invalid"},
+                        data={
+                            "csrf": token(followup, "csrf"),
+                            "reference": token(followup, "reference"),
+                        },
+                    )
+                    assert next_start.status_code == 303
+                    next_attempt = next_start.headers["Location"].rsplit("/", 1)[-1]
+                    prompts = assessed.connection.execute(
+                        "SELECT prompt_fen FROM unified_sessions WHERE attempt_id IN (?,?)",
+                        (attempt, next_attempt),
+                    ).fetchall()
+                    assert len(prompts) == 2 and prompts[0][0] != prompts[1][0]
+                    empty = assessment_get(followup_url)
+                    assert b"insufficient compatible unfamiliar examples" in empty.data
+                    with assessment_patch.context() as control:
+                        for verification in (
+                            {"status": "correct", "assistance": "hinted"},
+                            {"status": "unresolved", "assistance": "unassisted"},
+                        ):
+                            control.setattr(
+                                "chess_coach.objective_session_view.latest",
+                                lambda *_, value=verification: value,
+                            )
+                            assert (
+                                followup_text
+                                not in assessment_get(answered.headers["Location"]).data
+                            )
+                    review_evidence(assessed, assessed_id, decision="reject", actor="fixture")
+                    stale = assessment_get(answered.headers["Location"])
+                    assert stale.status_code == 404 and followup_text not in stale.data
                 assessed.close()
+
+                # A separate encounter verifies the miss cue with the actual objective worker.
+                from chess_coach.related_created import start_related as start_created
+
+                missed = make_protection_game(Path(":memory:"), patch, created=True)
+                missed_id = material_decision(missed, 1, LEARNER)["evidence_ids"][0]
+                add_sample(missed, fen="4k3/7p/8/2b5/8/3R3b/1P2P3/5b1K b - - 0 1")
+                candidate = created_preview(missed, LEARNER, missed_id, "test")
+                start_created(
+                    missed,
+                    attempt_id="missed",
+                    subject=LEARNER,
+                    evidence_id=missed_id,
+                    corpus_version="test",
+                    reference=candidate["items"][0]["reference"],
+                    assessment=True,
+                )
+                submit(missed, "missed", LEARNER, event_id="answer", move="e2e3")
+                assert verify_objectives(missed, LEARNER)["outcomes"] == {"incorrect": 1}
+                missed_state = show(missed, "missed", LEARNER)
+                assert missed_state["created_target"] == "d3"
+                assert missed_state["verification"]["capture_san"] == "Bxd3"
+                with patch.context() as next_action:
+                    next_action.setattr(
+                        "chess_coach.web_unified_practice.database", lambda db=missed: db
+                    )
+                    page = assessment_app.test_client().get(
+                        "/unified/missed",
+                        base_url="https://coach.invalid",
+                        headers=assessment_headers,
+                    )
+                    assert followup_text in page.data
+                    assert b"check what can capture the named piece after your move" in page.data
+                    assert b"even if that piece stays put" in page.data
+                missed.close()
 
                 found = created_preview(created_db, LEARNER, created_id, "test")
                 assert len(found["items"]) == 1 and not found["created_scan"]["truncated"]
@@ -2138,6 +2227,7 @@ def test_protection_lesson_offers_only_a_current_bounded_line_replay(tmp_path, m
                     answered.headers["Location"], base_url="https://coach.invalid", headers=headers
                 )
                 assert result.status_code == 200 and b"ungraded" in result.data
+                assert followup_text not in result.data
                 assert all(text in result.data for text in (b"Rd5", b"Rd4", b"Bxd4"))
                 assert show(created_db, attempt, LEARNER)["created_contrast"] == {
                     "good": "Rd5",
