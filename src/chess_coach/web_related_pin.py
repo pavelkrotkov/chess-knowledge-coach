@@ -21,6 +21,7 @@ def show(evidence_id):
             evidence_id,
             current_app.config["CORPUS"],
             request.args.get("cursor"),
+            mechanism=request.args.get("mechanism"),
         )
         for item in result["items"]:
             item["board"] = board_rows(item["fen"])
@@ -29,7 +30,12 @@ def show(evidence_id):
             "error.html",
             message="This pin source is unsupported, unavailable, or changed. Return to the evidence.",
         ), 400
-    return render_template("related_pin.html", result=result, evidence_id=evidence_id)
+    return render_template(
+        "related_pin.html",
+        result=result,
+        evidence_id=evidence_id,
+        mechanism=request.args.get("mechanism"),
+    )
 
 
 @related_pin.post("/evidence/<int:evidence_id>/related-pins/start")
@@ -43,6 +49,7 @@ def begin(evidence_id):
             evidence_id=evidence_id,
             corpus_version=current_app.config["CORPUS"],
             reference=request.form.get("reference", ""),
+            mechanism=request.form.get("mechanism") or None,
         )
     except ValueError:
         return render_template(
