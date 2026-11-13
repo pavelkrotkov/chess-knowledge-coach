@@ -5,6 +5,7 @@ from pathlib import Path
 
 from .opening_study_reconcile import reconcile_locked
 from .opening_study_session import publish_locked
+from .opening_unfamiliar_cli import add_arguments, selection
 from .opening_unfamiliar_study import publish_locked as publish_unfamiliar
 from .tactical_course_deadline import PreviewDeadline
 
@@ -13,7 +14,7 @@ def _run(args):
     if args.reconcile_only:
         return reconcile_locked(args.project_root, args.preview_version)
     if args.unfamiliar:
-        return publish_unfamiliar(args.project_root, args.preview_version)
+        return publish_unfamiliar(args.project_root, args.preview_version, args.selection)
     return publish_locked(
         args.project_root, args.game_id, args.position_id, args.alternative, args.preview_version
     )
@@ -32,11 +33,13 @@ def main():
     parser.add_argument("--project-root", required=True, type=Path)
     parser.add_argument("--reconcile-only", action="store_true")
     parser.add_argument("--unfamiliar", action="store_true")
+    add_arguments(parser)
     parser.add_argument("--game-id", type=int)
     parser.add_argument("--position-id", type=int)
     parser.add_argument("--alternative")
     parser.add_argument("--preview-version", required=True)
     args = parser.parse_args()
+    args.selection = selection(args, parser)
     _validate(args, parser)
     try:
         _run(args)
