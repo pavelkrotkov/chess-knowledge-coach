@@ -3,6 +3,7 @@
 import sqlite3
 import time
 
+from .capture_game_trend_current import _dates
 from .capture_game_trend_validate import matches_frontier
 from .protection_game_cache import binding, location, valid
 from .protection_game_review import binding as review_binding
@@ -60,7 +61,7 @@ def _fresh(db, learner, state, deadline):
     )
     if (frontier, signatures) != (state["frontier"], state["checked"]):
         return None
-    if not matches_frontier(state, games):
+    if not matches_frontier(state, games) or not _dates(games, state["games"]):
         return None
     state["coverage"] = coverage
     # A prior cohort needs its own current-source audit before it can be used.

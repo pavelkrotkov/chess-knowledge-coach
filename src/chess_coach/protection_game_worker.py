@@ -61,6 +61,8 @@ def _run(db, learner, path, deadline):
         retain_fields=("analysis", "review"),
         prepare_game=prepare,
     )
+    consumed = {str(row[0]) for row in state["checked"]}
+    state["retained"] = {k: v for k, v in state["retained"].items() if k not in consumed}
     if state["selection_complete"]:
         _inspect(
             db,

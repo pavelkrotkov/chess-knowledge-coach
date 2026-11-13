@@ -158,6 +158,7 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
     from chess_coach import protection_game_worker as protection_worker
     from chess_coach import short_mate_trend_paths as mate_paths
     from chess_coach import short_mate_trend_scan as scan
+    from chess_coach import short_mate_trend_select as selection
     from chess_coach import short_mate_trend_turns as turns
     from chess_coach.pipeline_config import PipelineConfig
     from chess_coach.pipeline_inputs import engine_identity, game_input
@@ -204,6 +205,10 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
         broken["games"][0].pop("review")
         assert not protection_worker.valid(broken, "fixture")
         assert protection_current.current(games_db, "fixture_a", None)
+        date = cache["state"]["games"][0]["date"]
+        cache["state"]["games"][0]["date"] = "2000-01-01T00:00:00Z"
+        assert protection_current.current(games_db, "fixture_a", None) is None
+        cache["state"]["games"][0]["date"] = date
         assert games_db.connection.total_changes == changes
         games_db.connection.execute(
             "UPDATE pipeline_stages SET status='failed' WHERE game_id=1 AND stage='analysis'"
@@ -222,6 +227,33 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
         for _ in range(3):
             protection_worker.run(games_db, "fixture_a", None)
         assert next(game for game in cache["state"]["games"] if game["id"] == 1)["results"]
+
+        # A new frontier interrupted during selection retains only unconsumed games.
+        ingest_pgn(games_db, pgn(3, "Qg1"))
+        assert (
+            run_analysis(
+                games_db, 4, game_input(games_db, 4), config, engine_identity(sys.executable)
+            )["status"]
+            == "complete"
+        )
+        select = protection_worker.select
+
+        def partial(db, learner, games, state, deadline, **kwargs):
+            ticks = iter((0, 0, float("inf")))
+            with patch.context() as limited:
+                limited.setattr(selection, "time", SimpleNamespace(monotonic=lambda: next(ticks)))
+                select(db, learner, games, state, deadline, **kwargs)
+
+        patch.setattr(protection_worker, "select", partial)
+        protection_worker.run(games_db, "fixture_a", None)
+        assert protection_worker.valid(cache["state"], "fixture")
+        assert cache["state"]["retained"] and not cache["state"]["selection_complete"]
+        patch.setattr(protection_worker, "select", select)
+        protection_worker.run(games_db, "fixture_a", None)
+        assert cache["state"]["selection_complete"]
+        assert (
+            sum(bool(game["results"]) for game in cache["state"]["games"] if game["id"] <= 3) == 3
+        )
         games_db.close()
 
     # Exact linked material review and analysis changes invalidate their game.
