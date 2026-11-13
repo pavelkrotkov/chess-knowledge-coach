@@ -155,11 +155,14 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
     import chess.engine
 
     from chess_coach import protection_game_current as protection_current
+    from chess_coach import protection_game_report as protection_report
     from chess_coach import protection_game_worker as protection_worker
     from chess_coach import short_mate_trend_paths as mate_paths
     from chess_coach import short_mate_trend_scan as scan
     from chess_coach import short_mate_trend_select as selection
     from chess_coach import short_mate_trend_turns as turns
+    from chess_coach import web_short_mate_game as protection_web
+    from chess_coach.capabilities import capability_report
     from chess_coach.pipeline_config import PipelineConfig
     from chess_coach.pipeline_inputs import engine_identity, game_input
     from chess_coach.pipeline_work import run_analysis
@@ -205,6 +208,30 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
         broken["games"][0].pop("review")
         assert not protection_worker.valid(broken, "fixture")
         assert protection_current.current(games_db, "fixture_a", None)
+        patch.setattr(protection_web, "database", lambda: games_db)
+        protection_app = create_app(
+            db_path=":memory:",
+            subject="fixture_a",
+            actor="operator",
+            corpus="test",
+            login="fixture",
+            origin="https://coach.invalid",
+        )
+        protection_client = protection_app.test_client()
+        assert protection_client.get("/game-samples/protection").status_code == 403
+        protection_client.environ_base["HTTP_TAILSCALE_USER_LOGIN"] = "fixture"
+        protection_page = protection_client.get(
+            "/game-samples/protection", base_url="https://coach.invalid"
+        )
+        assert protection_page.status_code == 200
+        assert "dated protection view" in next(
+            item["details"]
+            for item in capability_report()["capabilities"]
+            if item["id"] == "recurring_report"
+        )
+        assert (
+            b"3 games" in protection_page.data and b"20 independent games" in protection_page.data
+        )
         date = cache["state"]["games"][0]["date"]
         cache["state"]["games"][0]["date"] = "2000-01-01T00:00:00Z"
         assert protection_current.current(games_db, "fixture_a", None) is None
@@ -217,6 +244,14 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
         stale = protection_current.current(games_db, "fixture_a", None)
         assert next(game for game in stale["games"] if game["id"] == 1)["source_unavailable"]
         assert all(game["results"] for game in stale["games"] if game["id"] != 1)
+        protection_page = protection_client.get(
+            "/game-samples/protection", base_url="https://coach.invalid"
+        )
+        assert (
+            b"Games with results withheld after a source change: 1 (1 previously scanned turns)"
+            in protection_page.data
+        )
+        assert b"source, date, ownership record or review" in protection_page.data
         for _ in range(3):
             protection_worker.run(games_db, "fixture_a", None)
         assert not next(game for game in cache["state"]["games"] if game["id"] == 1)["results"]
@@ -254,6 +289,60 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
         assert (
             sum(bool(game["results"]) for game in cache["state"]["games"] if game["id"] <= 3) == 3
         )
+        # Exercise the independent report gates with two complete synthetic windows.
+        sample_games = []
+        for index in range(41):
+            outcome = "missed" if (index < 3 or 20 <= index < 30) else "protected"
+            if index == 19:
+                outcome = "unknown"
+            second = "opportunity_unresolved" if index == 0 else "no_opportunity"
+            sample_games.append(
+                {
+                    "id": index + 1,
+                    "date": f"2026-01-01T00:{59 - index:02}:00Z",
+                    "eligible": 2,
+                    "results": [[index * 2 + 1, outcome, None], [index * 2 + 2, second, None]],
+                }
+            )
+        sample_state = {
+            "games": sample_games,
+            "selection_complete": True,
+            "coverage": {
+                "unknown_time_lower_bound": 0,
+                "unknown_ownership_global_lower_bound": 0,
+                "candidate_recheck_failed": 0,
+                "game_limit_reached": False,
+            },
+            "duplicates": 0,
+            "unavailable": 0,
+        }
+        with patch.context() as comparisons:
+            comparisons.setattr(protection_report, "current", lambda *_: sample_state)
+            sample_result = protection_report.report(games_db, "fixture_a", None)
+            assert sample_result["newer"]["unknown"] == 1
+            assert sample_result["newer"]["opportunity_unresolved"] == 1
+            assert sample_result["newer"]["no_opportunity"] == 19
+            assert sample_result["newer"]["opportunities"] == 20
+            assert sample_result["bounds"]["direction"] == "lower"
+            protection_page = protection_client.get(
+                "/game-samples/protection", base_url="https://coach.invalid"
+            )
+            assert b"/decisions/" in protection_page.data
+            assert b"lower in the more recent sample" in protection_page.data
+            for index in range(23, 30):
+                sample_games[index]["results"] = [
+                    [index * 2 + 1, "protected", None],
+                    [index * 2 + 2, "no_opportunity", None],
+                ]
+            assert (
+                protection_report.report(games_db, "fixture_a", None)["bounds"]["direction"]
+                == "overlap"
+            )
+            sample_state["selection_complete"] = False
+            assert (
+                protection_report.report(games_db, "fixture_a", None)["bounds"]["status"]
+                == "incomparable"
+            )
         games_db.close()
 
     # Exact linked material review and analysis changes invalidate their game.

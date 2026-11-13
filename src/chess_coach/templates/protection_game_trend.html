@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Piece protection in your games - Chess coach{% endblock %}
+{% block content %}
+<h2>Piece protection in your games</h2>
+<p>These consecutive samples use independent finished games ordered by recorded UTC start time. The same bounded protection check is applied to recorded learner turns. Practice assessments are separate.</p>
+<p><a href="{{ url_for('protection_plan.show') }}">Back to piece-protection practice</a></p>
+{% if not report %}
+<p>The background game scan is pending or its sources have changed. This page will update after the worker checks the games.</p>
+{% else %}
+{% if report.comparable_reason %}<p>The samples or their boundaries are not yet verified for comparison.</p>{% else %}<p>The game samples and their boundaries are verified. Results may change as checks finish.</p>{% endif %}
+{% for label, sample in (("More recent", report.newer), ("Earlier", report.earlier)) %}
+<section>
+<h3>{{ label }} games</h3>
+<p>{{ sample.games }} games{% if sample.newest %}, from {{ sample.oldest }} to {{ sample.newest }} UTC{% endif %}. Games with current scanned turns: {{ sample.available_games }}. Games with results withheld after a source change: {{ sample.withheld_games }} ({{ sample.withheld_turns }} previously scanned turns).</p>
+<p>{{ sample.eligible }} eligible learner turns: {{ sample.eligible - sample.unchecked }} scanned and {{ sample.unchecked }} unchecked. Of the scanned turns, {{ sample.no_opportunity }} had no supported threat, {{ sample.unknown }} had unresolved opportunity status, and {{ sample.opportunity_unresolved }} had a proved opportunity with an unresolved played choice.</p>
+<p>{{ sample.opportunities }} proved opportunities: {{ sample.played }} protected, {{ sample.other }} missed, and {{ sample.opportunity_unresolved }} played choices unresolved. The {{ sample.played + sample.other }} resolved choices came from {{ sample.resolved_games }} independent games.</p>
+<p>Current source decisions: {% for outcome, label in (("played", "Protected"), ("other", "Missed"), ("opportunity_unresolved", "Choice unresolved")) %}{% for item in sample.examples if item.outcome == outcome %}{% if loop.index <= 2 %}<a href="{{ url_for('views.decision_detail', position_id=item.position_id) }}">{{ label }}</a> {% endif %}{% endfor %}{% endfor %}{% if not sample.examples %}none{% endif %}.</p>
+</section>
+{% endfor %}
+{% if report.bounds.status == "available" %}
+<p>Conservative missed-opportunity ranges, treating unresolved turns as possible opportunities: earlier {{ report.bounds.earlier.lower }}/{{ report.bounds.earlier.total }} to {{ report.bounds.earlier.upper }}/{{ report.bounds.earlier.total }}; more recent {{ report.bounds.newer.lower }}/{{ report.bounds.newer.total }} to {{ report.bounds.newer.upper }}/{{ report.bounds.newer.total }}.</p>
+{% if report.bounds.direction == "overlap" %}<p>The ranges overlap or touch, so their direction is inconclusive.</p>{% else %}<p>The missed-opportunity rate was {{ report.bounds.direction }} in the more recent sample across these bounds.</p>{% endif %}
+{% elif report.bounds.status == "pending" %}
+<p>A rate comparison is unavailable while either sample has unchecked turns.</p>
+{% elif report.bounds.status == "sparse" %}
+<p>A rate comparison needs at least five resolved opportunities across three independent games in each sample.</p>
+{% elif report.comparable_reason == "selection_pending" %}
+<p>A rate comparison is unavailable while the worker selects independent games.</p>
+{% elif report.comparable_reason == "source_unavailable" %}
+<p>A rate comparison is unavailable because a game source, date, ownership record or review could not be verified.</p>
+{% elif report.comparable_reason == "too_few_games" %}
+<p>A rate comparison needs 20 independent games in each sample.</p>
+{% elif report.comparable_reason in ("between_tie", "frontier_tie") %}
+<p>A rate comparison is unavailable because game start times tie at a sample boundary.</p>
+{% else %}
+<p>A rate comparison is unavailable because an independent boundary game has not been established.</p>
+{% endif %}
+<p>This limited check identifies a threatened piece and requires both a supported protective choice and a losing choice before assessing the played move. It checks up to 16 candidate moves to establish an opportunity, then checks the move you played. Unproved threats, unfamiliar histories, unsupported replies and time limits remain unresolved. A missed choice is a narrow observation, not a complete assessment of the move.</p>
+<p>Several opportunities can come from one game. Different game contexts and overlapping playing times limit comparisons. These observations do not establish improvement or cause.</p>
+<details><summary>Coverage details</summary>
+<p>Up to 100 dated records are examined for 40 independent games and a boundary game. Duplicates: {{ report.duplicates }}; unavailable games: {{ report.unavailable }}; unknown dates: at least {{ report.coverage.unknown_time_lower_bound }}; uncertain ownership or projections: at least {{ report.coverage.unknown_ownership_global_lower_bound }}; candidate rechecks failed: {{ report.coverage.candidate_recheck_failed }}.</p>
+</details>
+{% endif %}
+{% endblock %}
