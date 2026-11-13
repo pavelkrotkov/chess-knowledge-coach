@@ -124,8 +124,11 @@ def test_end_to_end_replay_review_and_version_changes(tmp_path, monkeypatch):
         "chess_coach.pipeline.fork_miss_after_pipeline",
         lambda *_: optional_scans.append("fork-miss"),
     )
+    monkeypatch.setattr(
+        "chess_coach.pipeline.study_after_pipeline", lambda *_: optional_scans.append("study")
+    )
     result = process_pipeline(db, config, transport=network)
-    assert optional_scans == ["mate", "capture", "opening", "fork", "fork-miss"]
+    assert optional_scans == ["mate", "capture", "opening", "fork", "fork-miss", "study"]
     assert result["sync"]["games"] == 3 and len(result["games"]) == 3
     assert all(item["status"] == "partial" for item in result["games"])
     assert all(item["stages"][2]["detail"] == "opening_not_configured" for item in result["games"])
@@ -171,7 +174,7 @@ def test_end_to_end_replay_review_and_version_changes(tmp_path, monkeypatch):
     assert failed["status"] == "partial"
     assert failed["sync"] == {"status": "failed", "detail": "source_http_error", "http_status": 503}
     assert len(failed["games"]) == 3
-    assert len(optional_scans) == before_hooks + 5
+    assert len(optional_scans) == before_hooks + 6
     health = db.connection.execute(
         "SELECT sync_status, sync_detail FROM pipeline_health"
     ).fetchone()

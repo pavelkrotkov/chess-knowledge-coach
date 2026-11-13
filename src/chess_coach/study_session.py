@@ -17,11 +17,11 @@ from .study_remote import Remote, StudyError
 
 
 @contextmanager
-def locked(path, planning):
+def locked(path, planning, *, sync_wait=True):
     lock = os.open(planning / "poc-study-336.lock", os.O_CREAT | os.O_RDWR, 0o600)
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        with pipeline_lock(path, sync=True):
+        with pipeline_lock(path, sync=True, sync_wait=sync_wait):
             yield
     finally:
         os.close(lock)
