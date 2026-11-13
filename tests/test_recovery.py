@@ -92,10 +92,21 @@ def populated_wal(path: Path) -> Database:
     return db
 
 
-def test_wal_online_backup_and_restore_preserve_all_history(tmp_path):
+def test_wal_online_backup_and_restore_preserve_all_history(tmp_path, monkeypatch):
     source = tmp_path / "live.sqlite"
     db = populated_wal(source)
     assert Path(str(source) + "-wal").stat().st_size > 0
+    # A WAL source without its shared index must not gain files during a check.
+    from shutil import copyfile
+
+    unindexed = tmp_path / "unindexed.sqlite"
+    copyfile(source, unindexed)
+    copyfile(Path(str(source) + "-wal"), Path(str(unindexed) + "-wal"))
+    with pytest.raises(ValueError, match="existing WAL and shared-index"):
+        backup_database(
+            unindexed, tmp_path / "unindexed-copy.sqlite", project_root=tmp_path, check_only=True
+        )
+    assert not Path(str(unindexed) + "-shm").exists()
     tables = (
         "games",
         "positions",
@@ -117,6 +128,32 @@ def test_wal_online_backup_and_restore_preserve_all_history(tmp_path):
     source_version = db.connection.execute("PRAGMA user_version").fetchone()[0]
     backup = tmp_path / "backup.sqlite"
     restored = tmp_path / "restored.sqlite"
+    from chess_coach import recovery_capacity, recovery_capacity_guard
+
+    with monkeypatch.context() as patch:
+        patch.setattr(recovery_capacity, "PROJECT_LIMIT", 1)
+        report = backup_database(source, backup, project_root=tmp_path, check_only=True)
+        assert report["status"] == "insufficient" and report["snapshot_bytes"] > 0
+        with pytest.raises(ValueError, match="capacity unavailable"):
+            backup_database(source, backup, project_root=tmp_path)
+    assert not backup.exists() and not list(tmp_path.glob(".chess-recovery-*"))
+    original_snapshot = recovery_capacity.snapshot
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            recovery_capacity,
+            "snapshot",
+            lambda reader: (original_snapshot(reader)[0] - 1, original_snapshot(reader)[1]),
+        )
+        with pytest.raises(ValueError, match="pinned database size changed"):
+            backup_database(source, backup, project_root=tmp_path)
+    assert not backup.exists() and not list(tmp_path.glob(".chess-recovery-*"))
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            recovery_capacity_guard, "allocated", lambda *_: recovery_capacity_guard.PROJECT_LIMIT
+        )
+        with pytest.raises(ValueError, match="storage reserve unavailable"):
+            backup_database(source, backup, project_root=tmp_path)
+    assert not backup.exists() and not list(tmp_path.glob(".chess-recovery-*"))
     assert backup_database(source, backup, project_root=tmp_path) == backup
     backup_bytes = backup.read_bytes()
     assert restore_database(backup, restored, project_root=tmp_path) == restored
@@ -147,7 +184,7 @@ def test_cli_backup_and_restore_do_not_initialize_or_upgrade_source(tmp_path):
     restored = tmp_path / "restored.sqlite"
     sentinel = tmp_path / "must-not-be-created.sqlite"
 
-    def run(command, source_path, target_path):
+    def run(command, source_path, target_path, *, check_only=False):
         result = subprocess.run(
             [
                 sys.executable,
@@ -160,15 +197,24 @@ def test_cli_backup_and_restore_do_not_initialize_or_upgrade_source(tmp_path):
                 str(target_path),
                 "--project-root",
                 str(tmp_path),
+                *(["--check-only"] if check_only else []),
             ],
             capture_output=True,
             text=True,
             check=True,
         )
-        assert json.loads(result.stdout) == {"status": "verified"}
+        output = json.loads(result.stdout)
+        if check_only:
+            assert output["status"] == "fits" and output["snapshot_bytes"] > 0
+            assert "not controlled by a quota" in output["scope"]
+            assert not target_path.exists()
+        else:
+            assert output == {"status": "verified"}
         assert "fixture" not in result.stdout + result.stderr
 
+    run("backup-db", source, backup, check_only=True)
     run("backup-db", source, backup)
+    run("restore-db", backup, restored, check_only=True)
     run("restore-db", backup, restored)
     assert not sentinel.exists()
     for path in (source, backup, restored):
