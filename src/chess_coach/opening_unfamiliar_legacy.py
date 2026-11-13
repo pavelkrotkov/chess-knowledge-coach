@@ -2,6 +2,7 @@
 
 from .opening_queue_files import read
 from .opening_unfamiliar_course import legacy_from, preview
+from .opening_unfamiliar_measured_alias import measured_alias
 from .opening_unfamiliar_study_course import build
 from .tactical_study_ledger import validate
 
@@ -25,6 +26,8 @@ def resolve(db, root, learner, selection, version, directory, *, deadline=None):
         if selection
         else preview(db, root, learner)
     )
+    if selection:
+        value = measured_alias(value, version)
     if selection and value["version"] != version and value.get("legacy_version") == version:
         value = legacy_from(value)
         if not retained(directory, value):

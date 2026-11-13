@@ -18,3 +18,7 @@ def candidates(db, learner, games, color, parent, suggestion, budget):
 
 def find(db, learner, games, color, parent, suggestion, budget):
     return next(candidates(db, learner, games, color, parent, suggestion, budget), None)
+
+
+def first_game(games, color):
+    return next((game["id"] for game, side in games if side == color), None)
