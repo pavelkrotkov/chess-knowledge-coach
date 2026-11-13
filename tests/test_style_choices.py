@@ -152,6 +152,13 @@ def _check_retained_purpose_iterations():
         result, issue = final(engine, board, position, "d2d4", time.monotonic() + 2)
         assert result["retained_depth"] == 6 and issue == "no_similar_alternative"
 
+        bounded = info(1, 4, first)
+        bounded["upperbound"] = True
+        protocol.events = [bounded, info(2, 4, second)]
+        assert (
+            final(engine, board, position, "d2d4", time.monotonic() + 2)[1]
+            == "no_complete_iteration"
+        )
         protocol.events = [info(1, 4, first)]
         assert (
             final(engine, board, position, "d2d4", time.monotonic() + 2)[1]
@@ -575,6 +582,25 @@ def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch):
                 assert not matches_purpose(
                     corrupt, capture["uci"], board=root, position=capture, policy=EARLY_CENTER
                 )
+
+        class BoundedScout(ScoutEngine):
+            def __init__(self, bound):
+                super().__init__()
+                self.bound = bound
+
+            def analyse(self, *args, **kwargs):
+                lines = super().analyse(*args, **kwargs)
+                lines[0][self.bound + "bound"] = True
+                return lines
+
+        for bound in ("upper", "lower"):
+            bounded, issue = purpose_search.search(
+                BoundedScout(bound), root, quiet, time.monotonic() + 10, policy=EARLY_CENTER
+            )
+            assert issue is None and bounded["scout"]["lines"][0]["line"]["score_bound"] == bound
+            assert matches_purpose(
+                bounded, quiet["uci"], board=root, position=quiet, policy=EARLY_CENTER
+            )
         patch.setattr(purpose_search, "final", lambda *_: ({}, "no_similar_alternative"))
         assert (
             purpose_search.search(
@@ -582,7 +608,7 @@ def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch):
             )[1]
             == "no_similar_alternative"
         )
-    assert len(final_calls) == 5
+    assert len(final_calls) == 7
     chosen = candidate(capture, root)
     fallback = {"game_id": 2, "position_id": 4, "early_center": False}
     with monkeypatch.context() as patch:

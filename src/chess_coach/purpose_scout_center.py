@@ -31,7 +31,7 @@ def valid(item, board, position, allowed):
             return False
         if line["position_id"] != position["id"] or line["role"] != "candidate":
             return False
-        if line["root_move"] not in allowed or not structural(line):
+        if line["root_move"] not in allowed or not structural(line, allow_bound=True):
             return False
         return view_line(line, board, position["uci"])["status"] == "limited"
     except (KeyError, TypeError, ValueError, AttributeError, IndexError):

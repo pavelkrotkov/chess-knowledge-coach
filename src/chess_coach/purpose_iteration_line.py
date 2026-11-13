@@ -26,11 +26,12 @@ def paired(first, second, roots):
     return (first, second) if same_depth and moves == roots else None
 
 
-def structural(item):
+# Final iterations require exact scores; scout-only callers may accept bounds.
+def structural(item, *, allow_bound=False):
     return (
         item["root_move"] is not None
         and item["score_kind"] in {"cp", "mate"}
-        and item["score_bound"] == "exact"
+        and item["score_bound"] in ({"exact", "lower", "upper"} if allow_bound else {"exact"})
         and type(item["score_value"]) is int
         and type(item["depth"]) is int
         and item["depth"] > 0
