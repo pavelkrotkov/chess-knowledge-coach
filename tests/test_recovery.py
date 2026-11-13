@@ -116,11 +116,42 @@ def test_wal_online_backup_and_restore_preserve_all_history(tmp_path, monkeypatc
     connection.close()
     assert not Path(str(closed) + "-wal").exists()
     closed_copy = tmp_path / "closed-copy.sqlite"
-    assert (
-        backup_database(closed, closed_copy, project_root=tmp_path, check_only=True)["status"]
-        == "fits"
-    )
+    from chess_coach import recovery_physical
+
+    estimate = backup_database(closed, closed_copy, project_root=tmp_path, check_only=True)
+    assert estimate["status"] == "fits" and estimate["source_sidecar_allowance_bytes"] > 0
     assert not Path(str(closed) + "-shm").exists() and not closed_copy.exists()
+    with monkeypatch.context() as patch:
+        patch.setattr(recovery_physical, "allocated", lambda *_: 0)
+        patch.setattr(
+            recovery_physical,
+            "PROJECT_LIMIT",
+            estimate["estimated_snapshot_bytes"]
+            + estimate["working_bytes"]
+            + estimate["reserve_bytes"],
+        )
+        with pytest.raises(ValueError, match="capacity unavailable"):
+            backup_database(closed, closed_copy, project_root=tmp_path)
+    assert not Path(str(closed) + "-shm").exists() and not closed_copy.exists()
+    original_state = recovery_physical._file_state
+    calls = []
+
+    def moving(path):
+        value = original_state(path)
+        if path == closed and value is not None:
+            calls.append(True)
+            if len(calls) > 1:
+                return (*value[:3], value[3] + 1, value[4])
+        return value
+
+    with monkeypatch.context() as patch:
+        patch.setattr(recovery_physical, "_file_state", moving)
+        report = backup_database(closed, closed_copy, project_root=tmp_path, check_only=True)
+        assert report["source_changed"] and report["status"] == "unavailable"
+        calls.clear()
+        patch.setattr(recovery_physical, "PROJECT_LIMIT", 1)
+        report = backup_database(closed, closed_copy, project_root=tmp_path, check_only=True)
+        assert report["source_changed"] and report["status"] == "insufficient"
     assert backup_database(closed, closed_copy, project_root=tmp_path).is_file()
     tables = (
         "games",
@@ -143,7 +174,7 @@ def test_wal_online_backup_and_restore_preserve_all_history(tmp_path, monkeypatc
     source_version = db.connection.execute("PRAGMA user_version").fetchone()[0]
     backup = tmp_path / "backup.sqlite"
     restored = tmp_path / "restored.sqlite"
-    from chess_coach import recovery_capacity, recovery_capacity_guard, recovery_physical
+    from chess_coach import recovery_capacity, recovery_capacity_guard
 
     with monkeypatch.context() as patch:
         patch.setattr(recovery_capacity, "PROJECT_LIMIT", 1)
