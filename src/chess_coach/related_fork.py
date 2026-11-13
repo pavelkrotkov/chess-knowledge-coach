@@ -1,5 +1,6 @@
 """Retrieve source-bound first-ply fork execution transfers."""
 
+from .fork_difficulty_selection import options, scoped
 from .related_capture import present
 from .related_fork_features import fork_features
 from .related_fork_match import candidate
@@ -9,9 +10,10 @@ from .related_transfer_select import select
 VERSION = "fork-execute-transfer-v1"
 
 
-def selection(db, subject, evidence_id, corpus_version, *, familiar_data=None):
+def selection(db, subject, evidence_id, corpus_version, *, familiar_data=None, difficulty=None):
     source = source_for_evidence(db, subject, evidence_id)
-    return select(
+    selection_options = options(difficulty) or {"score": candidate}
+    selected = select(
         db,
         subject,
         source,
@@ -21,8 +23,9 @@ def selection(db, subject, evidence_id, corpus_version, *, familiar_data=None):
         all_lines=True,
         familiar_data=familiar_data,
         feature=fork_features,
-        score=candidate,
+        **selection_options,
     )
+    return scoped(selected, difficulty)
 
 
 def preview(db, subject, evidence_id, corpus_version, cursor=None):

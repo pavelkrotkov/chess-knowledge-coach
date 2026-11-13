@@ -123,6 +123,7 @@ def test_unfamiliar_fork_browser_and_worker(tmp_path, monkeypatch, mode):
         # is in the recorded difficulty cohort. The first prompt is now familiar.
         for key, fen, solution, rating in (
             ("match", "3k3b/p2B4/2K5/2b3N1/8/8/8/8 b - - 0 1", "a7a6 g5f7 d8e7 f7h8", 1250),
+            ("harder", "3k3b/3B3p/2K5/2b3N1/8/8/8/8 b - - 0 1", "h7h6 g5f7 d8e7 f7h8", 1400),
             (
                 "different-band",
                 "8/8/8/8/1n3B2/5k2/4b2P/B3K3 w - - 0 1",
@@ -590,6 +591,65 @@ def test_unfamiliar_fork_browser_and_worker(tmp_path, monkeypatch, mode):
         )
         still_offered = focus()
         assert ("/plan/forks/next?attempt=" + attempt).encode() in still_offered.data
+        pending_harder = client.get(
+            "/plan/forks/next?attempt=" + second_attempt + "&harder=1",
+            base_url=base,
+            headers=headers,
+        )
+        assert b"No harder certified unfamiliar fork" in pending_harder.data
+        submit(db, second_attempt, SUBJECT, event_id="answer", move="g5f7")
+        assert process(db, SUBJECT)["outcomes"] == {"correct": 1}
+        second_page = client.get(second.location, base_url=base, headers=headers)
+        assert b"Check whether a harder fork is available" in second_page.data
+        harder = client.get(
+            "/plan/forks/next?attempt=" + second_attempt + "&harder=1",
+            base_url=base,
+            headers=headers,
+        )
+        assert b"1400" in harder.data and b"1599" in harder.data
+        hard_form = {
+            "csrf": token(harder, "csrf"),
+            "reference": token(harder, "reference"),
+            "assessment": "1",
+            "prior": "harder:" + second_attempt,
+        }
+        rejected = client.post(
+            f"/evidence/{evidence}/related-forks/start",
+            base_url=base,
+            headers=headers | {"Origin": base},
+            data={**hard_form, "prior": second_attempt},
+        )
+        assert rejected.status_code == 400
+        from chess_coach import fork_difficulty_history
+
+        with monkeypatch.context() as patch:
+            patch.setattr(
+                fork_difficulty_history,
+                "_prior",
+                lambda *_args: (_ for _ in ()).throw(ValueError()),
+            )
+            stale = client.post(
+                f"/evidence/{evidence}/related-forks/start",
+                base_url=base,
+                headers=headers | {"Origin": base},
+                data=hard_form,
+            )
+            assert stale.status_code == 400
+        started = client.post(
+            f"/evidence/{evidence}/related-forks/start",
+            base_url=base,
+            headers=headers | {"Origin": base},
+            data=hard_form,
+        )
+        assert started.status_code == 303
+        hard_page = client.get(started.location, base_url=base, headers=headers)
+        hard_attempt = token(hard_page, "attempt")
+        assert (
+            db.connection.execute(
+                "SELECT source_key FROM unified_sessions WHERE attempt_id=?", (hard_attempt,)
+            ).fetchone()[0]
+            == "harder"
+        )
 
         db.connection.executemany(
             "INSERT INTO unified_sessions ("
@@ -608,7 +668,7 @@ def test_unfamiliar_fork_browser_and_worker(tmp_path, monkeypatch, mode):
         db.connection.commit()
         from chess_coach.fork_followup_finder import latest
 
-        assert latest(db, SUBJECT, "fork-fixture") == attempt
+        assert latest(db, SUBJECT, "fork-fixture") == second_attempt
         from chess_coach import fork_history
 
         with monkeypatch.context() as patch:
@@ -668,7 +728,7 @@ def test_unfamiliar_fork_browser_and_worker(tmp_path, monkeypatch, mode):
     assert b"verified miss" not in stale_focus.data
     stale_history = history()
     assert (
-        b"2 unavailable or stale" if mode == "correct" else b"1 unavailable or stale"
+        b"3 unavailable or stale" if mode == "correct" else b"1 unavailable or stale"
     ) in stale_history
     assert (b"1 assisted" if mode == "assisted" else b"0 assisted") in stale_history
     with pytest.raises(ValueError):
