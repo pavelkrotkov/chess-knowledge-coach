@@ -45,7 +45,7 @@ def preview(db, subject, evidence_id, corpus_version, cursor=None, mechanism=Non
     except contract.UnsupportedPinTransfer:
         return {
             "status": (
-                "This source has no supported relative-pin slide."
+                "This source has no supported pin slide."
                 if mechanism == "slide"
                 else "This source has no supported capture or pin-prevention contrast."
             ),

@@ -4,7 +4,7 @@ import json
 
 import chess
 
-from .related_pin_contract import CREATED_VERSION, SLIDE_VERSION
+from .related_pin_contract import ABSOLUTE_SLIDE_VERSION, CREATED_VERSION, SLIDE_VERSION
 from .related_pin_created_view_certificate import certificate
 
 
@@ -31,10 +31,16 @@ def add_fields(result, row):
         return
     try:
         binding = json.loads(row["provenance_json"]).get("related_pin") or {}
-        if binding.get("rank_version") not in {CREATED_VERSION, SLIDE_VERSION}:
+        if binding.get("rank_version") not in {
+            CREATED_VERSION,
+            SLIDE_VERSION,
+            ABSOLUTE_SLIDE_VERSION,
+        }:
             return
-        result["pin_contrast"] = _describe(row, certificate(row, binding))
-        if binding["rank_version"] == SLIDE_VERSION:
-            result["pin_contrast"]["mechanism"] = "slide"
+        proof = certificate(row, binding)
+        from .related_pin_absolute_view import annotate
+
+        result["pin_contrast"] = _describe(row, proof)
+        annotate(result["pin_contrast"], row, proof, binding["rank_version"])
     except (ValueError, TypeError, KeyError, IndexError, StopIteration):
         return

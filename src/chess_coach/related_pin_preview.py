@@ -16,6 +16,11 @@ def _source(result, chosen):
 
 
 def _text(result):
+    if result.get("pin_origin") == "slide" and result["pin_kind"] == "absolute_pin":
+        return (
+            "The named checking capture has a supported legal reply that leaves less than "
+            "three immediate material points. Other threats, compensation and later play remain unknown."
+        )
     if result.get("pin_origin") == "slide":
         return (
             "The owned exposure and supplied slide are rechecked. The named rear capture "

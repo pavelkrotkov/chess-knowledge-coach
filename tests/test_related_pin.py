@@ -554,7 +554,7 @@ def _created_transfer(monkeypatch, black):
     db.close()
 
 
-def _slide_transfer(monkeypatch, black):
+def _slide_transfer(monkeypatch, black, absolute=False):
     import re
     import sys
 
@@ -573,7 +573,12 @@ def _slide_transfer(monkeypatch, black):
     from chess_coach.web import create_app
     from tests.test_pin_pipeline import Engine
 
-    board = chess.Board("4r2k/5p2/8/8/4R3/8/8/K3Q3 w - - 0 1")
+    board = chess.Board(
+        "4r2k/5p2/8/8/8/8/4RP2/4K3 w - - 0 1" if absolute else "4r2k/5p2/8/8/4R3/8/8/K3Q3 w - - 0 1"
+    )
+    good, bad, capture, final = (
+        ("e2e3", "e2e4", "e8e4", "e3e2") if absolute else ("e4e3", "e4f4", "e8e1", "e3e7")
+    )
     if black:
         board = board.mirror()
 
@@ -598,10 +603,10 @@ def _slide_transfer(monkeypatch, black):
             "UTCTime": "12:00:00",
         }
     )
-    node = game.add_variation(board.parse_uci(uci("e4f4")))
+    node = game.add_variation(board.parse_uci(uci(bad)))
     after = board.copy()
-    after.push_uci(uci("e4f4"))
-    node.add_variation(after.parse_uci(uci("e8e1")))
+    after.push_uci(uci(bad))
+    node.add_variation(after.parse_uci(uci(capture)))
     db = Database(":memory:")
     db.initialize()
     ingest_pgn(db, str(game))
@@ -617,20 +622,40 @@ def _slide_transfer(monkeypatch, black):
     source = source_for_evidence(db, SUBJECT, evidence, mechanism="slide")
     assert source["features"]["origin"] == "slide"
     named = pin(board)
-    assert named and slide(board, board.parse_uci(uci("e4e3")), *named)
-    assert not slide(board, board.parse_uci(uci("e4f4")), *named)
-    assert not slide(board, chess.Move.from_uci(uci("e4a8")), *named)
+    assert named and slide(board, board.parse_uci(uci(good)), *named)
+    assert not slide(board, board.parse_uci(uci(bad)), *named)
+    assert not slide(board, chess.Move.from_uci(uci(good[:2] + "a8")), *named)
+    if absolute:
+        import chess_coach.related_pin_absolute_slide as absolute_proof
+        from chess_coach.capture_game_replies import inspect as inspect_replies
+
+        for root, expected in ((good, "disproved"), (bad, "proved")):
+            capture_board = board.copy()
+            capture_board.push_uci(uci(root))
+            capture_move = chess.Move.from_uci(uci("e8" + root[2:]))
+            assert inspect_replies(capture_board, capture_move) == expected
+
+        with monkeypatch.context() as unsupported:
+            unsupported.setattr(absolute_proof, "reply_status", lambda *_: "unknown")
+            assert not slide(board, board.parse_uci(uci(good)), *named)
+        with monkeypatch.context() as mate:
+            mate.setattr(absolute_proof, "immediate_mates", lambda *_: [{}])
+            assert not slide(board, board.parse_uci(uci(good)), *named)
 
     external = board.copy()
     external.turn = not external.turn
     before = external.fen()
     setup = uci("f7f6")
     external.push_uci(setup)
-    line = [uci("e4e3"), uci("h8g8"), uci("e3e7")]
-    assert slide_line(external, line, source["features"], create())
-    assert not slide_line(external, [uci("e4f4")], source["features"], create())
+    line = [uci(good), uci("h8g8"), uci(final)]
+    candidate = slide_line(external, line, source["features"], create())
+    assert candidate
+    assert not slide_line(external, [uci(bad)], source["features"], create())
     assert not slide_line(
-        external, line, source["features"] | {"pin_kind": "absolute_pin"}, create()
+        external,
+        line,
+        source["features"] | {"pin_kind": "relative_pin" if absolute else "absolute_pin"},
+        create(),
     )
     db.connection.execute(
         "INSERT INTO puzzle_corpora(version,source,checksum,state) VALUES('slide','fixture','checksum','staging')"
@@ -668,7 +693,10 @@ def _slide_transfer(monkeypatch, black):
     page = client.get(url + "?mechanism=slide", base_url=base, headers=headers)
     assert page.status_code == 200 and b"supported slide" in page.data
     visible = re.sub(rb"<input\b[^>]*>", b"", page.data)
-    assert line[0].encode() not in visible and uci("e4f4").encode() not in visible
+    assert line[0].encode() not in visible and uci(bad).encode() not in visible
+    if absolute:
+        witness = candidate[2]["refutation"]
+        assert all(text.encode() not in visible for text in witness.values())
     with client.session_transaction(base_url=base) as session:
         csrf = session["csrf"]
     response = client.post(
@@ -689,7 +717,21 @@ def _slide_transfer(monkeypatch, black):
     assert first["status"] == "active" and "pin_contrast" not in first
     completed = submit(db, browser_attempt, SUBJECT, event_id="last", move=line[2])
     assert completed["status"] == "line_completed"
-    assert completed["pin_contrast"]["mechanism"] == "slide"
+    assert completed["pin_contrast"]["mechanism"] == ("absolute_slide" if absolute else "slide")
+    if absolute:
+        binding = json.loads(
+            db.connection.execute(
+                "SELECT provenance_json FROM unified_sessions WHERE attempt_id=?",
+                (browser_attempt,),
+            ).fetchone()[0]
+        )["related_pin"]
+        witness = binding["candidate_certificates"][0]["branch"]["refutation"]
+        replay = external.copy()
+        replay.push_uci(line[0])
+        capture_move = replay.parse_uci(witness["capture"])
+        assert completed["pin_contrast"]["capture"] == replay.san(capture_move)
+        replay.push(capture_move)
+        assert completed["pin_contrast"]["reply"] == replay.san(replay.parse_uci(witness["reply"]))
     assert show(db, browser_attempt, SUBJECT)["pin_contrast"] == completed["pin_contrast"]
     db.connection.execute(
         "INSERT INTO puzzle_corpora(version,source,checksum,state) "
@@ -753,6 +795,7 @@ def test_owned_pin_transfer_playable_concealed_and_review_bound(tmp_path, monkey
     _prevention_transfer(monkeypatch, black)
     _created_transfer(monkeypatch, black)
     _slide_transfer(monkeypatch, black)
+    _slide_transfer(monkeypatch, black, absolute=True)
 
 
 def test_public_lines_filter_wrong_operation_and_keep_only_certified_branch(tmp_path, monkeypatch):

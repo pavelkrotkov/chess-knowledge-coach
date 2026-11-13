@@ -5,7 +5,7 @@ from .material_lines import material
 from .material_reply_guard import MAX_REPLIES, MIN_GAIN
 
 
-def _reply(board, move, color, initial):
+def reply_status(board, move, color, initial):
     if board.gives_check(move) or move.promotion or board.is_en_passant(move):
         return "unknown"
     after = board.copy()
@@ -25,7 +25,7 @@ def inspect(board, move):
         return "unknown"
     unknown = False
     for reply in replies:
-        status = _reply(after, reply, color, initial)
+        status = reply_status(after, reply, color, initial)
         if status == "disproved":
             return status
         unknown |= status == "unknown"
