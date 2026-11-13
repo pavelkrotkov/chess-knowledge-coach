@@ -1,0 +1,18 @@
+<section>
+<h3>Optional promotion practice</h3>
+{% if promotion.status == "ready" %}
+<p>Play {{ promotion.color|capitalize }}. {% if promotion.objective == "promote_now" %}Promote a pawn now.{% else %}Force a promotion within two moves.{% endif %}</p>
+<form method="post" action="{{ url_for('unified_practice.begin') }}">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<input type="hidden" name="source_type" value="public">
+<input type="hidden" name="version" value="{{ promotion.version }}">
+<input type="hidden" name="key" value="{{ promotion.key }}">
+<button>Start promotion practice</button>
+</form>
+{% elif promotion.status == "complete" %}
+<p>You have completed the two-color promotion sequence without assistance.</p>
+{% else %}
+<p>The canonical promotion practice could not be checked now.</p>
+{% endif %}
+<p><a href="{{ url_for('views.library') }}">Open the practice library</a> for all available exercises.</p>
+</section>
