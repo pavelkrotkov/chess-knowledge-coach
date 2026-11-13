@@ -8,6 +8,7 @@ from flask import Blueprint, abort, current_app, render_template, request
 from .tactical_course_display import chapter as display
 from .tactical_course_offer_read import offered
 from .tactical_study_request_status import status
+from .web_tactical_prepare import preparation, prepare
 from .web_tactical_study import submit
 
 tactical_course_views = Blueprint("tactical_course_views", __name__)
@@ -25,6 +26,7 @@ def _index(name, count):
 
 @tactical_course_views.get("/coaching/tactical-course")
 def show():
+    """Read the prepared offer and request status without running preparation."""
     try:
         item, course = offered(
             current_app.config["PROJECT_ROOT"],
@@ -43,7 +45,9 @@ def show():
             "evidence_id"
         )
     except (OSError, ValueError, TypeError, KeyError, IndexError, AttributeError):
-        return render_template("tactical_course_browser.html", course=None), 200
+        return render_template(
+            "tactical_course_browser.html", course=None, preparation=preparation()
+        ), 200
     db = SimpleNamespace(path=Path(current_app.config["DB_PATH"]))
     study = status(
         db,
@@ -53,11 +57,22 @@ def show():
         item,
         course,
     )
+    # Only a validated current offer can confirm completion after interruption.
     return render_template(
-        "tactical_course_browser.html", course=course, offer=item, shown=shown, study=study
+        "tactical_course_browser.html",
+        course=course,
+        offer=item,
+        shown=shown,
+        study=study,
+        preparation=preparation(item),
     )
 
 
 tactical_course_views.add_url_rule(
     "/coaching/tactical-course/study", view_func=submit, methods=["POST"]
+)
+
+
+tactical_course_views.add_url_rule(
+    "/coaching/tactical-course/prepare", view_func=prepare, methods=["POST"]
 )

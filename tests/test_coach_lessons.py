@@ -1099,6 +1099,132 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
     export_path.write_bytes(exported_bytes)
     export_path.chmod(0o400)
 
+    # Preparation is local, preserves the old offer until completion, and never queues a Study.
+    from chess_coach import tactical_course_worker
+
+    with course_client.session_transaction(base_url="https://coach.invalid") as session:
+        course_csrf = session["csrf"]
+    post_headers = course_headers | {"Origin": "https://coach.invalid"}
+    local_url = course_url + "/prepare"
+    assert (
+        course_client.post(
+            local_url, base_url="https://coach.invalid", headers=post_headers
+        ).status_code
+        == 403
+    )
+    response = course_client.post(
+        local_url,
+        data={"csrf": course_csrf},
+        base_url="https://coach.invalid",
+        headers=post_headers,
+    )
+    assert response.status_code == 303 and offer_slot.read_bytes() == original_offer
+    assert not (planning / "tactical-study-request.json").exists()
+    assert (
+        b"preparation is queued"
+        in course_client.get(
+            course_url, base_url="https://coach.invalid", headers=course_headers
+        ).data
+    )
+    import time
+
+    from chess_coach import study_worker, tactical_course_worker_state
+
+    original_write = tactical_course_worker_state.write
+
+    def interrupted_write(path, value):
+        if value["state"] == "complete":
+            raise OSError("interrupted after publication")
+        return original_write(path, value)
+
+    with monkeypatch.context() as patch:
+        patch.setenv("CHESS_PROJECT_ROOT", str(project))
+        patch.setattr(study_worker, "active_deadline", lambda *_: "cooldown")
+        patch.setattr(tactical_course_worker_state, "write", interrupted_write)
+        study_worker.after_pipeline(db, LEARNER, time.monotonic())
+    request_file = planning / "tactical-course-request.json"
+    pending_bytes = request_file.read_bytes()
+    assert json.loads(pending_bytes)["state"] == "running"
+    published_bytes = offer_slot.read_bytes()
+    offer_slot.write_bytes(original_offer)
+    course_client.post(
+        local_url,
+        data={"csrf": course_csrf},
+        base_url="https://coach.invalid",
+        headers=post_headers,
+    )
+    assert request_file.read_bytes() == pending_bytes
+    offer_slot.write_bytes(published_bytes)
+    prepared_offer = json.loads(published_bytes)
+    assert prepared_offer["hash"] == exported["export_sha256"]
+    assert (planning / prepared_offer["file"]).is_file()
+    from chess_coach.tactical_course_capacity import output as automatic_output
+
+    saved_path, needed = automatic_output(project, planning, exported, Budget(db))
+    assert not needed and saved_path.name == prepared_offer["file"]
+    saved_bytes = saved_path.read_bytes()
+    saved_path.chmod(0o600)
+    saved_path.write_text("{}")
+    assert (
+        b"preparation completed"
+        not in course_client.get(
+            course_url, base_url="https://coach.invalid", headers=course_headers
+        ).data
+    )
+    saved_path.write_bytes(saved_bytes)
+    saved_path.chmod(0o400)
+    assert (
+        b"preparation completed"
+        in course_client.get(
+            course_url, base_url="https://coach.invalid", headers=course_headers
+        ).data
+    )
+    assert not (planning / "tactical-study-request.json").exists()
+    # A restart recognizes the same offer; a newer manual offer is not mislabeled.
+    tactical_course_worker.run(db, LEARNER, project)
+    assert json.loads(offer_slot.read_bytes()) == prepared_offer
+    from chess_coach.tactical_course_offer import offer as manual_offer
+
+    manual_offer(project, path, LEARNER, export_path, exported, Budget(db), enabled=True)
+    manual_bytes = offer_slot.read_bytes()
+    assert (
+        b"newer course replaced"
+        in course_client.get(
+            course_url, base_url="https://coach.invalid", headers=course_headers
+        ).data
+    )
+    course_client.post(
+        local_url,
+        data={"csrf": course_csrf},
+        base_url="https://coach.invalid",
+        headers=post_headers,
+    )
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            tactical_course_worker,
+            "build_preview",
+            lambda *_a, **_k: (_ for _ in ()).throw(ValueError("unavailable")),
+        )
+        tactical_course_worker.run(db, LEARNER, project)
+    assert offer_slot.read_bytes() == manual_bytes
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            "chess_coach.web_tactical_course.offered",
+            lambda *_: (_ for _ in ()).throw(ValueError("unavailable")),
+        )
+        missing = course_client.get(
+            course_url, base_url="https://coach.invalid", headers=course_headers
+        )
+        assert b"preparation is unavailable" in missing.data
+        assert b"previous course remains" not in missing.data
+    assert (
+        b"preparation is unavailable"
+        in course_client.get(
+            course_url, base_url="https://coach.invalid", headers=course_headers
+        ).data
+    )
+    offer_slot.write_bytes(original_offer)
+
     # Request only the exact offered course; an incomplete attempt retries the same file.
     from chess_coach import tactical_study_worker
     from chess_coach.study_remote import StudyError

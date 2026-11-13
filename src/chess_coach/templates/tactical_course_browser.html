@@ -3,8 +3,14 @@
 {% block content %}
 <h2>Prepared tactical course</h2>
 <p><a href="{{ url_for('coaching_views.index') }}">Back to Coaching</a></p>
+{% if preparation in ["queued", "running"] %}<p>Course preparation is queued for the scheduled worker.</p>
+{% elif preparation == "complete" %}<p>Course preparation completed.</p>
+{% elif preparation == "unavailable" %}<p>Course preparation is unavailable.{% if course %} The previous course remains available.{% endif %} You can try again.</p>
+{% elif preparation == "superseded" %}<p>A newer course replaced the prepared offer.</p>{% endif %}
+{% if preparation not in ["queued", "running"] %}<form method="post" action="{{ url_for('tactical_course_views.prepare') }}"><input type="hidden" name="csrf" value="{{ csrf }}"><button>Prepare a current course</button></form>{% endif %}
+<p>Preparation is local. Requesting a private Study is a separate action.</p>
 {% if not course %}
-<p>No current prepared course is available. An operator can offer an exported course after its source checks complete.</p>
+<p>No current prepared course is available.</p>
 {% else %}
 <p>Prepared {{ offer.prepared_at }}. This is the exact exported version <code>{{ offer.hash }}</code>. Sources were checked when it was prepared; this page does not recheck them.</p>
 <p>These are ungraded worked examples. Study publication is a separate action.</p>

@@ -2,6 +2,7 @@
 
 import os
 import time
+from contextlib import suppress
 
 from .opening_queue_files import read
 from .opening_queue_location import location
@@ -10,6 +11,7 @@ from .opening_queue_write import write
 from .opening_study_worker import run as opening_run
 from .pipeline_cooldown import active_deadline
 from .tactical_course_deadline import PreviewDeadline
+from .tactical_course_worker import run as course_run
 from .tactical_study_request import SLOT as TACTICAL_SLOT
 from .tactical_study_slot import valid as tactical_valid
 from .tactical_study_worker import run as tactical_run
@@ -51,6 +53,10 @@ def dispatch(db, learner, root):
 
 def after_pipeline(db, learner, started):
     # Reserve a bounded job and shutdown time within the existing worker unit.
+    if time.monotonic() - started > 28 * 60:
+        return
+    with suppress(Exception, PreviewDeadline):
+        course_run(db, learner, os.environ.get("CHESS_PROJECT_ROOT"))
     if time.monotonic() - started > 28 * 60:
         return
     try:
