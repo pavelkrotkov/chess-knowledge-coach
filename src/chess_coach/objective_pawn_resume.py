@@ -6,9 +6,12 @@ from .objective_pawn_history import before_answer
 from .objective_short_history import history_hash, validate_later_events
 
 
-def resume(db, session, row, result):
-    checked, events = current(db, row)
-    board, move = before_answer(db, checked, events)
+def resume(db, session, row, result, *, prepared=None):
+    if prepared is None:
+        checked, events = current(db, row)
+        board, move = before_answer(db, checked, events)
+    else:
+        board, move = prepared
     binding(row, result, board, session)
     if result.get("move") != move.uci():
         raise ValueError("pawn continuation move changed")

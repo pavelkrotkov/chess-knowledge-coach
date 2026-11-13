@@ -4,6 +4,7 @@ import json
 
 import chess
 import chess.syzygy
+import pytest
 
 from chess_coach import pawn_proof, pawn_tables
 from chess_coach.objective_pawn_contract import VERSION
@@ -36,9 +37,9 @@ def synthetic_proof(board, *, goal=1):
     }
 
 
-def setup_game(path, monkeypatch):
+def setup_game(path, monkeypatch, *, goal=1):
     board = chess.Board(FEN)
-    proof = synthetic_proof(board)
+    proof = synthetic_proof(board, goal=goal)
     db = owned_game(path, monkeypatch, fen=FEN, move="d4")
     monkeypatch.setattr("chess_coach.pawn_inspection.inspect", lambda board: proof)
     evidence = process_decision(db, 1, SUBJECT)["evidence_ids"][0]
@@ -111,6 +112,31 @@ def test_owned_unlisted_result_and_legal_training_continuation(tmp_path, monkeyp
     assert result["continuation"]["status"] == "available"
     resumed = show(db, "pawn", SUBJECT)
     assert resumed["status"] == "active" and resumed["pawn_continuation"]
+    assert resumed["pawn_feedback"] == {"move": "Kf3", "goal": 1, "lower": 1, "upper": 1}
+    from chess_coach.objective_pawn_feedback import checked as checked_feedback
+    from chess_coach.unified_session_state import session_row
+    from chess_coach.web import create_app
+
+    request = db.connection.execute(
+        """SELECT q.*,r.result_json FROM objective_requests q JOIN objective_results r
+        ON q.attempt_id=r.attempt_id AND q.event_id=r.event_id
+        WHERE q.attempt_id='pawn' AND q.event_id='answer'"""
+    ).fetchone()
+    with pytest.raises(ValueError):
+        checked_feedback(db, session_row(db, "pawn", SUBJECT), request, result | {"san": "wrong"})
+
+    client = create_app(
+        db_path=db.path,
+        subject=SUBJECT,
+        actor="fixture",
+        corpus="none",
+        login="fixture",
+        origin="https://coach.invalid",
+    ).test_client()
+    headers = {"Tailscale-User-Login": "fixture"}
+    page = client.get("/unified/pawn", base_url="https://coach.invalid", headers=headers)
+    assert b"last checked move" in page.data and b"Kf3" in page.data
+    assert b"result for your side is win" in page.data
     board = chess.Board(resumed["fen"])
     next_move = next(iter(board.legal_moves)).uci()
     event = submit(db, "pawn", SUBJECT, event_id="continue", move=next_move)
@@ -119,6 +145,7 @@ def test_owned_unlisted_result_and_legal_training_continuation(tmp_path, monkeyp
     assert (
         pending["status"] == "needs_verification" and pending["verification"]["status"] == "pending"
     )
+    assert "pawn_feedback" not in pending
     assert process(db, SUBJECT)["outcomes"] == {"correct": 1}
     assert inspect(db, SUBJECT, "pawn", "continue")["status"] == "correct"
     assert show(db, "pawn", SUBJECT)["pawn_continuation"]
@@ -129,6 +156,23 @@ def test_owned_unlisted_result_and_legal_training_continuation(tmp_path, monkeyp
         ).fetchone()[0]
         == frozen
     )
+    # The same objective distinguishes a proved miss from an overlapping interval.
+    for attempt, move, status in (
+        ("miss", "d2d4", "incorrect"),
+        ("uncertain", "e3f4", "unresolved"),
+    ):
+        begin(db, evidence, attempt)
+        submit(db, attempt, SUBJECT, event_id="answer", move=move)
+        assert process(db, SUBJECT)["outcomes"] == {status: 1}
+        checked = show(db, attempt, SUBJECT)
+        assert checked["verification"]["status"] == status
+        page = client.get(f"/unified/{attempt}", base_url="https://coach.invalid", headers=headers)
+        if status == "incorrect":
+            assert checked["pawn_feedback"] == {"move": "d4", "goal": 1, "lower": -1, "upper": -1}
+            assert b"result for your side is loss" in page.data
+        else:
+            assert "pawn_feedback" not in checked
+            assert b"last checked move" not in page.data
     assert {
         table: db.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
         for table in tracked
@@ -154,3 +198,14 @@ def test_review_revocation_before_publication_cancels_pawn_verdict(tmp_path, mon
         db.connection.execute("SELECT result_json FROM objective_results").fetchone()[0]
     )
     assert result["reason"] == "source_unavailable" and result["learning_eligible"] is False
+
+    draw_db, draw_evidence = setup_game(tmp_path / "draw.sqlite", monkeypatch, goal=0)
+    begin(draw_db, draw_evidence, "draw")
+    submit(draw_db, "draw", SUBJECT, event_id="answer", move="d2d4")
+    assert process(draw_db, SUBJECT)["outcomes"] == {"incorrect": 1}
+    assert show(draw_db, "draw", SUBJECT)["pawn_feedback"] == {
+        "move": "d4",
+        "goal": 0,
+        "lower": -1,
+        "upper": -1,
+    }

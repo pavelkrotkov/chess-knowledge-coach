@@ -6,7 +6,7 @@ from .objective_pawn_contract import is_source
 from .objective_pawn_resume import resume
 
 
-def continuation(db, session):
+def latest(db, session):
     if not is_source(session) or session["status"] != "needs_verification":
         return None
     row = db.connection.execute(
@@ -17,7 +17,14 @@ def continuation(db, session):
     ).fetchone()
     if row is None or row["result_json"] is None:
         return None
-    result = json.loads(row["result_json"])
+    return row, json.loads(row["result_json"])
+
+
+def continuation(db, session):
+    item = latest(db, session)
+    if item is None:
+        return None
+    row, result = item
     if (
         result.get("status") != "correct"
         or result.get("continuation", {}).get("status") != "available"

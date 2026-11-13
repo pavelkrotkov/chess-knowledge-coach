@@ -37,6 +37,11 @@
 {% include "practice_navigation.html" %}
 {% if notice %}<p role="status">{{ notice }}</p>{% endif %}
 {% if state.promotion_continuation %}<p role="status">Promotion within two was proved against every legal defense. Play a legal promotion now; this does not establish a win.</p>{% endif %}
+{% if state.pawn_feedback %}
+{% set outcomes = {-1: "loss", 0: "draw", 1: "win"} %}
+<p>Your last checked move was <strong>{{ state.pawn_feedback.move }}</strong>. The bounded result for your side is {% if state.pawn_feedback.lower == state.pawn_feedback.upper %}{{ outcomes[state.pawn_feedback.lower] }}{% else %}between {{ outcomes[state.pawn_feedback.lower] }} and {{ outcomes[state.pawn_feedback.upper] }}{% endif %}. The objective was to preserve {% if state.pawn_feedback.goal == 1 %}a win{% else %}at least a draw{% endif %}.</p>
+<p>Before choosing, compare how the king’s position and the opponent’s next move affect the pawn’s route to promotion. The result bound does not explain why the move works or establish mastery.</p>
+{% endif %}
 {% if state.pawn_continuation %}<p role="status">The result is preserved. A legal training reply was independently checked; it is not presented as best or forced. Play the next move; it will be checked against the same result objective.</p>{% endif %}
 {% if state.proved_continuation %}<p role="status">Correct: mate within two is proved against every legal defense. Play the reply to reach checkmate; this result does not measure mastery.</p>{% endif %}
 {% if state.status == "active" and at_current %}
