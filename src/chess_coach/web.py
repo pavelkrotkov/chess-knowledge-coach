@@ -38,6 +38,7 @@ from .web_repertoire import repertoire_views
 from .web_security import install_security
 from .web_short_mate_game import short_mate_game_views
 from .web_style import style_views
+from .web_tactical_course import tactical_course_views
 from .web_unified_practice import unified_practice
 from .web_views import views
 
@@ -102,6 +103,7 @@ def create_app(
     app.register_blueprint(recognition_progress)
     app.register_blueprint(short_mate_game_views)
     app.register_blueprint(style_views)
+    app.register_blueprint(tactical_course_views)
 
     app.teardown_appcontext(close_database)
 

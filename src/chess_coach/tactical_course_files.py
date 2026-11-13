@@ -1,11 +1,15 @@
 """Validate private, project-local output paths for tactical previews."""
 
 import os
+from pathlib import Path
 
+from .tactical_course_offer import SLOT
 from .web_paths import inside, socket_directory
 
 
 def paths(root, output):
+    if Path(output).name == SLOT:
+        raise ValueError("export path is reserved for the course offer")
     root = root.resolve(strict=True)
     planning = (root / ".runtime" / "planning").resolve(strict=True)
     data = (root / ".runtime" / "data").resolve(strict=True)
