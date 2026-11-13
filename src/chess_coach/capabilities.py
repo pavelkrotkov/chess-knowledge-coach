@@ -3,7 +3,7 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.100.0"
+REGISTRY_VERSION = "1.101.0"
 
 CAPABILITIES = (
     {
@@ -74,7 +74,7 @@ CAPABILITIES = (
         "area": "Training",
         "name": "Related threatened-piece protection",
         "status": "observation-only",
-        "details": "Current owned protection evidence retrieves source-bound examples with a matching supported immediate defense. Eligible unfamiliar corpus examples also offer a source-checked first-move assessment. Unsupported checks, captures, compensation and later play remain unresolved; no mastery is inferred.",
+        "details": "Current owned protection evidence retrieves source-bound examples with a matching supported immediate defense. Eligible unfamiliar corpus examples also offer a source-checked first-move assessment and a separate matched first-encounter history. Unsupported checks, captures, compensation and later play remain unresolved; no mastery is inferred.",
     },
     {
         "id": "style_protection_purpose_report",

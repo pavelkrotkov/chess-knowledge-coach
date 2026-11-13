@@ -429,6 +429,10 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
         )
         client = app.test_client()
         headers = {"Tailscale-User-Login": "fixture"}
+        empty_progress = client.get(
+            "/plan/protection/progress", base_url="https://coach.invalid", headers=headers
+        )
+        assert b"No certified unfamiliar protection assessments" in empty_progress.data
         assert (
             client.get(
                 f"/evidence/{2**63}/related-protections",
@@ -537,6 +541,20 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
         from chess_coach.protection_plan_history import report as assessment_history
 
         history = assessment_history(db, LEARNER, "test", evidence)
+        from chess_coach.protection_progress import report as protection_progress
+
+        progress_before = db.connection.total_changes
+        progress_history = protection_progress(db, LEARNER, "test")
+        assert db.connection.total_changes == progress_before
+        progress_entry = next(
+            entry for entry in progress_history["items"] if entry["attempt"] == assessment_attempt
+        )
+        assert progress_entry["status"] == ("correct" if color == "white" else "unavailable")
+        assert client.get("/plan/protection/progress").status_code == 403
+        progress_page = client.get(
+            "/plan/protection/progress", base_url="https://coach.invalid", headers=headers
+        )
+        assert progress_page.status_code == 200 and b"Matched samples" in progress_page.data
         if color == "white":
             assert history["status"] == "correct" and history["evidence_id"] == evidence
             separate = assessment_history(db, LEARNER, "test", evidence + 1)
@@ -911,6 +929,18 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
             )
             submit(db, "verified-miss", LEARNER, event_id="answer", move=wrong)
             assert verify(db, LEARNER)["processed"] == 1
+
+            # Both exact current assessments contribute, while ineligible attempts stay separate.
+            progress_history = protection_progress(db, LEARNER, "test")
+            matched_group = next(
+                group for group in progress_history["groups"] if group["count"] == 2
+            )
+            assert matched_group["reason"]
+            assert {entry["status"] for entry in progress_history["items"]} == {
+                "correct",
+                "incorrect",
+                "unavailable",
+            }
             db.connection.execute(
                 "UPDATE unified_sessions SET started_at='2099-01-01T00:00:00+00:00' WHERE attempt_id=?",
                 ("verified-miss",),
@@ -926,6 +956,7 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
                 )
                 assert b"Rehearse this assessment source" in view.data
                 assert b"check the opponent" in view.data
+                assert b'href="/plan/protection/progress"' in view.data
                 with app.test_request_context():
                     from flask import url_for
 
@@ -968,6 +999,10 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
             )
         review_evidence(db, evidence, decision="reject", actor="fixture")
         assert game_review(db, 1, LEARNER)[1] == {1}
+        assert all(
+            entry["status"] == "unavailable"
+            for entry in protection_progress(db, LEARNER, "test")["items"]
+        )
         with pytest.raises(ValueError):
             show(db, assessment_attempt, LEARNER)
         with pytest.raises(ValueError):
@@ -982,3 +1017,38 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
         with pytest.raises(ValueError):
             show(db, attempt, LEARNER)
         db.close()
+
+    # Full-size ordering and uncertainty gates use synthetic, disjoint checks.
+    from chess_coach.protection_progress_groups import group as progress_group
+
+    progress_scope = (
+        "test",
+        "checksum",
+        "white",
+        chess.ROOK,
+        chess.ROOK,
+        "move_threatened_piece",
+        6,
+        0,
+    )
+    progress_checks = [
+        {
+            "attempt": str(i),
+            "started_at": f"2026-01-01T00:{i:02d}:00+00:00",
+            "answered_at": f"2026-01-01T00:{i:02d}:30+00:00",
+            "current": True,
+            "hints": 0,
+            "status": "correct" if i < 10 else "incorrect",
+            "outcome": "verified" if i < 10 else "incorrect",
+        }
+        for i in range(20)
+    ]
+    assert progress_group(progress_scope, progress_checks, False)["direction"] == "fewer"
+    assert progress_group(progress_scope, progress_checks, True)["reason"]
+    assert progress_group((*progress_scope[:-1], None), progress_checks, False)["reason"]
+    progress_checks[9]["answered_at"] = progress_checks[10]["started_at"]
+    assert progress_group(progress_scope, progress_checks, False)["reason"] == (
+        "The assessment intervals overlap."
+    )
+    progress_checks[10]["started_at"] = progress_checks[9]["started_at"]
+    assert progress_group(progress_scope, progress_checks, False)["reason"]
