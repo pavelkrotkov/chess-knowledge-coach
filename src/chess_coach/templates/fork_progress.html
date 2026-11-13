@@ -30,7 +30,8 @@
 {% if comparison %}<p>Of {{ comparison.opportunities }} comparison opportunities, {{ comparison.played }} played a proved fork, {{ comparison.miss }} were verified misses, {{ comparison.unresolved }} remain unresolved and {{ comparison.pending }} are pending. {{ comparison.uncertain }} additional turns had unproved candidates.</p>{% endif %}
 {% endfor %}
 {% else %}<p>Cached fork game windows are pending or unavailable.</p>{% endif %}
-{% if relation == "later" %}<p>Both qualified game windows start after the last verified answer in the selected practice samples ({{ report.answer_end }}). Game outcomes remain independent observations.</p>
+{% if relation == "source_changed" %}<p>Sources changed during this check. Please retry.</p>
+{% elif relation == "later" %}<p>Both qualified game windows start after the last verified answer in the selected practice samples ({{ report.answer_end }}). Game outcomes remain independent observations.</p>
 {% elif relation == "newer_only" %}<p>The more recent qualified game window starts after the last verified practice answer ({{ report.answer_end }}). The earlier window starts on or before that answer, so the pair is not a fully later comparison.</p>
 {% elif relation == "practice_unavailable" %}<p>A temporal comparison is unavailable because selected practice results or their answer times are incomplete, assisted, tied or overlapping.</p>
 {% elif relation == "games_incomplete" %}<p>A temporal comparison is unavailable while game turns remain unchecked.</p>

@@ -10,7 +10,7 @@ def report(db, subject, corpus, root):
     practice = practice_report(db, subject, corpus)
     games = game_report(db, subject, root)
     if db.connection.execute("PRAGMA data_version").fetchone()[0] != version:
-        return {"status": "incomplete", "largest": 0}, None, "games_unavailable"
+        return {"status": "incomplete", "largest": 0}, None, "source_changed"
     game_ready = bool(
         games
         and not games.get("historical")

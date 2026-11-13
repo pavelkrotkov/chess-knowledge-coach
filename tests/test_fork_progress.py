@@ -386,6 +386,7 @@ def test_certified_fork_progress_workflow(tmp_path, monkeypatch):
             headers={"Tailscale-User-Login": "fixture-login"},
         )
         assert changed.status_code == 200 and b"checks were incomplete" in changed.data
+        assert b"Sources changed during this check. Please retry." in changed.data
         assert b"higher in the recent sample" not in changed.data
 
     with monkeypatch.context() as patch:
