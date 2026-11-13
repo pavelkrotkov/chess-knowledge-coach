@@ -751,6 +751,50 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
                 def plan_data(path="/plan", client=client, headers=headers):
                     return client.get(path, base_url="https://coach.invalid", headers=headers).data
 
+                ready_promotion = {
+                    "status": "ready",
+                    "version": "fixture",
+                    "key": "white",
+                    "color": "white",
+                    "objective": "promote_now",
+                }
+                with patch.context() as promotion_check:
+                    promotion_check.setattr(
+                        "chess_coach.plan_page.promotion_recommendation",
+                        lambda *_, ready_promotion=ready_promotion: ready_promotion,
+                    )
+                    prioritized = plan_data()
+                    assert (
+                        prioritized.index(b"Due review")
+                        < prioritized.index(b"Next focus: promotion practice")
+                        < prioritized.index(b"Available recurring practice: protect a piece")
+                        < prioritized.index(b"New puzzle")
+                    )
+                    assert prioritized.count(b"Start promotion practice") == 1
+                    explanation = prioritized.split(b"Next focus: promotion practice", 1)[1].split(
+                        b"</section>", 1
+                    )[0]
+                    assert f'href="/evidence/{evidence}"'.encode() in explanation
+                    assert f'href="/evidence/{source["evidence_id"]}"'.encode() not in explanation
+                    for status in ("pending", "unknown", "incorrect"):
+                        with promotion_check.context() as unresolved:
+                            unresolved.setattr(
+                                plan_web,
+                                "protection_history",
+                                lambda *_, status=status: {"status": status, "target": "d4"},
+                            )
+                            assert b"Next focus: promotion practice" not in plan_data()
+                    plan["scan"]["due_incomplete"] = True
+                    assert b"Next focus: promotion practice" not in plan_data()
+                    plan["scan"]["due_incomplete"] = False
+                    assert b"Next focus: promotion practice" not in plan_data("/plan?cursor=next")
+                    with promotion_check.context() as unavailable:
+                        unavailable.setattr(
+                            "chess_coach.plan_page.promotion_recommendation",
+                            lambda *_: {"status": "complete"},
+                        )
+                        assert b"Next focus: promotion practice" not in plan_data()
+
                 assert (
                     f"/evidence/{source['evidence_id']}/related-protections".encode() in daily.data
                 )

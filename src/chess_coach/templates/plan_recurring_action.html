@@ -1,7 +1,7 @@
 {% set choice = focus[focus.selected] %}
 {% set source = choice.source %}
 <section>
-<h3>{% if focus.selected == "capture" %}Capture practice{% elif focus.selected == "protection" %}Next focus: protect a piece{% else %}Next focus: finding forks{% endif %}</h3>
+<h3>{% if promotion_priority %}Available recurring practice: {% if focus.selected == "capture" %}find captures{% elif focus.selected == "protection" %}protect a piece{% else %}find forks{% endif %}{% elif focus.selected == "capture" %}Capture practice{% elif focus.selected == "protection" %}Next focus: protect a piece{% else %}Next focus: finding forks{% endif %}</h3>
 {% if focus.rotated_from == "protection" %}
 <p>A current protection assessment was verified correct without assistance. Its <a href="{{ url_for('views.evidence_detail', evidence_id=focus.assessment.evidence_id) }}">assessment source</a> {% if focus.assessment.evidence_id != focus.protection.source.evidence_id %}is separate from the selected protection rehearsal{% else %}matches the selected protection rehearsal{% endif %}. This choice adds variety.</p>
 {% elif focus.rotated_from %}
