@@ -22,3 +22,17 @@ def correct_root(result):
         and -1 <= low <= high <= 1
         and low >= goal
     )
+
+
+def result_interval(result, data, objective):
+    goal, low, high = result.get("goal"), result.get("lower"), result.get("upper")
+    if any(type(value) is not int for value in (goal, low, high)):
+        raise ValueError("pawn result interval unavailable")
+    if not (
+        goal in {0, 1}
+        and -1 <= low <= high <= 1
+        and goal == data.get("result_goal")
+        and objective == ("preserve_pawn_win" if goal == 1 else "preserve_pawn_draw")
+    ):
+        raise ValueError("pawn result interval unavailable")
+    return goal, low, high

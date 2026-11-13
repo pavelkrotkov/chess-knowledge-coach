@@ -23,15 +23,20 @@ def proved(db, session, event, board):
         or result.get("continuation", {}).get("status") != "available"
     ):
         raise ValueError("pawn prior proof unavailable")
-    _request_binding(db, session, row)
+    bound_events(db, session, row)
     binding(row, result, board, session)
     return result
 
 
-def _request_binding(db, session, row):
+def bound_events(db, session, row):
     data = json.loads(session["provenance_json"])
-    if normalize_identity(session["subject"]) != row["subject"] or not matches(session, data, row):
+    if (
+        session["attempt_id"] != row["attempt_id"]
+        or normalize_identity(session["subject"]) != row["subject"]
+        or not matches(session, data, row)
+    ):
         raise ValueError("pawn prior request changed")
     events = prefix(db, row["attempt_id"], row["event_id"])
     if prefix_hash(events) != row["event_prefix_hash"]:
         raise ValueError("pawn prior history changed")
+    return events
