@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Prepared tactical course — Chess coach{% endblock %}
+{% block content %}
+<h2>Prepared tactical course</h2>
+<p><a href="{{ url_for('coaching_views.index') }}">Back to Coaching</a></p>
+{% if not course %}
+<p>No current prepared course is available. An operator can offer an exported course after its source checks complete.</p>
+{% else %}
+<p>Prepared {{ offer.prepared_at }}. This is the exact exported version <code>{{ offer.hash }}</code>. Sources were checked when it was prepared; this page does not recheck them.</p>
+<p>These are ungraded worked examples. Study publication is a separate action.</p>
+{% if course.selection.unavailable %}<details><summary>Recorded omissions</summary><ul>{% for item in course.selection.unavailable %}<li>{{ item.skill|replace('_', ' ') }} · {{ item.operation|replace('_', ' ') }}: {{ item.reason }}</li>{% endfor %}</ul></details>{% endif %}
+<nav aria-label="Course chapters"><h3>Chapters</h3><ol>{% for chapter in course.chapters %}<li>{% if loop.index0 == shown.index %}<strong>{{ chapter.title }}</strong>{% else %}<a href="{{ url_for('tactical_course_views.show', version=offer.hash, chapter=loop.index0) }}">{{ chapter.title }}</a>{% endif %}</li>{% endfor %}</ol></nav>
+<section><h3>{{ shown.chapter.title }}</h3>
+<p>Learner side: {{ shown.chapter.orientation|title }}.</p><p>{{ shown.note }}</p>
+{% if shown.evidence is integer and shown.evidence > 0 and shown.evidence < 9223372036854775808 %}<p><a href="{{ url_for('views.evidence_detail', evidence_id=shown.evidence) }}">View the source decision</a></p>{% endif %}
+{% set board = shown.board %}{% set board_label = "Prepared position; learner plays " + shown.chapter.orientation + " at the bottom" %}{% include "board.html" %}
+{% if shown.line_count > 1 %}<nav aria-label="Supplied lines"><p>Choose a supplied line: {% for number in range(shown.line_count) %}{% if number == shown.line %}<strong>{{ number + 1 }}</strong>{% else %}<a href="{{ url_for('tactical_course_views.show', version=offer.hash, chapter=shown.index, line=number) }}">{{ number + 1 }}</a>{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}</p></nav>{% endif %}
+<details><summary>Show the supplied line</summary><ol>{% for move in shown.moves %}<li id="line-{{ loop.index }}">{{ move.san }}<details><summary>View position after {{ move.san }}</summary>{% set board = move.board %}{% set board_label = "Position after " + move.san + "; learner plays " + move.color + " at the bottom" %}{% include "board.html" %}</details>{% if not loop.first %} <a href="#line-{{ loop.index - 1 }}">Previous move</a>{% endif %}{% if not loop.last %} <a href="#line-{{ loop.index + 1 }}">Next move</a>{% endif %}</li>{% endfor %}</ol></details>
+</section>
+{% endif %}
+{% endblock %}

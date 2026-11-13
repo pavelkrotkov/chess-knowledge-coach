@@ -10,12 +10,13 @@ from types import SimpleNamespace
 from .tactical_course_budget import Budget
 from .tactical_course_deadline import PreviewDeadline
 from .tactical_course_files import paths
+from .tactical_course_offer import offer as offer_course
 from .tactical_course_publish import publish
 from .tactical_export import build
 from .tactical_export_input import load
 
 
-def prepare(root, preview, expected_hash, output):
+def prepare(root, preview, expected_hash, output, *, offer=False):
     database, output = paths(root, output)
     connection = sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=1)
     connection.row_factory = sqlite3.Row
@@ -35,6 +36,9 @@ def prepare(root, preview, expected_hash, output):
             db, os.environ["CHESS_SUBJECT"], os.environ["CHESS_CORPUS"], envelope, budget
         )
         publish(output, result, budget, readonly=True)
+        offer_course(
+            root, database, os.environ["CHESS_SUBJECT"], output, result, budget, enabled=offer
+        )
     finally:
         connection.close()
 
@@ -45,11 +49,15 @@ def main():
     parser.add_argument("--preview", required=True, type=Path)
     parser.add_argument("--preview-sha256", required=True)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument(
+        "--offer", action="store_true", help="offer the completed export in the private tutor"
+    )
     args = parser.parse_args()
     try:
-        prepare(args.project_root, args.preview, args.preview_sha256, args.output)
+        prepare(args.project_root, args.preview, args.preview_sha256, args.output, offer=args.offer)
     except (Exception, PreviewDeadline):
-        raise SystemExit("Tactical export unavailable; no candidate was published.") from None
+        raise SystemExit("Tactical export unavailable; an export may have been retained.") from None
+
     print("Private tactical export candidate prepared.")
 
 

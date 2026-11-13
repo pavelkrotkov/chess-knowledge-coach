@@ -995,7 +995,7 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
     assert preview["preview"]["selection"]["corpus_version"] == "test"
 
     export_path = planning / "tactical-export.json"
-    export_candidate(project, first_preview, preview["preview_sha256"], export_path)
+    export_candidate(project, first_preview, preview["preview_sha256"], export_path, offer=True)
     exported_bytes = export_path.read_bytes()
     exported = json.loads(exported_bytes)
     assert exported["kind"] == "local-tactical-course-export-v4"
@@ -1003,6 +1003,72 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
     assert exported["export"]["preview_sha256"] == preview["preview_sha256"]
     assert exported["export"]["chapters"] == preview["preview"]["chapters"]
     assert exported["export"]["selection"] == preview["preview"]["selection"]
+
+    course_app = create_app(
+        project_root=project,
+        db_path=path,
+        subject=LEARNER,
+        actor="fixture",
+        corpus="test",
+        login="login",
+        origin="https://coach.invalid",
+    )
+    course_client = course_app.test_client()
+    course_headers = {"Tailscale-User-Login": "login"}
+    course_url = "/coaching/tactical-course"
+    assert course_client.get(course_url, base_url="https://coach.invalid").status_code == 403
+    before_course_page = db.connection.total_changes
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            "chess_coach.tactical_export.build",
+            lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("rebuilt course on GET")),
+        )
+        shown = course_client.get(
+            course_url, base_url="https://coach.invalid", headers=course_headers
+        )
+    assert shown.status_code == 200
+    assert exported["export_sha256"].encode() in shown.data
+    assert b"Prepared tactical course" in shown.data and b"Show the supplied line" in shown.data
+    assert b"View the source decision" in shown.data and b"ungraded" in shown.data
+    assert b"Recorded omissions" in shown.data and db.connection.total_changes == before_course_page
+    assert (
+        course_client.get(
+            course_url + "?version=" + "0" * 64,
+            base_url="https://coach.invalid",
+            headers=course_headers,
+        ).status_code
+        == 409
+    )
+    course_app.config["SUBJECT"] = "another_learner"
+    assert (
+        b"No current prepared course"
+        in course_client.get(
+            course_url, base_url="https://coach.invalid", headers=course_headers
+        ).data
+    )
+    course_app.config["SUBJECT"] = LEARNER
+    other_database = path.parent / "other.sqlite"
+    other_database.touch()
+    course_app.config["DB_PATH"] = str(other_database)
+    assert (
+        b"No current prepared course"
+        in course_client.get(
+            course_url, base_url="https://coach.invalid", headers=course_headers
+        ).data
+    )
+    course_app.config["DB_PATH"] = str(path)
+    changed_export = json.loads(exported_bytes)
+    changed_export["export"]["ranking_qualification"] = "changed"
+    export_path.chmod(0o600)
+    export_path.write_text(json.dumps(changed_export))
+    assert (
+        b"No current prepared course"
+        in course_client.get(
+            course_url, base_url="https://coach.invalid", headers=course_headers
+        ).data
+    )
+    export_path.write_bytes(exported_bytes)
+    export_path.chmod(0o400)
 
     # A saved v1 preview retains its exact scope, hash, export and Study reconstruction.
     from chess_coach.tactical_course_budget import Budget
@@ -1142,10 +1208,31 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
     assert new_selection == old_selection
     assert len(related_preview["preview"]["chapters"]) == 2
     export_candidate(
-        project, related_preview_path, related_preview["preview_sha256"], related_output
+        project, related_preview_path, related_preview["preview_sha256"], related_output, offer=True
     )
     related_export = json.loads(related_output.read_bytes())
     assert related_export["export"]["chapters"] == related_preview["preview"]["chapters"]
+    new_hash = related_export["export_sha256"]
+    assert (
+        course_client.get(
+            course_url + "?version=" + exported["export_sha256"],
+            base_url="https://coach.invalid",
+            headers=course_headers,
+        ).status_code
+        == 409
+    )
+    second_chapter = course_client.get(
+        course_url + "?version=" + new_hash + "&chapter=1",
+        base_url="https://coach.invalid",
+        headers=course_headers,
+    )
+    assert (
+        second_chapter.status_code == 200 and b"Related unfamiliar example" in second_chapter.data
+    )
+    assert (
+        b"View the source decision" in second_chapter.data
+        and b"Show the supplied line" in second_chapter.data
+    )
     # Revalidate the explicit export before opening any versioned intent or transport.
     import chess_coach.tactical_study_session as tactical_session
 
