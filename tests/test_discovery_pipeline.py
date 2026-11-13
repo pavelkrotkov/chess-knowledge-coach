@@ -1,5 +1,7 @@
 """Integrated synthetic discovery worker, ownership, review, and practice."""
 
+import json
+import re
 import sys
 from datetime import UTC, datetime
 
@@ -136,12 +138,130 @@ def test_source_worker_lesson_practice_and_review(tmp_path, monkeypatch):
         login="fixture-login",
         origin="https://coach.invalid",
     )
-    page = app.test_client().get(
+    client = app.test_client()
+    page = client.get(
         f"/evidence/{evidence_id}",
         base_url="https://coach.invalid",
         headers={"Tailscale-User-Login": "fixture-login"},
     )
     assert b"Discovered-attack source: current" in page.data and b"double check" in page.data
+    assert b"Find unfamiliar discovered-mate practice" in page.data
+
+    # A different legal reset position shares the source's discovered-mate roles.
+    db.connection.execute(
+        "INSERT INTO puzzle_corpora(version,source,checksum,state) VALUES('test','fixture','hash','staging')"
+    )
+    corpus_id = db.connection.execute(
+        "SELECT id FROM puzzle_corpora WHERE version='test'"
+    ).fetchone()[0]
+    for file in "abcd":
+        candidate = chess.Board("7k/8/5K1N/8/8/8/8/6RR b - - 0 1")
+        candidate.set_piece_at(chess.parse_square(file + "7"), chess.Piece(chess.PAWN, chess.BLACK))
+        setup = file + "7" + file + "6"
+        db.connection.execute(
+            """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,rating_deviation,themes_json,objective)
+            VALUES(?,?,?,?,?,1200,80,'[]','unknown')""",
+            (
+                file,
+                corpus_id,
+                candidate.fen(),
+                "https://lichess.org/external" + file,
+                setup + " h6f7",
+            ),
+        )
+        db.connection.execute(
+            "INSERT INTO puzzle_themes VALUES(?,?,'discoveredAttack',1200)", (corpus_id, file)
+        )
+    wrong_check = chess.Board("7k/8/5K1N/8/8/8/8/6RR b - - 0 1")
+    wrong_check.set_piece_at(chess.D7, chess.Piece(chess.PAWN, chess.BLACK))
+    no_reset = chess.Board("1n5k/8/5K1N/8/8/8/8/6RR b - - 0 1")
+    for key, board, line in (
+        ("wrong-check", wrong_check, "d7d6 h6g8"),
+        ("no-reset", no_reset, "b8a6 h6f7"),
+    ):
+        db.connection.execute(
+            """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,rating_deviation,themes_json,objective)
+            VALUES(?,?,?,'https://example.invalid',?,1200,80,'[]','unknown')""",
+            (key, corpus_id, board.fen(), line),
+        )
+        db.connection.execute(
+            "INSERT INTO puzzle_themes VALUES(?,?,'discoveredAttack',1200)", (corpus_id, key)
+        )
+    db.connection.execute("UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus_id,))
+    db.connection.commit()
+    headers = {"Tailscale-User-Login": "fixture-login"}
+    origin = "https://coach.invalid"
+    url = f"/evidence/{evidence_id}/related-discovered-mates"
+    from chess_coach.unified_session_events import hint, reveal, show
+
+    for index, (move, expected) in enumerate(
+        (
+            ("h6f5", "objective_verified"),
+            ("g1f1", "line_completed"),
+            (None, "imported"),
+            (None, "revoked"),
+        )
+    ):
+        preview = client.get(url, base_url=origin, headers=headers)
+        assert preview.status_code == 200
+        assert preview.data.count(b"Try this assessment") == 4 - index
+        assert b"h6f7" not in preview.data and b"Play White" in preview.data
+        match = re.search(rb'name="reference" value="([0-9a-f]{64})"', preview.data)
+        assert match is not None
+        reference = match.group(1).decode()
+        with client.session_transaction(base_url=origin) as browser:
+            csrf = browser["csrf"]
+        started = client.post(
+            url + "/start",
+            base_url=origin,
+            headers=headers | {"Origin": origin},
+            data={"csrf": csrf, "reference": reference},
+        )
+        assert started.status_code == 303
+        with client.session_transaction(base_url=origin) as browser:
+            attempt = browser["unified_attempt"]
+        active = client.get(started.headers["Location"], base_url=origin, headers=headers)
+        assert b"h6f7" not in active.data and b">Hint</button>" not in active.data
+        with pytest.raises(ValueError, match="answer before"):
+            hint(db, attempt, LEARNER, event_id="hint")
+        with pytest.raises(ValueError, match="answer before"):
+            reveal(db, attempt, LEARNER, event_id="reveal")
+        if expected == "imported":
+            stored = db.connection.execute(
+                "SELECT provenance_json FROM unified_sessions WHERE attempt_id=?", (attempt,)
+            ).fetchone()[0]
+            source_game = json.loads(stored)["related_discovery_mate"]["source_game"]
+            game = chess.pgn.Game()
+            game.headers.update(
+                {
+                    "White": LEARNER,
+                    "Black": "fixture_opponent",
+                    "Result": "1-0",
+                    "Site": "https://lichess.org/" + source_game,
+                }
+            )
+            game.add_variation(chess.Move.from_uci("e2e4"))
+            ingest_pgn(db, str(game), source="lichess")
+            with pytest.raises(ValueError):
+                submit(db, attempt, LEARNER, event_id="answer", move="h6f7")
+        elif move is None:
+            review_evidence(db, evidence_id, decision="revoke", actor="fixture_reviewer")
+            with pytest.raises(ValueError):
+                submit(db, attempt, LEARNER, event_id="answer", move="h6f7")
+            review_evidence(db, evidence_id, decision="accept", actor="fixture_reviewer")
+        else:
+            answer = submit(db, attempt, LEARNER, event_id="answer", move=move)
+            assert answer["status"] == expected and answer["hints_used"] == 0
+            assert answer["feedback"] == (
+                "objective_verified" if expected == "objective_verified" else "incorrect"
+            )
+            assert show(db, attempt, LEARNER)["status"] == expected
+            result_page = client.get(started.headers["Location"], base_url=origin, headers=headers)
+            if expected == "objective_verified":
+                assert b"gave checkmate without assistance" in result_page.data
+            else:
+                assert b"Incorrect: this legal move did not give checkmate" in result_page.data
+
     db.connection.execute(
         "UPDATE decision_analysis_lines SET score_value=score_value+1 WHERE position_id=1 AND role=?",
         ("best",),

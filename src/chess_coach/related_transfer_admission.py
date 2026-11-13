@@ -81,6 +81,7 @@ def _binding(source, version, motif, item):
     if motif in {
         "fork",
         "created_exposure",
+        "discovery_mate",
         "protection",
         "fork_prevention",
         "fork_avoidance",
@@ -101,4 +102,5 @@ def _created_binding(binding, motif, item):
     # Keep the witness in the private bound session, not the preview.
     if motif == "created_exposure":
         binding["created_witness"] = item["created_witness"]
+    if motif in {"created_exposure", "discovery_mate"}:
         binding["source_game"] = item.get("game")

@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Related discovered mate — Chess coach{% endblock %}
+{% block content %}
+<h2>Practice a discovered checkmate</h2>
+<p>The checked source is {{ "reviewed" if result.review_status == "accepted" else "provisional" }}. Examples match the side, moving piece, revealed slider and whether the check is double. The supplied move is independently checked as immediate checkmate. This bounded sample does not establish mastery.</p>
+<p>{{ result.status }}{% if result.scanned is defined %}; {{ result.scanned }} corpus records examined in the content-rating range {{ result.bounds[0] }}–{{ result.bounds[1] }}. At most 100 records per rating band are inspected; more may remain. The source, selected example and familiarity are checked again when starting.{% endif %}</p>
+{% for item in result['items'] %}
+<section><h3>Unfamiliar example</h3>
+<p>Play {{ "White" if item.fen.split()[1] == "w" else "Black" }}. Find checkmate in one move. A different legal checkmate also counts.</p>
+{% set board = item.board %}{% set board_label = "Position for the side to move" %}{% include "board.html" %}
+<form method="post" action="{{ url_for('related_discovery.begin_discovery', evidence_id=evidence_id) }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="reference" value="{{ item.reference }}"><button>Try this assessment</button></form>
+</section>
+{% endfor %}
+{% if result.next_cursor %}<p><a href="{{ url_for('related_discovery.discovery', evidence_id=evidence_id, cursor=result.next_cursor) }}">More examples</a></p>{% endif %}
+{% endblock %}

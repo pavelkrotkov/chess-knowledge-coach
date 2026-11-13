@@ -5,6 +5,7 @@ from .objective_request import enqueue
 from .objective_session_dispatch import record
 from .objective_session_view import display
 from .related_created_view import waiting as created_waiting
+from .related_discovery_contract import is_source as discovery_mate
 from .unified_session_replay import previous as _previous
 from .unified_session_state import session_row
 from .unified_source_current import require_current
@@ -72,6 +73,6 @@ def _event(db, attempt_id, subject, event_id, kind, move):
 
 def _record(db, row, event_id, kind, move):
     # Existing event retries are returned before this new-assistance guard.
-    if kind == "hint" and created_waiting(row):
+    if kind == "hint" and (created_waiting(row) or discovery_mate(row)):
         raise ValueError("answer before requesting assistance")
     return record(db, row, event_id, kind, move)
