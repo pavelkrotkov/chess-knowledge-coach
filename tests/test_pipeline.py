@@ -161,6 +161,51 @@ def test_end_to_end_replay_review_and_version_changes(tmp_path, monkeypatch):
     assert evidence_ids(db, "fork-opportunity-mapper") == fork_ids
     assert len(calls) <= config.network_requests * 3
 
+    # A source outage still lets already imported games and local hooks progress.
+    offline = replace(config, structure_version="v3", network_retries=0)
+    bad_http = httpx.MockTransport(
+        lambda request: httpx.Response(503, text="private response", request=request)
+    )
+    before_hooks = len(optional_scans)
+    failed = process_pipeline(db, offline, transport=bad_http)
+    assert failed["status"] == "partial"
+    assert failed["sync"] == {"status": "failed", "detail": "source_http_error", "http_status": 503}
+    assert len(failed["games"]) == 3
+    assert len(optional_scans) == before_hooks + 5
+    health = db.connection.execute(
+        "SELECT sync_status, sync_detail FROM pipeline_health"
+    ).fetchone()
+    assert tuple(health) == ("failed", "source_http_error")
+    assert "private response" not in json.dumps(failed)
+
+    def unavailable(request):
+        raise httpx.ConnectError("private transport detail", request=request)
+
+    failed = process_pipeline(db, offline, transport=httpx.MockTransport(unavailable))
+    assert failed["status"] == "partial"
+    assert failed["sync"] == {"status": "failed", "detail": "source_transport_error"}
+    assert "private transport detail" not in json.dumps(failed)
+
+    import sqlite3
+
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            "chess_coach.pipeline_sync.sync_games",
+            lambda *args, **kwargs: (_ for _ in ()).throw(sqlite3.OperationalError("private db")),
+        )
+        before_hooks = len(optional_scans)
+        failed = process_pipeline(db, offline, transport=network)
+    assert failed["status"] == "failed"
+    assert failed["sync"] == {"status": "failed", "detail": "sync_database_error"}
+    assert len(optional_scans) == before_hooks
+    assert "private db" not in json.dumps(failed)
+
+    recovered = process_pipeline(db, offline, transport=network)
+    assert recovered["sync"]["status"] in {"complete", "partial"}
+    assert (
+        db.connection.execute("SELECT sync_status FROM pipeline_health").fetchone()[0] != "failed"
+    )
+
 
 def test_analysis_checkpoint_rolls_back_on_interruption(tmp_path, monkeypatch):
     from chess_coach import pipeline_work
