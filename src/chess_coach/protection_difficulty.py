@@ -20,7 +20,7 @@ def eligible(db, subject, corpus, evidence, attempt):
         with budget.scope(snapshot=False):
             recent, earlier = _pair(db, subject, corpus, evidence, attempt, budget.check)
             return _band(db, corpus, recent, earlier, budget.check)
-    except PreviewUnavailable:
+    except (sqlite3.Error, TypeError, KeyError, IndexError, AttributeError, PreviewUnavailable):
         raise ValueError("harder protection unavailable") from None
 
 

@@ -36,12 +36,14 @@ def prior(db, subject, corpus, evidence, attempt):
 
 
 # The selected first move must still match the verified source context.
-def selected(db, subject, corpus, evidence, attempt, assessment, chosen, *, harder=False):
+def selected(
+    db, subject, corpus, evidence, attempt, assessment, chosen, *, harder=False, expected=None
+):
     if not assessment:
         raise ValueError("protection follow-up requires an assessment")
     from .protection_followup_mode import expected_context
 
-    expected, side = expected_context(db, subject, corpus, evidence, attempt, harder)
+    expected, side = expected or expected_context(db, subject, corpus, evidence, attempt, harder)
     source_type, version, key, binding, lines = chosen
     if source_type != "corpus":
         raise ValueError("protection follow-up unavailable")

@@ -42,7 +42,8 @@ def find(db, subject, corpus, evidence, attempt, cursor, *, harder=False):
             if time.monotonic() >= until:
                 raise ValueError("protection search timed out")
 
-        chosen = selection(db, subject, evidence, corpus, check=check)
+        options = {"difficulty": (expected[3], side)} if harder else {}
+        chosen = selection(db, subject, evidence, corpus, check=check, **options)
         if chosen is None:
             raise ValueError("protection search unavailable")
         filtered = _filtered(db, chosen[3], expected, side, check)

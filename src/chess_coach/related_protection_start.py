@@ -24,11 +24,19 @@ def start_related(
     if db.connection.in_transaction:
         raise RuntimeError("cannot start during an existing transaction")
     version = db.connection.execute("PRAGMA main.data_version").fetchone()[0]
-    options = {"harder_attempt": followup} if harder else {}
+    options = {}
+    expected = None
+    if harder:
+        from .protection_followup_mode import expected_context
+
+        expected = expected_context(db, subject, corpus_version, evidence_id, followup, True)
+        options = {"harder_attempt": followup, "difficulty": (expected[0][3], expected[1])}
     selected = admit(db, subject, evidence_id, corpus_version, reference, **options)
     from .protection_followup_mode import validate
 
-    validate(db, subject, corpus_version, evidence_id, followup, assessment, selected, harder)
+    validate(
+        db, subject, corpus_version, evidence_id, followup, assessment, selected, harder, expected
+    )
     if assessment:
         source_type, corpus, key, binding, lines = selected
         if source_type != "corpus":

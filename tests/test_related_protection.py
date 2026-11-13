@@ -425,7 +425,9 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
             ],
         )
         main()
-        assert reference in [item["reference"] for item in json.loads(capsys.readouterr().out)["items"]]
+        assert reference in [
+            item["reference"] for item in json.loads(capsys.readouterr().out)["items"]
+        ]
 
         app = create_app(
             db_path=path,
@@ -579,12 +581,18 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
             with pytest.raises(ValueError):
                 harder_eligible(db, LEARNER, "test", evidence, assessment_attempt)
             next_item = next(
-                item for item in preview(db, LEARNER, evidence, "test")["items"]
+                item
+                for item in preview(db, LEARNER, evidence, "test")["items"]
                 if item["rating"] == 1200
             )
             start_related(
-                db, attempt_id="second-correct", subject=LEARNER, evidence_id=evidence,
-                corpus_version="test", reference=next_item["reference"], assessment=True,
+                db,
+                attempt_id="second-correct",
+                subject=LEARNER,
+                evidence_id=evidence,
+                corpus_version="test",
+                reference=next_item["reference"],
+                assessment=True,
                 followup=assessment_attempt,
             )
             submit(db, "second-correct", LEARNER, event_id="answer", move=moves[1])
@@ -592,17 +600,44 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
             assessment_attempt = "second-correct"
             history = assessment_history(db, LEARNER, "test", evidence)
             assert harder_eligible(db, LEARNER, "test", evidence, assessment_attempt)[0][3] == 7
+            from chess_coach.related_protection import selection as protection_selection
+
+            scoped = protection_selection(db, LEARNER, evidence, "test", difficulty=(7, color))
+            assert scoped[2]["scanned"] == scoped[2]["protection_scan"]["checked"] == 1
+            import chess_coach.protection_difficulty_filter as difficulty_filter
+
+            with monkeypatch.context() as patch:
+                patch.setattr(
+                    difficulty_filter, "_prompt", lambda *_: pytest.fail("wrong side replayed")
+                )
+                wrong_side = "black" if color == "white" else "white"
+                assert not difficulty_filter.accepts(
+                    {"type": "corpus", "rating": 1400, "fen": setup.fen()},
+                    None,
+                    None,
+                    (7, wrong_side),
+                    {},
+                )
             harder = client.get(
                 f"/evidence/{evidence}/related-protections?followup={assessment_attempt}&harder=1",
-                base_url="https://coach.invalid", headers=headers,
+                base_url="https://coach.invalid",
+                headers=headers,
             )
             assert harder.status_code == 200 and b"1400" in harder.data
-            harder_ref = re.search(rb'name="reference" value="([^"]+)"', harder.data).group(1).decode()
+            harder_match = re.search(rb'name="reference" value="([^"]+)"', harder.data)
+            assert harder_match is not None
+            harder_ref = harder_match.group(1).decode()
             started_harder = client.post(
-                url, base_url="https://coach.invalid",
+                url,
+                base_url="https://coach.invalid",
                 headers=headers | {"Origin": "https://coach.invalid"},
-                data={"csrf": csrf, "reference": harder_ref, "assessment": "1",
-                      "followup": assessment_attempt, "harder": "1"},
+                data={
+                    "csrf": csrf,
+                    "reference": harder_ref,
+                    "assessment": "1",
+                    "followup": assessment_attempt,
+                    "harder": "1",
+                },
             )
             assert started_harder.status_code == 303
             with pytest.raises(ValueError):

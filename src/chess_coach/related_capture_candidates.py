@@ -17,6 +17,7 @@ def candidates(
     all_lines=False,
     include_objective=False,
     per_band=100,
+    rating_bounds=None,
 ):
     corpus = db.connection.execute(
         "SELECT c.id,c.checksum,i.selection_json FROM puzzle_corpora c LEFT JOIN puzzle_imports i ON i.corpus_id=c.id WHERE c.version=? AND c.state='ready'",
@@ -25,6 +26,8 @@ def candidates(
     if corpus is None:
         return [], None
     lower, upper = (max(0, rating - 500), min(3999, rating + 500)) if rating else (600, 2200)
+    if rating_bounds is not None:
+        lower, upper = rating_bounds
     rows, limited = corpus_rows(db, corpus["id"], lower, upper, theme, per_band)
     result = [
         _corpus(row, version) for row in rows if _game_id(row["source"]) not in familiar_games
