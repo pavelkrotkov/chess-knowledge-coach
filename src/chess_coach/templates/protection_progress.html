@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Unfamiliar protection assessments - Chess coach{% endblock %}
+{% block content %}
+<h2>Unfamiliar protection assessments</h2>
+<p>These are source-checked first encounters in unfamiliar protection exercises. Practice results and game observations are independent. The checks cannot establish whether a position was familiar outside recorded history.</p>
+<p><a href="{{ url_for('protection_plan.show') }}">Back to protection practice</a></p>
+{% if report is none %}
+<p>Assessment history is unavailable or changed during this bounded check. Try again.</p>
+{% else %}
+{% if report.limited %}<p>The recent history limit or an unavailable date prevents a comparison.</p>{% endif %}
+{% if not report["items"] %}<p>No certified unfamiliar protection assessments have been recorded yet.</p>{% endif %}
+<h3>Matched samples</h3>
+<p>Groups share the current corpus, side, defending and threatened piece roles, protection mechanism, and recorded difficulty and uncertainty bands. A comparison needs two ordered, non-overlapping samples of 10 current, unassisted, resolved first checks each. Hinted, repeated, unfinished and unavailable attempts do not count toward those samples.</p>
+{% for group in report.groups %}
+<section>
+<h4>{{ group.side | capitalize }} - {{ group.mover }} protects {{ group.target }} - {{ group.mechanism | replace('_', ' ') }} - difficulty {{ group.rating }}-{{ group.rating + 199 }}{% if group.deviation is not none %} - deviation {{ group.deviation }}-{{ group.deviation + 99 }}{% else %} - deviation not recorded{% endif %}</h4>
+<p>{{ group.count }} current unassisted first checks in this context.</p>
+{% if group.reason %}
+<p>Direction withheld. {{ group.reason }}</p>
+{% else %}
+{% for label, sample in (("Earlier", group.earlier), ("Later", group.later)) %}
+<p>{{ label }} checks started {{ sample.start }} to {{ sample.end }}: {{ sample.correct }} correct and {{ sample.size - sample.correct }} incorrect out of {{ sample.size }}.</p>
+{% endfor %}
+<p>{% if group.direction == "equal" %}These samples have equal correct counts.{% else %}The later sample has {{ group.direction }} correct answers.{% endif %} This does not establish improvement or a cause.</p>
+{% endif %}
+</section>
+{% else %}<p>No current checks with a comparable recorded context are available yet.</p>{% endfor %}
+{% if report["items"] %}<h3>Recorded assessments</h3>
+<ul>{% for entry in report["items"] %}<li>{{ entry.started_at }} - {% if entry.status == "correct" %}Correct{% elif entry.status == "incorrect" %}Incorrect{% else %}Unfinished, assisted, repeated, stale or unavailable{% endif %}. <a href="{{ url_for('unified_practice.show_page', attempt=entry.attempt) }}">Open assessment</a></li>{% endfor %}</ul>{% endif %}
+{% endif %}
+{% endblock %}
