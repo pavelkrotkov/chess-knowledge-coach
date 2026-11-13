@@ -109,4 +109,8 @@ def result(db, row, observed, *, related_cache=None, related_check=None):
     target = chess.parse_square(json.loads(row["provenance_json"])["objective_target"])
     if not _matches(result, request, events, board, move, target, observed):
         return {"status": "unavailable"}
-    return {"status": result["status"], "assistance": result.get("assistance")}
+    return {
+        "status": result["status"],
+        "assistance": result.get("assistance"),
+        "answered_at": events[-1]["created_at"],
+    }

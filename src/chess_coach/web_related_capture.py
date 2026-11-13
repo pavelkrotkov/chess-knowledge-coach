@@ -93,12 +93,17 @@ def find_verified():
 
 @related_capture.get("/plan/captures/comparison")
 def comparison():
-    from .capture_compare_report import report
+    from .capture_compare_game import report
 
     try:
-        result = report(database(), current_app.config["SUBJECT"], current_app.config["CORPUS"])
+        result, games, timing = report(
+            database(),
+            current_app.config["SUBJECT"],
+            current_app.config["CORPUS"],
+            current_app.config["PROJECT_ROOT"],
+        )
     except (sqlite3.Error, ValueError, TypeError, KeyError, IndexError):
         return render_template(
             "error.html", message="Capture comparison is unavailable or changed."
         ), 400
-    return render_template("capture_comparison.html", report=result)
+    return render_template("capture_comparison.html", report=result, games=games, relation=timing)
