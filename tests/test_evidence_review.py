@@ -146,10 +146,18 @@ def test_review_lifecycle_replay_and_mastery_invalidation(monkeypatch) -> None:
     from chess_coach.tactical_pipeline_replay import fact_run
 
     context = next(decision_contexts(db, game_id, learner="SyntheticWhite"))
+    db.connection.execute("UPDATE digest_settings SET compact=1 WHERE id=1")
+    db.connection.commit()
     with mapping_transaction(db):
         run = fact_run(db, context, tactical_opportunities.PRODUCER, "1.0.0", [], None)
         legacy = map_decision(db, context, run, None, "tactical-mate-v1")
     legacy_id = legacy["mapping_run_id"]
+    assert (
+        db.connection.execute(
+            "SELECT typeof(output_hash) FROM mapping_runs WHERE id=?", (legacy_id,)
+        ).fetchone()[0]
+        == "blob"
+    )
     assert record_game_opportunities(db, game_id, learner="SyntheticWhite") == []
     assert (
         db.connection.execute(

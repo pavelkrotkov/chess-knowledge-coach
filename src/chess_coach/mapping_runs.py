@@ -1,6 +1,7 @@
 """Immutable, scoped mapping runs composable in a caller-owned transaction."""
 
 from .db import Database
+from .digest_storage import lookup, settings
 from .fact_fingerprint import canonical, digest
 from .mapping_inputs import mapping_batch
 from .mapping_run_storage import append_run
@@ -30,16 +31,21 @@ def record_mapping_run_in_transaction(
     items, output_hash = mapping_batch(mappings)
     input_json = canonical(input_data)
     scope = (producer, position_id, subject, operation, scope_key)
-    prior = db.connection.execute(
-        """SELECT * FROM mapping_runs WHERE producer = ? AND position_id = ?
-        AND subject = ? AND operation = ? AND scope_key = ?
-        AND mapper_version = ? AND input_hash = ?""",
-        (*scope, mapper_version, digest(input_json)),
-    ).fetchone()
+    compact, modern = settings(db.connection)
+    input_hash = digest(input_json)
+    table = "mapping_runs_read" if modern else "mapping_runs"
+    prior = lookup(
+        db.connection,
+        """SELECT id,input_hash,output_hash FROM mapping_runs WHERE producer=? AND position_id=?
+        AND subject=? AND operation=? AND scope_key=? AND mapper_version=? AND input_hash IN (?,?)""",
+        (*scope, mapper_version, input_hash, bytes.fromhex(input_hash)),
+        table,
+        modern=modern,
+    )
     if prior is not None:
         return _replay(db, prior, input_json, output_hash)
     validate_sources(db, position_id, items)
-    return append_run(db, scope, mapper_version, input_json, output_hash, items)
+    return append_run(db, scope, mapper_version, input_json, output_hash, items, compact=compact)
 
 
 def _replay(db: Database, prior, input_json: str, output_hash: str) -> dict:

@@ -81,7 +81,7 @@ def test_populated_legacy_upgrade_is_repeatable_and_preserves_history(
     }
     db.initialize()
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 34
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 35
     assert dict(db.connection.execute("SELECT * FROM analysis_runs").fetchone()) == old_run
     assert dict(db.connection.execute("SELECT * FROM analysis_runs_read").fetchone()) == old_run
     assert (
@@ -284,3 +284,32 @@ def test_failed_upgrade_rolls_back_schema_and_data(monkeypatch: pytest.MonkeyPat
         == before_recent
     )
     assert recent.connection.execute("PRAGMA foreign_key_check").fetchall() == []
+
+    # A failed v35 transition leaves the v34 detector view and settings intact.
+    monkeypatch.setattr(db_recent, "add_detector_inputs", add_inputs)
+    recent.initialize()
+    recent.connection.execute("DROP VIEW mapping_runs_read")
+    recent.connection.execute("DROP TABLE digest_settings")
+    recent.connection.execute("DROP VIEW detector_runs_read")
+    add_inputs(recent.connection)
+    recent.connection.execute("PRAGMA user_version=34")
+    recent.connection.commit()
+    before_v35 = list(
+        recent.connection.execute("SELECT type,name,sql FROM sqlite_master ORDER BY type,name")
+    )
+    add_digests = db_recent.add_digest_storage
+
+    def fail_after_digests(connection):
+        add_digests(connection)
+        raise RuntimeError("injected digest migration failure")
+
+    monkeypatch.setattr(db_recent, "add_digest_storage", fail_after_digests)
+    with pytest.raises(RuntimeError, match="digest migration failure"):
+        recent.initialize()
+    assert recent.connection.execute("PRAGMA user_version").fetchone()[0] == 34
+    assert (
+        list(
+            recent.connection.execute("SELECT type,name,sql FROM sqlite_master ORDER BY type,name")
+        )
+        == before_v35
+    )

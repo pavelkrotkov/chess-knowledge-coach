@@ -109,6 +109,7 @@ def test_wal_online_backup_and_restore_preserve_all_history(tmp_path, monkeypatc
         db.connection.execute("SELECT * FROM analysis_runs_read WHERE id=?", (run,)).fetchone()
     )
     db.connection.execute("UPDATE detector_input_settings SET compact=1 WHERE id=1")
+    db.connection.execute("UPDATE digest_settings SET compact=1 WHERE id=1")
     db.connection.commit()
     compact = record_fact_run(
         db,
@@ -128,6 +129,23 @@ def test_wal_online_backup_and_restore_preserve_all_history(tmp_path, monkeypatc
             "SELECT input_json FROM detector_runs WHERE id=?", (compact["run_id"],)
         ).fetchone()[0]
         == ""
+    )
+    with mapping_transaction(db):
+        mapped = record_mapping_run_in_transaction(
+            db,
+            position_id=1,
+            producer="compact-fixture",
+            mapper_version="v1",
+            subject="learner",
+            operation="execute",
+            scope_key="compact",
+            input_data={},
+            mappings=[],
+        )
+    expected_mapping = tuple(
+        db.connection.execute(
+            "SELECT * FROM mapping_runs_read WHERE id=?", (mapped["run_id"],)
+        ).fetchone()
     )
     assert Path(str(source) + "-wal").stat().st_size > 0
     # File-only checks do not create the missing SQLite shared index.
@@ -197,6 +215,7 @@ def test_wal_online_backup_and_restore_preserve_all_history(tmp_path, monkeypatc
         "detector_runs",
         "detector_inputs",
         "detector_input_settings",
+        "digest_settings",
         "detector_facts",
         "mapping_runs",
         "evidence_mappings",
@@ -262,6 +281,12 @@ def test_wal_online_backup_and_restore_preserve_all_history(tmp_path, monkeypatc
                     "SELECT * FROM detector_runs_read WHERE id=?", (compact["run_id"],)
                 ).fetchone()
                 == expected_detector
+            )
+            assert (
+                copy.execute(
+                    "SELECT * FROM mapping_runs_read WHERE id=?", (mapped["run_id"],)
+                ).fetchone()
+                == expected_mapping
             )
             assert {
                 name: copy.execute(f"SELECT * FROM {name}").fetchall() for name in tables

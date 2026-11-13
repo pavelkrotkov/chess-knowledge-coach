@@ -67,6 +67,8 @@ def test_worker_replay_review_lessons_and_mastery_gate(tmp_path, monkeypatch):
     game.add_variation(board.parse_uci("e1g1"))
     db = Database(tmp_path / "fixture.sqlite")
     db.initialize()
+    db.connection.execute("UPDATE digest_settings SET compact=1 WHERE id=1")
+    db.connection.commit()
     ingest_pgn(db, str(game))
     monkeypatch.setattr(chess.engine.SimpleEngine, "popen_uci", lambda _: Engine())
     config = PipelineConfig(learner="fixture_learner", engine_path=sys.executable, nodes=100)
@@ -79,6 +81,10 @@ def test_worker_replay_review_lessons_and_mastery_gate(tmp_path, monkeypatch):
     prepared, fact = prepare_lesson(db, 1, "fixture_learner")
     first = publish(db, prepared, fact)
     evidence_id = first["mapping"]["evidence_ids"][0]
+    assert (
+        db.connection.execute("SELECT typeof(output_hash) FROM mapping_runs").fetchone()[0]
+        == "blob"
+    )
     assert state(db, 1, "fixture_learner") == "current"
     assert inspect_evidence(db, evidence_id)["king_safety_currentness"] == "current"
     assert process_king_safety_lessons(db, config)["replayed"] == 1

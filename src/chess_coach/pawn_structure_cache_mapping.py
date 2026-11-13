@@ -12,7 +12,7 @@ from .pawn_structure_mapping import MAPPER
 
 def _mapping(db, position_id, subject):
     return db.connection.execute(
-        """SELECT * FROM mapping_runs WHERE position_id=? AND producer=? AND subject=?
+        """SELECT * FROM mapping_runs_read WHERE position_id=? AND producer=? AND subject=?
         AND operation='evaluate' AND scope_key='pawn-structure-lesson' AND status='active'""",
         (position_id, MAPPER, subject),
     ).fetchone()
