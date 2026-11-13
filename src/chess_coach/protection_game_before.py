@@ -30,5 +30,7 @@ def _supported(board, deadline, clock):
 
 def status(board, move, target, deadline, clock):
     start = clock()
-    result = judge(board, move, target, clock, start, max(0, deadline - start), {})
+    if start >= deadline:
+        return "unresolved"
+    result = judge(board, move, target, clock, start, deadline - start, {})
     return result["status"]

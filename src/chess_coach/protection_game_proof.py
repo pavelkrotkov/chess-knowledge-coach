@@ -15,7 +15,7 @@ def _contrast(board, target, deadline, clock):
         found.add(status(board, move, target, deadline, clock))
         if {"correct", "incorrect"} <= found:
             return True
-    return False
+    return None if clock() >= deadline else False
 
 
 def classify(board, played, deadline, clock):
@@ -27,17 +27,17 @@ def classify(board, played, deadline, clock):
         return "no_opportunity", None
     target = next(iter(initial["targets"]))
     contrast = _contrast(board, target, deadline, clock)
-    if contrast is None or clock() >= deadline:
-        return "unknown", "deadline"
-    if not contrast:
-        return "unknown", "contrast_unresolved"
+    if contrast is not True:
+        return "unknown", "contrast_unresolved" if contrast is False else "deadline"
+    if clock() >= deadline:
+        return "opportunity_unresolved", "deadline"
     try:
         move = board.parse_uci(played)
     except ValueError:
         return "opportunity_unresolved", "played_unavailable"
     played_status = status(board, move, target, deadline, clock)
     if clock() >= deadline:
-        return "unknown", "deadline"
+        return "opportunity_unresolved", "deadline"
     return {
         "correct": ("protected", None),
         "incorrect": ("missed", None),
