@@ -15,14 +15,22 @@ from .study_session import _publish, locked
 from .tactical_study_intents import MAX_INTENTS, require_clear
 
 
-def publish_locked(root, game, position, move, version):
+def publish_locked(root, game, position, move, version, *, queued=False):
     root, learner, planning, database = _paths(root, version)
     with (
-        locked(database, planning),
-        opening_lock(planning),
-        admitted(database, planning, root, learner, game, position, move, version) as source,
+        locked(database, planning, sync_wait=not queued),
+        nullcontext() if queued else opening_lock(planning),
+        admitted(
+            database, planning, root, learner, game, position, move, version, bounded=queued
+        ) as source,
     ):
-        return publish_course(database, planning, version, source)
+        if queued:
+            from .opening_study_receipt import verified
+
+            if verified(planning, learner, version, source[0]):
+                source[2]()
+                return
+        return publish_course(database, planning, version, source, bounded=queued)
 
 
 def publish_course(database, planning, version, source, *, bounded=False):

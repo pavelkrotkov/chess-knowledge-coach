@@ -5,9 +5,24 @@ from .opening_queue_location import location
 from .opening_queue_lock import lock
 from .opening_queue_write import write
 from .opening_study_request import SLOT, credentials, valid
+from .opening_study_session import publish_locked as publish_revision
 from .opening_unfamiliar_study import publish_locked
 from .study_remote import StudyError
 from .tactical_course_deadline import PreviewDeadline
+
+
+def _publish(root, item):
+    selection = item["selection"]
+    if "game_id" in selection:
+        return publish_revision(
+            root,
+            selection["game_id"],
+            selection["position_id"],
+            selection["move"],
+            item["version"],
+            queued=True,
+        )
+    return publish_locked(root, item["version"], selection, queued=True)
 
 
 def run(db, learner, root):
@@ -20,7 +35,7 @@ def run(db, learner, root):
         if not credentials(root, db, learner, item["version"]):
             return
         try:
-            publish_locked(root, item["version"], item["selection"], queued=True)
+            _publish(root, item)
         except StudyError:
             write(slot, {**item, "state": "incomplete"})
         except ValueError:

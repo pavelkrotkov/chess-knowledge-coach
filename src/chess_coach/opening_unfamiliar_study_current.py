@@ -6,20 +6,20 @@ from types import SimpleNamespace
 
 from .fact_fingerprint import canonical
 from .opening_profile_index import INDEX_NAME
+from .opening_queue_budget import study_budget
 from .opening_study_source import fingerprint, pin_inputs
 from .opening_unfamiliar_legacy import resolve
 from .opening_unfamiliar_study_course import build
-from .tactical_course_budget import Budget
 
 
 @contextmanager
-def admitted(database, directory, root, learner, version, selection=None):
+def admitted(database, directory, root, learner, version, selection=None, *, browser=False):
     connection = sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=1)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA query_only=ON")
     try:
         db = SimpleNamespace(path=database, connection=connection)
-        budget = Budget(db)
+        budget = study_budget(db, browser=browser)
         config = root / ".runtime" / "config.env"
         files = [directory / INDEX_NAME, config, config.resolve()]
         before = fingerprint(files)

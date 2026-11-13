@@ -2,34 +2,42 @@
 
 from .opening_queue_files import read
 from .opening_queue_location import location
-from .opening_study_receipt import link
+from .opening_study_receipt import link, verified
 from .opening_study_request import SLOT, credentials, valid
 from .opening_unfamiliar_legacy import retained
 
 
-def status(db, root, learner, course):
+def _message(item, database, learner, course, selected, receipt, available):
+    if receipt:
+        return "This private Study was verified."
+    if (
+        valid(item, database, learner)
+        and item["version"] == course["version"]
+        and item["selection"] == selected
+    ):
+        return {
+            "queued": "Publication is queued.",
+            "incomplete": "Publication is incomplete.",
+            "stale": "The requested preview changed. Request a current preview.",
+            "complete": "The publication receipt could not be checked.",
+        }[item["state"]]
+    if not available:
+        return "Add Study credentials to request publication."
+    return "This exact course has not been requested."
+
+
+def status(db, root, learner, course, *, revision=None, selection=None):
     try:
         directory, database = location(db, root, learner)
         available = credentials(root, db, learner, course["version"])
-        receipt = link(directory, learner, course)
+        receipt = (
+            verified(directory, learner, course["version"], revision)
+            if revision is not None
+            else link(directory, learner, course)
+        )
+        selected = selection if revision is not None else course["selection"]
         item = read(directory / SLOT)
-        if receipt:
-            message = "This private Study was verified."
-        elif (
-            valid(item, database, learner)
-            and item["version"] == course["version"]
-            and item["selection"] == course["selection"]
-        ):
-            message = {
-                "queued": "Publication is queued.",
-                "incomplete": "Publication is incomplete.",
-                "stale": "The requested preview changed. Request a current preview.",
-                "complete": "The publication receipt could not be checked.",
-            }[item["state"]]
-        elif not available:
-            message = "Add Study credentials to request publication."
-        else:
-            message = "This exact course has not been requested."
+        message = _message(item, database, learner, course, selected, receipt, available)
         return {
             "credentials": available,
             "link": receipt,

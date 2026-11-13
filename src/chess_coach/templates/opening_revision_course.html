@@ -4,6 +4,14 @@
 <h2>Opening revision course preview</h2>
 <p>This private exploratory preview pairs your checked opening decision with a public continuation of the same selected move when one is available. These examples support rehearsal; preparation, soundness and personal fit remain unknown.</p>
 <p>Preview version: <code>{{ course.version }}</code>. <a href="{{ download_url }}">Download this version as PGN</a> · <a href="{{ url_for('opening_experiments.show', game_id=course.decision.game_id, position_id=course.decision.position_id, move=course.choice.uci) }}">Return to your exact experiment</a>.</p>
+{% if study %}
+<section><h3>Private Lichess Study</h3>
+<p>Study credentials {% if study.credentials %}are available{% else %}are unavailable{% endif %}.</p>
+{% if study.link %}<p><a href="{{ study.link }}">Open verified private Study</a>.</p>{% else %}<p>{{ study.message }}</p>{% endif %}
+{% if study.credentials and not study.link %}<form method="post" action="{{ url_for('opening_experiments.study', game_id=course.decision.game_id, position_id=course.decision.position_id, move=course.choice.uci) }}">
+<input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="version" value="{{ course.version }}"><button type="submit">Request private Study</button></form>{% endif %}
+</section>
+{% endif %}
 <section><h3>1. Your worked comparison</h3>
 <p>You play {{ course.decision.color|title }}.</p>
 {% set board_label = "Starting opening position; learner plays " + course.decision.color %}{% include "board.html" %}
