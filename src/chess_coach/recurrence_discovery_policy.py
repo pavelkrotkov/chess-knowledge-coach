@@ -7,3 +7,11 @@ def discovery_ok(row, fact):
         "execute",
         "discovered_attack",
     )
+
+
+def discovery_defense_ok(row, fact):
+    return (row["skill"], row["operation"], fact["payload"].get("kind")) == (
+        "discovered_attack",
+        "prevent",
+        "discovery_mate_defense",
+    )

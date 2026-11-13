@@ -5,6 +5,7 @@ from typing import Any, cast
 from flask import abort, render_template
 
 from .back_rank_practice import list_candidates as back_rank
+from .discovery_defense_list import candidates as discovery_defense
 from .discovery_practice import list_candidates as discovery
 from .mate_practice import list_candidates as mate
 from .objective_capture_list import candidates as capture
@@ -24,6 +25,7 @@ from .unified_own_game import list_candidates as material
 FAMILIES = {
     "material": ("Material practice", "own_game", material),
     "discovery": ("Discovered attack", "discovery_game", discovery),
+    "discovery-defense": ("Discovered-mate defense", "discovery_defense_game", discovery_defense),
     "mate": ("Prepared mate", "mate_game", mate),
     "mate-one": ("Mate in one", "mate_one_game", mate_one),
     "short-mate": ("Mate within two", "short_mate_game", short_mate),

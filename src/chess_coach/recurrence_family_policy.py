@@ -4,6 +4,10 @@ from .discovery_contract import FACT as DISCOVERY_FACT
 from .discovery_contract import MAPPER as DISCOVERY_MAPPER
 from .discovery_contract import PRODUCER as DISCOVERY_PRODUCER
 from .discovery_contract import VERSION as DISCOVERY_VERSION
+from .discovery_defense_contract import FACT as DISCOVERY_DEFENSE_FACT
+from .discovery_defense_contract import MAPPER as DISCOVERY_DEFENSE_MAPPER
+from .discovery_defense_contract import PRODUCER as DISCOVERY_DEFENSE_PRODUCER
+from .discovery_defense_contract import VERSION as DISCOVERY_DEFENSE_VERSION
 from .fork_contract import MAPPER as FORK_MAPPER
 from .fork_contract import PRODUCER as FORK_PRODUCER
 from .fork_contract import VERSION as FORK_VERSION
@@ -11,7 +15,7 @@ from .fork_defense_contract import MAPPER as DEFENSE_MAPPER
 from .fork_defense_contract import PRODUCER as DEFENSE_PRODUCER
 from .fork_defense_contract import VERSION as DEFENSE_VERSION
 from .king_safety_recurrence import king_ok
-from .recurrence_discovery_policy import discovery_ok
+from .recurrence_discovery_policy import discovery_defense_ok, discovery_ok
 from .recurrence_fork_policy import fork_family_ok
 from .recurrence_pin_policy import PIN_FAMILIES, pin_family_ok
 from .recurrence_proof_policy import backrank_ok, mate_ok, pawn_ok
@@ -19,6 +23,11 @@ from .recurrence_rook_policy import rook_ok
 
 FAMILIES = {
     DISCOVERY_MAPPER: (DISCOVERY_PRODUCER, DISCOVERY_VERSION, DISCOVERY_FACT),
+    DISCOVERY_DEFENSE_MAPPER: (
+        DISCOVERY_DEFENSE_PRODUCER,
+        DISCOVERY_DEFENSE_VERSION,
+        DISCOVERY_DEFENSE_FACT,
+    ),
     **PIN_FAMILIES,
     "king-safety-lesson-mapper": ("king-safety-lesson", "1.0.0", "king_safety_lesson"),
     FORK_MAPPER: (FORK_PRODUCER, FORK_VERSION, "fork_opportunity"),
@@ -42,6 +51,7 @@ def _structure_ok(row, fact):
 
 VALIDATORS = {
     DISCOVERY_MAPPER: discovery_ok,
+    DISCOVERY_DEFENSE_MAPPER: discovery_defense_ok,
     "king-safety-lesson-mapper": king_ok,
     "rook-plan-lesson-mapper": rook_ok,
     FORK_MAPPER: fork_family_ok,

@@ -1,5 +1,6 @@
 """Check exact owned objective scope before any source work."""
 
+from .discovery_defense_contract import PRACTICE as DISCOVERY_DEFENSE_VERSION
 from .objective_binding_forks import SCOPES as FORK_SCOPES
 from .objective_capture_contract import GAIN_VERSION, TARGET_VERSION
 from .objective_contract import VERSION
@@ -33,6 +34,7 @@ def owned_source(session):
         (VERSION, "mate_in_one"),
         (SHORT_VERSION, "mate_within_two"),
         (DEFENSE_VERSION, "avoid_immediate_mate"),
+        (DISCOVERY_DEFENSE_VERSION, "avoid_immediate_mate"),
     }
 
 

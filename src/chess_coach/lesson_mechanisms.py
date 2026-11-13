@@ -2,6 +2,7 @@
 
 from .lesson_backrank import back_rank
 from .lesson_discovery import describe as discovery
+from .lesson_discovery_defense import describe as discovery_defense
 from .lesson_king_safety import king_safety
 from .lesson_lines import legal_san
 from .lesson_material import _material as material
@@ -17,6 +18,7 @@ from .related_fork_prevention_display import available as prevention_available
 
 ADAPTERS = {
     "discovery-opportunity-mapper": discovery,
+    "discovery-mate-defense-mapper": discovery_defense,
     "pin-execute-mapper": pin,
     "pin-prevent-mapper": pin,
     "material-opportunity-mapper": material,
