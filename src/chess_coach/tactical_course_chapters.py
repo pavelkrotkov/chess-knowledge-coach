@@ -40,7 +40,9 @@ def owned_chapter(db, subject, group, choice, bindings):
     return result
 
 
-def challenge(choice):
+def challenge(choice, *, protection=False):
+    if choice["kind"] == "protection" and protection:
+        return "/plan/protection/finder"
     if choice["kind"] == "capture":
         return f"/decisions/{choice['position_id']}/related-captures"
     if choice["kind"] == "fork":

@@ -4,12 +4,20 @@ from .course_preview import preview_hash
 from .learner_identity import normalize_identity
 from .tactical_course_budget import SLICE_SECONDS, Budget, PreviewUnavailable
 from .tactical_course_patterns import MAX_PATTERNS, assemble
-from .tactical_course_selection import CURRENT_PAIRS, PER_PAIR, candidates
+from .tactical_course_protection import PER_BAND
+from .tactical_course_selection import CURRENT_PAIRS, PAIRS, PER_PAIR, candidates
 
 LEGACY_VERSION = "local-tactical-course-v1"
 LEGACY_POLICY = "provisional-recurring-tactics-v1"
-VERSION = "local-tactical-course-v2"
-POLICY = "provisional-recurring-tactics-v2"
+PREVIOUS_VERSION = "local-tactical-course-v2"
+PREVIOUS_POLICY = "provisional-recurring-tactics-v2"
+VERSION = "local-tactical-course-v3"
+POLICY = "provisional-recurring-tactics-v3"
+CONTRACTS = {
+    LEGACY_VERSION: (LEGACY_POLICY, PAIRS),
+    PREVIOUS_VERSION: (PREVIOUS_POLICY, CURRENT_PAIRS),
+    VERSION: (POLICY, CURRENT_PAIRS),
+}
 
 
 def build(db, subject, corpus, *, budget=None):
@@ -29,6 +37,7 @@ def build(db, subject, corpus, *, budget=None):
             "per_pair_limit": PER_PAIR,
             "pattern_limit": MAX_PATTERNS,
             "related_match_seconds": SLICE_SECONDS,
+            "protection_per_band": PER_BAND,
             "ranking": "completed pairs by inspected independent failure games, then skill and operation",
             "scope": "Only completed supported pairs are ranked; this is not a global weakness ranking.",
             "coverage": coverage,

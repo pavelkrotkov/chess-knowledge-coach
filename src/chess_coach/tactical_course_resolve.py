@@ -6,7 +6,9 @@ from .tactical_course_deadline import PreviewDeadline
 from .tactical_course_evidence import independent
 from .tactical_course_familiar import familiarity
 from .tactical_course_familiar_games import FamiliarityLimit
-from .tactical_course_related import GENERAL_EMPTY, HISTORY_LIMIT, unfamiliar, with_reason
+from .tactical_course_protection import ContextUnavailable
+from .tactical_course_protection import source as teaching_source
+from .tactical_course_related import HISTORY_LIMIT, PROTECTION_SOURCE, with_reason
 
 
 def own(db, subject, group, budget):
@@ -27,14 +29,18 @@ def own(db, subject, group, budget):
 
 
 def related(db, subject, corpus, choice, budget):
-    if choice["kind"] == "protection":
-        return None, "related matching unsupported"
     try:
+        source = None
+        if choice["kind"] == "protection":
+            with budget.scope(snapshot=True):
+                source = teaching_source(db, subject, choice)
         familiar_data = familiarity(db, subject, budget)
         with budget.scope(snapshot=False):
-            if choice["kind"] == "fork":
-                return with_reason(db, subject, corpus, choice, familiar_data=familiar_data)
-            item = unfamiliar(db, subject, corpus, choice, familiar_data=familiar_data)
+            return with_reason(
+                db, subject, corpus, choice, familiar_data=familiar_data, teaching_source=source
+            )
+    except ContextUnavailable:
+        return None, PROTECTION_SOURCE
     except PreviewDeadline:
         budget.check()
         return None, "related matching deferred: time budget"
@@ -42,4 +48,3 @@ def related(db, subject, corpus, choice, budget):
         return None, HISTORY_LIMIT
     except (ValueError, KeyError, TypeError, IndexError):
         raise PreviewUnavailable("related source unavailable or changed") from None
-    return item, None if item else GENERAL_EMPTY

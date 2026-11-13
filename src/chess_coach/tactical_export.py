@@ -3,6 +3,8 @@
 from .course_preview import preview_hash
 from .learner_identity import normalize_identity
 from .tactical_course import LEGACY_VERSION as LEGACY_PREVIEW_VERSION
+from .tactical_course import PREVIOUS_VERSION as PREVIOUS_PREVIEW_VERSION
+from .tactical_course import VERSION as PREVIEW_VERSION
 from .tactical_export_chapters import verify
 from .tactical_export_contract import validate
 from .tactical_export_coverage import selected as covered
@@ -12,8 +14,10 @@ from .tactical_export_sources import lesson
 
 LEGACY_VERSION = "local-tactical-course-export-v1"
 LEGACY_POLICY = "tactical-export-verification-v1"
-VERSION = "local-tactical-course-export-v2"
-POLICY = "tactical-export-verification-v2"
+PREVIOUS_VERSION = "local-tactical-course-export-v2"
+PREVIOUS_POLICY = "tactical-export-verification-v2"
+VERSION = "local-tactical-course-export-v3"
+POLICY = "tactical-export-verification-v3"
 
 
 def _chapters(chapters, index):
@@ -26,9 +30,11 @@ def _chapters(chapters, index):
 
 
 def _contract(body):
-    if body["kind"] == LEGACY_PREVIEW_VERSION:
-        return LEGACY_VERSION, LEGACY_POLICY
-    return VERSION, POLICY
+    return {
+        LEGACY_PREVIEW_VERSION: (LEGACY_VERSION, LEGACY_POLICY),
+        PREVIOUS_PREVIEW_VERSION: (PREVIOUS_VERSION, PREVIOUS_POLICY),
+        PREVIEW_VERSION: (VERSION, POLICY),
+    }[body["kind"]]
 
 
 def build(db, subject, corpus, envelope, budget):
@@ -39,7 +45,8 @@ def build(db, subject, corpus, envelope, budget):
         body = validate(envelope, corpus)
     pairs = selection(body, corpus)
     index, seen = 0, set()
-    gaps = omissions(body["selection"], pairs=pairs)
+    modern = body["kind"] == PREVIEW_VERSION
+    gaps = omissions(body["selection"], pairs=pairs, modern=modern)
     for pattern in body["patterns"]:
         pair = (pattern["skill"], pattern["operation"])
         if pair in seen:
@@ -47,9 +54,9 @@ def build(db, subject, corpus, envelope, budget):
         seen.add(pair)
         group, index = _chapters(body["chapters"], index)
         covered(pattern, body["selection"]["coverage"])
-        selected(pattern, group, gaps)
+        selected(pattern, group, gaps, modern=modern)
         current = lesson(db, subject, pattern, budget, pairs=pairs)
-        verify(db, subject, corpus, pattern, current, group, budget)
+        verify(db, subject, corpus, pattern, current, group, budget, modern=modern)
     if any(reason != OWN and pair not in seen for pair, reason in gaps.items()):
         raise ValueError("related omission has no selected pattern")
     if index != len(body["chapters"]):

@@ -20,8 +20,46 @@ def selection(
     difficulty=None,
 ):
     source = source_for_evidence(db, subject, evidence_id)
+    return _select(
+        db, subject, source, corpus_version, VERSION, 2000, familiar_data, check, difficulty
+    )
+
+
+def course_selection(db, subject, source, corpus_version, *, familiar_data):
+    from .related_capture_position import prompt_key
+    from .tactical_course_protection import PER_BAND
+    from .tactical_course_protection import VERSION as COURSE_VERSION
+
+    familiar, _, indexed = familiar_data
+    source_key = prompt_key(source["prompt_fen"])
+    return _select(
+        db,
+        subject,
+        source,
+        corpus_version,
+        COURSE_VERSION,
+        PER_BAND,
+        familiar_data,
+        lambda: None,
+        None,
+        lambda key: key != source_key and key not in familiar and not indexed(key),
+    )
+
+
+def _select(
+    db,
+    subject,
+    source,
+    corpus_version,
+    version,
+    per_band,
+    familiar_data,
+    check,
+    difficulty,
+    prefilter=None,
+):
     budget = {"checked": 0, "limit": MAX_PROOFS, "truncated": False}
-    score_candidate = scorer(budget)
+    score_candidate = scorer(budget, prefilter)
     # Harder searches reuse one familiarity snapshot before reserving proof work.
     if difficulty is not None and familiar_data is None:
         from .related_capture_familiar import familiarity
@@ -45,10 +83,10 @@ def selection(
         subject,
         source,
         corpus_version,
-        VERSION,
+        version,
         theme="defensiveMove",
         all_lines=True,
-        per_band=2000,
+        per_band=per_band,
         rating_bounds=bounds,
         familiar_data=familiar_data,
         feature=lambda prompt, line: dict(source["features"]),
