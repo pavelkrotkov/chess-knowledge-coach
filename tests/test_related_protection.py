@@ -1160,6 +1160,8 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
             "/plan/protection/progress", base_url="https://coach.invalid", headers=headers
         )
         assert b"Both comparable game windows start after" in page.data
+        assert b"<title>Unfamiliar protection assessments - Chess coach</title>" in page.data
+        assert page.data.count(b"<h3>Independent protection-game windows</h3>") == 1
         assert (
             b"5 proved opportunities" in page.data
             and b"unresolved opportunity status: 1" in page.data

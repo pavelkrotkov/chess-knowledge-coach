@@ -1,14 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Unfamiliar protection assessments - Chess coach<h3>Independent protection-game windows</h3>
-<p>Practice and game results are separate observations; their timing cannot establish a training effect. A missed choice is a narrow observation, not a complete assessment of the move.</p>
-{% if games %}
-{% if games.comparable_reason %}<p>Game windows are not comparable: {{ games.comparable_reason | replace("_", " ") }}.</p>{% elif games.bounds.status != "available" %}<p>A game-rate comparison is unavailable {% if games.bounds.status == "pending" %}while checks are pending{% elif games.bounds.status == "sparse" %}because resolved opportunities are sparse{% else %}under the existing coverage thresholds{% endif %}.</p>{% endif %}
-{% for label, sample in (("Earlier", games.earlier), ("More recent", games.newer)) %}
-<p>{{ label }}: {{ sample.games }} games, {{ sample.oldest or "date unavailable" }} to {{ sample.newest or "date unavailable" }}; {{ sample.opportunities }} proved opportunities, {{ sample.played }} protected, {{ sample.other }} missed, {{ sample.opportunity_unresolved }} unresolved choices. Of {{ sample.eligible }} eligible turns, unresolved opportunity status: {{ sample.unknown }}; unchecked: {{ sample.unchecked }}. {{ sample.withheld_games }} games have {{ sample.withheld_turns }} previously checked turns withheld after source changes.</p>
-{% endfor %}
-{% else %}<p>Cached game windows are pending or unavailable.</p>{% endif %}
-<p><a href="{{ url_for('short_mate_game_views.protection_samples') }}">Open protection-game windows and coverage</a></p>
-{% endblock %}
+{% block title %}Unfamiliar protection assessments - Chess coach{% endblock %}
 {% block content %}
 <h2>Unfamiliar protection assessments</h2>
 <p>These are source-checked first encounters in unfamiliar protection exercises. Practice results and game observations are independent. The checks cannot establish whether a position was familiar outside recorded history.</p>
