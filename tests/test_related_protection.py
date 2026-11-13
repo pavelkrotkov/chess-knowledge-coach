@@ -32,6 +32,20 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
         path = tmp_path / (color + ".sqlite")
         db = make_protection_game(path, monkeypatch, played="d4d5", color=color)
         evidence = process_decision(db, 1, LEARNER)["evidence_ids"][0]
+        from chess_coach.protection_game_review import binding as game_review
+
+        protection_marker, blocked = game_review(db, 1, LEARNER)
+        assert not blocked
+        db.connection.execute(
+            "UPDATE decision_analysis_lines SET score_value=score_value+1 WHERE position_id=1"
+        )
+        db.connection.commit()
+        assert game_review(db, 1, LEARNER)[1] == {1}
+        db.connection.execute(
+            "UPDATE decision_analysis_lines SET score_value=score_value-1 WHERE position_id=1"
+        )
+        db.connection.commit()
+        assert game_review(db, 1, LEARNER) == (protection_marker, set())
         db.connection.execute(
             "INSERT INTO puzzle_corpora(version,source,checksum,state) VALUES('test','fixture','checksum','staging')"
         )
@@ -111,6 +125,68 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
                 {},
             )
             assert verdict["status"] == status
+        from chess_coach.protection_game_proof import classify as protection_game
+
+        for move, expected in (
+            (moves[1], "protected"),
+            (wrong, "missed"),
+            (uncertain, "opportunity_unresolved"),
+        ):
+            assert (
+                protection_game(candidate_board, move, time.monotonic() + 5, time.monotonic)[0]
+                == expected
+            )
+        assert protection_game(chess.Board(), "e2e4", time.monotonic() + 5, time.monotonic) == (
+            "no_opportunity",
+            None,
+        )
+        assert protection_game(candidate_board, moves[1], 0, time.monotonic) == (
+            "unknown",
+            "deadline",
+        )
+
+        # Once a contrast is proved, an expired played check remains an opportunity.
+        from chess_coach import protection_game_before as before_game
+        from chess_coach import protection_game_proof as game_proof
+
+        with monkeypatch.context() as patch:
+            now = [0]
+
+            def clock(now=now):
+                return now[0]
+
+            patch.setattr(
+                game_proof, "before", lambda *_, target=target: ({"targets": [target]}, None)
+            )
+            contrast = game_proof._contrast
+            patch.setattr(game_proof, "_contrast", lambda *_: True)
+
+            def expired(*_args, now=now):
+                now[0] = 1
+                return "correct"
+
+            patch.setattr(game_proof, "status", expired)
+            assert game_proof.classify(candidate_board, moves[1], 1, clock) == (
+                "opportunity_unresolved",
+                "deadline",
+            )
+            patch.setattr(game_proof, "_contrast", contrast)
+            now[0] = 0
+            assert game_proof.classify(candidate_board, moves[1], 1, clock) == (
+                "unknown",
+                "deadline",
+            )
+            patch.setattr(game_proof, "_contrast", lambda *_: False)
+            assert game_proof.classify(candidate_board, moves[1], 1, clock) == (
+                "unknown",
+                "contrast_unresolved",
+            )
+            patch.setattr(before_game, "judge", lambda *_: pytest.fail("expired judge called"))
+            assert (
+                before_game.status(candidate_board, chess.Move.from_uci(moves[1]), target, 1, clock)
+                == "unresolved"
+            )
+
         from chess_coach.related_protection_assessment import valid as certificate_valid
 
         candidate_board, _, fingerprint = assessment_setup(db, "test", "z-match")
@@ -891,6 +967,7 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
                 reference=reference,
             )
         review_evidence(db, evidence, decision="reject", actor="fixture")
+        assert game_review(db, 1, LEARNER)[1] == {1}
         with pytest.raises(ValueError):
             show(db, assessment_attempt, LEARNER)
         with pytest.raises(ValueError):
