@@ -7,7 +7,7 @@ from typing import Any
 from .db import Database
 from .learner_context import decision_contexts
 from .tactical_ontology import seed_tactical_ontology_in_transaction
-from .tactical_pipeline_replay import fact_run, mapping_run
+from .tactical_pipeline_replay import fact_run, mapping_run, retire_mapping
 from .tactical_rules import mate_in_one_fact
 
 PRODUCER = "mate-in-one"
@@ -58,6 +58,10 @@ def _record_decision(
     fact = mate_in_one_fact(fen, played)
     facts = [] if fact is None else [{"fact_type": "mate_in_one", "payload": fact}]
     run = fact_run(db, context, PRODUCER, detector_version, facts, pipeline_generation)
+    # The active detector records the no-fact result; no empty mapping is needed.
+    if fact is None and run["status"] == "active":
+        retire_mapping(db, context, run, ontology_version, pipeline_generation)
+        return None
     mapping = mapping_run(db, context, run, fact, ontology_version, pipeline_generation)
     if fact is None:
         return None
