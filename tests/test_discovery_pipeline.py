@@ -84,6 +84,7 @@ def make_game(path, monkeypatch):
 
 
 def test_source_worker_lesson_practice_and_review(tmp_path, monkeypatch):
+    _recent_defense_workflow(monkeypatch)
     path = tmp_path / "discovery.sqlite"
     db, config = make_game(path, monkeypatch)
     worker = process_discoveries(db, config)
@@ -761,3 +762,142 @@ def test_source_worker_lesson_practice_and_review(tmp_path, monkeypatch):
     )
     success_db.connection.commit()
     assert inspect_evidence(success_db, success_id)["discovery_success_currentness"] == "stale"
+
+
+def _recent_defense_workflow(monkeypatch):
+    from dataclasses import replace
+
+    from chess_coach import discovery_defense_pipeline
+    from chess_coach.discovery_defense_cursor import load
+    from chess_coach.fork_worker_cursor import scan
+    from chess_coach.material_source import prepare
+    from chess_coach.pipeline_cursor import save_cursor
+
+    class SyntheticEngine:
+        def __init__(self):
+            self.id, self.options = {"name": "fixture"}, {}
+
+        def configure(self, _settings):
+            pass
+
+        def analyse(self, board, _limit, multipv, root_moves=None):
+            move = root_moves[0] if root_moves else next(iter(board.legal_moves))
+            return [
+                {
+                    "score": chess.engine.PovScore(chess.engine.Cp(0), board.turn),
+                    "pv": [move],
+                    "nodes": 100,
+                    "depth": 5,
+                }
+            ]
+
+        def quit(self):
+            pass
+
+    db = Database(":memory:")
+    db.initialize()
+    for i in (1, 2, 3):
+        ingest_pgn(
+            db,
+            f'''[Event "Fixture {i}"]
+[UTCDate "2026.01.01"]
+[UTCTime "00:00:0{i}"]
+[White "{LEARNER}"]
+[Black "fixture_opponent"]
+[Result "*"]
+
+1. e4 e5 2. Nf3 Nc6 *
+''',
+        )
+    config = PipelineConfig(
+        learner=LEARNER,
+        engine_path=sys.executable,
+        nodes=100,
+        deep_enabled=False,
+        material_max_scan=8,
+        material_max_decisions=2,
+    )
+    engine_hash = engine_identity(sys.executable)
+    seen = []
+
+    def simulated(db, position, learner, *, exclusions, successes):
+        prepare(db, position, learner)
+        seen.append(position)
+        exclusions["fixture_unresolved"] += 1
+        return {"replayed": False, "outcome": "ambiguous"}
+
+    with monkeypatch.context() as fake:
+        fake.setattr(chess.engine.SimpleEngine, "popen_uci", lambda _: SyntheticEngine())
+        fake.setattr(discovery_defense_pipeline, "combined", simulated)
+        for game_id in (1, 2):
+            assert (
+                run_analysis(db, game_id, game_input(db, game_id), config, engine_hash)["status"]
+                == "complete"
+            )
+        archive_key, _ = scan(
+            db,
+            LEARNER,
+            1,
+            namespace="discovery-mate-defense-cursor-v1:",
+            policy=discovery_defense_pipeline.POLICY,
+        )
+        save_cursor(db, archive_key, 4, discovery_defense_pipeline.POLICY)
+        first = discovery_defense_pipeline.process_defenses(db, config, engine_hash)
+        assert first["limits"] == {"positions": 8, "decisions": 2}
+        assert first["recent"]["processed"] == first["archive"]["processed"] == 1
+        assert first["archive"]["overlap"] == 1 and len(seen) == len(set(seen))
+        assert first["recent"]["source_unavailable"] == 1 and first["examined"] <= 8
+        assert first["material_unresolved"]["fixture_unresolved"] == 2
+        assert first["recent"]["material_unresolved"]["fixture_unresolved"] == 1
+        first_state = load(db, LEARNER)
+        first_archive = db.connection.execute(
+            "SELECT last_game_id FROM pipeline_cursors WHERE account_key=?", (archive_key,)
+        ).fetchone()[0]
+        second = discovery_defense_pipeline.process_defenses(db, config, engine_hash)
+        second_state = load(db, LEARNER)
+        second_archive = db.connection.execute(
+            "SELECT last_game_id FROM pipeline_cursors WHERE account_key=?", (archive_key,)
+        ).fetchone()[0]
+        assert second["recent"]["processed"] == 1 and second_state["last"] != first_state["last"]
+        assert second_archive > first_archive and second["processed"] <= 2
+        # An imported game becomes eligible once its ordinary analysis is current.
+        assert run_analysis(db, 3, game_input(db, 3), config, engine_hash)["status"] == "complete"
+        third = discovery_defense_pipeline.process_defenses(db, config, engine_hash)
+        assert third["recent"]["processed"] == 1 and load(db, LEARNER)["last"] == 3
+        game_input_hash = db.connection.execute(
+            "SELECT input_hash FROM pipeline_stages WHERE game_id=2 AND stage='analysis'"
+        ).fetchone()[0]
+        db.connection.execute(
+            "UPDATE pipeline_stages SET input_hash=? WHERE game_id=2 AND stage='analysis'",
+            ("stale",),
+        )
+        db.connection.commit()
+        stale = discovery_defense_pipeline.process_defenses(db, config, engine_hash)
+        assert stale["recent"]["source_unavailable"] >= 1
+        db.connection.execute(
+            "UPDATE pipeline_stages SET input_hash=? WHERE game_id=2 AND stage='analysis'",
+            (game_input_hash,),
+        )
+        db.connection.commit()
+        small = replace(config, material_max_scan=1, material_max_decisions=1)
+        recent_turn = discovery_defense_pipeline.process_defenses(db, small, engine_hash)
+        archive_turn = discovery_defense_pipeline.process_defenses(db, small, engine_hash)
+        assert recent_turn["recent"]["scanned"] and not recent_turn["archive"]["scanned"]
+        assert archive_turn["archive"]["scanned"] and not archive_turn["recent"]["scanned"]
+        assert recent_turn["processed"] <= 1 and archive_turn["processed"] <= 1
+
+        before = dict(load(db, LEARNER)["positions"])
+        interrupted = []
+
+        def interrupt(_db, position, _learner, **_kwargs):
+            interrupted.append(position)
+            raise KeyboardInterrupt()
+
+        fake.setattr(discovery_defense_pipeline, "combined", interrupt)
+        with pytest.raises(KeyboardInterrupt):
+            discovery_defense_pipeline.process_defenses(db, config, engine_hash)
+        game_id = db.connection.execute(
+            "SELECT game_id FROM positions WHERE id=?", (interrupted[0],)
+        ).fetchone()[0]
+        assert dict(load(db, LEARNER)["positions"])[game_id] == before.get(game_id, 0)
+    db.close()
