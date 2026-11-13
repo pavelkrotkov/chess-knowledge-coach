@@ -12,7 +12,7 @@ from .mapping_inputs import mapping_batch
 
 def _mapping(db, position_id, subject):
     return db.connection.execute(
-        """SELECT * FROM mapping_runs WHERE position_id=? AND producer=? AND subject=?
+        """SELECT * FROM mapping_runs_read WHERE position_id=? AND producer=? AND subject=?
         AND operation='evaluate' AND scope_key='king-safety-lesson' AND status='active'""",
         (position_id, MAPPER, subject),
     ).fetchone()

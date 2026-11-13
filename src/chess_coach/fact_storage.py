@@ -21,8 +21,8 @@ def insert_run(
     position_id: int,
     version: str,
     input_json: str,
-    input_hash: str,
-    output_hash: str,
+    input_hash: str | bytes,
+    output_hash: str | bytes,
     produced_at: str,
     previous: int | None,
 ) -> int:

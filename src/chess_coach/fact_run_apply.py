@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from .db import Database
 from .detector_input_schema import legacy
 from .detector_input_storage import values
+from .digest_storage import lookup, pack, settings
 from .fact_fingerprint import canonical, digest
 from .fact_storage import insert_fact, insert_run, previous_run, replay_result
 from .mapping_invalidation import supersede_detector_mappings
@@ -30,11 +31,15 @@ def persist_run(
     input_hash = digest(input_json)
     old_schema = legacy(db.connection)
     table = "detector_runs" if old_schema else "detector_runs_read"
-    existing = db.connection.execute(
-        f"""SELECT * FROM {table}
-        WHERE producer = ? AND position_id = ? AND detector_version = ? AND input_hash = ?""",
-        (producer, position_id, version, input_hash),
-    ).fetchone()
+    compact, modern = settings(db.connection)
+    existing = lookup(
+        db.connection,
+        """SELECT id,input_hash,output_hash FROM detector_runs
+        WHERE producer=? AND position_id=? AND detector_version=? AND input_hash IN (?,?)""",
+        (producer, position_id, version, input_hash, bytes.fromhex(input_hash)),
+        table,
+        modern=modern,
+    )
     if existing is not None:
         if existing["input_json"] != input_json:
             raise ValueError("detector input identity conflict")
@@ -54,8 +59,8 @@ def persist_run(
         position_id=position_id,
         version=version,
         input_json=stored_input,
-        input_hash=input_hash,
-        output_hash=output_hash,
+        input_hash=pack(input_hash, compact),
+        output_hash=pack(output_hash, compact),
         produced_at=produced_at,
         previous=prior_id,
     )

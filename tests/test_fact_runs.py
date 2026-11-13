@@ -92,10 +92,44 @@ def test_exact_replay_has_stable_ids_and_utc_provenance():
     )
     assert db.connection.execute("SELECT COUNT(*) FROM detector_inputs").fetchone()[0] == 0
     db.connection.execute("UPDATE detector_input_settings SET compact=1 WHERE id=1")
+    db.connection.execute("UPDATE digest_settings SET compact=1 WHERE id=1")
     db.connection.commit()
+    assert produce(db) == {**first, "replayed": True}
     shared = produce(db, producer="shared-one")
     second = produce(db, producer="shared-two")
     assert produce(db, producer="shared-one") == {**shared, "replayed": True}
+    raw = db.connection.execute(
+        "SELECT input_hash,output_hash FROM detector_runs WHERE id=?", (shared["run_id"],)
+    ).fetchone()
+    assert all(isinstance(value, bytes) and len(value) == 32 for value in raw)
+    db.connection.execute("UPDATE digest_settings SET compact=0 WHERE id=1")
+    db.connection.commit()
+    assert produce(db, producer="shared-one") == {**shared, "replayed": True}
+    db.connection.execute("PRAGMA user_version=34")
+    db.connection.commit()
+    with pytest.raises(ValueError, match="digest schema unavailable"):
+        produce(db, producer="shared-one")
+    db.connection.execute("PRAGMA user_version=35")
+    db.connection.execute("UPDATE digest_settings SET compact=1 WHERE id=1")
+    db.connection.execute(
+        """INSERT INTO detector_runs(producer,position_id,detector_version,input_json,input_hash,
+        output_hash,produced_at,status,supersedes_run_id)
+        SELECT producer,position_id,detector_version,input_json,lower(hex(input_hash)),
+        output_hash,produced_at,'superseded',NULL FROM detector_runs WHERE id=?""",
+        (shared["run_id"],),
+    )
+    duplicate = db.connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+    db.connection.commit()
+    with pytest.raises(ValueError, match="duplicate digest identity"):
+        produce(db, producer="shared-one")
+    db.connection.execute("DELETE FROM detector_runs WHERE id=?", (duplicate,))
+    db.connection.commit()
+    plan = db.connection.execute(
+        """EXPLAIN QUERY PLAN SELECT id FROM detector_runs WHERE producer=? AND position_id=?
+        AND detector_version=? AND input_hash IN (?,?)""",
+        ("shared-one", 1, "v1", raw[0].hex(), raw[0]),
+    ).fetchall()
+    assert any("input_hash=?" in row[3] and "INDEX" in row[3] for row in plan)
     assert db.connection.execute("SELECT COUNT(*) FROM detector_inputs").fetchone()[0] == 1
     assert (
         db.connection.execute(
@@ -161,6 +195,8 @@ def test_new_versions_supersede_only_scope_and_preserve_older_fact_ids():
 
 def test_failure_after_partial_fact_writes_rolls_back_everything(monkeypatch):
     db = database()
+    db.connection.execute("UPDATE digest_settings SET compact=1 WHERE id=1")
+    db.connection.commit()
     first = produce(db)
     before = snapshot(db)
     original = fact_run_apply.insert_fact

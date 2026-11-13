@@ -46,7 +46,7 @@ def mapping_run(db, context, run, fact, ontology_version, generation):
 def retire_mapping(db, context, run, ontology_version, generation):
     """Keep an exact legacy empty scope; retire any other current scope."""
     row = db.connection.execute(
-        """SELECT id,mapper_version,input_json,output_hash FROM mapping_runs
+        """SELECT id,mapper_version,input_json,output_hash FROM mapping_runs_read
         WHERE producer=? AND position_id=? AND subject=? AND operation='execute'
         AND scope_key=? AND status='active'""",
         (MAPPER, context["position_id"], context["subject"], SCOPE),

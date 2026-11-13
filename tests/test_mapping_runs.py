@@ -71,7 +71,49 @@ def test_replay_replacement_review_and_empty_scope(db):
     validate_evidence(db, evidence_id, actor="fixture-reviewer")
     assert mapping(db, source["fact_ids"][0])["evidence_ids"] == [evidence_id]
     assert update_mastery(db, subject="learner", skill="fork", operation="execute") is not None
+    db.connection.execute("UPDATE digest_settings SET compact=1 WHERE id=1")
+    db.connection.commit()
+    assert mapping(db, source["fact_ids"][0])["run_id"] == first["run_id"]
     second = mapping(db, source["fact_ids"][0], version="two", value="failure")
+    raw = db.connection.execute(
+        "SELECT input_hash,output_hash FROM mapping_runs WHERE id=?", (second["run_id"],)
+    ).fetchone()
+    assert all(isinstance(value, bytes) and len(value) == 32 for value in raw)
+    normalized = db.connection.execute(
+        "SELECT input_hash,output_hash FROM mapping_runs_read WHERE id=?", (second["run_id"],)
+    ).fetchone()
+    assert tuple(normalized) == tuple(value.hex() for value in raw)
+    db.connection.execute("UPDATE digest_settings SET compact=0 WHERE id=1")
+    db.connection.commit()
+    assert (
+        mapping(db, source["fact_ids"][0], version="two", value="failure")["run_id"]
+        == second["run_id"]
+    )
+    db.connection.execute(
+        """INSERT INTO mapping_runs(producer,position_id,subject,operation,scope_key,mapper_version,
+        input_json,input_hash,output_hash,created_at,status,supersedes_run_id)
+        SELECT producer,position_id,subject,operation,scope_key,mapper_version,input_json,
+        lower(hex(input_hash)),output_hash,created_at,'superseded',NULL FROM mapping_runs WHERE id=?""",
+        (second["run_id"],),
+    )
+    duplicate = db.connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+    db.connection.commit()
+    with pytest.raises(ValueError, match="duplicate digest identity"):
+        mapping(db, source["fact_ids"][0], version="two", value="failure")
+    db.connection.execute("DELETE FROM mapping_runs WHERE id=?", (duplicate,))
+    db.connection.commit()
+    db.connection.execute("PRAGMA user_version=34")
+    db.connection.commit()
+    with pytest.raises(ValueError, match="digest schema unavailable"):
+        mapping(db, source["fact_ids"][0], version="two", value="failure")
+    db.connection.execute("PRAGMA user_version=35")
+    db.connection.commit()
+    plan = db.connection.execute(
+        """EXPLAIN QUERY PLAN SELECT id FROM mapping_runs WHERE producer=? AND position_id=?
+        AND subject=? AND operation=? AND scope_key=? AND mapper_version=? AND input_hash IN (?,?)""",
+        ("one", 1, "learner", "execute", "test", "two", raw[0].hex(), raw[0]),
+    ).fetchall()
+    assert any("input_hash=?" in row[3] and "INDEX" in row[3] for row in plan)
     assert second["evidence_ids"] != [evidence_id]
     assert (
         db.connection.execute(

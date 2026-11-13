@@ -4,13 +4,21 @@ from datetime import UTC, datetime
 from typing import cast
 
 from .db import Database
+from .digest_storage import pack
 from .fact_fingerprint import digest
 from .mapping_invalidation import supersede_mapping
 from .mapping_storage import insert_mapping
 
 
 def append_run(
-    db: Database, scope: tuple, version: str, input_json: str, output_hash: str, items: list[dict]
+    db: Database,
+    scope: tuple,
+    version: str,
+    input_json: str,
+    output_hash: str,
+    items: list[dict],
+    *,
+    compact=False,
 ) -> dict:
     prior = db.connection.execute(
         """SELECT * FROM mapping_runs WHERE producer = ? AND position_id = ?
@@ -27,8 +35,8 @@ def append_run(
             *scope,
             version,
             input_json,
-            digest(input_json),
-            output_hash,
+            pack(digest(input_json), compact),
+            pack(output_hash, compact),
             datetime.now(UTC).isoformat(),
             prior["id"] if prior else None,
         ),
