@@ -934,6 +934,199 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         and b"Black reply to e4" in page.data
     )
     assert b"CC BY-SA 4.0" in page.data and b"Style compatibility" in page.data
+    assert page.data.count(b"No current owned first-turn decision") == 2
+
+    # Optional comparisons use current owned first turns and never mutate the course report.
+    import chess_coach.opening_decision_budget as decision_budget
+    import chess_coach.opening_unfamiliar_measure_state as measure_state
+    from chess_coach.opening_snapshot import GRAPH_SHA256, SOURCE, VERSION
+    from chess_coach.opening_unfamiliar_measure import measurements
+
+    pinned = PipelineConfig(learner="learner", opening_version=VERSION, opening_source=SOURCE)
+    for owned_game in (1, 2):
+        assert (
+            run_opening(experiment_db, owned_game, game_input(experiment_db, owned_game), pinned)[
+                "status"
+            ]
+            == "complete"
+        )
+    experiment_db.connection.commit()
+    calls = []
+    kind = {"status": "queued"}
+
+    def synthetic_states(_db, _root, _learner, decision, *, deadline=None, with_identity=False):
+        choice = decision["catalog"]["items"][0]
+        calls.append((decision["color"], decision["ply"]))
+        if kind["status"] != "complete":
+            return {choice["uci"]: {"status": kind["status"]}}
+        board = chess.Board(decision["fen"])
+        lines = []
+        for root in (decision["played_uci"], choice["uci"]):
+            b = board.copy()
+            moves = [root]
+            b.push_uci(root)
+            for _ in range(2):
+                reply = next(iter(b.legal_moves))
+                moves.append(reply.uci())
+                b.push(reply)
+            score = -100 if root == choice["uci"] and decision["color"] == "black" else 0
+            lines.append(
+                {"root_move": root, "score_value": score, "depth": 8, "pv": " ".join(moves)}
+            )
+        value = {"status": "complete", "lines": lines}
+        if with_identity:
+            value["_identity"] = "a" * 64
+        return {choice["uci"]: value}
+
+    real_statuses = measure_state.statuses
+    with monkeypatch.context() as patch:
+        patch.setattr(decision_budget, "VERSION", VERSION)
+        patch.setattr(decision_budget, "SOURCE", SOURCE)
+        patch.setattr(decision_budget, "GRAPH_SHA256", GRAPH_SHA256)
+        patch.setattr(measure_state, "statuses", synthetic_states)
+        before_changes = experiment_db.connection.total_changes
+        before_data_version = experiment_db.connection.execute("PRAGMA data_version").fetchone()[0]
+        previous_slot = (planning_dir / "opening-comparison-slot.json").read_bytes()
+        found = measurements(experiment_db, tmp_path, "learner", result)
+        assert calls == [("white", 1), ("black", 2)]
+        assert found["white"]["status"] == found["black"]["status"] == "queued"
+        current = client_first.get(
+            "/repertoire/unfamiliar", base_url="https://coach.invalid", headers=headers
+        )
+        assert current.data.count(b"Comparison pending") == 2
+        assert current.data.count(b"Open the verified comparison") == 2
+        kind["status"] = "complete"
+        current = client_first.get(
+            "/repertoire/unfamiliar", base_url="https://coach.invalid", headers=headers
+        )
+        assert current.data.count(b"Current comparison at depth 8") == 2
+        assert b"50 cp disadvantage limit" in current.data
+
+        # The requested ninth move also reaches rehearsal and versioned PGN export.
+        import chess_coach.opening_experiment_current as experiment_current
+
+        patch.setattr(experiment_current, "statuses", synthetic_states)
+        white = found["white"]
+        white_decision = white["decision"]
+        white_move = white["choice"]["uci"]
+        experiment_path_url = (
+            f"/repertoire/games/{white_decision['game_id']}/openings/"
+            f"{white_decision['position_id']}/experiment/{white_move}"
+        )
+        assert (
+            client_first.get(
+                experiment_path_url, base_url="https://coach.invalid", headers=headers
+            ).status_code
+            == 200
+        )
+        assert (
+            client_first.get(
+                experiment_path_url + "?download=1",
+                base_url="https://coach.invalid",
+                headers=headers,
+            ).status_code
+            == 200
+        )
+        revision = client_first.get(
+            experiment_path_url + "/course", base_url="https://coach.invalid", headers=headers
+        )
+        assert revision.status_code == 200
+        version_match = re.search(
+            r"version: <code>([0-9a-f]{64})</code>", revision.get_data(as_text=True)
+        )
+        assert version_match
+        assert (
+            client_first.get(
+                experiment_path_url + "/course?download=1&version=" + version_match.group(1),
+                base_url="https://coach.invalid",
+                headers=headers,
+            ).status_code
+            == 200
+        )
+
+        kind["status"] = "stale"
+        current = client_first.get(
+            "/repertoire/unfamiliar", base_url="https://coach.invalid", headers=headers
+        )
+        assert current.data.count(b"earlier comparison is stale") == 2
+        assert experiment_db.connection.total_changes == before_changes
+        assert (
+            experiment_db.connection.execute("PRAGMA data_version").fetchone()[0]
+            == before_data_version
+        )
+        assert (planning_dir / "opening-comparison-slot.json").read_bytes() == previous_slot
+
+        # Admission independently rechecks both choices beyond the normal eight.
+        import chess_coach.opening_queue_request as queue_request
+        from chess_coach.opening_measure_source import selection as source_selection
+        from chess_coach.opening_unfamiliar_course import preview as course_preview
+
+        baseline_course = course_preview(experiment_db, tmp_path, "learner")
+        with client_first.session_transaction(base_url="https://coach.invalid") as session:
+            unfamiliar_csrf = session["csrf"]
+        patch.setattr(queue_request, "read", lambda _path: None)
+        for color in ("white", "black"):
+            item = found[color]
+            decision = item["decision"]
+            alternative = item["choice"]["uci"]
+            normal = inspect_opening(
+                experiment_db, decision["game_id"], decision["position_id"], "learner"
+            )
+            assert decision["catalog"]["items"][:8] == normal["catalog"]["items"]
+            assert item["choice"] not in normal["catalog"]["items"]
+            binding, _ = source_selection(
+                experiment_db, decision["game_id"], decision["position_id"], "learner", alternative
+            )
+            assert (
+                binding["alternative"] == alternative and binding["decision_fen"] == decision["fen"]
+            )
+            decision_path = (
+                f"/repertoire/games/{decision['game_id']}/openings/{decision['position_id']}"
+            )
+            decision_page = client_first.get(
+                decision_path + "?alternative=" + alternative,
+                base_url="https://coach.invalid",
+                headers=headers,
+            )
+            assert f'value="{alternative}"'.encode() in decision_page.data
+            queued_response = client_first.post(
+                decision_path + "/compare",
+                data={"csrf": unfamiliar_csrf, "alternative": alternative},
+                base_url="https://coach.invalid",
+                headers={**headers, "Origin": "https://coach.invalid"},
+            )
+            assert queued_response.status_code == 302
+            queued_payload = json.loads((planning_dir / "opening-comparison-slot.json").read_text())
+            assert queued_payload["source"]["alternative"] == alternative
+            assert queued_payload["source"]["decision_fen"] == decision["fen"]
+            patch.setattr(measure_state, "statuses", real_statuses)
+            real_page = client_first.get(
+                "/repertoire/unfamiliar", base_url="https://coach.invalid", headers=headers
+            )
+            assert b"Comparison pending for a later worker run" in real_page.data
+            patch.setattr(measure_state, "statuses", synthetic_states)
+            assert (
+                course_preview(experiment_db, tmp_path, "learner")["version"]
+                == baseline_course["version"]
+            )
+            (planning_dir / "opening-comparison-slot.json").write_bytes(previous_slot)
+
+        # A changed indexed source cannot supply a comparison.
+        black_position = found["black"]["decision"]["position_id"]
+        old_fen = experiment_db.connection.execute(
+            "SELECT fen FROM positions WHERE id=?", (black_position,)
+        ).fetchone()[0]
+        experiment_db.connection.execute(
+            "UPDATE positions SET fen=? WHERE id=?", (old_fen + " ", black_position)
+        )
+        experiment_db.connection.commit()
+        stale = measurements(experiment_db, tmp_path, "learner", result)
+        assert stale["black"]["status"] == "missing"
+        experiment_db.connection.execute(
+            "UPDATE positions SET fen=? WHERE id=?", (old_fen, black_position)
+        )
+        experiment_db.connection.commit()
+
     # The private course and its PGN contain the same checked two-color lessons.
     from chess_coach.opening_unfamiliar_course import preview as unfamiliar_course_preview
 
@@ -1360,6 +1553,45 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
                 "SELECT sum(x) FROM n"
             ).fetchone()
         guarded.set_progress_handler(None, 0)
+    # Explicit setup headers at the standard FEN are rejected by the queue
+    # source gate; continue to the older admitted White and retain Black.
+    setup_game = game("Learner", "Other", "1. d4 d5 2. c4 e6", second=59).replace(
+        '[Event "Fixture"]',
+        f'[SetUp "1"]\n[FEN "{chess.Board().fen()}"]\n[Event "Fixture"]',
+    )
+    ingest_pgn(experiment_db, setup_game)
+    setup_id = experiment_db.connection.execute("SELECT MAX(id) FROM games").fetchone()[0]
+    assert (
+        run_opening(experiment_db, setup_id, game_input(experiment_db, setup_id), pinned)["status"]
+        == "complete"
+    )
+    experiment_db.connection.commit()
+    setup_position = experiment_db.connection.execute(
+        "SELECT id FROM positions WHERE game_id=? AND ply=1", (setup_id,)
+    ).fetchone()[0]
+    with monkeypatch.context() as patch:
+        patch.setattr(decision_budget, "VERSION", VERSION)
+        patch.setattr(decision_budget, "SOURCE", SOURCE)
+        patch.setattr(decision_budget, "GRAPH_SHA256", GRAPH_SHA256)
+        with pytest.raises(ValueError):
+            source_selection(
+                experiment_db, setup_id, setup_position, "learner", result["white"]["uci"]
+            )
+        kind["status"] = "queued"
+        patch.setattr(measure_state, "statuses", synthetic_states)
+        fallback = measurements(experiment_db, tmp_path, "learner", result)
+        assert fallback["white"]["decision"]["game_id"] == 1
+        assert fallback["black"]["decision"]["game_id"] == 2
+
+        def one_status_fails(_db, _root, _learner, decision, **kwargs):
+            if decision["color"] == "white":
+                raise ValueError("synthetic status failure")
+            return synthetic_states(_db, _root, _learner, decision, **kwargs)
+
+        patch.setattr(measure_state, "statuses", one_status_fails)
+        independent = measurements(experiment_db, tmp_path, "learner", result)
+        assert independent["white"]["status"] == "unavailable"
+        assert independent["black"]["status"] == "queued"
     experiment_db.close()
 
     start_key = position_key(chess.Board())

@@ -14,7 +14,7 @@ def selection(db, game_id, position_id, learner, alternative):
     played = context["played_move"]
     if played != owned["position"]["uci"]:
         raise ValueError("opening decision move differs")
-    choices = catalog(db, opening["dataset_id"], board, played)
+    choices = catalog(db, opening["dataset_id"], board, played, alternative=alternative)
     choice = next((item for item in choices["items"] if item["uci"] == alternative), None)
     if choice is None:
         raise ValueError("catalog alternative unavailable")
