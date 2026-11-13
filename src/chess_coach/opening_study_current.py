@@ -32,18 +32,22 @@ def admitted(
         db = SimpleNamespace(path=database, connection=connection)
         budget = study_budget(db, browser=browser)
         deadline = budget.expires if browser or bounded else None
-        first = preview(
-            db, root, learner, game, position, move, deadline=deadline, with_identity=True
-        )
-        budget.check()
-        course = build(first, version, game, position, move)
-        files = inputs(directory, first["_identity"], root)
-        before = fingerprint(files)
-        budget.check()
-        second = preview(db, root, learner, game, position, move, deadline=deadline)
-        budget.check()
-        if canonical(build(second, version, game, position, move)) != canonical(course):
-            raise ValueError("opening preview changed")
+        try:
+            first = preview(
+                db, root, learner, game, position, move, deadline=deadline, with_identity=True
+            )
+            budget.check()
+            course = build(first, version, game, position, move)
+            files = inputs(directory, first["_identity"], root)
+            before = fingerprint(files)
+            budget.check()
+            second = preview(db, root, learner, game, position, move, deadline=deadline)
+            budget.check()
+            if canonical(build(second, version, game, position, move)) != canonical(course):
+                raise ValueError("opening preview changed")
+        except ValueError:
+            budget.check()
+            raise
 
         def check():
             budget.check()

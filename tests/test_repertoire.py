@@ -2635,6 +2635,21 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         assert revision_slot.read_bytes() == queued_revision and provider.created == 0
         pending_revision = client.get(course_url, base_url="https://coach.invalid", headers=headers)
         assert b"Publication is queued" in pending_revision.data
+        from chess_coach import opening_revision_course
+
+        real_continuation = opening_revision_course.continuation
+
+        def changed_during_preview(*args, **kwargs):
+            result = real_continuation(*args, **kwargs)
+            with sqlite3.connect(path) as other:
+                other.execute("UPDATE games SET event=event WHERE id=1")
+            return result
+
+        with monkeypatch.context() as concurrent:
+            concurrent.setattr(opening_revision_course, "continuation", changed_during_preview)
+            opening_study_worker.run(db, "learner", tmp_path)
+        assert json.loads(revision_slot.read_text())["state"] == "incomplete"
+        assert provider.created == 0
         with pipeline_lock(path, sync=True):
             opening_study_worker.run(db, "learner", tmp_path)
         assert json.loads(revision_slot.read_text())["state"] == "incomplete"
