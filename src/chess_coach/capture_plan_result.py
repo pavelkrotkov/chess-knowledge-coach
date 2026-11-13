@@ -88,7 +88,7 @@ def _matches(result, request, events, board, move, target, observed):
     return _limits(result) and _move(result, board, move) and _outcome(result, board, move, target)
 
 
-def result(db, row, observed, *, related_cache=None, related_check=None):
+def result(db, row, observed, *, related_cache=None, related_check=None, matcher=_matches):
     requests = db.connection.execute(
         "SELECT * FROM objective_requests WHERE attempt_id=? ORDER BY rowid LIMIT 2",
         (row["attempt_id"],),
@@ -107,7 +107,7 @@ def result(db, row, observed, *, related_cache=None, related_check=None):
         return {"status": "pending"}
     result = json.loads(record["result_json"])
     target = chess.parse_square(json.loads(row["provenance_json"])["objective_target"])
-    if not _matches(result, request, events, board, move, target, observed):
+    if not matcher(result, request, events, board, move, target, observed):
         return {"status": "unavailable"}
     return {
         "status": result["status"],

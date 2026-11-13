@@ -2,6 +2,7 @@
 {% block title %}Unfamiliar material practice — Chess coach{% endblock %}
 {% block content %}
 <h2>Practice avoiding an exposed piece</h2>
+<p><a href="{{ url_for('short_mate_game_views.exposure_samples') }}">View created-exposure observations in games</a></p>
 <p>{{ result.status }}. Choose a move that keeps your piece safe from an immediate capture. Your move is ungraded; the checked contrast follows your first legal answer.</p>
 {% if result.created_scan %}<details><summary>Search coverage</summary><p>Checked {{ result.scanned }} corpus records and {{ result.public_scanned }} public tasks. Tested {{ result.created_scan.roots }} of {{ result.created_scan.root_limit }} candidate roots and {{ result.created_scan.lines }} of {{ result.created_scan.line_limit }} lines. {% if result.pool_limited %}The indexed corpus window was limited.{% endif %}</p></details>{% endif %}
 {% for item in result["items"] %}

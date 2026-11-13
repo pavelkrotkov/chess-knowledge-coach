@@ -60,11 +60,12 @@ def _deadline(deadline):
         raise ValueError("time-control check timed out")
 
 
-def _fresh(db, learner, state, deadline):
+def _fresh(db, learner, state, deadline, *, filter_games=lambda games: games):
     before = db.connection.execute("PRAGMA data_version").fetchone()[0]
     games, coverage, frontier, signatures = snapshot(
         db, learner, state["checked"], seconds=min(1.0, max(0.0, deadline - time.monotonic()))
     )
+    games = filter_games(games)
     if (frontier, signatures) != (state["frontier"], state["checked"]):
         return None
     if not matches_frontier(state, games) or not _dates(games, state["games"]):

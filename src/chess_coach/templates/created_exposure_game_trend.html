@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Created piece exposure in your games - Chess coach{% endblock %}
+{% block content %}
+<h2>Created piece exposure in your games</h2>
+<p><a href="{{ url_for('protection_plan.show') }}">Back to piece-protection practice</a></p>
+{% if not report %}
+<p>The background sample is pending or its source is unavailable. Try again after the worker checks the games.</p>
+{% else %}
+{% set names = {1: "pawn", 2: "knight", 3: "bishop", 4: "rook", 5: "queen"} %}
+<p>This sample fixes one source-qualified profile before inspecting the games: a {{ names.get(report.profile.mover, "piece") }} move with a {{ names.get(report.profile.target, "piece") }} as the immediate attacker. <a href="{{ url_for('views.decision_detail', position_id=report.profile.position_id) }}">View the selected source decision</a>.</p>
+<p>The source game and duplicate imports of that game are excluded. The worker examines independent games and records at most the first sampled candidate per game. A bounded search with no candidate does not establish that no opportunity existed.</p>
+{% for label, item in (("More recent", report.newer), ("Earlier", report.earlier)) %}
+<section>
+<h3>{{ label }} games</h3>
+<p>{{ item.games }} independent games{% if item.oldest %}, from {{ item.oldest }} to {{ item.newest }} UTC{% endif %}; {{ item.completed_games }} have a finished sampled check, {{ item.pending_games }} are pending or withheld ({{ item.withheld_games }} withheld after a source change).</p>
+<p>{{ item.scanned_turns }} of {{ item.eligible_turns }} learner turns scanned. {{ item.no_candidate }} games had no sampled candidate and {{ item.unknown }} had an unresolved candidate. Neither establishes absence of an opportunity.</p>
+<p>{{ item.opportunities }} proved opportunities in distinct games: {{ item.protected }} safe played choices, {{ item.missed }} profile-matching misses, and {{ item.opportunity_unresolved }} unresolved played choices.</p>
+<p>Current source decisions: {% for entry in item.examples[:3] %}<a href="{{ url_for('views.decision_detail', position_id=entry.position_id) }}">{{ entry.outcome | replace("_", " ") }}{% if entry.color %} ({{ entry.color }}, {{ entry.phase }}){% endif %}{% if entry.reason %}: {{ entry.reason | replace("_", " ") }}{% endif %}</a> {% else %}none{% endfor %}.</p>
+</section>
+{% endfor %}
+{% if report.bounds.status == "available" %}
+<p>Conservative missed-choice ranges: earlier {{ report.bounds.earlier.lower }}/{{ report.bounds.earlier.total }} to {{ report.bounds.earlier.upper }}/{{ report.bounds.earlier.total }}; more recent {{ report.bounds.newer.lower }}/{{ report.bounds.newer.total }} to {{ report.bounds.newer.upper }}/{{ report.bounds.newer.total }}.</p>
+{% if report.bounds.direction == "overlap" %}<p>The ranges overlap or touch, so direction is inconclusive.</p>{% else %}<p>The observed missed-choice rate was {{ report.bounds.direction }} in the more recent sample across these bounds.</p>{% endif %}
+{% elif report.comparable_reason %}<p>A comparison is unavailable: {{ report.comparable_reason | replace("_", " ") }}.</p>
+{% elif not report.contexts_match %}<p>A direction is unavailable because the sampled color, time-control and exposure contexts are missing or differ.</p>
+{% elif report.bounds.status == "pending" %}<p>A comparison is pending while games remain unchecked.</p>
+{% else %}<p>A comparison needs at least five resolved opportunities in each sample, from at least three independent games.</p>{% endif %}
+{% if report.answer %}
+<p>One current, verified first practice answer was recorded at {{ report.answer.answered_at }} UTC. <a href="{{ url_for('unified_practice.show_page', attempt=report.answer.attempt) }}">View the practice result</a>.</p>
+{% for label, follows in (("Earlier", report.relation.earlier), ("More recent", report.relation.newer)) %}
+<p>{{ label }} window: {% if follows is none %}timing relative to that answer is unavailable{% elif follows %}starts strictly after that answer{% else %}does not start strictly after that answer{% endif %}.</p>
+{% endfor %}
+{% else %}<p>No current verified first practice answer for this profile was found in the bounded recent history.</p>{% endif %}
+<p>These are independent observations, not evidence that practice caused a change. The proof concerns an immediate material capture of the named piece; other aspects of a move and later play remain uncertain.</p>
+<details><summary>Coverage details</summary>
+<p>Up to 100 recent dated records are considered for two 20-game windows and a boundary game. Duplicate imports: {{ report.duplicates }}; unavailable game records: {{ report.unavailable }}; records with unknown dates: at least {{ report.coverage.unknown_time_lower_bound }}; uncertain ownership or projections: at least {{ report.coverage.unknown_ownership_global_lower_bound }}.</p>
+</details>
+{% endif %}
+{% endblock %}

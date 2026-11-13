@@ -4,6 +4,7 @@ import sqlite3
 import time
 
 from .capture_game_trend_scan import after_pipeline as capture_after_pipeline
+from .created_exposure_game_worker import after_pipeline as exposure_after_pipeline
 from .db import Database
 from .fork_game_trend_scan import after_pipeline as fork_after_pipeline
 from .fork_miss_worker import after_pipeline as fork_miss_after_pipeline
@@ -51,6 +52,7 @@ def process_pipeline(
             fork_after_pipeline(db, config.learner, started)
             fork_miss_after_pipeline(db, config.learner, started)
             study_after_pipeline(db, config.learner, started)
+            exposure_after_pipeline(db, config.learner, started)
         return result
 
 

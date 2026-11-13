@@ -17,11 +17,11 @@ from .short_mate_trend_store import read, write
 CYCLE_SECONDS = 20.0
 
 
-def _guarded(db, learner, item, deadline, quota):
+def _guarded(db, learner, item, deadline, quota, *, inspector=inspect):
     # Keep the last checkpoint if the deadline interrupts an inspection.
     candidate = {**item, "results": list(item["results"])}
     try:
-        consumed = inspect(db, learner, candidate, deadline, quota)
+        consumed = inspector(db, learner, candidate, deadline, quota)
     except (ValueError, TypeError, KeyError, IndexError, sqlite3.Error):
         if time.monotonic() >= deadline:
             return 1
