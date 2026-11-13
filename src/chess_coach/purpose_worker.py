@@ -21,7 +21,8 @@ def run(db, request_id, learner, *, retry=False, deadline=None):
             return {"request_id": request_id, "status": state}
         _row, snapshot, config = item
         try:
-            status, detail, result = execute(db, snapshot, config, deadline)
+            working = {**snapshot, "board": snapshot["board"].copy(stack=True)}
+            status, detail, result = execute(db, working, config, deadline)
         except BudgetExceeded:
             raise
         except Exception:
@@ -30,4 +31,4 @@ def run(db, request_id, learner, *, retry=False, deadline=None):
         result["worker_seconds_elapsed"] = round(
             time.monotonic() - (own_deadline - WORKER_SECONDS), 3
         )
-        return finish(db, request_id, learner, status, detail, result)
+        return finish(db, request_id, learner, status, detail, result, verified=snapshot)

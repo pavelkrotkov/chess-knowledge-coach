@@ -6,6 +6,7 @@ from .deep_selection_source import learner_key
 from .purpose_config import EARLY_CENTER, PURPOSE, VERSION, configuration
 from .purpose_snapshot_match import matches
 from .purpose_source import source
+from .purpose_source_recheck import recheck
 
 
 def owned(db, request_id, learner):
@@ -20,12 +21,14 @@ def owned(db, request_id, learner):
     return row
 
 
-def current(db, row, learner, *, snapshot=None):
+def current(db, row, learner, *, snapshot=None, verified=None):
     if row["purpose"] != PURPOSE or row["policy_version"] not in (VERSION, EARLY_CENTER):
         raise ValueError("purpose request is stale")
     try:
         config = json.loads(row["config_json"])
-        if snapshot is None:
+        if verified is not None:
+            snapshot = recheck(db, row["position_id"], learner, verified)
+        elif snapshot is None:
             snapshot = source(db, row["position_id"], learner)
         fresh = configured(db, row, snapshot, config)
         if not matches(snapshot, row, learner, config) or config != fresh:
