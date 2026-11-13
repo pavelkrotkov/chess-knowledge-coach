@@ -2,6 +2,7 @@
 
 import json
 
+from .related_capture_public import _game_id
 from .related_created_candidate import recheck as recheck_candidate
 from .related_created_contract import FILTER_VERSION, KEY, VERSION
 from .related_created_novel import require_created_novel
@@ -43,4 +44,9 @@ def _recheck(db, row, binding, snapshot_hash):
     if snapshot_hash(selected) != row["snapshot_hash"]:
         raise ValueError("practice snapshot changed")
     if row["status"] == "active" and row["next_index"] == 0:
-        require_created_novel(db, row, binding)
+        game = (
+            _game_id(selected["provenance"]["source_url"])
+            if row["source_type"] == "public"
+            else binding.get("source_game")
+        )
+        require_created_novel(db, row, binding, game)

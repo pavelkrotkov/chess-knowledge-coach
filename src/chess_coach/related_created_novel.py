@@ -10,7 +10,7 @@ from .related_capture_position import prompt_key
 from .related_protection_assessment_novelty import _check as check_protection
 
 
-def require_created_novel(db, row, binding):
+def require_created_novel(db, row, binding, game):
     until = time.monotonic() + 2
 
     def check():
@@ -37,7 +37,6 @@ def require_created_novel(db, row, binding):
             (identity, prompt_key(row["prompt_fen"])),
         ).fetchone():
             raise ValueError("practice prompt became familiar")
-        game = binding.get("source_game")
         if (
             game
             and db.connection.execute(
