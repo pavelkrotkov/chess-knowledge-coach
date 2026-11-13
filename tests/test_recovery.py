@@ -96,17 +96,32 @@ def test_wal_online_backup_and_restore_preserve_all_history(tmp_path, monkeypatc
     source = tmp_path / "live.sqlite"
     db = populated_wal(source)
     assert Path(str(source) + "-wal").stat().st_size > 0
-    # A WAL source without its shared index must not gain files during a check.
+    # File-only checks do not create the missing SQLite shared index.
     from shutil import copyfile
 
     unindexed = tmp_path / "unindexed.sqlite"
     copyfile(source, unindexed)
     copyfile(Path(str(source) + "-wal"), Path(str(unindexed) + "-wal"))
-    with pytest.raises(ValueError, match="existing WAL and shared-index"):
-        backup_database(
-            unindexed, tmp_path / "unindexed-copy.sqlite", project_root=tmp_path, check_only=True
-        )
-    assert not Path(str(unindexed) + "-shm").exists()
+    unindexed_copy = tmp_path / "unindexed-copy.sqlite"
+    assert (
+        backup_database(unindexed, unindexed_copy, project_root=tmp_path, check_only=True)["status"]
+        == "fits"
+    )
+    assert not Path(str(unindexed) + "-shm").exists() and not unindexed_copy.exists()
+    assert backup_database(unindexed, unindexed_copy, project_root=tmp_path) == unindexed_copy
+    closed = tmp_path / "closed-wal.sqlite"
+    with sqlite3.connect(closed) as connection:
+        connection.execute("PRAGMA journal_mode=WAL")
+        connection.execute("CREATE TABLE fixture(id INTEGER)")
+    connection.close()
+    assert not Path(str(closed) + "-wal").exists()
+    closed_copy = tmp_path / "closed-copy.sqlite"
+    assert (
+        backup_database(closed, closed_copy, project_root=tmp_path, check_only=True)["status"]
+        == "fits"
+    )
+    assert not Path(str(closed) + "-shm").exists() and not closed_copy.exists()
+    assert backup_database(closed, closed_copy, project_root=tmp_path).is_file()
     tables = (
         "games",
         "positions",
@@ -128,12 +143,13 @@ def test_wal_online_backup_and_restore_preserve_all_history(tmp_path, monkeypatc
     source_version = db.connection.execute("PRAGMA user_version").fetchone()[0]
     backup = tmp_path / "backup.sqlite"
     restored = tmp_path / "restored.sqlite"
-    from chess_coach import recovery_capacity, recovery_capacity_guard
+    from chess_coach import recovery_capacity, recovery_capacity_guard, recovery_physical
 
     with monkeypatch.context() as patch:
         patch.setattr(recovery_capacity, "PROJECT_LIMIT", 1)
+        patch.setattr(recovery_physical, "PROJECT_LIMIT", 1)
         report = backup_database(source, backup, project_root=tmp_path, check_only=True)
-        assert report["status"] == "insufficient" and report["snapshot_bytes"] > 0
+        assert report["status"] == "insufficient" and report["estimated_snapshot_bytes"] > 0
         with pytest.raises(ValueError, match="capacity unavailable"):
             backup_database(source, backup, project_root=tmp_path)
     assert not backup.exists() and not list(tmp_path.glob(".chess-recovery-*"))
@@ -205,8 +221,8 @@ def test_cli_backup_and_restore_do_not_initialize_or_upgrade_source(tmp_path):
         )
         output = json.loads(result.stdout)
         if check_only:
-            assert output["status"] == "fits" and output["snapshot_bytes"] > 0
-            assert "not controlled by a quota" in output["scope"]
+            assert output["status"] == "fits" and output["estimated_snapshot_bytes"] > 0
+            assert "not a quota" in output["scope"]
             assert not target_path.exists()
         else:
             assert output == {"status": "verified"}

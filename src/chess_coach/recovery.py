@@ -7,7 +7,9 @@ from pathlib import Path
 from .recovery_capacity import plan
 from .recovery_capacity_guard import Guard
 from .recovery_copy import copy_database, pinned
+from .recovery_deadline import Deadline
 from .recovery_paths import ensure_no_companions, recovery_paths
+from .recovery_physical import physical
 from .recovery_verify import require_standalone
 
 
@@ -30,11 +32,16 @@ def _copy(source, destination, project_root, *, standalone=False, check_only=Fal
     if standalone:
         require_standalone(source_path)
     root = Path(project_root).resolve(strict=True)
-    with pinned(source_path) as (reader, deadline):
+    deadline = Deadline()
+    # This first check uses file metadata only and creates no SQLite sidecars.
+    estimate = physical(source_path, root, target, deadline)
+    if check_only:
+        return estimate
+    if estimate["status"] != "fits":
+        raise ValueError("recovery capacity unavailable; no destination was created")
+    # Actual copies also require an exact check against the pinned source.
+    with pinned(source_path, deadline) as reader:
         report = plan(reader, root, target, deadline)
-        # The estimate and copy refer to the same pinned source transaction.
-        if check_only:
-            return report
         if report["status"] != "fits":
             raise ValueError("recovery capacity unavailable; no destination was created")
         return _write(reader, deadline, root, target, report)
