@@ -79,6 +79,112 @@ def test_profile_uses_owned_current_deep_results_and_private_browser(tmp_path, m
     assert item["selection_id"] == selection_id and item["analysis_run_id"]
     assert item["played_line"]["root_move"] == item["played_move"]
     assert item["context"]["familiarity"] == "unknown"
+    # Control candidates have their own coverage and preserve check-response counts.
+    from collections import defaultdict
+
+    from chess_coach import style_center_control, style_purpose_evaluate, style_purpose_view
+    from chess_coach.style_counts import counts
+
+    board = chess.Board("4k3/8/8/3p4/4P3/8/8/4K3 w - - 0 1")
+    played = line("e4d5 e8d7 e1d2 d7d6")
+    other = line("e1d2 e8d7 d2e3 d7d6")
+    view = {
+        "attempts": [
+            {
+                "number": 1,
+                "final": {
+                    "lines": [
+                        {"rank": 1, **played},
+                        {"rank": 2, **other},
+                    ]
+                },
+            }
+        ],
+        "limits": {},
+    }
+    context = {
+        "game_id": item["game_id"],
+        "position_id": item["position_id"],
+        "ply": item["ply"],
+        "played_move": "e4d5",
+        "pre_move_fen": board.fen(),
+        "game_outcome": "unknown",
+    }
+    slot = {
+        "kind": "control",
+        "game_id": context["game_id"],
+        "position_id": context["position_id"],
+        "request_id": 1,
+        "sequence": 1,
+    }
+    snapshot = {"board": board, "position": {"uci": "e4d5"}}
+
+    def state():
+        return {
+            "views": {},
+            "counts": defaultdict(int),
+            "observations": [],
+            "center_control": {"coverage": defaultdict(int), "seen": set(), "observations": []},
+        }
+
+    original_view = style_purpose_evaluate.current_view
+    with monkeypatch.context() as patch:
+        patch.setattr(style_purpose_evaluate, "current_view", lambda *args: ("current", view))
+        patch.setattr(style_center_control, "current_opening", lambda *args: None)
+        patch.setattr(style_center_control, "describe_context", lambda *args: item["context"])
+        current = state()
+        style_purpose_evaluate.evaluate(db, LEARNER, slot, context, snapshot, current, set())
+        style_purpose_evaluate.evaluate(db, LEARNER, slot, context, snapshot, current, set())
+        assert current["counts"]["control_outside_check"] == 2
+        assert current["center_control"]["coverage"]["duplicate"] == 1
+        center_items = current["center_control"]["observations"]
+        assert len(center_items) == 1 and not current["observations"]
+        assert center_items[0]["choices"] == {"center_file_opening": "file_opened"}
+        dimension = counts(center_items, "center_file_opening")
+        assert dimension["opportunities"] == dimension["games"] == 1
+        assert not dimension["sufficient"]
+        overlap = state()
+        style_purpose_evaluate.evaluate(
+            db,
+            LEARNER,
+            slot,
+            context,
+            snapshot,
+            overlap,
+            {(slot["game_id"], slot["position_id"])},
+        )
+        assert overlap["counts"]["control_duplicate"] == 1
+        assert overlap["center_control"]["coverage"]["overlap"] == 1
+        assert not overlap["center_control"]["observations"]
+        mismatch = state()
+        bad_snapshot = {"board": board, "position": {"uci": "e1d2"}}
+        style_purpose_evaluate.evaluate(db, LEARNER, slot, context, bad_snapshot, mismatch, set())
+        assert mismatch["counts"]["control_history_unavailable"] == 1
+        assert not mismatch["center_control"]["observations"]
+        patch.setattr(style_purpose_evaluate, "current_view", lambda *args: ("stale", None))
+        stale = state()
+        style_purpose_evaluate.evaluate(db, LEARNER, slot, context, snapshot, stale, set())
+        assert stale["counts"]["control_stale"] == 1
+        assert not stale["center_control"]["observations"]
+        patch.setattr(style_purpose_evaluate, "current_view", original_view)
+        patch.setattr(style_purpose_view, "slot_matches_request", lambda *args: False)
+        changed = state()
+        style_purpose_evaluate.evaluate(db, LEARNER, slot, context, snapshot, changed, set())
+        assert changed["counts"]["control_source_unknown"] == 1
+        assert not changed["center_control"]["observations"]
+        patch.setattr(style_purpose_evaluate, "current_view", lambda *args: ("current", view))
+        view["attempts"][0]["final"]["lines"][1]["depth"] = 3
+        shallow = state()
+        style_purpose_evaluate.evaluate(db, LEARNER, slot, context, snapshot, shallow, set())
+        assert shallow["center_control"]["coverage"]["unavailable"] == 1
+        assert not shallow["center_control"]["observations"]
+
+    report["center_control"] = {
+        **dimension,
+        "observations": center_items,
+        "coverage": dict(current["center_control"]["coverage"]),
+        "scope": "Bounded control candidates.",
+    }
     db.close()
     monkeypatch.setattr(
         sys, "argv", ["chess-coach", "--db", str(path), "style-choices", "--learner", LEARNER]
@@ -86,7 +192,8 @@ def test_profile_uses_owned_current_deep_results_and_private_browser(tmp_path, m
     main()
     output = capsys.readouterr().out
     cli_report = json.loads(output)
-    assert cli_report["version"] == "style-choices-v11"
+    assert cli_report["version"] == "style-choices-v12"
+    assert "center_control" in cli_report
     assert "not prior exposure" in cli_report["familiarity_note"]
     assert "overlapping games" in cli_report["trend_note"]
     assert LEARNER not in output and OPPONENT not in output
@@ -108,6 +215,17 @@ def test_profile_uses_owned_current_deep_results_and_private_browser(tmp_path, m
     )
     assert page.status_code == 200 and b"Source choices" in page.data
     assert f"/decisions/{item['position_id']}".encode() in page.data
+    with monkeypatch.context() as patch:
+        patch.setattr("chess_coach.web_style.style_report", lambda *args, **kwargs: report)
+        page = client.get(
+            "/style-choices",
+            base_url="https://coach.invalid",
+            headers={"Tailscale-User-Login": "login"},
+        )
+        assert b"Center-file choices from control comparisons" in page.data
+        assert b"These lines show conditional continuations." in page.data
+        assert b"Insufficient data for a direction" in page.data
+        assert b"control diagnostic" in page.data
 
 
 def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch):

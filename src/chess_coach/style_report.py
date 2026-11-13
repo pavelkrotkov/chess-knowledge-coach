@@ -5,6 +5,8 @@ from collections import Counter
 from .engine_report_cache import report_digests
 from .recurrence_snapshot import read_snapshot
 from .repertoire_sources import MAX_GAMES
+from .style_center_control import DIMENSION as CENTER_DIMENSION
+from .style_counts import counts as dimension_counts
 from .style_protection_budget import MAX_WORK as PROTECTION_WORK_LIMIT
 from .style_protection_budget import create as protection_budget
 from .style_purpose_collect import collect_game
@@ -13,7 +15,7 @@ from .style_schedule_status import status as schedule_status
 from .style_sources import source_games
 from .style_summary import summarize
 
-VERSION = "style-choices-v11"
+VERSION = "style-choices-v12"
 MATE_SEARCH_LIMIT = 100
 
 
@@ -72,6 +74,12 @@ def _style_report(db, learner, *, max_games):
             **purpose["limits"],
             "counts": dict(purpose["counts"]),
             "sample_note": "Check and protection targets and deterministic controls are small, biased samples; overlapping allocations share one decision. Older cycles and excluded records remain unknown.",
+        },
+        "center_control": {
+            **dimension_counts(purpose["center_control"]["observations"], CENTER_DIMENSION),
+            "coverage": dict(purpose["center_control"]["coverage"]),
+            "observations": purpose["center_control"]["observations"],
+            "scope": "Current non-check controls after ordinary-first overlap suppression. Each comparison covers the played move and a scout-selected alternative. This candidate set is a biased sample.",
         },
         "transition_method": (
             "Four-ply conditional projections, not observed outcomes or intent: queenless "
