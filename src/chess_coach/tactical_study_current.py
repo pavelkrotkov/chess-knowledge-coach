@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from types import SimpleNamespace
 
 from .fact_fingerprint import canonical
+from .schema_compat import readonly
 from .tactical_course_budget import Budget
 from .tactical_export import build
 from .tactical_study_preview import preview
@@ -16,6 +17,7 @@ def revalidate(path, envelope, expected, *, with_budget=False):
     saved_preview = preview(envelope, expected)
     connection = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=1)
     connection.row_factory = sqlite3.Row
+    readonly(connection, path)
     connection.execute("PRAGMA query_only=ON")
     try:
         db = SimpleNamespace(connection=connection)

@@ -89,7 +89,7 @@ COMMANDS = {
 COMMANDS.update(RELATED_COMMANDS)
 
 
-def main() -> None:
+def main(*, compatibility: bool = False) -> None:
     args = build_parser().parse_args()
     if args.command == "capabilities":
         print(json.dumps(capability_report(), indent=2))
@@ -98,7 +98,7 @@ def main() -> None:
         print(json.dumps(competency_report(), indent=2))
         return
     if args.command == "seed-competencies":
-        db = Database(args.db)
+        db = Database(args.db, compatibility=compatibility)
         db.initialize()
         print(json.dumps({"skills": seed_competency_graph(db)}))
         return
@@ -108,7 +108,7 @@ def main() -> None:
     if args.command in snapshot.COMMANDS:
         snapshot.COMMANDS[args.command](args)
         return
-    db = Database(args.db)
+    db = Database(args.db, compatibility=compatibility)
     db.initialize()
     COMMANDS[args.command](db, args)
 

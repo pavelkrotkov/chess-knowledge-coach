@@ -2,7 +2,7 @@
 
 import re
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import chess
 import chess.pgn
@@ -70,7 +70,7 @@ def post(client, path, csrf, **values):
     )
 
 
-def test_private_access_and_csrf(setup):
+def test_private_access_and_csrf(setup, tmp_path, monkeypatch):
     path, app, evidence_id = setup
     client = app.test_client()
     assert client.get("/", base_url=ORIGIN).status_code == 403
@@ -117,6 +117,179 @@ def test_private_access_and_csrf(setup):
     db = Database(path)
     assert db.connection.execute("SELECT COUNT(*) FROM evidence_review_events").fetchone()[0] == 0
     db.close()
+
+    # A separately attested legacy DB remains schema 32 for browser and inline writes.
+    import sqlite3
+
+    from chess_coach import schema_compat_identity
+    from chess_coach.fact_runs import record_fact_run
+    from chess_coach.schema_compat import attest
+    from chess_coach.schema_compat_layout import TABLES, VIEWS
+
+    root = tmp_path / "compat"
+    data = root / ".runtime" / "data"
+    data.mkdir(parents=True)
+    (root / ".runtime" / "planning").mkdir(mode=0o700)
+    legacy = data / "legacy.sqlite"
+    source = sqlite3.connect(path)
+    destination = sqlite3.connect(legacy)
+    source.backup(destination)
+    source.close()
+    destination.execute("PRAGMA foreign_keys=OFF")
+    for name in VIEWS:
+        destination.execute(f"DROP VIEW {name}")
+    for name in TABLES:
+        destination.execute(f"DROP TABLE {name}")
+    destination.execute("PRAGMA user_version=32")
+    destination.commit()
+    destination.close()
+    monkeypatch.setenv("CHESS_PROJECT_ROOT", str(root))
+    monkeypatch.setenv("CHESS_DB", str(legacy))
+    monkeypatch.setenv("CHESS_SUBJECT", "learner")
+    monkeypatch.setenv("CHESS_SCHEMA_COMPAT", "32")
+    monkeypatch.setattr(
+        schema_compat_identity,
+        "release_info",
+        lambda: {
+            "commit": "a" * 40,
+            "module_path": str(root / ".runtime" / "releases" / ("a" * 40) / "module.py"),
+        },
+    )
+    read = sqlite3.connect(legacy.as_uri() + "?mode=ro", uri=True)
+    read.execute("PRAGMA query_only=ON")
+    from chess_coach import db_recent
+
+    def newer_migration(_connection):
+        raise AssertionError("future migration used by legacy preflight")
+
+    with monkeypatch.context() as preflight:
+        preflight.setattr(db_recent, "add_digest_storage", newer_migration)
+        attest(legacy, read)
+    read.close()
+    compat_app = create_app(
+        db_path=legacy,
+        subject="learner",
+        actor="fixture",
+        corpus="fixture-v1",
+        login=LOGIN,
+        origin=ORIGIN,
+        compatibility=True,
+    )
+    page = compat_app.test_client().get(
+        f"/evidence/{evidence_id}", base_url=ORIGIN, headers=HEADERS
+    )
+    assert page.status_code == 200 and b"Chess position" in page.data
+    compat_db = Database(legacy, compatibility=True)
+    before = compat_db.connection.execute("PRAGMA schema_version").fetchone()[0]
+    compat_db.initialize()
+    for name in ("analysis_runs", "detector_runs", "mapping_runs"):
+        assert [
+            tuple(row) for row in compat_db.connection.execute(f"SELECT * FROM {name} ORDER BY id")
+        ] == [
+            tuple(row)
+            for row in compat_db.connection.execute(f"SELECT * FROM {name}_read ORDER BY id")
+        ]
+    args: dict[str, Any] = dict(
+        position_id=1, producer="compat", detector_version="v1", input_data={"test": True}, facts=[]
+    )
+    from chess_coach import detector_input_schema
+
+    with monkeypatch.context() as verified:
+        verified.setattr(detector_input_schema, "legacy", newer_migration)
+        result = record_fact_run(compat_db, **args)
+        assert record_fact_run(compat_db, **args) == {**result, "replayed": True}
+    assert compat_db.connection.execute("PRAGMA user_version").fetchone()[0] == 32
+    assert compat_db.connection.execute("PRAGMA schema_version").fetchone()[0] == before
+    compat_db.close()
+    raw = sqlite3.connect(legacy.as_uri() + "?mode=ro", uri=True)
+    from chess_coach.schema_compat import readonly
+
+    readonly(raw, legacy)
+    raw.execute("PRAGMA query_only=ON")
+    assert raw.execute("SELECT count(*) FROM detector_runs_read").fetchone()[0] > 0
+    with pytest.raises(sqlite3.OperationalError):
+        raw.execute("DELETE FROM detector_runs")
+    raw.close()
+
+    # Both scheduled entry points receive the same verified connection mode.
+    import sys
+
+    from chess_coach import cli, ops_retry, ops_worker, tactical_study_current
+
+    calls = []
+
+    def worker_action(db, _args):
+        calls.append(("worker", db.compat32))
+        db.close()
+
+    monkeypatch.setitem(cli.COMMANDS, "process-pipeline", worker_action)
+    monkeypatch.setattr(ops_worker, "database_path", lambda: legacy)
+    monkeypatch.setattr(sys, "argv", [])
+    ops_worker.main()
+    monkeypatch.setenv("LICHESS_USERNAME", "learner")
+    monkeypatch.setattr(ops_retry, "database_path", lambda: legacy)
+    monkeypatch.setattr(ops_retry, "sync_result", lambda db, *_args, **_kw: None)
+    monkeypatch.setattr(
+        ops_retry, "process_objectives", lambda db, _learner: calls.append(("retry", db.compat32))
+    )
+    ops_retry.main()
+    assert calls == [("worker", True), ("retry", True)]
+
+    envelope = {"preview": "fixture"}
+    monkeypatch.setenv("CHESS_CORPUS", "fixture-v1")
+    monkeypatch.setattr(tactical_study_current, "preview", lambda *_args: {})
+
+    def study_build(db, *_args):
+        assert db.connection.execute("PRAGMA query_only").fetchone()[0] == 1
+        assert db.connection.execute("SELECT count(*) FROM detector_runs_read").fetchone()[0] > 0
+        return envelope
+
+    monkeypatch.setattr(tactical_study_current, "build", study_build)
+    with tactical_study_current.revalidate(legacy, envelope, "selected") as check:
+        check()
+
+    # An attestation cannot be reused for a different release or malformed rows.
+    release = schema_compat_identity.release_info
+    monkeypatch.setattr(
+        schema_compat_identity,
+        "release_info",
+        lambda: {
+            "commit": "b" * 40,
+            "module_path": str(root / ".runtime" / "releases" / ("b" * 40) / "module.py"),
+        },
+    )
+    with pytest.raises(ValueError, match="attestation"):
+        Database(legacy, compatibility=True)
+    monkeypatch.setattr(schema_compat_identity, "release_info", release)
+    changed = sqlite3.connect(legacy)
+    changed.execute("UPDATE detector_runs SET input_hash=? WHERE id=1", (b"invalid",))
+    changed.commit()
+    changed.close()
+    invalid = sqlite3.connect(legacy.as_uri() + "?mode=ro", uri=True)
+    invalid.execute("PRAGMA query_only=ON")
+    with pytest.raises(ValueError, match="representation"):
+        attest(legacy, invalid)
+    invalid.close()
+    invalid = Database(legacy, compatibility=True)
+    with pytest.raises(sqlite3.OperationalError):
+        invalid.connection.execute(
+            "SELECT input_hash FROM detector_runs_read WHERE id=1"
+        ).fetchone()
+    invalid.close()
+    from chess_coach.schema_compat import configured
+
+    assert not configured(path)
+    changed = sqlite3.connect(legacy)
+    changed.execute("UPDATE detector_runs SET input_hash='legacy' WHERE id=1")
+    changed.execute("CREATE TABLE analysis_provenance(id INTEGER)")
+    changed.commit()
+    changed.close()
+    with pytest.raises(ValueError, match="attestation"):
+        Database(legacy, compatibility=True)
+    invalid = sqlite3.connect(legacy.as_uri() + "?mode=ro", uri=True)
+    with pytest.raises(ValueError, match="newer schema objects"):
+        attest(legacy, invalid)
+    invalid.close()
 
 
 def test_review_practice_completion_and_followup_plan(setup):

@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from .db import Database
-from .detector_input_schema import legacy
 from .detector_input_storage import values
 from .digest_storage import lookup, pack, settings
 from .fact_fingerprint import canonical, digest
@@ -29,7 +28,7 @@ def persist_run(
         raise ValueError(f"unknown position id: {position_id}")
     input_json = canonical({"position_fen": position["fen"], "detector_input": input_data})
     input_hash = digest(input_json)
-    old_schema = legacy(db.connection)
+    old_schema = db.legacy_detector()
     table = "detector_runs" if old_schema else "detector_runs_read"
     compact, modern = settings(db.connection)
     existing = lookup(
