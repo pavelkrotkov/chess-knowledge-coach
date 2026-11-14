@@ -6,6 +6,7 @@ from pathlib import Path
 from waitress import serve
 
 from .db import Database
+from .schema_compat import configured
 from .web import create_app
 from .web_paths import inside, socket_directory, socket_location
 from .web_socket import browser_socket
@@ -16,6 +17,7 @@ def main() -> None:
     db_path = inside(root, os.environ["CHESS_DB"], existing=True)
     socket = socket_location(root, os.environ["CHESS_WEB_SOCKET"])
     socket_directory(socket)
+    compatibility = configured(db_path)
     app = create_app(
         db_path=db_path,
         project_root=root,
@@ -25,8 +27,9 @@ def main() -> None:
         login=os.environ["CHESS_TAILSCALE_LOGIN"],
         origin=os.environ["CHESS_WEB_ORIGIN"],
         backend_host="localhost",
+        compatibility=compatibility,
     )
-    db = Database(db_path)
+    db = Database(db_path, compatibility=compatibility)
     try:
         db.initialize()
     finally:

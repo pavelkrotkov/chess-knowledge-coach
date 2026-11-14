@@ -9,6 +9,7 @@ from .opening_queue_budget import study_budget
 from .opening_revision_course import preview
 from .opening_study_course import build
 from .opening_study_source import fingerprint, inputs
+from .schema_compat import readonly
 
 
 @contextmanager
@@ -27,6 +28,7 @@ def admitted(
 ):
     connection = sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=1)
     connection.row_factory = sqlite3.Row
+    readonly(connection, database)
     connection.execute("PRAGMA query_only=ON")
     try:
         db = SimpleNamespace(path=database, connection=connection)
