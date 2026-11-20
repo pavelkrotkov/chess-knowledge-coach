@@ -14,4 +14,4 @@ def attach(db, learner, lesson):
             resolve(db, PRACTICE, str(example["evidence_id"]), learner)
         except (sqlite3.Error, ValueError, TypeError, KeyError, IndexError, AttributeError):
             continue
-        example["discovery_material_rehearsal"] = True
+        example["discovery_material_rehearsal"] = PRACTICE
