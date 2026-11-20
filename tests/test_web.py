@@ -141,6 +141,10 @@ def test_private_access_and_csrf(setup, tmp_path, monkeypatch):
     for name in TABLES:
         destination.execute(f"DROP TABLE {name}")
     destination.execute("PRAGMA user_version=32")
+    destination.execute(
+        "INSERT INTO analysis_runs(game_id,engine,engine_version,config_json) "
+        "VALUES(1,'fixture','v1','{}')"
+    )
     destination.commit()
     destination.close()
     monkeypatch.setenv("CHESS_PROJECT_ROOT", str(root))
@@ -181,6 +185,12 @@ def test_private_access_and_csrf(setup, tmp_path, monkeypatch):
     assert page.status_code == 200 and b"Chess position" in page.data
     compat_db = Database(legacy, compatibility=True)
     before = compat_db.connection.execute("PRAGMA schema_version").fetchone()[0]
+    plan = compat_db.connection.execute(
+        "EXPLAIN QUERY PLAN SELECT input_json FROM detector_runs_read "
+        "WHERE producer=? AND position_id=? AND status='active'",
+        ("mate-in-one", 1),
+    ).fetchall()
+    assert any("idx_detector_run_active" in row[3] for row in plan)
     compat_db.initialize()
     for name in ("analysis_runs", "detector_runs", "mapping_runs"):
         assert [
@@ -262,6 +272,7 @@ def test_private_access_and_csrf(setup, tmp_path, monkeypatch):
         Database(legacy, compatibility=True)
     monkeypatch.setattr(schema_compat_identity, "release_info", release)
     changed = sqlite3.connect(legacy)
+    original_hash = changed.execute("SELECT input_hash FROM detector_runs WHERE id=1").fetchone()[0]
     changed.execute("UPDATE detector_runs SET input_hash=? WHERE id=1", (b"invalid",))
     changed.commit()
     changed.close()
@@ -273,14 +284,50 @@ def test_private_access_and_csrf(setup, tmp_path, monkeypatch):
     invalid = Database(legacy, compatibility=True)
     with pytest.raises(sqlite3.OperationalError):
         invalid.connection.execute(
-            "SELECT input_hash FROM detector_runs_read WHERE id=1"
+            "SELECT input_json FROM detector_runs_read WHERE id=1"
         ).fetchone()
     invalid.close()
     from chess_coach.schema_compat import configured
 
     assert not configured(path)
     changed = sqlite3.connect(legacy)
-    changed.execute("UPDATE detector_runs SET input_hash='legacy' WHERE id=1")
+    changed.execute("UPDATE detector_runs SET input_hash=? WHERE id=1", (original_hash,))
+    mapping_id, mapping_hash = changed.execute(
+        "SELECT id,output_hash FROM mapping_runs ORDER BY id LIMIT 1"
+    ).fetchone()
+    changed.execute("UPDATE mapping_runs SET output_hash=? WHERE id=?", (b"invalid", mapping_id))
+    changed.commit()
+    invalid = Database(legacy, compatibility=True)
+    with pytest.raises(sqlite3.OperationalError):
+        invalid.connection.execute(
+            "SELECT input_json FROM mapping_runs_read WHERE id=?", (mapping_id,)
+        ).fetchone()
+    invalid.close()
+    changed.execute("UPDATE mapping_runs SET output_hash=? WHERE id=?", (mapping_hash, mapping_id))
+    changed.execute(
+        "UPDATE analysis_runs SET config_json='',nnue='',compatibility_json='' WHERE id=1"
+    )
+    changed.commit()
+    invalid = Database(legacy, compatibility=True)
+    with pytest.raises(sqlite3.OperationalError):
+        invalid.connection.execute("SELECT id FROM analysis_runs_read WHERE id=1").fetchone()
+    invalid.close()
+    changed.execute("UPDATE analysis_runs SET config_json='{}',compatibility_json='{}' WHERE id=1")
+    original_index = changed.execute(
+        "SELECT sql FROM sqlite_master WHERE name='idx_detector_run_active'"
+    ).fetchone()[0]
+    changed.execute("DROP INDEX idx_detector_run_active")
+    changed.execute(
+        "CREATE INDEX idx_detector_run_active ON detector_runs(producer,position_id) "
+        "WHERE status='active'"
+    )
+    changed.commit()
+    invalid = sqlite3.connect(legacy.as_uri() + "?mode=ro", uri=True)
+    with pytest.raises(ValueError, match="constraints differ"):
+        attest(legacy, invalid)
+    invalid.close()
+    changed.execute("DROP INDEX idx_detector_run_active")
+    changed.execute(original_index)
     changed.execute("CREATE TABLE analysis_provenance(id INTEGER)")
     changed.commit()
     changed.close()

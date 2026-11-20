@@ -26,13 +26,15 @@ def install(connection):
     connection.create_function("legacy_analysis", 3, _analysis)
     connection.execute("""CREATE TEMP VIEW analysis_runs_read AS
         SELECT id,game_id,engine,engine_version,
-        legacy_analysis(config_json,nnue,compatibility_json) AS config_json,
-        binary_path,binary_version,nnue,compatibility_json,created_at FROM main.analysis_runs""")
+        config_json,binary_path,binary_version,nnue,compatibility_json,created_at
+        FROM main.analysis_runs WHERE legacy_analysis(config_json,nnue,compatibility_json) IS NOT NULL""")
     connection.execute("""CREATE TEMP VIEW detector_runs_read AS
-        SELECT id,producer,position_id,detector_version,legacy_text(input_json) AS input_json,
-        legacy_text(input_hash) AS input_hash,legacy_text(output_hash) AS output_hash,
-        produced_at,status,supersedes_run_id FROM main.detector_runs""")
+        SELECT id,producer,position_id,detector_version,input_json,input_hash,output_hash,
+        produced_at,status,supersedes_run_id FROM main.detector_runs
+        WHERE legacy_text(input_json) IS NOT NULL AND legacy_text(input_hash) IS NOT NULL
+        AND legacy_text(output_hash) IS NOT NULL""")
     connection.execute("""CREATE TEMP VIEW mapping_runs_read AS
         SELECT id,producer,position_id,subject,operation,scope_key,mapper_version,
-        legacy_text(input_json) AS input_json,legacy_text(input_hash) AS input_hash,
-        legacy_text(output_hash) AS output_hash,created_at,status,supersedes_run_id FROM main.mapping_runs""")
+        input_json,input_hash,output_hash,created_at,status,supersedes_run_id FROM main.mapping_runs
+        WHERE legacy_text(input_json) IS NOT NULL AND legacy_text(input_hash) IS NOT NULL
+        AND legacy_text(output_hash) IS NOT NULL""")

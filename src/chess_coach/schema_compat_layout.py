@@ -7,6 +7,7 @@ from .db import SCHEMA
 from .db_migrations import upgrade_v1
 from .db_recent import upgrade_recent
 from .lichess_schema import add_sync_progress
+from .schema_compat_constraints import columns, columns_match, constraints
 
 FORBIDDEN = (
     "analysis_provenance",
@@ -42,17 +43,10 @@ def _expected():
             "SELECT name,type FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'"
         ).fetchall()
         tables = [name for name, kind in objects if kind == "table"]
-        columns = {name: _columns(connection, name) for name in tables}
-        return set(objects), columns
+        expected_columns = {name: columns(connection, name) for name in tables}
+        return set(objects), expected_columns, constraints(connection, tables)
     finally:
         connection.close()
-
-
-def _columns(connection, name):
-    return {
-        (row[1], row[2].upper(), row[3], row[5])
-        for row in connection.execute("SELECT * FROM pragma_table_info(?)", (name,))
-    }
 
 
 def validate(connection):
@@ -66,8 +60,10 @@ def validate(connection):
     }
     if any(name in FORBIDDEN for name, _ in objects):
         raise ValueError("newer schema objects are present")
-    expected, columns = _expected()
-    if not expected.issubset(objects):
+    expected, columns, expected_constraints = _expected()
+    if expected != objects:
         raise ValueError("legacy schema is incomplete")
-    if any(_columns(connection, table) != expected for table, expected in columns.items()):
+    if not columns_match(connection, columns):
         raise ValueError("legacy table columns differ")
+    if constraints(connection, columns) != expected_constraints:
+        raise ValueError("legacy schema constraints differ")
