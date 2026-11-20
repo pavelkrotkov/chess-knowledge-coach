@@ -591,7 +591,88 @@ def test_source_worker_lesson_practice_and_review(tmp_path, monkeypatch):
         login="fixture-login",
         origin="https://coach.invalid",
     )
-    page = material_app.test_client().get(
+    material_client = material_app.test_client()
+    origin = "https://coach.invalid"
+    headers = {"Tailscale-User-Login": "fixture-login"}
+    dates = {
+        "compare_start": "2025-12-01T00:00:00+00:00",
+        "start": "2025-12-31T00:00:00+00:00",
+        "end": "2026-02-01T00:00:00+00:00",
+        "skill": "discovered_attack",
+        "operation": "prevent",
+    }
+    recurrence = material_client.get(
+        "/recurrence", query_string=dates, base_url=origin, headers=headers
+    )
+    assert recurrence.status_code == 200
+    assert b"Replay this material defense" in recurrence.data
+    assert (
+        b"cued recorded-line rehearsal" in recurrence.data
+        and b"Other legal defenses remain ungraded" in recurrence.data
+    )
+    assert MATERIAL_PRACTICE.encode() in recurrence.data
+    from chess_coach import lesson_discovery_material_rehearsal
+
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            lesson_discovery_material_rehearsal,
+            "resolve",
+            lambda *_: (_ for _ in ()).throw(ValueError("preflight unavailable")),
+        )
+        unavailable = material_client.get(
+            "/recurrence", query_string=dates, base_url=origin, headers=headers
+        )
+        assert b"Replay this material defense" not in unavailable.data
+        assert b"other material threats" in unavailable.data
+    with material_client.session_transaction(base_url=origin) as session:
+        csrf = session["csrf"]
+    post_headers = headers | {"Origin": origin}
+    form = {
+        "csrf": csrf,
+        "source_type": "own-game",
+        "version": MATERIAL_PRACTICE,
+        "key": str(material_id),
+    }
+    before_learning = [
+        material_db.connection.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0]
+        for name in ("training_attempts", "mastery_events", "objective_requests")
+    ]
+    started = material_client.post(
+        "/unified/start", base_url=origin, headers=post_headers, data=form
+    )
+    assert started.status_code == 303
+    active = material_client.get(started.headers["Location"], base_url=origin, headers=headers)
+    assert b"Replay a defense to the named discovered attack" in active.data
+    assert [
+        material_db.connection.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0]
+        for name in ("training_attempts", "mastery_events", "objective_requests")
+    ] == before_learning
+    material_app.config["SUBJECT"] = "fixture_other"
+    foreign = material_client.get(
+        "/recurrence", query_string=dates, base_url=origin, headers=headers
+    )
+    assert b"Replay this material defense" not in foreign.data
+    assert (
+        material_client.post(
+            "/unified/start", base_url=origin, headers=post_headers, data=form
+        ).status_code
+        == 400
+    )
+    material_app.config["SUBJECT"] = LEARNER
+
+    from chess_coach.lesson_discovery_material_rehearsal import attach
+    from chess_coach.lesson_history import save
+
+    attach(material_db, LEARNER, material_lesson)
+    assert material_lesson["examples"][0]["discovery_material_rehearsal"]
+    saved_id = save(material_db, LEARNER, material_lesson)
+    material_db.connection.commit()
+    saved = material_client.get(f"/lessons/{saved_id}", base_url=origin, headers=headers)
+    assert (
+        b"historical snapshot" in saved.data and b"Replay this material defense" not in saved.data
+    )
+
+    page = material_client.get(
         f"/evidence/{material_id}",
         base_url="https://coach.invalid",
         headers={"Tailscale-User-Login": "fixture-login"},
@@ -608,6 +689,16 @@ def test_source_worker_lesson_practice_and_review(tmp_path, monkeypatch):
     assert b"Status: Ungraded" in replay_page.data
     assert b"Replay a defense to the named discovered attack" in replay_page.data
     review_evidence(material_db, material_id, decision="revoke", actor="fixture_reviewer")
+    revoked_page = material_client.get(
+        "/recurrence", query_string=dates, base_url=origin, headers=headers
+    )
+    assert b"Replay this material defense" not in revoked_page.data
+    assert (
+        material_client.post(
+            "/unified/start", base_url=origin, headers=post_headers, data=form
+        ).status_code
+        == 400
+    )
     with pytest.raises(ValueError):
         resolve_material(material_db, MATERIAL_PRACTICE, str(material_id), LEARNER)
     review_evidence(material_db, material_id, decision="accept", actor="fixture_reviewer")
@@ -617,6 +708,16 @@ def test_source_worker_lesson_practice_and_review(tmp_path, monkeypatch):
     )
     material_db.connection.commit()
     assert inspect_evidence(material_db, material_id)["discovery_material_currentness"] == "stale"
+    stale_page = material_client.get(
+        "/recurrence", query_string=dates, base_url=origin, headers=headers
+    )
+    assert b"Replay this material defense" not in stale_page.data
+    assert (
+        material_client.post(
+            "/unified/start", base_url=origin, headers=post_headers, data=form
+        ).status_code
+        == 400
+    )
     with pytest.raises(ValueError):
         resolve_material(material_db, MATERIAL_PRACTICE, str(material_id), LEARNER)
     unresolved_worker = process_defenses(material_db, config)
