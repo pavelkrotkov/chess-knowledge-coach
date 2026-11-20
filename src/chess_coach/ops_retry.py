@@ -7,13 +7,15 @@ from .objective_worker import process as process_objectives
 from .ops_worker import database_path
 from .pipeline_config import PipelineConfig
 from .pipeline_sync import sync_result
+from .schema_compat import configured
 
 
 def main() -> None:
     learner = os.environ.get("LICHESS_USERNAME")
     if not learner:
         raise SystemExit("LICHESS_USERNAME is required")
-    db = Database(database_path())
+    path = database_path()
+    db = Database(path, compatibility=configured(path))
     try:
         result = sync_result(
             db,

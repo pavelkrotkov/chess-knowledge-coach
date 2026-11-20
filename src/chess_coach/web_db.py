@@ -7,7 +7,9 @@ from .db import Database
 
 def database() -> Database:
     if "db" not in g:
-        g.db = Database(current_app.config["DB_PATH"])
+        g.db = Database(
+            current_app.config["DB_PATH"], compatibility=current_app.config["SCHEMA_COMPAT"]
+        )
     return g.db
 
 

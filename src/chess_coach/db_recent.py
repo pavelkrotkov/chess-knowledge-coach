@@ -34,7 +34,7 @@ from .training_schema import add_training_scheduler_config
 from .unified_session_schema import add_unified_sessions
 
 
-def upgrade_recent(connection: sqlite3.Connection, version: int) -> None:
+def upgrade_recent(connection: sqlite3.Connection, version: int, *, through=None) -> None:
     upgrades = (
         (4, add_sync_turn),
         (5, add_puzzle_sessions),
@@ -70,7 +70,7 @@ def upgrade_recent(connection: sqlite3.Connection, version: int) -> None:
         (35, add_digest_storage),
     )
     for target, apply_upgrade in upgrades:
-        if version < target:
+        if version < target and (through is None or target <= through):
             apply_upgrade(connection)
             connection.execute(f"PRAGMA user_version = {target}")
 

@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from .cli import main as cli_main
+from .schema_compat import configured
 from .web_paths import inside
 
 
@@ -20,8 +21,9 @@ def database_path() -> Path:
 
 
 def main() -> None:
-    sys.argv = ["chess-coach", "--db", str(database_path()), "process-pipeline"]
-    cli_main()
+    path = database_path()
+    sys.argv = ["chess-coach", "--db", str(path), "process-pipeline"]
+    cli_main(compatibility=configured(path))
 
 
 def _release_root() -> Path:

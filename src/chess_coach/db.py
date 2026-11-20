@@ -242,16 +242,32 @@ SCHEMA += RUN_TABLE
 
 
 class Database:
-    def __init__(self, path: str | Path):
+    def __init__(self, path: str | Path, *, compatibility: bool = False):
         self.path = Path(path)
         self.connection = sqlite3.connect(self.path)
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA foreign_keys = ON")
+        self.compat32 = False
+        if compatibility:
+            from .schema_compat import attach
+
+            try:
+                attach(self.connection, self.path)
+            except Exception:
+                self.connection.close()
+                raise
+            self.compat32 = True
 
     def initialize(self) -> None:
-        from .db_migrations import upgrade
+        if not self.compat32:
+            from .db_migrations import upgrade
 
-        upgrade(self.connection, SCHEMA)
+            upgrade(self.connection, SCHEMA)
+
+    def legacy_detector(self):
+        from .detector_input_schema import legacy
+
+        return self.compat32 or legacy(self.connection)
 
     def close(self) -> None:
         self.connection.close()

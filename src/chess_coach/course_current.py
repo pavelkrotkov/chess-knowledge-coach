@@ -5,6 +5,7 @@ import sqlite3
 from types import SimpleNamespace
 
 from .course_preview import build
+from .schema_compat import readonly
 from .study_remote import StudyError
 
 
@@ -17,6 +18,7 @@ def revalidate(path, preview, frozen):
 def build_readonly(path, preview):
     connection = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)
     connection.row_factory = sqlite3.Row
+    readonly(connection, path)
     try:
         return build(
             SimpleNamespace(connection=connection),

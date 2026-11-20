@@ -201,6 +201,34 @@ companions. Keep exclusive control of the destination directory. Compare
 representative game, provenance, review, training, and schedule records in the
 restored database. Copying only a WAL database's main file is insufficient.
 
+For a release explicitly reviewed for schema-32 compatibility, an operator may
+select CHESS_SCHEMA_COMPAT=32 for the configured service database. This mode
+does not migrate the database, enable compact storage, or replace the backup and
+separate-restore requirement above. With all five units stopped and verified
+inactive, prepare the exact installed release's private attestation using the
+existing project environment:
+
+~~~sh
+set -a
+. .runtime/config.env
+set +a
+export CHESS_SCHEMA_COMPAT=32
+release="$PWD/.runtime/releases/REVIEWED_COMMIT"
+"$release/venv/bin/python" -m chess_coach.ops_schema_compat
+~~~
+
+Here release is the absolute path of the selected sealed release under this
+project's .runtime/releases; it must match the release that will run all
+services. The bounded preflight checks the schema and inline row formats and
+writes one owner-only attestation under .runtime/planning. It refuses if the
+database changes during the scan, exceeds the deadline, has newer objects or
+compact rows, or does not match that release and database. Re-run it for a
+different release or database. Supply the explicit mode to each reviewed
+service environment; do not enable it for other databases. Opening and browser
+reads create connection-local memory views, not persistent schema objects.
+Removing the mode while still running new code on schema 32 would resume normal
+migration behavior; stop the units and return to the prior release first.
+
 Prepare and review new exact-SHA units before changing any links; require
 authorization for external links and manager updates. Keep the old release,
 units, database, and backup. If older code cannot safely read a newer schema,

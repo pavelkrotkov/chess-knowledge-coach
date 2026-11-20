@@ -6,6 +6,7 @@ import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
 
+from .schema_compat import readonly
 from .tactical_course import build
 from .tactical_course_budget import Budget
 from .tactical_course_deadline import PreviewDeadline
@@ -17,6 +18,7 @@ def prepare(root, output):
     database, output = paths(root, output)
     connection = sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=1)
     connection.row_factory = sqlite3.Row
+    readonly(connection, database)
     connection.execute("PRAGMA query_only=ON")
     try:
         db = SimpleNamespace(connection=connection)
