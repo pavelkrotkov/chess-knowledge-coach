@@ -2,6 +2,7 @@
 
 import json
 
+from .cli_unified_training import handle_start as handle_start
 from .objective_fork_avoidance_list import candidates as fork_avoidance_candidates
 from .objective_fork_defense_list import candidates as fork_defense_candidates
 from .objective_pin_list import candidates as pin_candidates
@@ -12,7 +13,6 @@ from .objective_worker import process as process_objectives
 from .pawn_practice_list import list_candidates as list_pawn_candidates
 from .unified_own_game import list_candidates
 from .unified_session_events import hint, show, submit
-from .unified_sessions import start
 
 
 def configure(sub):
@@ -44,6 +44,9 @@ def configure(sub):
     begin.add_argument("--version", required=True)
     begin.add_argument("--key", required=True)
     begin.add_argument("--goal", choices=("mate_in_one",))
+    from .cli_unified_training import configure as configure_training
+
+    configure_training(sub, begin)
     for name in ("show-unified", "move-unified", "hint-unified"):
         parser = sub.add_parser(name)
         parser.add_argument("--attempt", required=True)
@@ -52,23 +55,6 @@ def configure(sub):
             parser.add_argument("--event", required=True)
         if name == "move-unified":
             parser.add_argument("--move", required=True)
-
-
-def handle_start(db, args):
-    print(
-        json.dumps(
-            start(
-                db,
-                attempt_id=args.attempt,
-                subject=args.subject,
-                source_type=args.source,
-                version=args.version,
-                key=args.key,
-                goal=getattr(args, "goal", None),
-            ),
-            indent=2,
-        )
-    )
 
 
 def handle_show(db, args):

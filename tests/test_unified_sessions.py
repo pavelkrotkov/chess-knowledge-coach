@@ -745,7 +745,7 @@ def token(response, name):
     return match.group(1)
 
 
-def test_private_browser_starts_and_completes_direct_prompt(tmp_path, capsys):
+def test_private_browser_starts_and_completes_direct_prompt(tmp_path, capsys, monkeypatch):
     db = fixture_db(tmp_path / "coach.sqlite")
     corpus = db.connection.execute(
         "INSERT INTO puzzle_corpora(version,source,checksum,state) VALUES('ready-mate','fixture','mate-hash','staging')"
@@ -788,9 +788,173 @@ def test_private_browser_starts_and_completes_direct_prompt(tmp_path, capsys):
     assert assisted["status"] == "objective_verified" and assisted["hints_used"] == 2
     assert submit(db, "cli-mate", "learner", event_id="mate", move="c5c8") == assisted
     source = dict(subject="learner", source_type="corpus", version="ready-mate", key="ready-mate")
+    from datetime import UTC, datetime, timedelta
+
+    from chess_coach.curriculum import daily_plan
+    from chess_coach.evidence_review import review_evidence
+    from chess_coach.mastery_sources import evidence_rows
+    from chess_coach.mastery_training_context import training_context
+    from chess_coach.unified_training_complete import complete
+
+    with pytest.raises(ValueError):
+        start(db, attempt_id="unqualified-learning", training=True, **source)
+    start(db, attempt_id="learning", goal="mate_in_one", training=True, **source)
+    assert show(db, "learning", "learner")["learning"]["state"] == "in_progress"
+    with pytest.raises(ValueError, match="not terminal"):
+        complete(db, "learning", "learner")
+    learned = submit(db, "learning", "learner", event_id="answer", move="c5c8")
+    receipt = learned["learning"]
+    assert receipt["outcome"] == "success" and receipt["rating"] == "good"
+    assert submit(db, "learning", "learner", event_id="answer", move="c5c8") == learned
+    assert (
+        complete(db, "learning", "learner", event_id="answer")["evidence_id"]
+        == receipt["evidence_id"]
+    )
+    with pytest.raises(ValueError):
+        complete(db, "learning", "learner", event_id="different")
+    evidence = db.connection.execute(
+        "SELECT human_validated FROM evidence_mappings WHERE id=?", (receipt["evidence_id"],)
+    ).fetchone()
+    assert evidence[0] == 0
+    review_evidence(db, receipt["evidence_id"], decision="accept", actor="tester")
+    candidate = evidence_rows(db, "learner", "mate_in_one", "execute")[0]
+    assert training_context(db, candidate)[0]["attempt_id"] == "learning"
+    from chess_coach.mastery_checks import basic_reason
+
+    review_evidence(db, receipt["evidence_id"], decision="revoke", actor="tester")
+    assert (
+        basic_reason(db, evidence_rows(db, "learner", "mate_in_one", "execute")[0], "learner")
+        == "revoked"
+    )
+    review_evidence(db, receipt["evidence_id"], decision="accept", actor="tester")
+    db.connection.execute("BEGIN")
+    db.connection.execute("DROP TRIGGER immutable_ready_corpus_update")
+    db.connection.execute("UPDATE puzzle_corpora SET checksum='changed' WHERE version='ready-mate'")
+    assert training_context(db, candidate)[0] is None
+    stale_plan = daily_plan(
+        db,
+        subject="learner",
+        corpus_version="ready-mate",
+        as_of=datetime.now(UTC) + timedelta(days=2),
+    )
+    assert not any(item.get("unified_training") for item in stale_plan["items"])
+    with pytest.raises(ValueError):
+        complete(db, "learning", "learner")
+    db.connection.rollback()
+    plan = daily_plan(
+        db,
+        subject="learner",
+        corpus_version="ready-mate",
+        as_of=datetime.now(UTC) + timedelta(days=2),
+    )
+    assert any(
+        item.get("unified_training") and item["item_id"] == receipt["item_id"]
+        for item in plan["items"]
+    )
+    other = daily_plan(
+        db,
+        subject="other",
+        corpus_version="ready-mate",
+        as_of=datetime.now(UTC) + timedelta(days=2),
+    )
+    assert all(not item.get("unified_training") for item in other["items"])
+
+    start(
+        db,
+        attempt_id="assisted-learning",
+        goal="mate_in_one",
+        training=True,
+        item_id=receipt["item_id"],
+        **source,
+    )
+    before = db.connection.execute(
+        "SELECT due FROM training_items WHERE id=?", (receipt["item_id"],)
+    ).fetchone()[0]
+    hint(db, "assisted-learning", "learner", event_id="hint")
+    guided = submit(db, "assisted-learning", "learner", event_id="answer", move="c5c8")["learning"]
+    assert (
+        guided["assistance"] == "assisted"
+        and guided["evidence_id"] is None
+        and guided["rating"] is None
+    )
+    assert (
+        db.connection.execute(
+            "SELECT due FROM training_items WHERE id=?", (receipt["item_id"],)
+        ).fetchone()[0]
+        == before
+    )
+
+    start(
+        db,
+        attempt_id="failed-learning",
+        goal="mate_in_one",
+        training=True,
+        item_id=receipt["item_id"],
+        **source,
+    )
+    failed = submit(db, "failed-learning", "learner", event_id="answer", move="c5c4")["learning"]
+    assert failed["outcome"] == "failure" and failed["rating"] == "again"
+    start(
+        db,
+        attempt_id="pending-learning",
+        goal="mate_in_one",
+        training=True,
+        item_id=receipt["item_id"],
+        **source,
+    )
+    from chess_coach import unified_training_complete
+
+    real_review = unified_training_complete.review_item_in_transaction
+    evidence_before = db.connection.execute("SELECT COUNT(*) FROM evidence_mappings").fetchone()[0]
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            unified_training_complete,
+            "review_item_in_transaction",
+            lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("synthetic")),
+        )
+        pending = submit(db, "pending-learning", "learner", event_id="answer", move="c5c8")
+    assert pending["learning"]["state"] == "pending"
+    assert (
+        db.connection.execute("SELECT COUNT(*) FROM evidence_mappings").fetchone()[0]
+        == evidence_before
+    )
+    assert (
+        db.connection.execute(
+            "SELECT COUNT(*) FROM unified_training_completions WHERE attempt_id='pending-learning'"
+        ).fetchone()[0]
+        == 0
+    )
+    assert unified_training_complete.review_item_in_transaction is real_review
+    assert complete(db, "pending-learning", "learner")["outcome"] == "success"
     assert start(db, attempt_id="ordinary-mate", **source)["objective"] == "legal_line"
+    from chess_coach.cli_unified_practice import handle_move
+
+    args.attempt = "cli-learning"
+    args.training = True
+    handle_start(db, args)
+    assert json.loads(capsys.readouterr().out)["objective"] == "corpus_mate_in_one"
+    move_args = build_parser().parse_args(
+        [
+            "move-unified",
+            "--attempt",
+            "cli-learning",
+            "--subject",
+            "learner",
+            "--event",
+            "answer",
+            "--move",
+            "c5c8",
+        ]
+    )
+    handle_move(db, move_args)
+    assert json.loads(capsys.readouterr().out)["learning"]["rating"] == "good"
     with pytest.raises(ValueError, match="another goal"):
         start(db, attempt_id="cli-mate", **source)
+    db.connection.execute(
+        "UPDATE training_items SET due='2000-01-01T00:00:00+00:00' WHERE id=?",
+        (receipt["item_id"],),
+    )
+    db.connection.commit()
     db.close()
     app = create_app(
         db_path=tmp_path / "coach.sqlite",
@@ -819,6 +983,28 @@ def test_private_browser_starts_and_completes_direct_prompt(tmp_path, capsys):
         return client.get(
             response.headers["Location"], base_url="https://coach.invalid", headers=headers
         )
+
+    plan_page = client.get("/plan", base_url="https://coach.invalid", headers=headers)
+    assert plan_page.status_code == 200 and b"Practice" in plan_page.data
+    assert token(plan_page, "item_id") == str(receipt["item_id"])
+    due_page = follow(
+        post("/unified/start", {**goal_data, "training": "1", "item_id": str(receipt["item_id"])})
+    )
+    completed_page = follow(
+        post(
+            "/unified/move",
+            dict(
+                csrf=csrf,
+                attempt=token(due_page, "attempt"),
+                event=token(due_page, "event"),
+                move="c5c8",
+            ),
+        )
+    )
+    assert (
+        b"Evidence</a> is unreviewed" in completed_page.data
+        and b"Next review:" in completed_page.data
+    )
 
     goal_page = follow(post("/unified/start", goal_data))
     assert b"Find checkmate in one move" in goal_page.data and b"c5f8" not in goal_page.data

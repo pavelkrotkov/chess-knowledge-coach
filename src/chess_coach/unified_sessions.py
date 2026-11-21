@@ -11,7 +11,9 @@ from .unified_source_current import require_current, snapshot_hash
 from .unified_sources import resolve_source
 
 
-def start(db, *, attempt_id, subject, source_type, version, key, goal=None):
+def start(
+    db, *, attempt_id, subject, source_type, version, key, goal=None, training=False, item_id=None
+):
     validate_goal(source_type, goal)
     if not all(
         isinstance(v, str) and 0 < len(v) <= 256
@@ -39,6 +41,9 @@ def start(db, *, attempt_id, subject, source_type, version, key, goal=None):
         else:
             _create(db, attempt_id, subject, source_type, version, key, goal=goal)
         row = session_row(db, attempt_id, subject)
+        from .unified_training_enroll import enroll_if_requested
+
+        enroll_if_requested(db, row, training=training, item_id=item_id, created=not old, goal=goal)
         result = view(row)
         db.connection.commit()
         return result
