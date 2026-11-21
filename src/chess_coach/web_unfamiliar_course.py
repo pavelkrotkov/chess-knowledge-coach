@@ -9,6 +9,7 @@ from .tactical_course_deadline import PreviewDeadline
 from .web_board import board_rows
 from .web_db import database
 from .web_opening_study import selection as _selection
+from .web_tactical_exposure import record
 from .web_unfamiliar_download import download as download_pgn
 
 
@@ -47,9 +48,14 @@ def show():
         version=course["version"],
         **(selection or {}),
     )
-    return render_template(
+    page = render_template(
         "opening_unfamiliar_course.html",
         course=course,
+        exposure_unavailable=database().compat32,
         download_url=download,
         study=study,
     )
+
+    if course["chapters"]:
+        record(course["version"], list(enumerate(course["chapters"])), "served")
+    return page

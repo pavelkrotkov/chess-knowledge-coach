@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Opening experiment — Chess coach{% endblock %}
 {% block content %}
+{% if exposure_unavailable %}<p>Delivery tracking is unavailable in compatibility mode; held-out qualification is unavailable.</p>{% endif %}
 <h2>Opening experiment</h2>
 <p>You play {{ decision.color }}. Replay the played branch. From the starting position, choose {{ choice.san }}. After {{ experiment.alternative.san[1] }}, find your continuation before revealing the worked line.</p>
 <p><a href="{{ url_for('repertoire_views.opening_decision', game_id=decision.game_id, position_id=decision.position_id) }}">View the exact source decision</a> · <a href="{{ url_for('opening_profiles.show', game_id=decision.game_id, position_id=decision.position_id, alternative=choice.uci) }}">View public branch structures for these moves</a> · <a href="{{ url_for('opening_experiments.course', game_id=decision.game_id, position_id=decision.position_id, move=choice.uci) }}">Preview an opening revision course</a> · <a href="{{ download_url }}">Download private PGN</a></p>

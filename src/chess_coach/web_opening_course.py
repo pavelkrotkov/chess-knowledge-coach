@@ -9,6 +9,7 @@ from .tactical_course_budget import PreviewUnavailable
 from .tactical_course_deadline import DeadlineConflict, PreviewDeadline
 from .web_board import board_rows
 from .web_db import database
+from .web_tactical_exposure import record
 
 
 def _study(course, game_id, position_id, move):
@@ -52,7 +53,7 @@ def show(game_id, position_id, move):
         if request.args.get("version") != course["version"]:
             abort(409)
         document = "\n\n".join(chapter["pgn"] for chapter in course["chapters"]) + "\n"
-        return Response(
+        response = Response(
             document,
             mimetype="application/x-chess-pgn",
             headers={
@@ -60,6 +61,8 @@ def show(game_id, position_id, move):
                 "Cache-Control": "private, no-store",
             },
         )
+        record(course["version"], list(enumerate(course["chapters"])), "download")
+        return response
     download = url_for(
         "opening_experiments.course",
         game_id=game_id,
@@ -69,10 +72,14 @@ def show(game_id, position_id, move):
         version=course["version"],
     )
     study = _study(course, game_id, position_id, move)
-    return render_template(
+    page = render_template(
         "opening_revision_course.html",
         course=course,
+        exposure_unavailable=database().compat32,
         study=study,
         download_url=download,
         board=board_rows(course["decision"]["fen"], course["decision"]["color"]),
     )
+
+    record(course["version"], list(enumerate(course["chapters"])), "served")
+    return page

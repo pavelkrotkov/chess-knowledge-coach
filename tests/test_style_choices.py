@@ -1763,6 +1763,7 @@ def _opening_fit_route(monkeypatch):
                 patch.setattr(module, "_identity", lambda *_: identity)
             patch.setattr(web, "database", lambda: owned)
             patch.setattr(course_web, "database", lambda: owned)
+            patch.setattr("chess_coach.web_tactical_exposure.database", lambda: owned)
             app = create_app(
                 db_path=":memory:",
                 subject="learner",
@@ -1777,6 +1778,17 @@ def _opening_fit_route(monkeypatch):
             url = "/repertoire/unfamiliar?choices=1"
             version = course_preview(owned, "/synthetic", "learner")["version"]
             before = (owned.connection.total_changes, public.total_changes)
+            protected = (
+                "unified_sessions",
+                "puzzle_sessions",
+                "evidence_mappings",
+                "training_items",
+                "training_attempts",
+            )
+            snapshots = {
+                table: [tuple(row) for row in owned.connection.execute(f"SELECT * FROM {table}")]
+                for table in protected
+            }
             page = client.get(url, base_url="https://coach.invalid", headers=headers)
             text = page.get_data(as_text=True)
             assert page.status_code == 200 and text.count("Learning opportunity fit") == 1
@@ -1792,7 +1804,20 @@ def _opening_fit_route(monkeypatch):
             )
             assert selected.status_code == 200 and b"Play White" in selected.data
             assert course_preview(owned, "/synthetic", "learner")["version"] == version
-            assert (owned.connection.total_changes, public.total_changes) == before
+            assert owned.connection.total_changes > before[0] and public.total_changes == before[1]
+            recorded = owned.connection.execute(
+                "SELECT prompt_key FROM tactical_exposures WHERE subject=? AND kind='served' LIMIT 1",
+                ("learner",),
+            ).fetchone()
+            assert recorded is not None
+            from chess_coach.tactical_exposure_check import check as exposure_check
+
+            assert exposure_check(owned, "learner", recorded[0]) == "provided"
+            assert exposure_check(owned, "other", recorded[0]) == "not_recorded"
+            assert {
+                table: [tuple(row) for row in owned.connection.execute(f"SELECT * FROM {table}")]
+                for table in protected
+            } == snapshots
 
             # A cooperative expiry during actual PGN replay leaves the choices
             # available and lets the final source guard complete.
