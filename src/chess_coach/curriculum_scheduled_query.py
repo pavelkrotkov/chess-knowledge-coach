@@ -6,9 +6,23 @@ def scheduled_rows(db, after, limit):
     source = (
         "source_type='puzzle'" if db.compat32 else "source_type IN ('puzzle','unified_corpus_m1')"
     )
-    return db.connection.execute(
-        f"""SELECT id,source_type,source_ref,last_review FROM training_items INDEXED BY {index}
+    rows = list(
+        db.connection.execute(
+            f"""SELECT id,source_type,source_ref,last_review FROM training_items INDEXED BY {index}
             WHERE id>? AND {source} AND skill='mate_in_one' AND operation='execute'
             ORDER BY id LIMIT ?""",
-        (after, limit + 1),
-    ).fetchall()
+            (after, limit + 1),
+        ).fetchall()
+    )
+    if db.compat32:
+        return rows
+    rows.extend(
+        db.connection.execute(
+            """SELECT id,source_type,source_ref,last_review FROM training_items
+        INDEXED BY idx_curriculum_capture_scheduled WHERE id>?
+        AND source_type='unified_owned_capture' AND skill='hanging_piece'
+        AND operation='execute' ORDER BY id LIMIT ?""",
+            (after, limit + 1),
+        ).fetchall()
+    )
+    return sorted(rows, key=lambda row: row["id"])[: limit + 1]

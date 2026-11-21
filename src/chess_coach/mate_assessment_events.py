@@ -5,6 +5,7 @@ import json
 from .mate_assessment_event_steps import check_event
 from .mate_assessment_outcome import outcome
 from .objective_events import MAX_EVENTS
+from .unified_training_owned_capture import enrolled
 
 
 def _event_rows(db, attempt):
@@ -28,6 +29,7 @@ def replay(db, original):
         "reveals": 0,
         "illegal": 0,
         "feedback": None,
+        "queue_first": enrolled(db, original),
     }
     for event in _event_rows(db, row["attempt_id"]):
         check_event(event, row, state, lines)

@@ -15,7 +15,13 @@ def _hint(event, response, state):
 
 
 def _move(event, response, row, state, lines):
-    result = apply_move(row, lines, state["candidates"], event["submitted_move"])
+    result = apply_move(
+        row,
+        lines,
+        state["candidates"],
+        event["submitted_move"],
+        queue_first=state["queue_first"],
+    )
     if any(
         result.get(key) != response.get(key)
         for key in ("feedback", "status", "fen", "opponent_move")

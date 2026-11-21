@@ -15,7 +15,9 @@ def select(
             {
                 **candidate,
                 "reason": _reason(candidate, summary),
-                "evidence_ref": "mate_in_one" if summary["supporting_evidence_ids"] else None,
+                "evidence_ref": "mate_in_one"
+                if candidate["skill"] == "mate_in_one" and summary["supporting_evidence_ids"]
+                else None,
             }
         )
     return selected, seen
@@ -23,7 +25,7 @@ def select(
 
 def _reason(candidate: dict, summary: dict) -> str:
     if candidate["kind"] == "due":
-        return "Scheduled puzzle review is due."
+        return "Scheduled review is due."
     if summary["state"] == "supported_weakness":
         return "Verified practice targets a supported mate-in-one weakness."
     if summary["state"] == "cold_start":

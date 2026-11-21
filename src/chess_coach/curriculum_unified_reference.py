@@ -1,10 +1,12 @@
 """Resolve owner-bound, currently certified unified mate review items."""
 
 from .curriculum_candidates import verified_candidate
+from .curriculum_capture_reference import candidate as capture_candidate
 from .curriculum_unified_identity import identity
 from .unified_corpus_mate import GOAL, apply
 from .unified_source_current import snapshot_hash
 from .unified_sources import resolve_source
+from .unified_training_owned_capture import SOURCE as CAPTURE_SOURCE
 
 
 def candidate(db, row, subject_hash):
@@ -15,6 +17,8 @@ def candidate(db, row, subject_hash):
         from .curriculum_reference import referenced_candidate
 
         return True, referenced_candidate(db, ref)
+    if row["source_type"] == CAPTURE_SOURCE:
+        return True, capture_candidate(db, row, ref)
     record = db.connection.execute(
         """SELECT p.*,c.version,c.checksum FROM puzzles p
         JOIN puzzle_corpora c ON c.id=p.corpus_id

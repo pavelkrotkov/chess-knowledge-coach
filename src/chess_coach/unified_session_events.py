@@ -31,10 +31,10 @@ def show(db, attempt_id, subject):
         return _show_pawn(db, attempt_id, subject)
     require_current(db, row)
     result = display(db, row)
-    if row["source_type"] == "corpus":
-        from .unified_training_view import status
+    if row["source_type"] in {"corpus", "own-game"}:
+        from .unified_training_view import for_show
 
-        result["learning"] = status(db, attempt_id)
+        for_show(db, row, result)
     return result
 
 

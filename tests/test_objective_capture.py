@@ -11,7 +11,7 @@ from chess_coach.objective_capture_contract import GAIN_VERSION, TARGET_VERSION
 from chess_coach.objective_capture_judge import judge
 from chess_coach.objective_status import inspect
 from chess_coach.objective_worker import process
-from chess_coach.unified_session_events import show, submit
+from chess_coach.unified_session_events import hint, show, submit
 from chess_coach.unified_sessions import start
 from tests.test_material_pipeline import LEARNER, make_game
 
@@ -62,26 +62,7 @@ def test_owned_session_immutable_retry_and_stale_review(tmp_path, monkeypatch, v
     assert db.connection.execute("SELECT COUNT(*) FROM mastery_events").fetchone()[0] == before
     assert show(db, "one", LEARNER)["verification"]["status"] == outcome["status"]
     if version == TARGET_VERSION:
-        with pytest.raises(ValueError, match="qualified mate training is unavailable"):
-            start(
-                db,
-                attempt_id="closed-enrollment",
-                subject=LEARNER,
-                source_type="own-game",
-                version=version,
-                key=str(evidence),
-                training=True,
-            )
-        assert (
-            db.connection.execute(
-                "SELECT 1 FROM unified_sessions WHERE attempt_id='closed-enrollment'"
-            ).fetchone()
-            is None
-        )
-        from chess_coach.training import create_training_item
-        from chess_coach.unified_session_state import now, session_row
-        from chess_coach.unified_training_item import source_ref
-        from chess_coach.unified_training_owned_capture import SOURCE
+        from chess_coach.unified_session_state import session_row
 
         for attempt in ("legacy-exemplar", "enrolled-exemplar"):
             start(
@@ -91,27 +72,176 @@ def test_owned_session_immutable_retry_and_stale_review(tmp_path, monkeypatch, v
                 source_type="own-game",
                 version=version,
                 key=str(evidence),
+                training=attempt == "enrolled-exemplar",
             )
         enrolled = session_row(db, "enrolled-exemplar", LEARNER)
         exemplar = json.loads(enrolled["lines_json"])[0][0]
-        item_id = create_training_item(
-            db,
-            source_type=SOURCE,
-            source_ref=source_ref(LEARNER, version, str(evidence), enrolled["snapshot_hash"]),
-            skill="hanging_piece",
-            operation="execute",
-        )
-        db.connection.execute(
-            "INSERT INTO unified_training_enrollments VALUES(?,?,?,?)",
-            ("enrolled-exemplar", item_id, LEARNER, now()),
-        )
-        db.connection.commit()
         legacy = submit(db, "legacy-exemplar", LEARNER, event_id="answer", move=exemplar)
         assert legacy["feedback"] == "objective_verified"
         queued = submit(db, "enrolled-exemplar", LEARNER, event_id="answer", move=exemplar)
         assert queued["feedback"] == "needs_verification"
         assert process(db, LEARNER)["outcomes"] == {"correct": 1}
         assert inspect(db, LEARNER, "enrolled-exemplar", "answer")["status"] == "correct"
+        learning = show(db, "enrolled-exemplar", LEARNER)["learning"]
+        assert learning["outcome"] == "success"
+        assert learning["rating"] == "good"
+        assert learning["evidence_id"] is not None
+        from datetime import UTC, datetime, timedelta
+
+        from chess_coach.curriculum import daily_plan
+        from chess_coach.mastery_sources import evidence_rows
+        from chess_coach.mastery_training_context import training_context
+        from chess_coach.unified_training_complete import complete
+
+        assert complete(db, "enrolled-exemplar", LEARNER, event_id="answer") == {
+            key: value for key, value in learning.items() if key != "state"
+        }
+        candidate = next(
+            row
+            for row in evidence_rows(db, LEARNER, "hanging_piece", "execute")
+            if row["id"] == learning["evidence_id"]
+        )
+        assert training_context(db, candidate)[0]["attempt_id"] == "enrolled-exemplar"
+        from chess_coach.mastery_checks import basic_reason
+
+        assert basic_reason(db, candidate, LEARNER) == "unreviewed_or_invalid_review"
+        review_evidence(db, learning["evidence_id"], decision="accept", actor="fixture_reviewer")
+        candidate = next(
+            row
+            for row in evidence_rows(db, LEARNER, "hanging_piece", "execute")
+            if row["id"] == learning["evidence_id"]
+        )
+        assert basic_reason(db, candidate, LEARNER) is None
+        plan = daily_plan(
+            db,
+            subject=LEARNER,
+            corpus_version="fixture-v1",
+            as_of=datetime.now(UTC) + timedelta(days=2),
+        )
+        due = next(item for item in plan["items"] if item.get("item_id") == learning["item_id"])
+        assert due["source_type"] == "own-game" and due["source_key"] == str(evidence)
+        start(
+            db,
+            attempt_id="due-again",
+            subject=LEARNER,
+            source_type=due["source_type"],
+            version=due["source_version"],
+            key=due["source_key"],
+            training=True,
+            item_id=due["item_id"],
+        )
+        assert show(db, "due-again", LEARNER)["learning"]["item_id"] == learning["item_id"]
+        old_due = learning["due"]
+        hint(db, "due-again", LEARNER, event_id="hint")
+        submit(db, "due-again", LEARNER, event_id="answer", move=exemplar)
+        process(db, LEARNER)
+        assisted = show(db, "due-again", LEARNER)["learning"]
+        assert assisted["assistance"] == "assisted"
+        assert assisted["evidence_id"] is None and assisted["rating"] is None
+        assert assisted["due"] == old_due
+        start(
+            db,
+            attempt_id="miss",
+            subject=LEARNER,
+            source_type="own-game",
+            version=version,
+            key=str(evidence),
+            training=True,
+            item_id=learning["item_id"],
+        )
+        submit(db, "miss", LEARNER, event_id="answer", move="e1f1")
+        before_evidence = db.connection.execute(
+            "SELECT COUNT(*) FROM evidence_mappings"
+        ).fetchone()[0]
+        with monkeypatch.context() as patch:
+
+            def fail_review(*args, **kwargs):
+                raise ValueError("synthetic scheduling failure")
+
+            patch.setattr(
+                "chess_coach.unified_capture_completion.review_item_in_transaction", fail_review
+            )
+            process(db, LEARNER)
+        assert (
+            db.connection.execute("SELECT COUNT(*) FROM evidence_mappings").fetchone()[0]
+            == before_evidence
+        )
+        assert show(db, "miss", LEARNER)["learning"]["state"] == "pending"
+        missed = complete(db, "miss", LEARNER)
+        assert missed["outcome"] == "failure" and missed["rating"] == "again"
+        assert complete(db, "miss", LEARNER) == missed
+        start(
+            db,
+            attempt_id="older",
+            subject=LEARNER,
+            source_type="own-game",
+            version=version,
+            key=str(evidence),
+            training=True,
+            item_id=learning["item_id"],
+        )
+        submit(db, "older", LEARNER, event_id="answer", move="e1f1")
+        with monkeypatch.context() as patch:
+            patch.setattr(
+                "chess_coach.unified_capture_completion.review_item_in_transaction", fail_review
+            )
+            process(db, LEARNER)
+        start(
+            db,
+            attempt_id="newer",
+            subject=LEARNER,
+            source_type="own-game",
+            version=version,
+            key=str(evidence),
+            training=True,
+            item_id=learning["item_id"],
+        )
+        submit(db, "newer", LEARNER, event_id="answer", move=exemplar)
+        process(db, LEARNER)
+        assert show(db, "newer", LEARNER)["learning"]["rating"] == "good"
+        assert show(db, "older", LEARNER)["learning"]["state"] == "superseded"
+        before_evidence = db.connection.execute(
+            "SELECT COUNT(*) FROM evidence_mappings"
+        ).fetchone()[0]
+        with pytest.raises(ValueError, match="precede"):
+            complete(db, "older", LEARNER)
+        assert (
+            db.connection.execute("SELECT COUNT(*) FROM evidence_mappings").fetchone()[0]
+            == before_evidence
+        )
+        start(
+            db,
+            attempt_id="unknown",
+            subject=LEARNER,
+            source_type="own-game",
+            version=version,
+            key=str(evidence),
+            training=True,
+            item_id=learning["item_id"],
+        )
+        submit(db, "unknown", LEARNER, event_id="answer", move=exemplar)
+        from chess_coach.objective_verify import unresolved
+
+        process(
+            db, LEARNER, verifier=lambda db, request, clock, seconds: unresolved(request, "timeout")
+        )
+        assert show(db, "unknown", LEARNER)["learning"]["state"] == "unresolved"
+        with pytest.raises(ValueError):
+            complete(db, "unknown", LEARNER)
+        from chess_coach.mate_assessment_events import replay
+
+        event_before = db.connection.execute(
+            "SELECT response_json FROM unified_session_events WHERE attempt_id=? AND event_id=?",
+            ("enrolled-exemplar", "answer"),
+        ).fetchone()[0]
+        assert replay(db, session_row(db, "enrolled-exemplar", LEARNER))["outcome"] == "unresolved"
+        assert (
+            db.connection.execute(
+                "SELECT response_json FROM unified_session_events WHERE attempt_id=? AND event_id=?",
+                ("enrolled-exemplar", "answer"),
+            ).fetchone()[0]
+            == event_before
+        )
         assert submit(db, "enrolled-exemplar", LEARNER, event_id="answer", move=exemplar) == queued
     review_evidence(db, evidence, decision="reject", actor="fixture_reviewer")
     with pytest.raises(ValueError):
@@ -166,6 +296,7 @@ def test_browser_and_cli_resume_show_the_bound_objective(tmp_path, monkeypatch, 
             "source_type": "own-game",
             "version": TARGET_VERSION,
             "key": str(evidence),
+            "training": "1",
         },
     )
     assert post.status_code == 303
@@ -191,11 +322,40 @@ def test_browser_and_cli_resume_show_the_bound_objective(tmp_path, monkeypatch, 
 
     db = Database(path)
     assert process(db, LEARNER)["outcomes"] == {"incorrect": 1}
+    item_id = db.connection.execute(
+        "SELECT item_id FROM unified_training_enrollments ORDER BY rowid DESC LIMIT 1"
+    ).fetchone()[0]
+    db.connection.execute(
+        "UPDATE training_items SET due='2000-01-01T00:00:00+00:00' WHERE id=?", (item_id,)
+    )
+    db.connection.commit()
     db.close()
     resumed = client.get(
         move.headers["Location"], base_url="https://coach.invalid", headers=headers
     )
     assert b"This move did not capture the named target" in resumed.data
+    assert b"Learning result: failure" in resumed.data and b"unreviewed" in resumed.data
+    plan = client.get("/plan", base_url="https://coach.invalid", headers=headers)
+    assert plan.status_code == 200 and b"Capture the named target." in plan.data
+    assert (f'name="item_id" value="{item_id}"').encode() in plan.data
+    again = client.post(
+        "/unified/start",
+        base_url="https://coach.invalid",
+        headers=headers | {"Origin": "https://coach.invalid"},
+        data={
+            "csrf": token(plan, "csrf"),
+            "source_type": "own-game",
+            "version": TARGET_VERSION,
+            "key": str(evidence),
+            "training": "1",
+            "item_id": str(item_id),
+        },
+    )
+    assert again.status_code == 303
+    again_page = client.get(
+        again.headers["Location"], base_url="https://coach.invalid", headers=headers
+    )
+    assert b"Capture the piece on d4" in again_page.data
 
 
 @pytest.mark.parametrize("mode", ["correct", "assisted", "incorrect", "unresolved", "tampered"])

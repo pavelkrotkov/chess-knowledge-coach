@@ -26,11 +26,11 @@ def is_source(row):
     )
 
 
-def enrolled(db, row):
-    if db.compat32 or row["next_index"] != 0 or not is_source(row):
-        return False
+def binding(db, row):
+    if db.compat32 or not is_source(row):
+        return None
     item = db.connection.execute(
-        """SELECT e.subject,i.source_type,i.source_ref,i.skill,i.operation
+        """SELECT e.subject,i.source_type,i.source_ref,i.skill,i.operation,e.item_id
         FROM unified_training_enrollments e JOIN training_items i ON i.id=e.item_id
         WHERE e.attempt_id=?""",
         (row["attempt_id"],),
@@ -38,10 +38,16 @@ def enrolled(db, row):
     expected = source_ref(
         row["subject"], row["source_version"], row["source_key"], row["snapshot_hash"]
     )
-    return item is not None and tuple(item) == (
+    if item is None or tuple(item)[:5] != (
         normalize_identity(row["subject"]),
         SOURCE,
         expected,
         "hanging_piece",
         "execute",
-    )
+    ):
+        return None
+    return item
+
+
+def enrolled(db, row):
+    return row["next_index"] == 0 and binding(db, row) is not None

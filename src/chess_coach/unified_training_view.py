@@ -50,3 +50,13 @@ def finish(db, row, attempt_id, subject, event_id, result):
     with suppress(ValueError, sqlite3.Error, RuntimeError, OverflowError):
         complete(db, attempt_id, subject, event_id=event_id)
     return {**result, "learning": status(db, attempt_id)}
+
+
+def for_show(db, row, result):
+    learning = status(db, row["attempt_id"])
+    if row["source_type"] == "corpus" or learning is not None:
+        result["learning"] = learning
+    if learning and learning["state"] == "completed":
+        result["source_key"] = row["source_key"]
+    if learning and result.get("verification", {}).get("status") == "unresolved":
+        learning["state"] = "unresolved"

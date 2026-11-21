@@ -141,6 +141,8 @@ def test_private_access_and_csrf(setup, tmp_path, monkeypatch):
     for name in TABLES:
         destination.execute(f"DROP TABLE {name}")
     destination.execute("DROP INDEX IF EXISTS idx_engine_outputs_position_id")
+    destination.execute("DROP INDEX IF EXISTS idx_curriculum_capture_due")
+    destination.execute("DROP INDEX IF EXISTS idx_curriculum_capture_scheduled")
     destination.execute("DROP INDEX IF EXISTS idx_curriculum_unified_due")
     destination.execute("DROP INDEX IF EXISTS idx_curriculum_unified_scheduled")
     destination.execute("DROP TRIGGER IF EXISTS unified_completed_training_attempt_no_update")
@@ -183,6 +185,7 @@ def test_private_access_and_csrf(setup, tmp_path, monkeypatch):
         preflight.setattr(db_recent, "add_engine_output_position_index", newer_migration)
         preflight.setattr(db_recent, "add_unified_training", newer_migration)
         preflight.setattr(db_recent, "add_tactical_exposure", newer_migration)
+        preflight.setattr(db_recent, "add_capture_indexes", newer_migration)
         attest(legacy, read)
     read.close()
     compat_app = create_app(
@@ -194,6 +197,10 @@ def test_private_access_and_csrf(setup, tmp_path, monkeypatch):
         origin=ORIGIN,
         compatibility=True,
     )
+    capture_page = compat_app.test_client().get(
+        "/library?family=capture", base_url=ORIGIN, headers=HEADERS
+    )
+    assert capture_page.status_code == 200
     page = compat_app.test_client().get(
         f"/evidence/{evidence_id}", base_url=ORIGIN, headers=HEADERS
     )

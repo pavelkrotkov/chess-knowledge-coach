@@ -5,8 +5,8 @@
 <strong>{{ item.objective }}</strong> - {{ item.kind }}. {{ item.reason }}{% if item.due %} Due: {{ item.due }}.{% endif %}<form method="post" action="{{ url_for('unified_practice.begin') if item.unified_training else url_for('practice.start') }}">
 <input type="hidden" name="csrf" value="{{ csrf }}">
 <input type="hidden" name="cursor" value="{{ request.args.get('cursor', '') }}">
-<input type="hidden" name="version" value="{{ item.corpus_version }}">
-{% if item.unified_training %}<input type="hidden" name="source_type" value="corpus"><input type="hidden" name="key" value="{{ item.puzzle_id }}"><input type="hidden" name="goal" value="mate_in_one"><input type="hidden" name="training" value="1"><input type="hidden" name="item_id" value="{{ item.item_id }}">{% endif %}
+<input type="hidden" name="version" value="{{ item.source_version if item.source_type == 'own-game' else item.corpus_version }}">
+{% if item.unified_training %}<input type="hidden" name="source_type" value="{{ item.source_type if item.source_type == 'own-game' else 'corpus' }}"><input type="hidden" name="key" value="{{ item.source_key if item.source_type == 'own-game' else item.puzzle_id }}">{% if item.source_type != 'own-game' %}<input type="hidden" name="goal" value="mate_in_one">{% endif %}<input type="hidden" name="training" value="1"><input type="hidden" name="item_id" value="{{ item.item_id }}">{% endif %}
 <input type="hidden" name="puzzle_id" value="{{ item.puzzle_id }}">
 <button>Start practice</button>
 </form>
