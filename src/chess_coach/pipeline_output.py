@@ -51,16 +51,18 @@ def tactical_output_hash(connection: sqlite3.Connection, game_id: int) -> str:
     facts = [
         row[0]
         for row in connection.execute(
-            """SELECT d.id FROM detector_runs d JOIN positions p ON p.id=d.position_id
-        WHERE p.game_id=? AND d.producer="mate-in-one" AND d.status="active" ORDER BY d.id""",
+            """SELECT d.id FROM detector_runs d
+        WHERE d.position_id IN (SELECT id FROM positions WHERE game_id=?)
+        AND d.producer="mate-in-one" AND d.status="active" ORDER BY d.id""",
             (game_id,),
         )
     ]
     mappings = [
         row[0]
         for row in connection.execute(
-            """SELECT m.id FROM mapping_runs m JOIN positions p ON p.id=m.position_id
-        WHERE p.game_id=? AND m.producer="mate-in-one-mapper" AND m.status="active" ORDER BY m.id""",
+            """SELECT m.id FROM mapping_runs m
+        WHERE m.position_id IN (SELECT id FROM positions WHERE game_id=?)
+        AND m.producer="mate-in-one-mapper" AND m.status="active" ORDER BY m.id""",
             (game_id,),
         )
     ]
