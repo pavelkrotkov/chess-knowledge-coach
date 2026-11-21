@@ -231,7 +231,7 @@ def test_merge_preserves_decision_provenance(monkeypatch, tmp_path):
         def interrupted(*_args):
             raise RuntimeError("synthetic interruption")
 
-        patch.setattr(history, "_compact", interrupted)
+        patch.setattr(history, "after_swap", interrupted)
         with pytest.raises(RuntimeError, match="synthetic interruption"):
             history.convert(source.connection, tmp_path)
     assert [
@@ -318,6 +318,71 @@ def test_merge_preserves_decision_provenance(monkeypatch, tmp_path):
     source.connection.commit()
     with pytest.raises(ValueError, match="provenance view unavailable"):
         merge_analysis_outputs(target, source)
+
+    # Repeated settings span many SQLite pages and several keyset batches.
+    large_path = tmp_path / "repeated.sqlite"
+    large = Database(large_path)
+    large.initialize()
+    ingest_pgn(large, PGN)
+    ids = [-(1 << 63), -7, 0, *range(1, 126), (1 << 63) - 1]
+    rows = [
+        (
+            run_id,
+            1,
+            "synthetic",
+            "1",
+            json.dumps(
+                {
+                    "engine": "Stockfish",
+                    "options": {"Hash": 64, "Threads": 1},
+                    "search": {"nodes": 100000, "multipv": 3},
+                    "metadata": "x" * 1024,
+                    "variant": index % 2,
+                }
+            ),
+            "net",
+            "{}",
+        )
+        for index, run_id in enumerate(ids)
+    ]
+    large.connection.executemany(
+        """INSERT INTO analysis_runs
+        (id,game_id,engine,engine_version,config_json,nnue,compatibility_json)
+        VALUES(?,?,?,?,?,?,?)""",
+        rows,
+    )
+    large.connection.commit()
+    original = [
+        tuple(row)
+        for row in large.connection.execute("SELECT * FROM analysis_runs_read ORDER BY id")
+    ]
+    sql = """SELECT sum(pgsize) FROM dbstat WHERE name IN
+        ('analysis_runs','analysis_run_provenance','analysis_provenance',
+         'sqlite_autoindex_analysis_provenance_1')"""
+    used_before = large.connection.execute(sql).fetchone()[0]
+    page_size = large.connection.execute("PRAGMA page_size").fetchone()[0]
+    free_before = large.connection.execute("PRAGMA freelist_count").fetchone()[0] * page_size
+    physical_before = large_path.stat().st_size
+    result = history.convert(large.connection, tmp_path)
+    used_after = large.connection.execute(sql).fetchone()[0]
+    assert result["all_runs_linked"] and result["converted_rows"] == len(ids)
+    assert large.connection.execute("SELECT COUNT(*) FROM analysis_provenance").fetchone()[0] == 2
+    assert [
+        tuple(row)
+        for row in large.connection.execute("SELECT * FROM analysis_runs_read ORDER BY id")
+    ] == original
+    assert used_after < used_before
+    assert result["reusable_bytes_after"] > free_before
+    assert result["physical_file_bytes_after"] == large_path.stat().st_size
+    print(
+        "Synthetic pages:",
+        used_before,
+        used_after,
+        free_before,
+        result["reusable_bytes_after"],
+        physical_before,
+        result["physical_file_bytes_after"],
+    )
 
 
 @pytest.mark.skipif(not Path("/usr/games/stockfish").is_file(), reason="Stockfish not installed")

@@ -279,7 +279,7 @@ To estimate a future analysis-history compaction without changing the database,
 use the read-only planner against a project-contained file:
 
 ~~~sh
-"$release/venv/bin/python" -m chess_coach.cli plan-analysis-history SOURCE --project-root "$PWD"
+"$release" -I -B -m chess_coach.cli plan-analysis-history SOURCE --project-root "$PWD"
 ~~~
 
 The report measures only the analysis table and its indexes and samples at most

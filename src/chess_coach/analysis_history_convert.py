@@ -3,7 +3,7 @@
 import sqlite3
 from pathlib import Path
 
-from .analysis_history_assert import after_compaction, after_swap
+from .analysis_history_assert import after_compaction, after_swap, schema
 from .analysis_history_compact import compact as _compact
 from .analysis_history_guard import check_storage, progress
 from .analysis_history_links import links
@@ -15,32 +15,24 @@ from .recovery_deadline import Deadline
 from .recovery_fidelity import MAX_RECORD_BYTES
 
 
-def _schema(connection):
-    return list(
-        connection.execute(
-            """SELECT type,name,tbl_name,sql FROM sqlite_schema
-        WHERE NOT (type='table' AND name='analysis_runs') ORDER BY type,name"""
-        )
-    )
-
-
 def _perform(connection, source, root, deadline):
     report = inspect(connection, source, root, deadline)
     if report["status"] != "fits":
         raise ValueError("conversion capacity not confirmed")
     connection.set_progress_handler(progress(source, root, report, deadline), 1000)
-    before_schema = _schema(connection)
+    before_schema = schema(connection)
     before_runs = resolved(connection, deadline)
     before_dependents = dependents(connection, deadline)
     before_links = links(connection, deadline)
-    swap(connection)
-    after_swap(connection, deadline, before_schema, before_dependents)
     count, added_links = _compact(connection, deadline)
-    after_compaction(
+    compacted_dependents = after_compaction(
         connection, deadline, before_runs, before_dependents, before_links, count, added_links
     )
+    swap(connection)
+    after_swap(connection, deadline, before_schema, compacted_dependents, before_runs)
     check_storage(source, root, report, deadline)
     report["converted_rows"] = count
+    report["all_runs_linked"] = True
     report["reusable_bytes_after"] = (
         connection.execute("PRAGMA freelist_count").fetchone()[0]
         * connection.execute("PRAGMA page_size").fetchone()[0]
