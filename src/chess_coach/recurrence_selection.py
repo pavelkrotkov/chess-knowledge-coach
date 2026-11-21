@@ -27,7 +27,7 @@ def consider(
     period = _period(row, excluded, begin, finish, previous)
     if period is None:
         return None
-    game = source(db, learner, row, sources, cache, excluded)
+    game = source(db, learner, row, sources, cache, excluded, _history=_history)
     if game is None:
         return None
     item, reason = candidate(db, row, game, parts, _history=_history)
