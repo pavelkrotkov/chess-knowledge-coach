@@ -994,6 +994,50 @@ def test_private_browser_starts_and_completes_direct_prompt(tmp_path, capsys, mo
     )
     assert show(db, "older-pending", "learner")["learning"]["state"] == "superseded"
     assert start(db, attempt_id="ordinary-mate", **source)["objective"] == "legal_line"
+    unlisted = submit(db, "ordinary-mate", "learner", event_id="unlisted", move="c5c4")
+    assert unlisted["feedback"] == unlisted["status"] == "ungraded"
+    assert show(db, "ordinary-mate", "learner")["status"] == "ungraded"
+    assert submit(db, "ordinary-mate", "learner", event_id="unlisted", move="c5c4") == unlisted
+    assert (
+        db.connection.execute(
+            "SELECT COUNT(*) FROM objective_requests WHERE attempt_id=?", ("ordinary-mate",)
+        ).fetchone()[0]
+        == 0
+    )
+    from chess_coach.unified_session_state import recent
+
+    assert (
+        next(item for item in recent(db, "learner") if item["attempt_id"] == "ordinary-mate")[
+            "status"
+        ]
+        == "ungraded"
+    )
+    # Preserve an older accepted response even though its current presentation is corrected.
+    from chess_coach.unified_session_branch import move_state
+    from chess_coach.unified_session_state import view as session_view
+
+    start(db, attempt_id="old-corpus-response", **source)
+
+    def old_view(row):
+        view = session_view(row)
+        view["status"] = row["status"]
+        view.pop("public_outcome", None)
+        view.pop("source_key", None)
+        return view
+
+    with monkeypatch.context() as patch:
+        patch.setattr("chess_coach.unified_session_apply.view", old_view)
+        patch.setattr(
+            "chess_coach.unified_session_legal_move._unmatched",
+            lambda row, board, index, candidates: move_state(
+                board, "needs_verification", "needs_verification", index, candidates
+            ),
+        )
+        old_response = submit(db, "old-corpus-response", "learner", event_id="m", move="c5c4")
+    assert old_response["status"] == "needs_verification"
+    assert show(db, "old-corpus-response", "learner")["status"] == "ungraded"
+    assert submit(db, "old-corpus-response", "learner", event_id="m", move="c5c4") == old_response
+
     from chess_coach.cli_unified_practice import handle_move
 
     args.attempt = "cli-learning"
@@ -1054,6 +1098,38 @@ def test_private_browser_starts_and_completes_direct_prompt(tmp_path, capsys, mo
         return client.get(
             response.headers["Location"], base_url="https://coach.invalid", headers=headers
         )
+
+    corpus_page = follow(
+        post("/unified/start", {k: v for k, v in goal_data.items() if k != "goal"})
+    )
+    corpus_attempt = token(corpus_page, "attempt")
+    corpus_page = follow(
+        post(
+            "/unified/move",
+            dict(csrf=csrf, attempt=corpus_attempt, event=token(corpus_page, "event"), move="c5c4"),
+        )
+    )
+    assert (
+        b"Status: Ungraded" in corpus_page.data
+        and b"no verification was queued" in corpus_page.data
+    )
+    assert token(corpus_page, "source_type") == "corpus"
+    again = follow(
+        post(
+            "/unified/start",
+            dict(
+                csrf=csrf,
+                source_type=token(corpus_page, "source_type"),
+                version=token(corpus_page, "version"),
+                key=token(corpus_page, "key"),
+            ),
+        )
+    )
+    assert token(again, "attempt") != corpus_attempt and b"Status: In progress" in again.data
+    assert (
+        b"Ungraded"
+        in client.get("/library", base_url="https://coach.invalid", headers=headers).data
+    )
 
     plan_page = client.get("/plan", base_url="https://coach.invalid", headers=headers)
     assert plan_page.status_code == 200 and b"Practice" in plan_page.data
@@ -1193,6 +1269,10 @@ def test_private_browser_starts_and_completes_direct_prompt(tmp_path, capsys, mo
     db.connection.execute("UPDATE puzzle_corpora SET checksum='changed' WHERE version='ready-mate'")
     db.connection.commit()
     with pytest.raises(ValueError, match="stale"):
+        show(db, "ordinary-mate", "learner")
+    with pytest.raises(ValueError, match="stale"):
+        submit(db, "ordinary-mate", "learner", event_id="unlisted", move="c5c4")
+    with pytest.raises(ValueError, match="stale"):
         show(db, "cli-mate", "learner")
     with pytest.raises(ValueError, match="stale"):
         submit(db, "cli-mate", "learner", event_id="mate", move="c5c8")
@@ -1202,7 +1282,17 @@ def test_private_browser_starts_and_completes_direct_prompt(tmp_path, capsys, mo
         ).fetchone()[0]
         == 0
     )
+    db.connection.execute(
+        "UPDATE puzzle_corpora SET state=? WHERE version=?", ("failed", "ready-mate")
+    )
+    db.connection.commit()
     db.close()
+    assert (
+        post(
+            "/unified/start", {**{k: v for k, v in goal_data.items() if k != "goal"}, "csrf": csrf}
+        ).status_code
+        == 400
+    )
 
 
 def test_black_orientation_and_subject_bound_idempotency(tmp_path):

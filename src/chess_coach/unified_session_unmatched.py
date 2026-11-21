@@ -3,6 +3,7 @@
 import json
 
 from .related_mate import FILTER_VERSION, VERSION
+from .unified_corpus_rehearsal import supplied_corpus
 from .unified_public_outcome import direct
 from .unified_session_branch import move_state
 
@@ -46,5 +47,5 @@ def unmatched(row, board, index, candidates):
                 board, "objective_verified", "objective_verified", index + 1, candidates
             )
         return move_state(board, "ungraded", "needs_verification", index, candidates)
-    feedback = "ungraded" if short_assessment(row) else "needs_verification"
+    feedback = "ungraded" if short_assessment(row) or supplied_corpus(row) else "needs_verification"
     return move_state(board, feedback, "needs_verification", index, candidates)

@@ -535,6 +535,44 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
         from chess_coach.db import Database
 
         db = Database(path)
+        # Isolate the deviation to preserve the existing assessment selection.
+        copied_path = tmp_path / (color + "-rehearsal.sqlite")
+        copied = Database(copied_path)
+        db.connection.backup(copied.connection)
+        board = chess.Board(show(copied, attempt, LEARNER)["fen"])
+        lines = json.loads(
+            copied.connection.execute(
+                "SELECT lines_json FROM unified_sessions WHERE attempt_id=?", (attempt,)
+            ).fetchone()[0]
+        )
+        first_moves = {line[0] for line in lines if line}
+        alternative = next(
+            move.uci() for move in board.legal_moves if move.uci() not in first_moves
+        )
+        unlisted = submit(copied, attempt, LEARNER, event_id="unlisted", move=alternative)
+        assert unlisted["status"] == unlisted["feedback"] == "ungraded"
+        assert "source_key" not in show(copied, attempt, LEARNER)
+        assert (
+            copied.connection.execute(
+                "SELECT COUNT(*) FROM objective_requests WHERE attempt_id=?", (attempt,)
+            ).fetchone()[0]
+            == 0
+        )
+        copied.close()
+        copied_app = create_app(
+            db_path=copied_path,
+            subject=LEARNER,
+            actor="fixture",
+            corpus="test",
+            login="fixture",
+            origin="https://coach.invalid",
+        )
+        related_page = copied_app.test_client().get(
+            response.location, base_url="https://coach.invalid", headers=headers
+        )
+        assert b"no verification was queued" in related_page.data
+        assert b"Restart this exercise" not in related_page.data
+        assert b'name="key"' not in related_page.data
         assert (
             submit(db, attempt, LEARNER, event_id="move", move=moves[1])["status"]
             == "line_completed"

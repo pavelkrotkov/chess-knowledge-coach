@@ -5,6 +5,7 @@ import json
 import chess
 
 from .objective_promotion_contract import OBJECTIVES
+from .unified_corpus_rehearsal import supplied_corpus
 
 
 def direct(row):
@@ -17,6 +18,8 @@ def direct(row):
 def outcome(row):
     if row["status"] != "needs_verification" or row["objective"] in OBJECTIVES:
         return None
+    if supplied_corpus(row):
+        return "ungraded"
     if row["source_type"] != "public":
         return None
     if direct(row) and row["objective"] == "checkmate" and _mate(row["current_fen"]):

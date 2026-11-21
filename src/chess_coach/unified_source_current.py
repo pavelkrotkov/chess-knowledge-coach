@@ -7,6 +7,7 @@ from .objective_fork_defense_budget import BudgetExceeded
 from .objective_pin_prevent_budget import BudgetExceeded as PinBudgetExceeded
 from .objective_promotion_contract import OBJECTIVES as PROMOTION_OBJECTIVES
 from .unified_corpus_mate_current import require_current as require_corpus_mate
+from .unified_corpus_rehearsal import direct_corpus
 from .unified_sources import resolve_source
 
 
@@ -24,7 +25,7 @@ def require_current(db, row, *, related_cache=None, related_check=None):
         db, row, snapshot_hash, fork_check=related_check, fork_cache=related_cache
     )
     public = row["source_type"] == "public" and row["objective"] in PROMOTION_OBJECTIVES
-    if row["source_type"] != "own-game" and not public:
+    if row["source_type"] != "own-game" and not public and not direct_corpus(row):
         return
     try:
         snapshot = resolve_source(
