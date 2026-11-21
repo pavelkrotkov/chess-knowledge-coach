@@ -848,6 +848,144 @@ def _fork_prevention_coaching(tmp_path, monkeypatch):
     db.close()
 
 
+def _default_course_readiness_workflow(
+    db, learner, project, path, client, headers, csrf, offer_slot, request_file, monkeypatch
+):
+    import json
+    import sqlite3
+
+    import pytest
+
+    from chess_coach import tactical_course, tactical_course_patterns, tactical_course_worker
+    from chess_coach.tactical_course_budget import Budget, PreviewUnavailable
+    from chess_coach.tactical_course_choice import SLICE_SECONDS
+    from chess_coach.tactical_course_selection import CURRENT_PAIRS
+    from chess_coach.tactical_export import build as build_export
+
+    base = "https://coach.invalid"
+    course_url = "/coaching/tactical-course"
+    post_headers = headers | {"Origin": base}
+    old_offer = offer_slot.read_bytes()
+
+    def candidates(_db, _subject, _budget, *, pairs):
+        rows = []
+        for skill, operation in pairs:
+            deferred = (skill, operation) == ("hanging_piece", "prevent")
+            rows.append(
+                {
+                    "skill": skill,
+                    "operation": operation,
+                    "examined": None if deferred else 3,
+                    "limited": deferred,
+                    "excluded": {} if deferred else {"private-test-marker": 1},
+                    "status": "deferred: time budget" if deferred else "complete",
+                }
+            )
+        groups = (
+            [{"lesson": {"skill": "fork", "operation": "execute"}}]
+            if ("fork", "execute") in pairs
+            else []
+        )
+        return groups, rows
+
+    def enqueue_default():
+        response = client.post(
+            course_url + "/prepare",
+            data={"csrf": csrf},
+            base_url=base,
+            headers=post_headers,
+        )
+        assert response.status_code == 303
+
+    with monkeypatch.context() as patch:
+        patch.setattr(tactical_course, "candidates", candidates)
+        patch.setattr(tactical_course_patterns, "own", lambda *_args: None)
+        enqueue_default()
+        tactical_course_worker.run(db, learner, project)
+        assert offer_slot.read_bytes() == old_offer
+        saved = json.loads(request_file.read_text())
+        assert saved["state"] == "unavailable"
+        assert [(r["skill"], r["operation"]) for r in saved["coverage"]] == list(CURRENT_PAIRS)
+        assert "private-test-marker" not in json.dumps(saved)
+        page = client.get(course_url, base_url=base, headers=headers)
+        assert b"default preparation could not produce a course" in page.data
+        assert b"no qualified group in the checked sample" in page.data
+        assert b"owned source unavailable" in page.data and b"deferred" in page.data
+        assert b"historical checks within bounded samples" in page.data
+        assert b"previous course remains available" in page.data
+        selected_budget = Budget(db, slice_seconds=SLICE_SECONDS)
+        empty = tactical_course.build(
+            db, learner, "test", budget=selected_budget, selected=["fork:execute"]
+        )
+        with pytest.raises(ValueError, match="unsupported pattern count"):
+            build_export(db, learner, "test", empty, selected_budget)
+        with pytest.raises(PreviewUnavailable):
+            tactical_course.build(db, learner, "test")
+
+        saved_bytes = request_file.read_bytes()
+        forged = json.loads(saved_bytes)
+        forged["coverage"][0]["skill"] = "invalid"
+        request_file.write_text(json.dumps(forged))
+        invalid = client.get(course_url, base_url=base, headers=headers)
+        assert b"default preparation could not produce a course" not in invalid.data
+        request_file.write_bytes(saved_bytes)
+
+        original = tactical_course.readiness_selection
+
+        def changed_source(*args):
+            value = original(*args)
+            with sqlite3.connect(path) as writer:
+                writer.execute("UPDATE games SET event=event WHERE id=1")
+            return value
+
+        enqueue_default()
+        with patch.context() as stale:
+            stale.setattr(tactical_course, "readiness_selection", changed_source)
+            tactical_course_worker.run(db, learner, project)
+        assert offer_slot.read_bytes() == old_offer
+        stale_result = json.loads(request_file.read_text())
+        assert stale_result["state"] == "unavailable" and "coverage" not in stale_result
+
+        # A source commit after the JSON is staged must not publish readiness.
+        from contextlib import contextmanager
+
+        from chess_coach import tactical_course_worker_guard
+
+        real_stage = tactical_course_worker_guard.staged
+
+        @contextmanager
+        def changed_during_stage(slot, value):
+            with real_stage(slot, value) as temporary:
+                with sqlite3.connect(path) as writer:
+                    writer.execute("UPDATE games SET event=event WHERE id=1")
+                yield temporary
+
+        enqueue_default()
+        with patch.context() as staged_change:
+            staged_change.setattr(tactical_course_worker_guard, "staged", changed_during_stage)
+            tactical_course_worker.run(db, learner, project)
+        assert offer_slot.read_bytes() == old_offer
+        staged_result = json.loads(request_file.read_text())
+        assert staged_result["state"] == "unavailable" and "coverage" not in staged_result
+
+        enqueue_default()
+
+        def replaced_request(*args):
+            value = original(*args)
+            item = json.loads(request_file.read_text())
+            item["id"] = "f" * 32
+            request_file.write_text(json.dumps(item))
+            return value
+
+        with patch.context() as replaced:
+            replaced.setattr(tactical_course, "readiness_selection", replaced_request)
+            tactical_course_worker.run(db, learner, project)
+        assert offer_slot.read_bytes() == old_offer
+        superseding = json.loads(request_file.read_text())
+        assert superseding["id"] == "f" * 32 and "coverage" not in superseding
+        request_file.write_bytes(saved_bytes)
+
+
 def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, monkeypatch):
     import json
     import sys
@@ -1340,6 +1478,18 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
         ).data
     )
     offer_slot.write_bytes(original_offer)
+    _default_course_readiness_workflow(
+        db,
+        LEARNER,
+        project,
+        path,
+        course_client,
+        course_headers,
+        course_csrf,
+        offer_slot,
+        request_file,
+        monkeypatch,
+    )
 
     # Request only the exact offered course; an incomplete attempt retries the same file.
     from chess_coach import tactical_study_worker

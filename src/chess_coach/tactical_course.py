@@ -2,11 +2,18 @@
 
 from .course_preview import preview_hash
 from .learner_identity import normalize_identity
-from .tactical_course_budget import SLICE_SECONDS, TOTAL_SECONDS, Budget, PreviewUnavailable
+from .tactical_course_budget import (
+    SLICE_SECONDS,
+    TOTAL_SECONDS,
+    Budget,
+    NoPatterns,
+    PreviewUnavailable,
+)
 from .tactical_course_choice import SLICE_SECONDS as SELECTED_SECONDS
 from .tactical_course_choice import WORK_POLICY, check_budget, pairs
 from .tactical_course_patterns import MAX_PATTERNS, assemble
 from .tactical_course_protection import PER_BAND
+from .tactical_course_readiness import selection as readiness_selection
 from .tactical_course_selection import CURRENT_PAIRS, PAIRS, PER_PAIR, candidates
 
 LEGACY_VERSION = "local-tactical-course-v1"
@@ -44,9 +51,10 @@ def build(db, subject, corpus, *, budget=None, selected=None):
     check_budget(selected is not None, budget)
     groups, coverage = candidates(db, subject, budget, pairs=chosen)
     patterns, chapters, unavailable, omitted = assemble(
-        db, subject, corpus, groups, budget, allow_empty=selected is not None
+        db, subject, corpus, groups, budget, allow_empty=True
     )
     budget.check()
+    _check_empty(patterns, selected, coverage, unavailable, chosen)
     body = {
         "kind": version,
         "policy": policy,
@@ -71,3 +79,8 @@ def build(db, subject, corpus, *, budget=None, selected=None):
         body["selection"]["work_policy"] = WORK_POLICY
         body["selection"]["total_seconds"] = TOTAL_SECONDS
     return {"kind": version, "preview": body, "preview_sha256": preview_hash(body)}
+
+
+def _check_empty(patterns, selected, coverage, unavailable, chosen):
+    if not patterns and selected is None:
+        raise NoPatterns(readiness_selection(coverage, unavailable, chosen))
