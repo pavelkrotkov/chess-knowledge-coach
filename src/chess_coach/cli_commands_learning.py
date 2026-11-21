@@ -104,4 +104,12 @@ def handle_review_evidence(db, args):
 
 
 def handle_style_choices(db, args):
-    print(json.dumps(style_report(db, args.learner), indent=2))
+    if (args.protection_evidence is None) != (args.response is None):
+        raise ValueError("both protection evidence and response are required")
+    if args.protection_evidence is not None:
+        from .style_guard_inspect import inspect
+
+        report = inspect(db, args.learner, args.protection_evidence, args.response)
+    else:
+        report = style_report(db, args.learner)
+    print(json.dumps(report, indent=2))

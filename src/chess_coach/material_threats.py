@@ -3,7 +3,7 @@
 from .material_threat_actions import collect
 
 
-def threats(board, *, hypothetical, check=None):
+def threats(board, *, hypothetical, check=None, exclude_target=None):
     if not _valid_start(board):
         return None
     probe = board.copy(stack=False) if hypothetical else board.copy()
@@ -11,7 +11,9 @@ def threats(board, *, hypothetical, check=None):
         probe.turn = not probe.turn
     if not probe.is_valid() or probe.is_check():
         return None
-    return collect(probe) if check is None else collect(probe, check=check)
+    if check is None and exclude_target is None:
+        return collect(probe)
+    return collect(probe, check=check, exclude_target=exclude_target)
 
 
 def _valid_start(board):

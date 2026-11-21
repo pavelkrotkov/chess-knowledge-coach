@@ -19,9 +19,191 @@ from chess_coach.unified_session_events import show, submit
 from tests.test_material_pipeline import LEARNER, make_protection_game
 
 
+def _guard_inspection_workflow(tmp_path, monkeypatch, capsys):
+    import time
+
+    import chess.engine
+    import chess.pgn
+
+    from chess_coach.cli import main
+    from chess_coach.db import Database
+    from chess_coach.ingest import ingest_pgn
+    from chess_coach.objective_protection_judge import judge
+    from chess_coach.pipeline_config import PipelineConfig
+    from chess_coach.pipeline_inputs import engine_identity, game_input
+    from chess_coach.pipeline_work import run_analysis
+    from chess_coach.style_guard_exchange import assess
+    from chess_coach.style_guard_inspect import inspect
+    from tests.test_material_pipeline import Engine
+
+    initial = chess.Board("k7/8/8/5n2/3B4/8/7K/2R5 w - - 0 1")
+    for color in ("white", "black"):
+        board = initial.copy() if color == "white" else initial.mirror()
+
+        def orient(text, color=color):
+            move = chess.Move.from_uci(text)
+            if color == "black":
+                move = chess.Move(
+                    chess.square_mirror(move.from_square), chess.square_mirror(move.to_square)
+                )
+            return move.uci()
+
+        away, reply, guard, losing = map(orient, ("d4c3", "a8a7", "c1c4", "c1b1"))
+        target = chess.D4 if color == "white" else chess.D5
+        assert (
+            judge(board, board.parse_uci(guard), target, time.monotonic, time.monotonic(), 5, {})[
+                "status"
+            ]
+            == "unresolved"
+        )
+        assert (
+            judge(board, board.parse_uci(away), target, time.monotonic, time.monotonic(), 5, {})[
+                "status"
+            ]
+            == "correct"
+        )
+        game = chess.pgn.Game()
+        game.setup(board)
+        game.headers["White"] = LEARNER if color == "white" else "fixture_opponent"
+        game.headers["Black"] = LEARNER if color == "black" else "fixture_opponent"
+        game.headers["Result"] = "*"
+        game.headers["UTCDate"] = "2026.01.01"
+        game.headers["UTCTime"] = "12:00:00"
+        node = game.add_variation(board.parse_uci(away))
+        continued = board.copy()
+        continued.push_uci(away)
+        node.add_variation(continued.parse_uci(reply))
+        path = tmp_path / ("guard-" + color + ".sqlite")
+        db = Database(path)
+        db.initialize()
+        ingest_pgn(db, str(game))
+        monkeypatch.setattr(
+            chess.engine.SimpleEngine,
+            "popen_uci",
+            lambda _, away=away, reply=reply: Engine(away, reply),
+        )
+        config = PipelineConfig(learner=LEARNER, engine_path=sys.executable, nodes=100)
+        assert (
+            run_analysis(db, 1, game_input(db, 1), config, engine_identity(sys.executable))[
+                "status"
+            ]
+            == "complete"
+        )
+        evidence = process_decision(db, 1, LEARNER)["evidence_ids"][0]
+        result = inspect(db, LEARNER, evidence, guard)
+        assert result["status"] == "supported" and result["opponent_gain_max"] == 0
+        assert result["guard_witness"] == {
+            "capture": orient("f5d4"),
+            "recapture": orient("c4d4"),
+            "opponent_gain_max": 0,
+        }
+        assert result["target_captures"] == {"available": 1, "examined": 1}
+        assert result["captures"] == [
+            {
+                "capture": orient("f5d4"),
+                "opponent_gain": 0,
+                "recapture": orient("c4d4"),
+                "recapture_gain_max": 0,
+            }
+        ]
+        assert result["source"]["history_mode"] == "owned_historical"
+        assert 0 < result["coverage"]["exchange_nodes"] <= 64
+        assert result["limits"]["deadline_seconds"] == 8.0
+        alternative = inspect(db, LEARNER, evidence, away)
+        assert alternative["status"] == "supported" and alternative["guard_witness"] is None
+        assert inspect(db, LEARNER, evidence, losing)["status"] == "unknown"
+        assert inspect(db, "other-owner", evidence, guard)["status"] == "unknown"
+        with monkeypatch.context() as limited:
+            limited.setattr("chess_coach.style_guard_inspect.NODE_LIMIT", 1)
+            unfinished = inspect(db, LEARNER, evidence, guard)
+            assert unfinished["status"] == "unknown" and unfinished["reason"] == "work_limit"
+            assert unfinished["coverage"]["exchange_nodes"] <= 1
+        with monkeypatch.context() as expired:
+            expired.setattr("chess_coach.style_guard_inspect.SECONDS", 0.0)
+            assert inspect(db, LEARNER, evidence, guard)["status"] == "unknown"
+        counts = tuple(
+            db.connection.execute(
+                "SELECT (SELECT count(*) FROM evidence_mappings), (SELECT count(*) FROM training_attempts)"
+            ).fetchone()
+        )
+        db.close()
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "chess-coach",
+                "--db",
+                str(path),
+                "style-choices",
+                "--learner",
+                LEARNER,
+                "--protection-evidence",
+                str(evidence),
+                "--response",
+                guard,
+            ],
+        )
+        main()
+        cli = json.loads(capsys.readouterr().out)
+        assert (
+            cli["version"] == "protection-exchange-inspection-v1"
+            and cli["guard_witness"] == result["guard_witness"]
+        )
+        db = Database(path)
+        assert (
+            tuple(
+                db.connection.execute(
+                    "SELECT (SELECT count(*) FROM evidence_mappings), (SELECT count(*) FROM training_attempts)"
+                ).fetchone()
+            )
+            == counts
+        )
+        review_evidence(db, evidence, decision="accept", actor="fixture")
+        review_evidence(db, evidence, decision="revoke", actor="fixture")
+        assert inspect(db, LEARNER, evidence, guard)["status"] == "unknown"
+        db.close()
+
+    board = chess.Board("1k3b2/8/8/R4n2/3B4/8/8/1K6 w - - 0 1")
+    non_guard = assess(
+        board,
+        board.parse_uci("d4c5"),
+        chess.D4,
+        time.monotonic,
+        time.monotonic(),
+        5,
+        [0],
+        lambda: None,
+        lambda: None,
+    )
+    assert non_guard["status"] == "supported" and non_guard["guard_witness"] is None
+    assert non_guard["captures"][0]["recapture"] == "a5c5"
+
+    for fen, move in (
+        ("k7/8/8/5n2/2RB4/8/7K/8 w - - 0 1", "c4c3"),
+        ("k7/8/8/5n2/3B4/8/4K3/2R5 w - - 0 1", "c1c4"),
+    ):
+        board = chess.Board(fen)
+        assert (
+            assess(
+                board,
+                board.parse_uci(move),
+                chess.D4,
+                time.monotonic,
+                time.monotonic(),
+                5,
+                [0],
+                lambda: None,
+                lambda: None,
+            )["status"]
+            == "unknown"
+        )
+
+
 def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
     from chess_coach.cli import main
     from chess_coach.web import create_app
+
+    _guard_inspection_workflow(tmp_path, monkeypatch, capsys)
 
     # A threatened piece may itself capture the attacker.
     fen = "4k3/8/8/2b5/3Q4/8/P7/7K w - - 0 1"

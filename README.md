@@ -751,6 +751,14 @@ reached later. It is unknown when timestamps or sample history are incomplete.
 The two-period comparison groups games by start time; overlapping games mean it
 does not establish decision-time order.
 
+For one current owned protection source, the opt-in command
+`chess-coach --db PATH style-choices --learner NAME --protection-evidence ID --response UCI`
+reports a separately versioned, bounded same-square exchange certificate or unknown.
+A guard witness requires a newly legal recapture by the moved piece. The result
+covers legal target captures within the reported node, ply and time limits; quiet
+alternatives, compensation and later play remain outside its scope. It does not
+change the profile, existing grading, evidence or scheduling.
+
 Method `style-choices-v2` compares exact centipawn scores within 50 cp at
 minimum depth four and replays four legal PV plies per choice. It uses conventional
 1/3/3/5/9 material units and requires a one-pawn material difference opposed by
