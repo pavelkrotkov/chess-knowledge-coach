@@ -51,6 +51,9 @@ def pinned_raw(source, deadline):
     descriptor = os.open(source, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
     # Closing any other descriptor for this inode before SQLite closes can release
     # POSIX locks. Keep the raw descriptor open outside the SQLite context.
-    with os.fdopen(descriptor, "rb") as raw, pinned(source, deadline) as reader:
+    with (
+        os.fdopen(descriptor, "rb") as raw,
+        pinned(source, deadline, require_memory=True) as reader,
+    ):
         metadata = _metadata(reader, raw, source)
         yield reader, raw, metadata

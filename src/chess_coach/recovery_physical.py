@@ -19,7 +19,7 @@ def _file_state(path):
     return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
 
 
-def physical(source, root, target, deadline):
+def physical(source, root, target, deadline, *, working_bytes=None):
     """Estimate capacity using only stable file metadata, with no SQLite open."""
     wal = Path(str(source) + "-wal")
     before = (_file_state(source), _file_state(wal))
@@ -35,7 +35,7 @@ def physical(source, root, target, deadline):
     changed = before != after
     # Compare the smaller estimate when the source moved during measurement.
     size = min(_size(before), _size(after)) if after[0] else _size(before)
-    working = max(MIN_WORKING, size // 10)
+    working = _working(size, working_bytes)
     required = size + working + RESERVE + SOURCE_ALLOWANCE
     fits = usage + required <= PROJECT_LIMIT and free >= required
     deadline.check()
@@ -64,3 +64,11 @@ def _status(changed, present, fits):
     if not fits:
         return "insufficient"
     return "unavailable" if changed else "fits"
+
+
+def _working(size, requested):
+    if requested is None:
+        return max(MIN_WORKING, size // 10)
+    if not isinstance(requested, int) or requested < MIN_WORKING:
+        raise ValueError("recovery working allowance unavailable")
+    return requested

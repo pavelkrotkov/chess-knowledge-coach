@@ -10,6 +10,7 @@ from .recovery_gzip_capacity import restore_plan
 from .recovery_gzip_files import sync, temporary
 from .recovery_gzip_guard import Guard
 from .recovery_gzip_manifest import load, verify_metadata
+from .recovery_gzip_memory import configure, probe
 from .recovery_gzip_restore import restore
 from .recovery_paths import recovery_paths
 from .recovery_verify import require_standalone, verify_database
@@ -19,6 +20,7 @@ def restore_backup(archive, destination, *, project_root, check_only=False):
     root = Path(project_root).resolve(strict=True)
     archive, target = recovery_paths(archive, destination, root)
     manifest = load(archive)
+    probe()
     deadline = Deadline()
     report = restore_plan(manifest["raw_bytes"], root, target, deadline)
     if check_only:
@@ -39,6 +41,7 @@ def _write(archive, target, root, manifest, report, deadline):
         with closing(sqlite3.connect(staged.as_uri() + "?mode=ro", uri=True, timeout=5)) as reader:
             reader.set_progress_handler(deadline.progress, 1000)
             reader.execute("PRAGMA query_only=ON")
+            configure(reader)
             verify_metadata(reader, manifest)
             verify_database(reader)
         guard.check(0, force=True)

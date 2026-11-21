@@ -60,12 +60,40 @@ def _compressed_recovery_checks(tmp_path, source, monkeypatch):
         recovery_gzip_capacity,
         recovery_gzip_execute,
         recovery_gzip_files,
+        recovery_gzip_memory,
+        recovery_gzip_single,
+        recovery_gzip_snapshot,
         recovery_physical,
     )
     from chess_coach.recovery_gzip import compressed_recovery
     from chess_coach.recovery_gzip_restore import restore
     from chess_coach.recovery_gzip_single import restore_backup
 
+    checks = []
+    for module, name, label in (
+        (recovery_gzip_snapshot, "verify_database", "source"),
+        (recovery_gzip_execute, "verify_database", "composite"),
+        (recovery_gzip_single, "verify_database", "standalone"),
+        (recovery_gzip_single, "verify_metadata", "metadata"),
+    ):
+        original = getattr(module, name)
+
+        def checked(connection, *args, _original=original, _label=label):
+            assert connection.execute("PRAGMA temp_store").fetchone()[0] == 2
+            checks.append(_label)
+            return _original(connection, *args)
+
+        monkeypatch.setattr(module, name, checked)
+    original_fidelity = recovery_gzip_execute.verify_fidelity
+
+    def fidelity_memory(reader, writer, deadline):
+        assert reader.execute("PRAGMA temp_store").fetchone()[0] == 2
+        assert writer.execute("PRAGMA temp_store").fetchone()[0] == 2
+        checks.append("fidelity")
+        return original_fidelity(reader, writer, deadline)
+
+    monkeypatch.setattr(recovery_gzip_execute, "verify_fidelity", fidelity_memory)
+    _gzip_resource_checks(tmp_path, source, monkeypatch)
     archive = tmp_path / "backup.sqlite.gz"
     restored = tmp_path / "gzip-restored.sqlite"
     manifest_path = tmp_path / "backup.sqlite.gz.manifest.json"
@@ -115,7 +143,27 @@ def _compressed_recovery_checks(tmp_path, source, monkeypatch):
     assert not recovered.exists()
     assert restore_backup(retained, recovered, project_root=tmp_path) == {"status": "verified"}
     assert hashlib.sha256(recovered.read_bytes()).hexdigest() == manifest["raw_sha256"]
+    assert {"source", "composite", "standalone", "metadata", "fidelity"} <= set(checks)
     assert retained.read_bytes() == archive.read_bytes()
+    unsupported = isolated / "unsupported.sqlite"
+
+    def force_unsupported(_connection):
+        raise ValueError("SQLite memory-only temporary storage unavailable")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(recovery_gzip_memory, "compile_mode", force_unsupported)
+        with pytest.raises(ValueError, match="memory-only"):
+            restore_backup(retained, unsupported, project_root=tmp_path)
+        with pytest.raises(ValueError, match="memory-only"):
+            compressed_recovery(
+                source,
+                isolated / "unsupported.gz",
+                isolated / "unsupported-copy.sqlite",
+                project_root=tmp_path,
+            )
+    assert not unsupported.exists() and not (isolated / "unsupported.gz").exists()
+    assert not (isolated / "unsupported-copy.sqlite").exists()
+    assert not list(tmp_path.glob(".chess-recovery-*"))
     with pytest.raises(FileExistsError):
         restore_backup(retained, recovered, project_root=tmp_path)
     bad_manifest = {**manifest, "version": "invalid"}
@@ -221,6 +269,101 @@ def _compressed_recovery_checks(tmp_path, source, monkeypatch):
         compressed_recovery(
             wal, tmp_path / "wal.gz", tmp_path / "wal-restored", project_root=tmp_path
         )
+
+
+def _gzip_resource_checks(tmp_path, source, monkeypatch):
+    from types import SimpleNamespace
+
+    import pytest
+
+    from chess_coach import recovery_gzip_capacity, recovery_gzip_memory, recovery_physical
+    from chess_coach.recovery_capacity import MIN_WORKING, RESERVE
+    from chess_coach.recovery_deadline import Deadline
+    from chess_coach.recovery_gzip import compressed_recovery
+
+    class FileOnlyBuild:
+        def execute(self, command):
+            assert command == "PRAGMA compile_options"
+            return [("TEMP_STORE=0",)]
+
+    with pytest.raises(ValueError, match="memory-only"):
+        recovery_gzip_memory.configure(FileOnlyBuild())
+
+    class Result(list):
+        def fetchone(self):
+            return self[0]
+
+    class RefusesMemory:
+        def execute(self, command):
+            if command == "PRAGMA compile_options":
+                return [("TEMP_STORE=1",)]
+            if command == "PRAGMA temp_store":
+                return Result([(1,)])
+            assert command == "PRAGMA temp_store=MEMORY"
+            return Result([])
+
+    class AlreadyMemory:
+        def execute(self, command):
+            if command == "PRAGMA compile_options":
+                return [("TEMP_STORE=1",)]
+            assert command == "PRAGMA temp_store"
+            return Result([(2,)])
+
+    with pytest.raises(ValueError, match="memory-only"):
+        recovery_gzip_memory.configure(RefusesMemory())
+    recovery_gzip_memory.configure(AlreadyMemory())
+    invalid = tmp_path / "invalid-sqlite"
+    invalid.write_bytes(b"not a SQLite database")
+    with pytest.raises(ValueError, match="valid SQLite"):
+        compressed_recovery(
+            invalid,
+            tmp_path / "invalid.gz",
+            tmp_path / "invalid-copy",
+            project_root=tmp_path,
+            check_only=True,
+        )
+    size = 2 * 1024**3
+    state = (1, 2, size, 3, 4)
+    limit = size + MIN_WORKING + RESERVE + recovery_gzip_capacity.MANIFEST_ALLOWANCE + 4096
+    target = tmp_path / "boundary.gz"
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            recovery_physical, "_file_state", lambda path: state if path == source else None
+        )
+        patch.setattr(recovery_physical, "allocated", lambda *_: 0)
+        patch.setattr(recovery_gzip_capacity, "allocated", lambda *_: 0)
+        patch.setattr(recovery_physical, "PROJECT_LIMIT", limit)
+        patch.setattr(recovery_gzip_capacity, "PROJECT_LIMIT", limit)
+        patch.setattr("shutil.disk_usage", lambda *_: SimpleNamespace(free=limit * 2))
+        native = recovery_physical.physical(source, tmp_path, target, Deadline())
+        fixed = recovery_physical.physical(
+            source, tmp_path, target, Deadline(), working_bytes=MIN_WORKING
+        )
+        assert native["working_bytes"] == size // 10 and native["status"] == "insufficient"
+        assert fixed["working_bytes"] == MIN_WORKING and fixed["status"] == "fits"
+        report = compressed_recovery(
+            source, target, tmp_path / "boundary.sqlite", project_root=tmp_path, check_only=True
+        )
+        assert report["working_bytes"] == MIN_WORKING and report["status"] == "conditional"
+        assert report["archive_limit_bytes"] == 4096 and not target.exists()
+        patch.setattr(recovery_gzip_capacity, "snapshot", lambda _: (size // 4096, 4096))
+        pinned = recovery_gzip_capacity.pinned_plan(None, tmp_path, target, Deadline())
+        later = recovery_gzip_capacity.restore_plan(size, tmp_path, target, Deadline())
+        assert pinned["working_bytes"] == later["working_bytes"] == MIN_WORKING
+        assert pinned["archive_limit_bytes"] == later["archive_limit_bytes"] == 4096
+        calls = []
+
+        def changed(path):
+            if path != source:
+                return None
+            calls.append(True)
+            return state if len(calls) == 1 else (1, 2, size, 4, 4)
+
+        patch.setattr(recovery_physical, "_file_state", changed)
+        report = compressed_recovery(
+            source, target, tmp_path / "boundary.sqlite", project_root=tmp_path, check_only=True
+        )
+        assert report["status"] == "unavailable" and not target.exists()
 
 
 def test_committed_wal_writer_during_real_backup_keeps_pinned_snapshot(tmp_path, monkeypatch):
