@@ -16,6 +16,7 @@ from .pipeline_lock import pipeline_lock
 from .pipeline_run import run_pipeline as _run_pipeline
 from .protection_game_worker import after_pipeline as protection_after_pipeline
 from .short_mate_trend_scan import after_pipeline
+from .skewer_sample_worker import after_pipeline as skewer_after_pipeline
 from .study_worker import after_pipeline as study_after_pipeline
 
 
@@ -53,6 +54,7 @@ def process_pipeline(
             fork_miss_after_pipeline(db, config.learner, started)
             study_after_pipeline(db, config.learner, started)
             exposure_after_pipeline(db, config.learner, started)
+            skewer_after_pipeline(db, config.learner, started)
         return result
 
 

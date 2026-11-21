@@ -13,22 +13,22 @@ from .short_mate_trend_turns import _check_prefix, _reason
 TURN_SECONDS = 0.5
 
 
-def _result(context, board, blocked, deadline):
+def _result(context, board, blocked, deadline, classifier):
     position = context["position_id"]
     if position in blocked:
         return [position, "unknown", "source_unavailable"]
     local = min(time.monotonic() + TURN_SECONDS, deadline)
-    outcome, reason = classify(board, context["played_move"], local, time.monotonic)
+    outcome, reason = (classifier or classify)(board, context["played_move"], local, time.monotonic)
     reason = _reason(reason, local, deadline)
     return None if reason == "cycle_deadline" else [position, outcome, reason]
 
 
-def _advance(item, turns, blocked, deadline, quota):
+def _advance(item, turns, blocked, deadline, quota, classifier):
     used = 0
     while used < quota and len(item["results"]) < len(turns):
         if time.monotonic() + TURN_SECONDS >= deadline:
             break
-        result = _result(*turns[len(item["results"])], blocked, deadline)
+        result = _result(*turns[len(item["results"])], blocked, deadline, classifier)
         if result is None:
             break
         item["results"].append(result)
@@ -36,7 +36,7 @@ def _advance(item, turns, blocked, deadline, quota):
     return used
 
 
-def inspect(db, learner, item, deadline, quota):
+def inspect(db, learner, item, deadline, quota, *, classifier=None):
     analysis = analysis_binding(db, item["id"])
     review, blocked = review_binding(db, item["id"], learner)
     stamps = (analysis, review)
@@ -51,7 +51,7 @@ def inspect(db, learner, item, deadline, quota):
     if previous != stamps:
         item["results"] = []
     _check_prefix(item, turns)
-    used = _advance(item, turns, blocked, deadline, quota)
+    used = _advance(item, turns, blocked, deadline, quota, classifier)
     # Recheck after proof so a changing source cannot bless new outcomes.
     recheck(db, learner, source)
     if (analysis_binding(db, item["id"]), review_binding(db, item["id"], learner)[0]) != stamps:

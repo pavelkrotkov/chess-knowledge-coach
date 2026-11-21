@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Royal skewers in your games — Chess coach{% endblock %}
+{% block content %}
+<h2>Royal skewers in your games</h2>
+<p>A bounded background scan checks learner decisions in up to 40 independent analyzed games. A proved example checks the king and wins the named rear piece against every covered legal reply. An alternative is not a verdict on the recorded move.</p>
+{% if not report %}
+<p>The scan is pending or its sources have changed. The worker will refresh it.</p>
+{% else %}
+{% if not report.selection_complete %}<p>Game selection is still in progress; coverage is partial.</p>{% endif %}
+{% for label, sample in (("More recent", report.newer), ("Earlier", report.earlier)) %}
+<section><h3>{{ label }} games</h3>
+<p>{{ sample.games }} games; {{ sample.examined }} learner turns examined, {{ sample.pending }} pending, and {{ sample.unresolved }} unresolved. {{ sample.withheld }} games withheld after a source change.</p>
+<p>Proved examples: {% for item in sample.examples %}<a href="{{ url_for('short_mate_game_views.skewer', position_id=item.position_id) }}">{{ "Recorded skewer" if item.played else "Alternative skewer" }}</a>{% if not loop.last %}; {% endif %}{% else %}none available{% endfor %}.</p>
+</section>
+{% endfor %}
+<p>Unavailable games: {{ report.unavailable }}; duplicate games: {{ report.duplicates }}. Unresolved decisions include unsupported history, limits and cases without a supported proof; they do not establish that no opportunity existed.</p>
+{% endif %}
+<p><a href="{{ url_for('views.plan') }}">Back to the daily plan</a></p>
+{% endblock %}

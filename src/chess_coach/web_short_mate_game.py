@@ -11,6 +11,7 @@ from .protection_game_report import report as protection_trend_report
 from .short_mate_game_report import report
 from .short_mate_trend_report import report as trend_report
 from .skewer_game_report import report as skewer_report
+from .skewer_sample_report import report as skewer_samples_report
 from .web_board import board_rows
 from .web_db import database
 
@@ -85,3 +86,8 @@ def skewer(position_id):
             "error.html", message="This owned analyzed decision is unavailable."
         ), 400
     return render_template("skewer_game.html", result=result, board=board_rows(result["fen"]))
+
+
+@short_mate_game_views.get("/game-samples/skewers")
+def skewer_samples():
+    return _samples(skewer_samples_report, "skewer_samples.html")
