@@ -17,6 +17,8 @@ from tests.test_unified_sessions import token
 
 @pytest.mark.parametrize("played,outcome", [("f6g5", "failure"), ("b5c7", "success")])
 def test_unlisted_owned_fork_is_proved_for_success_and_miss(tmp_path, monkeypatch, played, outcome):
+    if played == "f6g5":
+        _daily_fork_workflow(tmp_path, monkeypatch)
     path = tmp_path / "fork.sqlite"
     db, evidence = owned_fork(path, monkeypatch, played)
     for _ in range(10):
@@ -1050,3 +1052,246 @@ def test_certified_pawn_fork_miss_control():
         )
         is None
     )
+
+
+def _daily_fork_workflow(tmp_path, monkeypatch):
+    import io
+    import sys
+    from datetime import UTC, datetime, timedelta
+
+    import chess.pgn
+
+    from chess_coach.curriculum import daily_plan
+    from chess_coach.fork_detector import process_decision
+    from chess_coach.ingest import ingest_pgn
+    from chess_coach.pipeline_config import PipelineConfig
+    from chess_coach.pipeline_inputs import engine_identity, game_input
+    from chess_coach.pipeline_work import run_analysis
+
+    path = tmp_path / "fork-plan.sqlite"
+    db, _ = owned_fork(path, monkeypatch, "f6g5")
+    source = db.connection.execute("SELECT pgn FROM games WHERE id=1").fetchone()[0]
+    config = PipelineConfig(
+        learner=SUBJECT, engine_path=sys.executable, nodes=100, deep_enabled=False
+    )
+    for index in (2, 3):
+        game = chess.pgn.read_game(io.StringIO(source))
+        game.headers["UTCDate"] = f"2026.01.0{index}"
+        game.headers["UTCTime"] = "12:00:00"
+        ingest_pgn(db, str(game))
+        assert (
+            run_analysis(db, index, game_input(db, index), config, engine_identity(sys.executable))[
+                "status"
+            ]
+            == "complete"
+        )
+        position = db.connection.execute(
+            "SELECT id FROM positions WHERE game_id=? ORDER BY ply LIMIT 1", (index,)
+        ).fetchone()[0]
+        process_decision(db, position, SUBJECT)
+    # A second synthetic learner has a distinct qualified capture need; the
+    # fork learner also has capture evidence so one plan can exercise the mix.
+    from chess_coach.material_detector import process_decision as material_decision
+    from tests.test_material_pipeline import LEARNER, make_game
+
+    seed = make_game(tmp_path / "capture-plan-seed.sqlite", monkeypatch)
+    material_pgn = seed.connection.execute("SELECT pgn FROM games WHERE id=1").fetchone()[0]
+    seed.close()
+    for owner in (SUBJECT, "capture_learner"):
+        for day in ("01", "02"):
+            game = chess.pgn.read_game(io.StringIO(material_pgn.replace(LEARNER, owner)))
+            game.headers["UTCDate"] = f"2026.01.{day}"
+            ingest_pgn(db, str(game))
+            game_id = db.connection.execute("SELECT max(id) FROM games").fetchone()[0]
+            material_config = PipelineConfig(learner=owner, engine_path=sys.executable, nodes=100)
+            assert (
+                run_analysis(
+                    db,
+                    game_id,
+                    game_input(db, game_id),
+                    material_config,
+                    engine_identity(sys.executable),
+                )["status"]
+                == "complete"
+            )
+            position = db.connection.execute(
+                "SELECT id FROM positions WHERE game_id=? ORDER BY ply LIMIT 1", (game_id,)
+            ).fetchone()[0]
+            material_decision(db, position, owner)
+    from chess_coach.training import create_training_item, review_item
+
+    corpus = db.connection.execute(
+        "INSERT INTO puzzle_corpora(version,source,checksum,state) "
+        "VALUES('fixture','fixture','checksum','staging')"
+    ).lastrowid
+    for name in ("one", "two"):
+        db.connection.execute(
+            """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,
+            rating_deviation,themes_json,objective)
+            VALUES(?,?,'7k/1p6/6K1/2Q5/8/8/8/8 b - - 17 14',
+            'fixture','b7b6 c5f8',1200,80,'[]','unknown')""",
+            (name, corpus),
+        )
+    db.connection.execute("UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus,))
+    db.connection.commit()
+    now = datetime.now(UTC)
+    for name in ("one", "two"):
+        item = create_training_item(
+            db,
+            source_type="puzzle",
+            source_ref=json.dumps(["fixture", name]),
+            skill="mate_in_one",
+            operation="execute",
+        )
+        review_item(db, item, "good", reviewed_at=now)
+    before = db.connection.total_changes
+    plan = daily_plan(db, subject=SUBJECT, corpus_version="fixture", as_of=now)
+    other = daily_plan(db, subject="capture_learner", corpus_version="fixture", as_of=now)
+    assert db.connection.total_changes == before
+    assert any(item["skill"] == "hanging_piece" for item in plan["items"])
+    assert any(item["skill"] == "hanging_piece" for item in other["items"])
+    assert all(item["skill"] != "fork" for item in other["items"])
+    fork = next(item for item in plan["items"] if item["skill"] == "fork")
+    assert fork["source_version"] == MISS_VERSION and fork["independent_games"] == 2
+    assert fork["source_review"] == "unreviewed" and "Provisional" in fork["reason"]
+
+    # A partially checked fork conflict keeps its exact binding and position.
+    from types import SimpleNamespace
+
+    import chess_coach.curriculum_capture_conflict as conflict
+    import chess_coach.curriculum_family_mix as family_mix
+    import chess_coach.fork_evidence_verify as fork_verify
+    from chess_coach.curriculum_cursor_codec import decode_cursor
+
+    fork_time = now
+    while fork_time.date().toordinal() % 3 != 1:
+        fork_time -= timedelta(days=1)
+
+    def bounded(cursor=None):
+        return daily_plan(
+            db,
+            subject=SUBJECT,
+            corpus_version="fixture",
+            as_of=fork_time,
+            limit=5,
+            scan_limit=1,
+            cursor=cursor,
+        )
+
+    pending_page = bounded()
+    assert pending_page["continuation_reason"] == "scheduled_scan_incomplete"
+    pending = decode_cursor(db, pending_page["next_cursor"])
+    assert pending["phase"] == "fork" and pending["fork_pending"] and pending["scheduled_after"]
+    from chess_coach.evidence_review import review_evidence
+
+    db.connection.execute("BEGIN")
+    review_evidence(db, fork["source_evidence_id"], decision="reject", actor="fixture")
+    with pytest.raises(ValueError, match="sources changed"):
+        bounded(pending_page["next_cursor"])
+    db.connection.rollback()
+    clock = [0.0]
+    visited = []
+
+    def expire(observer, prepared, check):
+        assert check is not None
+        visited.append(True)
+        clock[0] = 3.0
+        check()
+
+    with monkeypatch.context() as patch:
+        patch.setattr(family_mix, "time", SimpleNamespace(monotonic=lambda: clock[0]))
+        patch.setattr(fork_verify, "_observe", expire)
+        interrupted = bounded(pending_page["next_cursor"])
+    after = decode_cursor(db, interrupted["next_cursor"])
+    assert visited and interrupted["continuation_reason"] == "fork_scan_incomplete"
+    assert (after["fork_pending"], after["scheduled_after"]) == (
+        pending["fork_pending"],
+        pending["scheduled_after"],
+    )
+    resumed = bounded(interrupted["next_cursor"])
+    assert any(item["skill"] == "fork" for item in resumed["items"])
+
+    # An interrupted scheduled query has already bound the fork candidate.
+    import sqlite3
+
+    clock[0] = 0.0
+
+    def interrupted_query(*_args, **_kwargs):
+        clock[0] = 3.0
+        raise sqlite3.OperationalError("synthetic interruption")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(family_mix, "time", SimpleNamespace(monotonic=lambda: clock[0]))
+        patch.setattr(conflict, "scheduled_page", interrupted_query)
+        bound = bounded()
+    bound_state = decode_cursor(db, bound["next_cursor"])
+    assert bound["continuation_reason"] == "fork_scan_incomplete"
+    assert bound_state["phase"] == "fork" and bound_state["fork_pending"]
+    assert bounded(bound["next_cursor"])["next_cursor"]
+
+    # A deadline before any candidate is bound defers this family once and
+    # lets the next signed page check other families instead of starving them.
+    clock[0] = 0.0
+    with monkeypatch.context() as patch:
+        patch.setattr(family_mix, "time", SimpleNamespace(monotonic=lambda: clock[0]))
+        patch.setattr(fork_verify, "_observe", expire)
+        deferred = bounded()
+    assert deferred["fork_status"] == "deferred"
+    assert deferred["continuation_reason"] == "family_scan_incomplete"
+    next_state = decode_cursor(db, deferred["next_cursor"])
+    assert next_state["phase"] != "fork" and next_state["fork_pending"] is None
+    subsequent = deferred
+    for _ in range(6):
+        subsequent = bounded(subsequent["next_cursor"])
+        if subsequent["items"]:
+            break
+        assert subsequent["next_cursor"]
+    assert subsequent["items"]
+
+    app = create_app(
+        db_path=path,
+        subject=SUBJECT,
+        actor="fixture",
+        corpus="fixture",
+        login="fixture-login",
+        origin="https://coach.invalid",
+    )
+    client = app.test_client()
+    headers = {"Tailscale-User-Login": "fixture-login"}
+    page = client.get("/plan", base_url="https://coach.invalid", headers=headers)
+    assert page.status_code == 200 and b"Move the piece on b5" in page.data
+    posted = client.post(
+        "/unified/start",
+        base_url="https://coach.invalid",
+        headers=headers | {"Origin": "https://coach.invalid"},
+        data={
+            "csrf": token(page, "csrf"),
+            "source_type": "own-game",
+            "version": MISS_VERSION,
+            "key": fork["source_key"],
+            "training": "1",
+        },
+    )
+    assert posted.status_code == 303
+    attempt = posted.location.rstrip("/").rsplit("/", 1)[-1]
+    submit(db, attempt, SUBJECT, event_id="answer", move="b5d6")
+    assert process(db, SUBJECT)["outcomes"] == {"correct": 1}
+    learning = show(db, attempt, SUBJECT)["learning"]
+    assert learning["rating"] == "good" and learning["evidence_id"] is not None
+    due = daily_plan(db, subject=SUBJECT, corpus_version="fixture", as_of=now + timedelta(days=2))
+    assert any(item.get("item_id") == learning["item_id"] for item in due["items"])
+    review_evidence(db, fork["source_evidence_id"], decision="reject", actor="fixture")
+    stale = client.post(
+        "/unified/start",
+        base_url="https://coach.invalid",
+        headers=headers | {"Origin": "https://coach.invalid"},
+        data={
+            "csrf": token(page, "csrf"),
+            "source_type": "own-game",
+            "version": MISS_VERSION,
+            "key": fork["source_key"],
+            "training": "1",
+        },
+    )
+    assert stale.status_code == 400
+    db.close()

@@ -8,7 +8,11 @@ def validate_scope(state: dict) -> None:
     _bounds(state)
     if not integer(state["revision"], 0, 2**63 - 1):
         raise ValueError("invalid revision")
-    phases = {"due", "new", "capture"} if state["v"] == 2 else {"due", "new"}
+    phases = {"due", "new"}
+    if state["v"] in {2, 3}:
+        phases.add("capture")
+    if state["v"] == 3:
+        phases.add("fork")
     if state["phase"] not in phases:
         raise ValueError("invalid phase")
 

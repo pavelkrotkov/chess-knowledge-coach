@@ -50,3 +50,32 @@ def recommendation(db, subject, corpus):
         PreviewUnavailable,
     ):
         return None
+
+
+# Reuse the same finder and history while the caller owns the snapshot budget.
+def checked(db, subject, corpus, check):
+    from .coaching_quick_pair import build
+    from .coaching_quick_practice import choose
+    from .fork_plan_history import checked as checked_history
+
+    groups, limited, _ = build(db, subject, ("fork", "execute"), check)
+    actions = [choose(db, subject, group, check, source_check=True) for group in groups]
+    selected = _source({"groups": groups}, actions)
+    if selected is None:
+        return None
+    evidence = selected["source"]["evidence_id"]
+    assessment = checked_history(db, subject, corpus, evidence, check)
+    harder = _harder(db, subject, corpus, evidence, assessment, check)
+    return {**selected, "assessment": assessment, "harder": harder, "limited": limited}
+
+
+def _harder(db, subject, corpus, evidence, assessment, check):
+    if assessment["status"] != "correct":
+        return False
+    from .fork_difficulty_history import _pair
+
+    try:
+        _pair(db, subject, corpus, evidence, assessment["attempt"], check)
+        return True
+    except (ValueError, TypeError, KeyError, IndexError, AttributeError):
+        return False

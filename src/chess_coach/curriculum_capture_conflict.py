@@ -3,8 +3,8 @@
 from .curriculum_conflicts import scheduled_page
 
 
-def check_conflicts(db, state, scan, check, candidate, report):
-    state["capture_pending"] = candidate["binding"]
+def check_conflicts(db, state, scan, check, candidate, report, *, pending_key="capture_pending"):
+    state[pending_key] = candidate["binding"]
     check()
     matched, after, more, examined, unavailable = scheduled_page(
         db,
@@ -25,7 +25,7 @@ def check_conflicts(db, state, scan, check, candidate, report):
         scan["scheduled_incomplete"] = True
         return [], "deferred", "scheduled_scan_incomplete", report
     state["phase"] = "new"
-    state["capture_pending"] = None
+    state[pending_key] = None
     state["scheduled_after"] = 0
     if matched:
         return [], "already_scheduled", None, report
