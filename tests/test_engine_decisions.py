@@ -152,6 +152,7 @@ def test_merge_preserves_decision_provenance(monkeypatch, tmp_path):
     source, target = Database(tmp_path / "source.sqlite"), database()
     source.initialize()
     ingest_pgn(source, PGN)
+    source.connection.execute("PRAGMA temp_store=MEMORY")
     source.connection.execute("CREATE INDEX synthetic_analysis_engine ON analysis_runs(engine)")
     source.connection.commit()
     first = run_fake(monkeypatch, source, FakeEngine())
@@ -201,14 +202,36 @@ def test_merge_preserves_decision_provenance(monkeypatch, tmp_path):
     with pytest.raises(sqlite3.IntegrityError, match="immutable"):
         source.connection.execute("UPDATE analysis_provenance SET nnue='changed'")
     source.connection.rollback()
+    source.connection.execute("ANALYZE analysis_runs")
+    source.connection.commit()
+    # An existing link can retain inline bytes; the rebuild must budget and preserve them.
+    source.connection.execute(
+        "UPDATE analysis_runs SET config_json=? WHERE id=?", ("linked-inline" * 1024, second)
+    )
+    source.connection.commit()
     before = [
         tuple(row)
         for row in source.connection.execute("SELECT * FROM analysis_runs_read ORDER BY id")
     ]
     estimate = plan(tmp_path / "source.sqlite", tmp_path)
-    assert estimate["sample_complete"]
+    assert estimate["sample_complete"] and estimate["inventory_complete"]
+    assert estimate["inventory_rows"] == 3 and estimate["distinct_profiles"] == 1
+    assert estimate["profile_encoded_bytes"] > 0 and estimate["run_overflow_pages"] > 0
     assert estimate["sampled_rows"] == 3 and estimate["distinct_sampled_profiles"] == 1
     assert estimate["analysis_table_bytes"] > 0 and estimate["analysis_index_bytes"] > 0
+    page_size = source.connection.execute("PRAGMA page_size").fetchone()[0]
+    assert estimate["statistics_table_bytes"] >= page_size
+    assert estimate["journal_affected_pages_bound"] * page_size >= (
+        estimate["statistics_table_bytes"]
+        + estimate["analysis_table_bytes"]
+        + estimate["analysis_index_bytes"]
+    )
+    assert (
+        source.connection.execute(
+            "SELECT count(*) FROM sqlite_stat1 WHERE tbl='analysis_runs'"
+        ).fetchone()[0]
+        > 0
+    )
     before_file = (tmp_path / "source.sqlite").read_bytes()
     command = subprocess.run(
         [
@@ -226,6 +249,10 @@ def test_merge_preserves_decision_provenance(monkeypatch, tmp_path):
     )
     assert json.loads(command.stdout)["sampled_rows"] == 3
     assert (tmp_path / "source.sqlite").read_bytes() == before_file
+    source.connection.execute("PRAGMA temp_store=DEFAULT")
+    with pytest.raises(ValueError, match="memory-only temporary storage"):
+        history.convert(source.connection, tmp_path)
+    source.connection.execute("PRAGMA temp_store=MEMORY")
     with monkeypatch.context() as patch:
 
         def interrupted(*_args):
@@ -241,6 +268,18 @@ def test_merge_preserves_decision_provenance(monkeypatch, tmp_path):
     assert source.connection.execute("PRAGMA foreign_keys").fetchone()[0] == 1
     result = history.convert(source.connection, tmp_path)
     assert result["converted_rows"] == 1
+    assert (
+        source.connection.execute(
+            "SELECT config_json FROM analysis_runs WHERE id=?", (second,)
+        ).fetchone()[0]
+        == "linked-inline" * 1024
+    )
+    assert (
+        source.connection.execute(
+            "SELECT count(*) FROM sqlite_stat1 WHERE tbl='analysis_runs'"
+        ).fetchone()[0]
+        == 0
+    )
     assert source.connection.execute(
         "SELECT 1 FROM sqlite_schema WHERE type='index' AND name='synthetic_analysis_engine'"
     ).fetchone()
@@ -336,7 +375,7 @@ def test_merge_preserves_decision_provenance(monkeypatch, tmp_path):
                     "engine": "Stockfish",
                     "options": {"Hash": 64, "Threads": 1},
                     "search": {"nodes": 100000, "multipv": 3},
-                    "metadata": "x" * 1024,
+                    "metadata": "x" * (8192 if index == 0 else 1024),
                     "variant": index % 2,
                 }
             ),
@@ -363,10 +402,22 @@ def test_merge_preserves_decision_provenance(monkeypatch, tmp_path):
     page_size = large.connection.execute("PRAGMA page_size").fetchone()[0]
     free_before = large.connection.execute("PRAGMA freelist_count").fetchone()[0] * page_size
     physical_before = large_path.stat().st_size
+    complete = plan(large_path, tmp_path)
+    assert complete["inventory_complete"] and complete["inventory_rows"] == len(ids)
+    assert complete["distinct_profiles"] == 3
+    assert complete["original_run_overflow_pages"] > 0
+    with monkeypatch.context() as patch:
+        patch.setattr("chess_coach.analysis_history_inventory_scan.MAX_ROWS", 2)
+        incomplete = plan(large_path, tmp_path)
+    assert not incomplete["inventory_complete"] and incomplete["status"] == "unknown"
+    with monkeypatch.context() as patch:
+        patch.setattr("chess_coach.analysis_history_identity.digest", lambda _value: "collision")
+        collision = plan(large_path, tmp_path)
+    assert not collision["inventory_complete"] and collision["status"] == "unknown"
     result = history.convert(large.connection, tmp_path)
     used_after = large.connection.execute(sql).fetchone()[0]
     assert result["all_runs_linked"] and result["converted_rows"] == len(ids)
-    assert large.connection.execute("SELECT COUNT(*) FROM analysis_provenance").fetchone()[0] == 2
+    assert large.connection.execute("SELECT COUNT(*) FROM analysis_provenance").fetchone()[0] == 3
     assert [
         tuple(row)
         for row in large.connection.execute("SELECT * FROM analysis_runs_read ORDER BY id")
@@ -374,6 +425,24 @@ def test_merge_preserves_decision_provenance(monkeypatch, tmp_path):
     assert used_after < used_before
     assert result["reusable_bytes_after"] > free_before
     assert result["physical_file_bytes_after"] == large_path.stat().st_size
+    assert (
+        result["physical_file_bytes_after"] - physical_before
+        <= complete["physical_growth_bound_bytes"]
+    )
+    assert result["reusable_bytes_after"] >= complete["future_reusable_bytes_min"]
+    saved_view = large.connection.execute(
+        "SELECT sql FROM sqlite_schema WHERE type='view' AND name='analysis_runs_read'"
+    ).fetchone()[0]
+    large.connection.execute("DROP VIEW analysis_runs_read")
+    large.connection.execute(
+        "CREATE VIEW analysis_runs_read AS SELECT * FROM analysis_runs WHERE id<0"
+    )
+    large.connection.commit()
+    filtered = plan(large_path, tmp_path)
+    assert not filtered["supported_layout"] and filtered["status"] == "unknown"
+    large.connection.execute("DROP VIEW analysis_runs_read")
+    large.connection.execute(saved_view)
+    large.connection.commit()
     print(
         "Synthetic pages:",
         used_before,

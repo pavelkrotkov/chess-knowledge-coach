@@ -32,6 +32,14 @@ def source(connection, root):
     if not source.is_file() or not source.is_relative_to(root):
         raise ValueError("database must be a file inside the selected project")
     _supported_triggers(connection)
+    _index_temp(connection)
     if connection.execute("PRAGMA user_version").fetchone()[0] < 33:
         raise ValueError("native shared provenance schema is required")
     return source
+
+
+def _index_temp(connection):
+    if connection.execute("PRAGMA index_list(analysis_runs)").fetchone() and (
+        connection.execute("PRAGMA temp_store").fetchone()[0] != 2
+    ):
+        raise ValueError("indexed conversion requires memory-only temporary storage")
