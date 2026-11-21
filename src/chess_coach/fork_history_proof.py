@@ -3,7 +3,8 @@
 from .capture_plan_result import _move
 from .fork_assessment_miss_result import valid as valid_miss
 from .objective_events import assistance
-from .objective_fork_contract import VERIFIER
+from .objective_fork_contract import MISS_OBJECTIVE, MISS_VERIFIER, OBJECTIVE, VERIFIER
+from .objective_fork_owned_replay import valid as valid_owned_miss
 
 
 def _bound(result, request):
@@ -14,10 +15,14 @@ def _bound(result, request):
         "source_hash",
         "event_prefix_hash",
     )
+    verifier = {OBJECTIVE: VERIFIER, MISS_OBJECTIVE: MISS_VERIFIER}.get(
+        request["objective_version"]
+    )
     return (
-        isinstance(result, dict)
+        verifier is not None
+        and isinstance(result, dict)
         and all(result.get(key) == request[key] for key in keys)
-        and result.get("verifier") == VERIFIER
+        and result.get("verifier") == verifier
         and result.get("learning_eligible") is False
     )
 
@@ -28,7 +33,11 @@ def valid(result, request, events, board, move, session=None):
     if result.get("status") == "unresolved":
         return True
     return (
-        (result.get("status") == "correct" or valid_miss(result, board, move, session))
+        (
+            result.get("status") == "correct"
+            or valid_miss(result, board, move, session)
+            or valid_owned_miss(result, board, move, session)
+        )
         and result.get("assistance") == assistance(events[:-1])
         and _move(result, board, move)
     )

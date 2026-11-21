@@ -8,6 +8,8 @@ from .objective_defense_judge import VERSION as DEFENSE_VERIFIER
 from .objective_defense_source import OBJECTIVE as DEFENSE_OBJECTIVE
 from .objective_fork_avoidance_contract import OBJECTIVE as FORK_AVOIDANCE_OBJECTIVE
 from .objective_fork_avoidance_contract import VERIFIER as FORK_AVOIDANCE_VERIFIER
+from .objective_fork_contract import MISS_OBJECTIVE as FORK_MISS_OBJECTIVE
+from .objective_fork_contract import MISS_VERIFIER as FORK_MISS_VERIFIER
 from .objective_fork_contract import OBJECTIVE as FORK_OBJECTIVE
 from .objective_fork_contract import VERIFIER as FORK_VERIFIER
 from .objective_fork_defense_contract import OBJECTIVE as FORK_DEFENSE_OBJECTIVE
@@ -31,6 +33,7 @@ VERSION = "mate-one-verifier-v1"
 SECONDS = 5.0
 VERIFIERS = {
     FORK_OBJECTIVE: FORK_VERIFIER,
+    FORK_MISS_OBJECTIVE: FORK_MISS_VERIFIER,
     FORK_DEFENSE_OBJECTIVE: FORK_DEFENSE_VERIFIER,
     FORK_AVOIDANCE_OBJECTIVE: FORK_AVOIDANCE_VERIFIER,
     PIN_OBJECTIVE: PIN_VERIFIER,
@@ -48,6 +51,7 @@ VERIFIERS = {
 
 PLIES = {
     FORK_OBJECTIVE: 3,
+    FORK_MISS_OBJECTIVE: 3,
     FORK_DEFENSE_OBJECTIVE: 3,
     FORK_AVOIDANCE_OBJECTIVE: 3,
     PIN_OBJECTIVE: 3,

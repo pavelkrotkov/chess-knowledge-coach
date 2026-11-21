@@ -5,6 +5,8 @@ from .objective_fork_avoidance_contract import OBJECTIVE as AVOIDANCE_OBJECTIVE
 from .objective_fork_avoidance_contract import VERSION as AVOIDANCE_VERSION
 from .objective_fork_avoidance_contract import is_source as avoidance_source
 from .objective_fork_contract import GOAL as EXECUTE_GOAL
+from .objective_fork_contract import MISS_OBJECTIVE as EXECUTE_MISS_OBJECTIVE
+from .objective_fork_contract import MISS_VERSION as EXECUTE_MISS_VERSION
 from .objective_fork_contract import OBJECTIVE as EXECUTE_OBJECTIVE
 from .objective_fork_contract import VERSION as EXECUTE_VERSION
 from .objective_fork_contract import is_source as execute_source
@@ -15,11 +17,13 @@ from .objective_fork_defense_contract import is_source as defense_source
 
 SCOPES = {
     (EXECUTE_VERSION, EXECUTE_GOAL),
+    (EXECUTE_MISS_VERSION, EXECUTE_GOAL),
     (AVOIDANCE_VERSION, AVOIDANCE_GOAL),
     (DEFENSE_VERSION, DEFENSE_GOAL),
 }
 BINDINGS = {
     (EXECUTE_VERSION, EXECUTE_OBJECTIVE),
+    (EXECUTE_MISS_VERSION, EXECUTE_MISS_OBJECTIVE),
     (AVOIDANCE_VERSION, AVOIDANCE_OBJECTIVE),
     (DEFENSE_VERSION, DEFENSE_OBJECTIVE),
 }

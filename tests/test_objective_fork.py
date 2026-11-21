@@ -5,7 +5,7 @@ import re
 
 import pytest
 
-from chess_coach.objective_fork_contract import VERSION
+from chess_coach.objective_fork_contract import MISS_VERSION, VERSION
 from chess_coach.objective_fork_list import candidates
 from chess_coach.objective_status import inspect
 from chess_coach.objective_worker import process
@@ -44,7 +44,7 @@ def test_unlisted_owned_fork_is_proved_for_success_and_miss(tmp_path, monkeypatc
     section = library.get_data(as_text=True).split("<h2>Own-game fork execution</h2>", 1)[1]
     section = section.split("<h2>", 1)[0]
     assert f'name="key" value="{evidence}"' in section
-    assert f'name="version" value="{VERSION}"' in section
+    assert f'name="version" value="{MISS_VERSION}"' in section
     posted = client.post(
         "/unified/start",
         base_url="https://coach.invalid",
@@ -52,13 +52,15 @@ def test_unlisted_owned_fork_is_proved_for_success_and_miss(tmp_path, monkeypatc
         data={
             "csrf": token(library, "csrf"),
             "source_type": "own-game",
-            "version": VERSION,
+            "version": MISS_VERSION,
             "key": str(evidence),
         },
     )
     assert posted.status_code == 303
     page = client.get(posted.location, base_url="https://coach.invalid", headers=headers)
     assert page.status_code == 200
+    assert b"piece on b5" in page.data and b"piece on e8" in page.data
+    assert b"not automatically a blunder" in page.data
     assert not re.search(rb"(?<![A-Za-z0-9_-])b5c7(?![A-Za-z0-9_-])", page.data)
     before = {
         table: db.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
@@ -70,6 +72,8 @@ def test_unlisted_owned_fork_is_proved_for_success_and_miss(tmp_path, monkeypatc
             "training_items",
             "training_attempts",
             "training_completions",
+            "unified_training_enrollments",
+            "unified_training_completions",
         )
     }
     state = begin(db, evidence)
@@ -91,10 +95,116 @@ def test_unlisted_owned_fork_is_proved_for_success_and_miss(tmp_path, monkeypatc
     submit(db, "owned-unsupported", SUBJECT, event_id="answer", move="f6g5")
     assert process(db, SUBJECT)["outcomes"] == {"unresolved": 1}
     assert inspect(db, SUBJECT, "owned-unsupported", "answer")["status"] == "unresolved"
+
+    # New policy binds a separate version and preserves the old unresolved session.
+    from chess_coach.fork_history_proof import valid as valid_result
+    from chess_coach.objective_current import current as current_request
+    from chess_coach.objective_history_dispatch import replay as replay_answer
+    from chess_coach.unified_session_events import hint, reveal
+
+    with pytest.raises(ValueError, match="another source"):
+        begin(db, evidence, attempt="owned-unsupported", version=MISS_VERSION)
+    assert begin(db, evidence, attempt="owned-unsupported")["status"] == "needs_verification"
+    assert inspect(db, SUBJECT, "owned-unsupported", "answer")["status"] == "unresolved"
+
+    for attempt, move in (("v2-exemplar", "b5c7"), ("v2-alternative", "b5d6")):
+        state = begin(db, evidence, attempt=attempt, version=MISS_VERSION)
+        assert state["fork_objective_miss_policy"] and state["learner_color"] == "white"
+        assert (
+            submit(db, attempt, SUBJECT, event_id="answer", move=move)["status"]
+            == "needs_verification"
+        )
+        assert process(db, SUBJECT)["outcomes"] == {"correct": 1}
+        assert inspect(db, SUBJECT, attempt, "answer")["status"] == "correct"
+
+    begin(db, evidence, attempt="v2-miss", version=MISS_VERSION)
+    hint(db, "v2-miss", SUBJECT, event_id="hint")
+    reveal(db, "v2-miss", SUBJECT, event_id="reveal")
+    answer = submit(db, "v2-miss", SUBJECT, event_id="answer", move="e7d6")
+    assert answer["status"] == "needs_verification"
+    assert process(db, SUBJECT)["outcomes"] == {"incorrect": 1}
+    missed = inspect(db, SUBJECT, "v2-miss", "answer")
+    assert missed["reason"] == "named_attacker_not_moved" and missed["assistance"] == "revealed"
+    page = client.get("/unified/v2-miss", base_url="https://coach.invalid", headers=headers)
+    assert b"Objective missed" in page.data and b"named piece was not moved" in page.data
+    assert b"learner plays white" in page.data
+    assert submit(db, "v2-miss", SUBJECT, event_id="answer", move="e7d6") == answer
+
+    request = db.connection.execute(
+        "SELECT * FROM objective_requests WHERE attempt_id='v2-miss'"
+    ).fetchone()
+    session, events = current_request(db, request)
+    board, move = replay_answer(db, session, events, request)
+    assert not valid_result(result, request, events, board, move, session)
+    from chess_coach.objective_fork_owned_replay import valid as valid_owned_miss
+
+    stored = json.loads(
+        db.connection.execute(
+            "SELECT result_json FROM objective_results WHERE attempt_id='v2-miss'"
+        ).fetchone()[0]
+    )
+    assert not valid_owned_miss(stored, board, move, dict(session) | {"source_type": "corpus"})
+    begin(db, evidence, attempt="v2-unresolved", version=MISS_VERSION)
+    submit(db, "v2-unresolved", SUBJECT, event_id="answer", move="f6g5")
+    assert process(db, SUBJECT)["outcomes"] == {"unresolved": 1}
+    begin(db, evidence, attempt="v2-capture", version=MISS_VERSION)
+    submit(db, "v2-capture", SUBJECT, event_id="answer", move="f6f5")
+    assert process(db, SUBJECT)["outcomes"] == {"unresolved": 1}
+
+    import itertools
+
+    begin(db, evidence, attempt="v2-timeout", version=MISS_VERSION)
+    submit(db, "v2-timeout", SUBJECT, event_id="answer", move="e7d6")
+    ticks = itertools.count()
+    assert process(db, SUBJECT, clock=lambda: next(ticks), seconds=0.01)["outcomes"] == {
+        "unresolved": 1
+    }
+    assert inspect(db, SUBJECT, "v2-timeout", "answer")["reason"] == "timeout"
+
+    if played == "f6g5":
+        black, black_evidence = owned_fork(
+            tmp_path / "black.sqlite", monkeypatch, played, with_history=True, mirrored=True
+        )
+        state = begin(black, black_evidence, attempt="black", version=MISS_VERSION)
+        assert state["learner_color"] == "black"
+        assert (state["fork_attacker"], state["fork_anchor"]) == ("b4", "e1")
+        submit(black, "black", SUBJECT, event_id="answer", move="b4d3")
+        assert process(black, SUBJECT)["outcomes"] == {"correct": 1}
+        black_request = black.connection.execute(
+            "SELECT * FROM objective_requests WHERE attempt_id='black'"
+        ).fetchone()
+        black_session, black_events = current_request(black, black_request)
+        black_board, _ = replay_answer(black, black_session, black_events, black_request)
+        assert len(black_board.move_stack) == 1
+        begin(black, black_evidence, attempt="black-miss", version=MISS_VERSION)
+        submit(black, "black-miss", SUBJECT, event_id="answer", move="e2d3")
+        assert process(black, SUBJECT)["outcomes"] == {"incorrect": 1}
+        assert (
+            inspect(black, SUBJECT, "black-miss", "answer")["reason"] == "named_attacker_not_moved"
+        )
+        anchor_db, anchor_evidence = owned_fork(
+            tmp_path / "anchor.sqlite", monkeypatch, played, anchor_layout=True
+        )
+        begin(anchor_db, anchor_evidence, attempt="anchor", version=MISS_VERSION)
+        submit(anchor_db, "anchor", SUBJECT, event_id="answer", move="b5d4")
+        assert process(anchor_db, SUBJECT)["outcomes"] == {"incorrect": 1}
+        assert (
+            inspect(anchor_db, SUBJECT, "anchor", "answer")["reason"] == "named_target_not_attacked"
+        )
+
     assert {
         table: db.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
         for table in before
     } == before
+
+    # Revocation after a queued answer invalidates its source, without grading it.
+    from chess_coach.evidence_review import review_evidence
+
+    begin(db, evidence, attempt="v2-stale", version=MISS_VERSION)
+    submit(db, "v2-stale", SUBJECT, event_id="answer", move="e7d6")
+    review_evidence(db, evidence, decision="reject", actor="fixture")
+    assert process(db, SUBJECT)["outcomes"] == {"unresolved": 1}
+    assert inspect(db, SUBJECT, "v2-stale", "answer")["reason"] == "source_unavailable"
 
 
 @pytest.mark.parametrize("mode", ["correct", "assisted", "unresolved", "miss_piece", "miss_target"])
