@@ -281,6 +281,77 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
         assert not inspect_skewer(alternative, "h1g1", time.monotonic() + 1, time.monotonic)[0][
             "played"
         ]
+        from chess_coach import skewer_sample_report as skewers_report
+        from chess_coach import skewer_sample_scan as skewers_scan
+        from chess_coach import skewer_sample_worker as skewers_worker
+        from chess_coach.skewer_sample_cache import valid as valid_skewers
+
+        skewer_db.connection.execute(
+            "UPDATE pipeline_stages SET status='complete' WHERE game_id=1 AND stage='analysis'"
+        )
+        skewer_db.connection.commit()
+        second_pgn = skewer_pgn.replace('[Event "Skewer"]', '[Event "Skewer alternative"]')
+        second_pgn = second_pgn.replace("2026.01.01", "2026.01.02")
+        second_pgn = second_pgn.replace("1. Re2+ Kd6", "1. Kg2")
+        ingest_pgn(skewer_db, second_pgn)
+        assert (
+            run_analysis(
+                skewer_db, 2, game_input(skewer_db, 2), config, engine_identity(sys.executable)
+            )["status"]
+            == "complete"
+        )
+        skewer_cache = {}
+
+        def cached(_path, key, *, validator):
+            state = deepcopy(skewer_cache.get("state"))
+            return state if state and validator(state, key) else None
+
+        with patch.context() as sampling:
+            for module in (skewers_worker, skewers_report):
+                sampling.setattr(module, "location", lambda *_: "in-memory")
+            for module in (skewers_scan, skewers_report):
+                sampling.setattr(module, "binding", lambda _db, learner: learner)
+                sampling.setattr(module, "read", cached)
+            sampling.setattr(
+                skewers_scan,
+                "write",
+                lambda _path, state: skewer_cache.update(state=deepcopy(state)),
+            )
+            sampling.setattr(scan, "TURN_LIMIT", 1)
+            before = skewer_db.connection.total_changes
+            for expected in (1, 2):
+                skewers_worker.run(skewer_db, "fixture_a", None)
+                assert (
+                    sum(len(game["results"]) for game in skewer_cache["state"]["games"]) == expected
+                )
+            assert valid_skewers(skewer_cache["state"], "fixture_a")
+            sample = skewers_report.report(skewer_db, "fixture_a", None)
+            assert {item["played"] for item in sample["newer"]["examples"]} == {True, False}
+            assert skewers_report.report(skewer_db, "fixture_b", None) is None
+            assert (
+                skewers_scan.classify(draw_board, "a2e2", time.monotonic() + 1, time.monotonic)[0]
+                == "unknown"
+            )
+            sampling.setattr(protection_web, "database", lambda: skewer_db)
+            sampling.setattr(
+                skewers_scan,
+                "inspect",
+                lambda *_: (_ for _ in ()).throw(AssertionError("GET must not run proof")),
+            )
+            app.config["SUBJECT"] = "fixture_a"
+            page = client.get("/game-samples/skewers", base_url="https://coach.invalid")
+            assert b"Recorded skewer" in page.data and b"Alternative skewer" in page.data
+            assert b"unresolved" in page.data and skewer_db.connection.total_changes == before
+            skewer_db.connection.execute(
+                "UPDATE pipeline_stages SET status='failed' WHERE game_id=1 AND stage='analysis'"
+            )
+            skewer_db.connection.commit()
+            stale = skewers_report.report(skewer_db, "fixture_a", None)
+            assert stale["newer"]["withheld"] == 1
+            assert all(item["position_id"] != 1 for item in stale["newer"]["examples"])
+            skewer_db.connection.execute("UPDATE games SET white=? WHERE id=2", ("other",))
+            skewer_db.connection.commit()
+            assert skewers_report.report(skewer_db, "fixture_a", None) is None
         skewer_db.close()
 
         cache = {}

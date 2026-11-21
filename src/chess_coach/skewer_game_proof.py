@@ -6,6 +6,8 @@ from .pawn_scope import history_known
 from .skewer_game_geometry import rear
 from .skewer_game_line import witness
 
+# Bump when the bounded proof semantics change.
+VERSION = "royal-skewer-proof-v1"
 MAX_ROOTS = 16
 
 
