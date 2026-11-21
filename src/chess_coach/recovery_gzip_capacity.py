@@ -10,7 +10,7 @@ MANIFEST_ALLOWANCE = 1024 * 1024
 def estimate(size, root, target, deadline):
     usage = allocated(root, deadline)
     free = shutil.disk_usage(target.parent).free
-    working = max(MIN_WORKING, size // 10)
+    working = MIN_WORKING
     reserve = size + working + RESERVE + MANIFEST_ALLOWANCE
     archive_limit = max(0, min(PROJECT_LIMIT - usage, free) - reserve)
     return {

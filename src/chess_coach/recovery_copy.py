@@ -9,10 +9,15 @@ from .recovery_verify import verify_database
 
 
 @contextmanager
-def pinned(source: Path, deadline):
+def pinned(source: Path, deadline, *, require_memory=False):
     with closing(sqlite3.connect(source.as_uri() + "?mode=ro", uri=True, timeout=5)) as reader:
         reader.set_progress_handler(deadline.progress, 1000)
-        reader.execute("PRAGMA temp_store=MEMORY")
+        if require_memory:
+            from .recovery_gzip_memory import configure
+
+            configure(reader)
+        else:
+            reader.execute("PRAGMA temp_store=MEMORY")
         reader.execute("BEGIN")
         reader.execute("SELECT count(*) FROM main.sqlite_schema").fetchone()
         deadline.check()

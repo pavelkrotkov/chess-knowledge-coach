@@ -213,10 +213,12 @@ release="$PWD/.runtime/releases/<reviewed-sha>/venv/bin/python"
 ```
 
 The estimate is `conditional`, not a promise that compression will fit. It
-reserves the full separate restore, working space and the operating reserve;
-the command refuses to exceed its compressed-output allowance. Stop other
-project writers while this runs because the project limit is not an enforced
-filesystem quota. The command rejects WAL mode and SQLite companions; use the
+reserves the full separate restore, a 64 MiB streaming working allowance and a
+separate 64 MiB operating reserve; the command refuses to exceed its
+compressed-output allowance. SQLite verification requires effective in-memory
+temporary storage; its memory usage is not capped by that disk allowance. Stop
+other project writers while this runs because the project limit is not an
+enforced filesystem quota. The command rejects WAL mode and SQLite companions; use the
 ordinary native backup for WAL databases. It holds the original read snapshot
 through compression, separate restoration, integrity and foreign-key checks,
 and the existing typed schema and row comparison. It publishes the archive,

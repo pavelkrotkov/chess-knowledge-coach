@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from .recovery_capacity import MIN_WORKING
 from .recovery_deadline import Deadline
 from .recovery_gzip_capacity import estimate, pinned_plan
 from .recovery_gzip_execute import create
@@ -17,7 +18,7 @@ def compressed_recovery(source, archive, restored, *, project_root, check_only=F
     deadline = Deadline()
     _companions(source)
     require_standalone(source)
-    physical_report = physical(source, root, archive, deadline)
+    physical_report = physical(source, root, archive, deadline, working_bytes=MIN_WORKING)
     report = estimate(physical_report["estimated_snapshot_bytes"], root, archive, deadline)
     if physical_report["status"] != "fits":
         report["status"] = physical_report["status"]

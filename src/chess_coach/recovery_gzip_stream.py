@@ -32,7 +32,9 @@ def compress(raw, archive, metadata, report, guard, deadline):
     total = 0
     with archive.open("wb", buffering=0) as target:
         bounded = LimitedOutput(target, report["archive_limit_bytes"])
-        with gzip.GzipFile(fileobj=bounded, mode="wb", filename="", mtime=0) as stream:
+        with gzip.GzipFile(
+            fileobj=bounded, mode="wb", filename="", mtime=0, compresslevel=6
+        ) as stream:
             while chunk := raw.read(CHUNK):
                 deadline.check()
                 digest.update(chunk)

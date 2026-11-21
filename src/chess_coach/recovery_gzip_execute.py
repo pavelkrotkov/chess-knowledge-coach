@@ -8,6 +8,7 @@ from .recovery_fidelity import verify_fidelity
 from .recovery_gzip_files import discard, publish, sync
 from .recovery_gzip_files import temporary as temporary_file
 from .recovery_gzip_guard import Guard
+from .recovery_gzip_memory import configure
 from .recovery_gzip_restore import restore
 from .recovery_gzip_stream import compress
 from .recovery_verify import verify_database
@@ -17,7 +18,7 @@ def _verify(reader, path, deadline):
     with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=5)) as restored:
         restored.set_progress_handler(deadline.progress, 1000)
         restored.execute("PRAGMA query_only=ON")
-        restored.execute("PRAGMA temp_store=MEMORY")
+        configure(restored)
         verify_database(restored)
         verify_fidelity(reader, restored, deadline)
 
