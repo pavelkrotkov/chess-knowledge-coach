@@ -483,6 +483,27 @@ def test_private_access_and_csrf(setup, tmp_path, monkeypatch):
     assert legacy_plan["capture_status"] == "learning_unavailable"
     assert legacy_plan["fork_status"] == "learning_unavailable"
     assert all(item.get("source_type") != "own-game" for item in legacy_plan["items"])
+    # The genuine legacy database can still offer an ordinary fork rehearsal.
+    # The existing fork finder is represented by a deterministic synthetic result.
+    fork_only = {
+        "source": {
+            "evidence_id": evidence_id,
+            "version": "fork-execution-own-v2",
+            "key": str(evidence_id),
+        },
+        "games": 2,
+        "assessment": {"status": "unknown"},
+    }
+    with monkeypatch.context() as focus:
+        focus.setattr("chess_coach.web_protection_plan.admissible", lambda *_: None)
+        focus.setattr("chess_coach.web_protection_plan.report", lambda *_: None)
+        focus.setattr("chess_coach.web_protection_plan.fork_recommendation", lambda *_: fork_only)
+        fork_page = compat_app.test_client().get("/plan", base_url=ORIGIN, headers=HEADERS)
+    assert fork_page.status_code == 200
+    assert (
+        b"Next focus: finding forks" in fork_page.data and b"Rehearse this fork" in fork_page.data
+    )
+    assert compat_db.connection.execute("PRAGMA schema_version").fetchone()[0] == before
     with pytest.raises(ValueError, match="qualified mate training is unavailable"):
         start_unified(
             compat_db,

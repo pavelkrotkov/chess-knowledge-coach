@@ -1248,6 +1248,106 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
         assert subsequent["next_cursor"]
     assert subsequent["items"]
 
+    # A broad non-mate corpus yields after its first bounded page instead of
+    # holding the owned families behind every unrelated corpus row.
+    broad_corpus = db.connection.execute(
+        "INSERT INTO puzzle_corpora(version,source,checksum,state) "
+        "VALUES('broad','fixture','broad-checksum','staging')"
+    ).lastrowid
+    for name in ("a-nonmate", "b-nonmate"):
+        db.connection.execute(
+            """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,
+            rating_deviation,themes_json,objective)
+            VALUES(?,?,?,'fixture','e2e4 e7e5',1100,80,'[]','unknown')""",
+            (name, broad_corpus, chess.STARTING_FEN),
+        )
+    for name, solution in (
+        ("candidate", "b7b5 c5f8"),
+        ("three", "b7b6 c5f8"),
+        ("four", "b7b6 c5f8"),
+    ):
+        db.connection.execute(
+            """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,
+            rating_deviation,themes_json,objective)
+            VALUES(?,?,'7k/1p6/6K1/2Q5/8/8/8/8 b - - 17 14',
+            'fixture',?,1200,80,'[]','unknown')""",
+            (name, broad_corpus, solution),
+        )
+    db.connection.execute("UPDATE puzzle_corpora SET state='ready' WHERE id=?", (broad_corpus,))
+    db.connection.commit()
+    for name in ("three", "four"):
+        item = create_training_item(
+            db,
+            source_type="puzzle",
+            source_ref=json.dumps(["broad", name]),
+            skill="mate_in_one",
+            operation="execute",
+        )
+        review_item(db, item, "good", reviewed_at=now)
+
+    corpus_time = now
+    while corpus_time.date().toordinal() % 3 != 2:
+        corpus_time -= timedelta(days=1)
+
+    def corpus_page(cursor=None, scan_limit=1):
+        return daily_plan(
+            db,
+            subject=SUBJECT,
+            corpus_version="broad",
+            as_of=corpus_time,
+            limit=5,
+            scan_limit=scan_limit,
+            cursor=cursor,
+        )
+
+    broad = corpus_page()
+    broad_state = decode_cursor(db, broad["next_cursor"])
+    assert broad["continuation_reason"] == "family_scan_incomplete"
+    assert broad_state["phase"] == "capture" and broad_state["new_after"] == [1100, "a-nonmate"]
+    for _ in range(8):
+        broad = corpus_page(broad["next_cursor"])
+        if any(item["skill"] == "hanging_piece" for item in broad["items"]):
+            break
+        assert broad["next_cursor"]
+    assert any(item["skill"] == "hanging_piece" for item in broad["items"])
+
+    # On a later candidate, an interrupted conflict retains its coordinate,
+    # candidate digest, and any previously scanned scheduled position together.
+    import chess_coach.curriculum_consider as consider
+
+    clock[0] = 0.0
+
+    def expire_corpus(*_args, **kwargs):
+        clock[0] = 3.0
+        kwargs["check"]()
+
+    with monkeypatch.context() as patch:
+        patch.setattr(family_mix, "time", SimpleNamespace(monotonic=lambda: clock[0]))
+        patch.setattr(consider, "scheduled_page", expire_corpus)
+        corpus_interrupted = corpus_page(scan_limit=3)
+    interrupted_state = decode_cursor(db, corpus_interrupted["next_cursor"])
+    assert interrupted_state["phase"] == "new"
+    assert interrupted_state["new_after"] == [1100, "b-nonmate"]
+    assert interrupted_state["pending"][:2] == [1200, "candidate"]
+    assert interrupted_state["scheduled_after"] == 0
+    corpus_pending = corpus_page(corpus_interrupted["next_cursor"], scan_limit=3)
+    pending_state = decode_cursor(db, corpus_pending["next_cursor"])
+    assert corpus_pending["continuation_reason"] == "scheduled_scan_incomplete"
+    assert pending_state["new_after"] == interrupted_state["new_after"]
+    assert pending_state["pending"] == interrupted_state["pending"]
+    assert pending_state["scheduled_after"] > 0
+    clock[0] = 0.0
+    with monkeypatch.context() as patch:
+        patch.setattr(family_mix, "time", SimpleNamespace(monotonic=lambda: clock[0]))
+        patch.setattr(consider, "scheduled_page", expire_corpus)
+        interrupted_again = corpus_page(corpus_pending["next_cursor"], scan_limit=3)
+    after_again = decode_cursor(db, interrupted_again["next_cursor"])
+    assert tuple(after_again[key] for key in ("new_after", "pending", "scheduled_after")) == tuple(
+        pending_state[key] for key in ("new_after", "pending", "scheduled_after")
+    )
+    resumed_corpus = corpus_page(interrupted_again["next_cursor"], scan_limit=3)
+    assert any(item.get("puzzle_id") == "candidate" for item in resumed_corpus["items"])
+
     app = create_app(
         db_path=path,
         subject=SUBJECT,

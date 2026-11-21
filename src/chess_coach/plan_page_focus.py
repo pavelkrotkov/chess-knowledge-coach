@@ -49,10 +49,17 @@ def _overrides(result, version):
         if version is None or version != result.get("capture_generation"):
             return None
         options["capture_override"] = result["capture_focus"]
-    if "fork_status" in result:
-        if result["fork_status"] not in {None, "learning_unavailable"} and (
-            version is None or version != result.get("fork_generation")
-        ):
-            return None
-        options["fork_override"] = result.get("fork_focus")
+    if not _fork_override(result, version, options):
+        return None
     return options
+
+
+def _fork_override(result, version, options):
+    if "fork_status" not in result or result["fork_status"] == "learning_unavailable":
+        return True
+    if result["fork_status"] is not None and (
+        version is None or version != result.get("fork_generation")
+    ):
+        return False
+    options["fork_override"] = result.get("fork_focus")
+    return True

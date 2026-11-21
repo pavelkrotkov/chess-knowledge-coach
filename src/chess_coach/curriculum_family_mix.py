@@ -86,6 +86,9 @@ def _loop(db, state, learner, summary, counts, corpus, budget, check, progress):
 def _reason(state, reason):
     if reason in {"capture_scan_incomplete", "fork_scan_incomplete"}:
         return _defer(state)
+    # Yield to other families only during the one-item corpus pass.
+    if reason == "corpus_scan_incomplete" and state["family_index"] < 3:
+        return _defer(state)
     return reason
 
 
@@ -102,6 +105,8 @@ def _timeout(db, state, counts, budget, progress):
     pending_key = {"capture": "capture_pending", "fork": "fork_pending", "new": "pending"}[phase]
     pending = state[pending_key]
     after = state["scheduled_after"]
+    # The prior corpus coordinate and its pending candidate are one continuation.
+    new_after = state["new_after"]
     # Rewind only the unfinished family; earlier checked items can still be shown.
     checkpoint = progress["checkpoint"]
     if checkpoint is not None:
@@ -112,6 +117,8 @@ def _timeout(db, state, counts, budget, progress):
     # A bound candidate must resume its conflict check before another family.
     if pending is not None and state["phase"] == phase:
         state[pending_key], state["scheduled_after"] = pending, after
+        if phase == "new":
+            state["new_after"] = new_after
     phase = state["phase"]
     progress["statuses"][phase] = "deferred"
     progress["reason"] = _defer(state)

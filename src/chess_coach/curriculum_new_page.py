@@ -52,6 +52,7 @@ def checked_page(db, state, summary, counts, corpus, check):
     except (PreviewUnavailable, sqlite3.OperationalError):
         state["pending"] = working["pending"]
         state["scheduled_after"] = working["scheduled_after"]
+        state["new_after"] = working["new_after"]
         raise
     state.update(working)
     counts.update(work_counts)
