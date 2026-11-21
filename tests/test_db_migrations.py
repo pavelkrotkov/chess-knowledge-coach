@@ -171,12 +171,12 @@ def test_populated_legacy_upgrade_is_repeatable_and_preserves_history(
     fresh.initialize()
     assert schema_columns(db) == schema_columns(fresh)
     _fork_index_upgrade(monkeypatch)
-    _native_upgrade_inventory(tmp_path)
+    _native_upgrade_inventory(tmp_path, monkeypatch)
     _position_index_upgrade()
     _current_schema_contention(tmp_path)
 
 
-def _native_upgrade_inventory(tmp_path):
+def _native_upgrade_inventory(tmp_path, monkeypatch):
     from chess_coach.analysis_schema import add_decision_columns
     from chess_coach.db_recent import upgrade_recent
     from chess_coach.lichess_schema import add_sync_progress
@@ -214,13 +214,54 @@ def _native_upgrade_inventory(tmp_path):
     db.connection.commit()
     db.close()
     original = path.read_bytes()
-    result = plan(path, tmp_path)
+
+    import subprocess
+    import sys
+
+    from chess_coach import native_upgrade_plan
+
+    def exclusive():
+        script = """
+import sqlite3, sys
+connection = sqlite3.connect(sys.argv[1], timeout=0)
+try:
+    connection.execute("BEGIN EXCLUSIVE")
+except sqlite3.OperationalError as exc:
+    assert exc.sqlite_errorcode == sqlite3.SQLITE_BUSY
+    print("blocked")
+else:
+    connection.rollback()
+    print("acquired")
+finally:
+    connection.close()
+"""
+        return subprocess.run(
+            [sys.executable, "-c", script, str(path)],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=10,
+        ).stdout.strip()
+
+    observed = []
+    real_inspect = native_upgrade_plan.inspect_layout
+
+    def inspect_while_pinned(*args):
+        layout = real_inspect(*args)
+        observed.append(exclusive())
+        return layout
+
+    with monkeypatch.context() as patch:
+        patch.setattr(native_upgrade_plan, "inspect_layout", inspect_while_pinned)
+        result = plan(path, tmp_path)
     with sqlite3.connect(":memory:") as probe:
         if not supported(probe):
             assert result == {"status": "unknown", "inventory_complete": False}
             assert path.read_bytes() == original
             return
     assert result["status"] == "unknown" and result["inventory_complete"]
+    assert observed == ["blocked"]
+    assert exclusive() == "acquired"
     assert (
         result["engine_rows"],
         result["mate_rows"],
@@ -232,8 +273,6 @@ def _native_upgrade_inventory(tmp_path):
     assert path.read_bytes() == original
 
     import json
-    import subprocess
-    import sys
 
     command = subprocess.run(
         [
@@ -263,6 +302,29 @@ def _native_upgrade_inventory(tmp_path):
     }
     recovered = plan(path, tmp_path, archive=archive, restored=restored)
     assert recovered["status"] == "unknown" and recovered["recovery_current"]
+
+    # An aliased manifest must be refused before opening it under the source pin.
+    import os
+
+    aliased_archive = tmp_path / "aliased-backup.gz"
+    aliased_archive.write_bytes(b"synthetic")
+    os.link(path, aliased_archive.with_name(aliased_archive.name + ".manifest.json"))
+    observed.clear()
+    real_recovery = native_upgrade_plan.check_recovery
+
+    def check_while_pinned(*args, **kwargs):
+        try:
+            return real_recovery(*args, **kwargs)
+        finally:
+            observed.append(exclusive())
+
+    with monkeypatch.context() as patch:
+        patch.setattr(native_upgrade_plan, "check_recovery", check_while_pinned)
+        refused = plan(path, tmp_path, archive=aliased_archive, restored=restored)
+    assert refused == {"status": "unknown", "inventory_complete": False}
+    assert observed == ["blocked"]
+    assert exclusive() == "acquired"
+
     zstd_archive = tmp_path / "native-backup.zst"
     zstd_restore = tmp_path / "native-zstd-restore.sqlite"
     assert compressed_recovery(
