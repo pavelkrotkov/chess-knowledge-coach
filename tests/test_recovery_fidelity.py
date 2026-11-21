@@ -11,6 +11,11 @@ def test_typed_rows_hidden_rowids_and_without_rowid_preserved(tmp_path, monkeypa
     target = tmp_path / "copy.sqlite"
     restored = tmp_path / "restore.sqlite"
     with sqlite3.connect(source) as db:
+        db.execute("PRAGMA foreign_keys=ON")
+        db.execute("CREATE TABLE parent(id INTEGER PRIMARY KEY)")
+        db.execute("CREATE TABLE child(parent_id INTEGER REFERENCES parent(id))")
+        db.execute("INSERT INTO parent VALUES(1)")
+        db.execute("INSERT INTO child VALUES(1)")
         db.execute('CREATE TABLE "odd""name"(x, y, z)')
         db.execute('INSERT INTO "odd""name"(rowid,x,y,z) VALUES(-7, NULL, ?, ?)', (1, 1.25))
         db.execute('INSERT INTO "odd""name"(rowid,x,y,z) VALUES(9, ?, ?, ?)', ("same", b"same", 1))
@@ -44,6 +49,7 @@ def test_typed_rows_hidden_rowids_and_without_rowid_preserved(tmp_path, monkeypa
 def _compressed_recovery_checks(tmp_path, source, monkeypatch):
     import hashlib
     import json
+    import shutil
     import subprocess
     import sys
 
@@ -58,6 +64,7 @@ def _compressed_recovery_checks(tmp_path, source, monkeypatch):
     )
     from chess_coach.recovery_gzip import compressed_recovery
     from chess_coach.recovery_gzip_restore import restore
+    from chess_coach.recovery_gzip_single import restore_backup
 
     archive = tmp_path / "backup.sqlite.gz"
     restored = tmp_path / "gzip-restored.sqlite"
@@ -94,6 +101,46 @@ def _compressed_recovery_checks(tmp_path, source, monkeypatch):
     assert archive.stat().st_mode & 0o777 == 0o600
     assert restored.stat().st_mode & 0o777 == 0o600
     assert manifest_path.stat().st_mode & 0o777 == 0o600
+    isolated = tmp_path / "archive-only"
+    isolated.mkdir()
+    retained = isolated / "retained.gz"
+    retained_manifest = Path(str(retained) + ".manifest.json")
+    shutil.copyfile(archive, retained)
+    shutil.copyfile(manifest_path, retained_manifest)
+    recovered = isolated / "recovered.sqlite"
+    assert (
+        restore_backup(retained, recovered, project_root=tmp_path, check_only=True)["status"]
+        == "fits"
+    )
+    assert not recovered.exists()
+    assert restore_backup(retained, recovered, project_root=tmp_path) == {"status": "verified"}
+    assert hashlib.sha256(recovered.read_bytes()).hexdigest() == manifest["raw_sha256"]
+    assert retained.read_bytes() == archive.read_bytes()
+    with pytest.raises(FileExistsError):
+        restore_backup(retained, recovered, project_root=tmp_path)
+    bad_manifest = {**manifest, "version": "invalid"}
+    retained_manifest.write_text(json.dumps(bad_manifest))
+    with pytest.raises(ValueError, match="manifest invalid"):
+        restore_backup(retained, isolated / "invalid.sqlite", project_root=tmp_path)
+    assert not (isolated / "invalid.sqlite").exists()
+    retained_manifest.write_text(
+        json.dumps({**manifest, "user_version": manifest["user_version"] + 1})
+    )
+    with pytest.raises(ValueError, match="metadata differs"):
+        restore_backup(retained, isolated / "mismatch.sqlite", project_root=tmp_path)
+    assert not (isolated / "mismatch.sqlite").exists()
+    retained_manifest.write_text(json.dumps(manifest))
+    with monkeypatch.context() as patch:
+        patch.setattr(recovery_gzip_capacity, "PROJECT_LIMIT", 1)
+        assert (
+            restore_backup(
+                retained, isolated / "no-space.sqlite", project_root=tmp_path, check_only=True
+            )["status"]
+            == "insufficient"
+        )
+        with pytest.raises(ValueError, match="capacity unavailable"):
+            restore_backup(retained, isolated / "no-space.sqlite", project_root=tmp_path)
+    assert not (isolated / "no-space.sqlite").exists()
     with pytest.raises(FileExistsError):
         compressed_recovery(source, archive, restored, project_root=tmp_path)
     corrupted = tmp_path / "corrupt.sqlite.gz"
@@ -110,6 +157,10 @@ def _compressed_recovery_checks(tmp_path, source, monkeypatch):
     with pytest.raises(ValueError, match="archive verification"):
         restore(corrupted, tmp_path / "corrupt-restored.sqlite", manifest, NoopGuard(), Deadline())
     assert not (tmp_path / "corrupt-restored.sqlite").exists()
+    Path(str(corrupted) + ".manifest.json").write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match="archive verification"):
+        restore_backup(corrupted, tmp_path / "bad-gzip.sqlite", project_root=tmp_path)
+    assert not (tmp_path / "bad-gzip.sqlite").exists()
     no_space = tmp_path / "no-space.sqlite.gz"
     with monkeypatch.context() as patch:
         patch.setattr(recovery_gzip_capacity, "PROJECT_LIMIT", 1)

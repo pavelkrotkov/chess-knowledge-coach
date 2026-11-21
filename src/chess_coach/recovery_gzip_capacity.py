@@ -30,3 +30,10 @@ def estimate(size, root, target, deadline):
 def pinned_plan(reader, root, target, deadline):
     pages, page_size = snapshot(reader)
     return estimate(pages * page_size, root, target, deadline)
+
+
+def restore_plan(size, root, target, deadline):
+    report = estimate(size, root, target, deadline)
+    report["status"] = "fits" if report["archive_limit_bytes"] > 0 else "insufficient"
+    report["scope"] = "Point-in-time restore estimate; project writers must be stopped."
+    return report

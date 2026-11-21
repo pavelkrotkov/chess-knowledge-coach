@@ -5,10 +5,11 @@ from pathlib import Path
 
 from .recovery import backup_database, restore_database
 from .recovery_gzip import compressed_recovery
+from .recovery_gzip_single import restore_backup
 
 
 def configure(sub):
-    for name in ("backup-db", "restore-db"):
+    for name in ("backup-db", "restore-db", "restore-gzip"):
         parser = sub.add_parser(name)
         parser.add_argument("source", type=Path)
         parser.add_argument("destination", type=Path)
@@ -38,6 +39,13 @@ def _gzip(args):
     print(json.dumps(result))
 
 
+def _restore_gzip(args):
+    result = restore_backup(
+        args.source, args.destination, project_root=args.project_root, check_only=args.check_only
+    )
+    print(json.dumps(result))
+
+
 def _backup(args):
     result = backup_database(
         args.source, args.destination, project_root=args.project_root, check_only=args.check_only
@@ -52,4 +60,9 @@ def _restore(args):
     print(json.dumps(result if args.check_only else {"status": "verified"}))
 
 
-COMMANDS = {"backup-db": _backup, "restore-db": _restore, "backup-gzip-verify": _gzip}
+COMMANDS = {
+    "backup-db": _backup,
+    "restore-db": _restore,
+    "backup-gzip-verify": _gzip,
+    "restore-gzip": _restore_gzip,
+}

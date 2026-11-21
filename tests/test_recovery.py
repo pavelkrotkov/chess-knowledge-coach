@@ -360,6 +360,25 @@ def test_cli_backup_and_restore_do_not_initialize_or_upgrade_source(tmp_path):
     assert not gzip_archive.exists() and not gzip_restore.exists()
     done = subprocess.run(gzip_command, capture_output=True, text=True, check=True)
     assert json.loads(done.stdout) == {"status": "verified"}
+    later_restore = tmp_path / "later-restored.sqlite"
+    restore_command = [
+        sys.executable,
+        "-m",
+        "chess_coach.cli",
+        "--db",
+        str(sentinel),
+        "restore-gzip",
+        str(gzip_archive),
+        str(later_restore),
+        "--project-root",
+        str(tmp_path),
+    ]
+    check_later = subprocess.run(
+        [*restore_command, "--check-only"], capture_output=True, text=True, check=True
+    )
+    assert json.loads(check_later.stdout)["status"] == "fits" and not later_restore.exists()
+    done_later = subprocess.run(restore_command, capture_output=True, text=True, check=True)
+    assert json.loads(done_later.stdout) == {"status": "verified"}
     assert "fixture" not in check.stdout + check.stderr + done.stdout + done.stderr
     assert not sentinel.exists()
     for path in (source, backup, restored):
