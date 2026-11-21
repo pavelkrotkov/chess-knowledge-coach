@@ -320,3 +320,52 @@ def test_duplicate_import_alias_and_replay_count_once(tmp_path):
     assert result["current"][0]["opportunities"] == 1
     assert result["current"][0]["independent_games"] == 1
     assert result["coverage"]["excluded"]["duplicate decision"] == 1
+
+    from collections import Counter
+
+    from chess_coach.preview_snapshot import preview_history
+    from chess_coach.recurrence_game_cache import source as cached_game
+    from chess_coach.recurrence_sources import load_game
+
+    position = db.connection.execute(
+        "SELECT id FROM positions WHERE game_id=1 AND ply=1"
+    ).fetchone()[0]
+    normal = load_game(db, "learner", 1)
+    row = {"game_id": 1, "position_id": position}
+    with preview_history(db, "learner") as history:
+        history.targets([position])
+        shared = cached_game(db, "learner", row, {}, {}, Counter(), _history=history)
+        assert shared["key"] == normal["key"]
+        for key, decision in shared["decisions"].items():
+            assert {k: v for k, v in decision.items() if k != "processed_at"} == {
+                k: v for k, v in normal["decisions"][key].items() if k != "processed_at"
+            }
+        assert len(history.games[1].entries) == 1
+        assert "prompt_fen" not in history.context(1, position)
+        board = history.board(1, position)
+        original = history.board(1, position).fen()
+        board.push(next(iter(board.legal_moves)))
+        assert history.board(1, position).fen() == original
+        with pytest.raises(ValueError):
+            history.contexts(db, "other", 1, position)
+        # A preview consumed before recurrence falls back to a complete replay.
+        history.targets([position])
+        history.board(1, position)
+        assert not history.can_share(db, "learner", 1, position)
+        fallback = cached_game(db, "learner", row, {}, {}, Counter(), _history=history)
+        assert fallback["key"] == normal["key"]
+        assert history.games[1].contexts is None
+        history.targets([])
+        assert not history.games
+        with pytest.raises(ValueError):
+            history.board(1, position)
+    with pytest.raises(ValueError):
+        history.contexts(db, "learner", 1, position)
+
+    # Later corruption invalidates full-game recurrence even when an earlier board is legal.
+    db.connection.execute("UPDATE positions SET uci='a1a1' WHERE game_id=1 AND ply=2")
+    db.connection.commit()
+    with preview_history(db, "learner") as history:
+        history.targets([position])
+        assert cached_game(db, "learner", row, {}, {}, Counter(), _history=history) is None
+    db.close()

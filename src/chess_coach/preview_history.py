@@ -43,6 +43,21 @@ class PreviewHistory:
             raise ValueError("position outside preview")
         return self._game(game_id).entry(position_id)
 
+    def can_share(self, db, learner, game_id, position_id):
+        require_read_snapshot(self.db.connection)
+        if db is not self.db or learner != self.learner:
+            raise ValueError("history outside preview scope")
+        game = self.games.get(game_id)
+        return position_id in self.wanted and (
+            game is None or not game.started or game.contexts is not None
+        )
+
+    def contexts(self, db, learner, game_id, position_id):
+        require_read_snapshot(self.db.connection)
+        if db is not self.db or learner != self.learner or position_id not in self.wanted:
+            raise ValueError("history outside preview scope")
+        return self._game(game_id).all_contexts()
+
     def context(self, game_id, position_id):
         context, _board = self._entry(game_id, position_id)
         if context["subject"] is None:

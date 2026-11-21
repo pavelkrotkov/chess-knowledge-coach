@@ -27,7 +27,7 @@ def games(db, learner):
     }
 
 
-def load_game(db, learner, game_id):
+def load_game(db, learner, game_id, *, _history=None, _position_id=None):
     game = db.connection.execute("SELECT * FROM games WHERE id=?", (game_id,)).fetchone()
     if game is None:
         return None
@@ -38,7 +38,9 @@ def load_game(db, learner, game_id):
         "SELECT 1 FROM positions WHERE game_id=? LIMIT 1 OFFSET 1000", (game_id,)
     ).fetchone():
         return None
-    decisions = decisions_for_game(db, game_id, learner)
+    decisions = decisions_for_game(
+        db, game_id, learner, _history=_history, _position_id=_position_id
+    )
     if not decisions:
         return None
     identity = next(iter(decisions.values()))["game_key"]

@@ -95,8 +95,41 @@ def test_private_card_rotates_only_after_complete_unassisted_rehearsal(tmp_path,
         assert calculation["examined"] == 2 and calculation["limited"]
         assert tactical["preview"]["selection"]["per_pair_limit"] == 2
 
+        # Compare the complete bounded pair with and without history reuse.
+        import chess_coach.learner_context as learner_context
+        import chess_coach.preview_history as history_module
         import chess_coach.tactical_course_selection as course_selection
         from chess_coach.tactical_course_deadline import PreviewDeadline
+
+        original_boards = learner_context.decision_context_boards
+
+        def measured_pair(reuse):
+            starts = {"recurrence": 0, "preview": 0}
+
+            def counted(kind):
+                def run(*args, **kwargs):
+                    starts[kind] += 1
+                    return original_boards(*args, **kwargs)
+
+                return run
+
+            with monkeypatch.context() as patch:
+                patch.setattr(learner_context, "decision_context_boards", counted("recurrence"))
+                patch.setattr(history_module, "decision_context_boards", counted("preview"))
+                if not reuse:
+                    patch.setattr(history_module.PreviewHistory, "can_share", lambda *_: False)
+                result = course_selection._pair(db, SUBJECT, "calculation", "execute", Budget(db))
+            return result, starts
+
+        from chess_coach.tactical_course_budget import Budget
+
+        baseline, before = measured_pair(False)
+        optimized, after = measured_pair(True)
+        assert baseline == optimized
+        assert before["recurrence"] > 0
+        assert after["recurrence"] == 0
+        assert before["preview"] == after["preview"]
+        print("synthetic_course_traversals", {"before": before, "after": after})
 
         original_evidence = course_selection.evidence
 
@@ -115,8 +148,6 @@ def test_private_card_rotates_only_after_complete_unassisted_rehearsal(tmp_path,
         assert [item["kind"] for item in partial["preview"]["patterns"]] == ["short_mate"]
         assert "Only completed supported pairs" in partial["preview"]["selection"]["scope"]
         assert not db.connection.in_transaction
-
-        from chess_coach.tactical_course_budget import Budget
 
         original_collect = course_selection.collect_page
         calls = 0
