@@ -6,6 +6,7 @@ from .capture_plan_result import result
 from .mastery_time import parse_utc
 from .mate_assessment_events import replay
 from .related_capture_objective import is_source
+from .tactical_exposure_progress import apply as apply_exposure
 from .unified_source_current import require_current
 
 LIMIT = 100
@@ -65,6 +66,8 @@ def latest(db, subject, position, corpus, *, check=None):
             if row["status"] == "active"
             else result(db, row, observed, related_check=check)
         )
+        # Keep the recorded result while limiting first-encounter claims.
+        state = apply_exposure(db, row, state)
         return {
             **state,
             "attempt_id": row["attempt_id"],

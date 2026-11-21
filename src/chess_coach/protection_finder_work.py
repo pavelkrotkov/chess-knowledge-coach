@@ -42,7 +42,9 @@ class SourceChecks:
         result = present(chosen, None)
         if chosen is not None:
             self.check()
-            _assessment_options(self.db, result["items"], chosen[3], None, result["scope"])
+            _assessment_options(
+                self.db, result["items"], chosen[3], None, result["scope"], self.subject
+            )
             self.check()
             result.update(
                 source_outcome=chosen[0]["outcome"],

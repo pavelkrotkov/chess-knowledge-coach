@@ -1062,6 +1062,21 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
     assert b"Prepared tactical course" in shown.data and b"Show the supplied line" in shown.data
     assert b"View the source decision" in shown.data and b"ungraded" in shown.data
     assert b"Recorded omissions" in shown.data and db.connection.total_changes == before_course_page
+    from chess_coach.related_capture_position import prompt_key
+    from chess_coach.tactical_exposure_admission import eligible
+    from chess_coach.tactical_exposure_check import check as exposure_check
+
+    taught = chapter["source_snapshot"]["prompt_fen"]
+    taught_key = prompt_key(taught)
+    assert exposure_check(db, LEARNER, taught_key) == "provided"
+    assert not eligible(db, LEARNER, {"prompt_key": taught_key})
+    assert exposure_check(db, "other", taught_key) == "not_recorded"
+    unprovided = prompt_key(chess.STARTING_FEN)
+    assert exposure_check(db, LEARNER, unprovided) == "not_recorded"
+    assert eligible(db, LEARNER, {"prompt_key": unprovided})
+    supplied = chess.Board(taught)
+    supplied.push_uci(chapter["source_snapshot"]["lines"][0].split()[0])
+    assert exposure_check(db, LEARNER, prompt_key(supplied.fen())) == "provided"
     chapter_count = len(exported["export"]["chapters"])
     assert f"{chapter_count} chapter".encode() in shown.data
     version = exported["export_sha256"]
@@ -1094,6 +1109,29 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
     assert download.mimetype == "application/x-chess-pgn"
     assert download.headers["Content-Disposition"] == 'attachment; filename="tactical-course.pgn"'
     assert download.headers["Cache-Control"] == "no-store"
+    assert (
+        db.connection.execute(
+            "SELECT COUNT(*) FROM tactical_exposures WHERE kind='download'"
+        ).fetchone()[0]
+        > 0
+    )
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            "chess_coach.web_tactical_exposure.record_exposure",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(sqlite3.OperationalError("synthetic")),
+        )
+        assert (
+            course_client.get(
+                course_url, base_url="https://coach.invalid", headers=course_headers
+            ).status_code
+            == 503
+        )
+        assert (
+            course_client.get(
+                download_url, base_url="https://coach.invalid", headers=course_headers
+            ).status_code
+            == 503
+        )
     assert db.connection.total_changes == before_course_page
     assert all(
         (p.read_bytes() if p.exists() else None) == value for p, value in before_files.items()

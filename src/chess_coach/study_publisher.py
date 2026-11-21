@@ -1,5 +1,7 @@
 """Publish one marked private course without repeating uncertain creates."""
 
+import re
+
 from .study_authorization import require_scopes
 from .study_destination import destination
 from .study_import import upload_all
@@ -17,6 +19,10 @@ def publish(remote, path, course, *, check=lambda: None, strict=False):
         validate(state, course["course"]["chapters"])
     account = remote.account()
     require_scopes(remote)
+    if re.fullmatch(r"tactical-study-[0-9a-f]{64}-intent\.json", path.name):
+        from .tactical_study_exposure import bind
+
+        bind(state, remote.learner)
     if state["study"] is None:
 
         def before_create():

@@ -242,6 +242,7 @@ def test_private_publication_reconciles_timeouts_and_rejects_public_destination(
     planning = tmp_path / ".runtime" / "planning"
     planning.mkdir(parents=True)
     (planning / "poc-study-336-intent.json").write_text(intent.read_text())
+    (planning / "poc-study-336-intent.json").chmod(0o600)
     assert status(tmp_path)["url"] == link
     receipt = {
         "study": "abcd1234",
@@ -267,8 +268,14 @@ def test_private_publication_reconciles_timeouts_and_rejects_public_destination(
     from chess_coach.tactical_study_pgn import matches_mainline
     from chess_coach.tactical_study_status import status as tactical_status
 
-    upload_planning = tmp_path / "upload-planning"
-    upload_planning.mkdir(mode=0o700)
+    upload_planning = tmp_path / ".runtime" / "planning"
+    upload_planning.chmod(0o700)
+    data = tmp_path / ".runtime" / "data"
+    data.mkdir(mode=0o700)
+    from chess_coach.db import Database
+
+    exposure_db = Database(data / "synthetic.sqlite")
+    exposure_db.initialize()
     tactical_body = {"chapters": chapters[:4], "version": "fixture"}
     tactical_course = {"course": tactical_body, "course_sha256": preview_hash(tactical_body)}
     tactical_path = (
@@ -307,7 +314,22 @@ def test_private_publication_reconciles_timeouts_and_rejects_public_destination(
     tactical_provider.timeout_upload = True
     with pytest.raises(StudyError, match="unknown"):
         publish(tactical_remote, tactical_path, tactical_course, strict=True)
-    assert json.loads(tactical_path.read_text())["chapters"][0] == "pending"
+    pending_state = json.loads(tactical_path.read_text())
+    assert pending_state["chapters"][0] == "pending"
+    from datetime import timedelta
+
+    from chess_coach.mastery_time import parse_utc
+    from chess_coach.related_capture_position import prompt_key
+    from chess_coach.tactical_exposure_check import check as exposure_check
+
+    pending_at = parse_utc(pending_state["tactical_delivery"]["chapters"]["0"]["pending_at"])
+    during_send = (pending_at + timedelta(microseconds=1)).isoformat()
+    key = prompt_key(chess.STARTING_FEN)
+    assert (
+        exposure_check(exposure_db, "learner", key, answered_at=during_send)
+        == "publication_time_unknown"
+    )
+    assert exposure_check(exposure_db, "other", key, answered_at=during_send) == "not_recorded"
     assert len(tactical_provider.uploaded) == 1
     tactical_provider.uploaded[0]["mode"] = "gamebook"
     with pytest.raises(StudyError, match="mode"):
@@ -346,8 +368,29 @@ def test_private_publication_reconciles_timeouts_and_rejects_public_destination(
     tactical_link = publish(tactical_remote, tactical_path, tactical_course, strict=True)
     assert tactical_link.endswith("/abcd1234/ch000000#0")
     verified = json.loads(tactical_path.read_text())
+    assert (
+        exposure_check(exposure_db, "learner", key, answered_at=during_send)
+        == "publication_time_unknown"
+    )
+    confirmed_at = parse_utc(verified["tactical_delivery"]["chapters"]["0"]["verified_at"])
+    assert (
+        exposure_check(
+            exposure_db,
+            "learner",
+            key,
+            answered_at=(confirmed_at + timedelta(microseconds=1)).isoformat(),
+        )
+        == "provided"
+    )
     assert verified["complete"] and verified["privacy_verified"] and verified["ordered_verified"]
     assert verified["anonymous_verified"]
+    partially_reconciled = json.loads(tactical_path.read_text())
+    del partially_reconciled["tactical_delivery"]["chapters"]["2"]
+    saved = tactical_path.read_bytes()
+    tactical_path.write_text(json.dumps(partially_reconciled))
+    mate_key = prompt_key(mate["prompt_fen"])
+    assert exposure_check(exposure_db, "learner", mate_key) == "publication_time_unknown"
+    tactical_path.write_bytes(saved)
     from chess_coach.deep_selection_source import learner_key
 
     assert verified["learner_key"] == learner_key("learner")

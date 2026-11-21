@@ -42,6 +42,10 @@ def start_selected(
             line_filter=lines,
         )
         row = session_row(db, attempt_id, subject)
+        if binding_key in {"related_capture", "related_fork", "related_protection"}:
+            from .tactical_exposure_admission import require_assessment
+
+            require_assessment(db, subject, row, binding)
         currentness(db, row)
         result = view(row)
         db.connection.commit()

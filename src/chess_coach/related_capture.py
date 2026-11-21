@@ -29,12 +29,13 @@ def preview(db, subject, position, corpus_version, cursor=None, *, secret=None):
     result = present(selection, cursor, secret=secret)
     # Only the browser receives opaque references and assessment controls.
     if selection is not None and secret is not None:
-        _assessment_options(db, result["items"], selection[3], cursor, result["scope"])
+        _assessment_options(db, result["items"], selection[3], cursor, result["scope"], subject)
     return result
 
 
-def _assessment_options(db, visible, ordered, cursor, scope):
+def _assessment_options(db, visible, ordered, cursor, scope, subject):
     from .related_capture_assessment import setup
+    from .tactical_exposure_admission import eligible
 
     offset = _offset(cursor, scope)
     for item, source in zip(visible, ordered[offset : offset + PAGE], strict=True):
@@ -43,7 +44,10 @@ def _assessment_options(db, visible, ordered, cursor, scope):
         # Eligibility is cheap; admission separately runs the capture proof.
         try:
             setup(db, source["version"], source["key"])
-            item["assessment_available"] = True
+            if eligible(db, subject, source):
+                item["assessment_available"] = True
+            else:
+                item["assessment_reason"] = "provided or exposure coverage unavailable"
         except (ValueError, TypeError, KeyError, IndexError):
             continue
 

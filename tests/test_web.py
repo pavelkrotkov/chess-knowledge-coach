@@ -182,6 +182,7 @@ def test_private_access_and_csrf(setup, tmp_path, monkeypatch):
         preflight.setattr(db_recent, "add_digest_storage", newer_migration)
         preflight.setattr(db_recent, "add_engine_output_position_index", newer_migration)
         preflight.setattr(db_recent, "add_unified_training", newer_migration)
+        preflight.setattr(db_recent, "add_tactical_exposure", newer_migration)
         attest(legacy, read)
     read.close()
     compat_app = create_app(
@@ -206,6 +207,41 @@ def test_private_access_and_csrf(setup, tmp_path, monkeypatch):
     ).fetchall()
     assert any("idx_detector_run_active" in row[3] for row in plan)
     compat_db.initialize()
+    from chess_coach.course_pgn import chapter as make_chapter
+
+    snapshot = {"prompt_fen": chess.STARTING_FEN, "learner_color": "white", "lines": ["e2e4"]}
+    worked = make_chapter("Synthetic", "Worked example", snapshot, {})
+    offered = {"hash": "a" * 64, "prepared_at": "2026-01-01T00:00:00+00:00"}
+    course = {
+        "chapters": [worked],
+        "patterns": [],
+        "selection": {"coverage": [], "unavailable": []},
+    }
+    with monkeypatch.context() as patch:
+        patch.setattr("chess_coach.web_tactical_course.offered", lambda *_: (offered, course))
+        patch.setattr("chess_coach.web_tactical_course.status", lambda *_: {"configured": False})
+        patch.setattr("chess_coach.web_tactical_course.preparation", lambda *_: None)
+        patch.setattr("chess_coach.web_tactical_course.preparation_details", lambda *_: None)
+        patch.setattr(
+            "chess_coach.web_tactical_exposure.record_exposure",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                AssertionError("compat must not write")
+            ),
+        )
+        compat_client = compat_app.test_client()
+        worked_page = compat_client.get(
+            "/coaching/tactical-course", base_url=ORIGIN, headers=HEADERS
+        )
+        assert (
+            worked_page.status_code == 200
+            and b"Delivery tracking is unavailable" in worked_page.data
+        )
+        worked_pgn = compat_client.get(
+            "/coaching/tactical-course?download=1&version=" + offered["hash"],
+            base_url=ORIGIN,
+            headers=HEADERS,
+        )
+        assert worked_pgn.status_code == 200 and worked_pgn.mimetype == "application/x-chess-pgn"
     from chess_coach.curriculum import daily_plan
     from chess_coach.unified_sessions import start as start_unified
 

@@ -5,6 +5,7 @@ from .capture_finder_dispatch import accept_options, decorate
 from .capture_finder_proof import prove
 from .capture_plan_sources import witnesses
 from .related_capture import _selection, present
+from .tactical_exposure_admission import filter_eligible
 
 MAX_PROOFS = 12
 PER_SOURCE_PROOFS = 4
@@ -48,9 +49,10 @@ def search(
             break
         if selection is None:
             continue
+        available = filter_eligible(db, subject, selection[3], 16)
         candidate, used = prove(
             db,
-            selection,
+            (*selection[:3], available, *selection[4:]),
             deadline,
             min(PER_SOURCE_PROOFS, MAX_PROOFS - checked),
             expired,
