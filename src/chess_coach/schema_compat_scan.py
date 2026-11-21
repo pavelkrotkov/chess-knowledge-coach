@@ -10,16 +10,16 @@ CHECKS = (
         "analysis_runs",
         "typeof(config_json)!='text' OR typeof(nnue)!='text' OR "
         "typeof(compatibility_json)!='text' OR "
-        "(config_json='' AND nnue='' AND compatibility_json='')",
+        "(octet_length(config_json)=0 AND octet_length(nnue)=0 AND octet_length(compatibility_json)=0)",
     ),
     (
         "detector_runs",
-        "typeof(input_json)!='text' OR input_json='' OR "
+        "typeof(input_json)!='text' OR octet_length(input_json)=0 OR "
         "typeof(input_hash)!='text' OR typeof(output_hash)!='text'",
     ),
     (
         "mapping_runs",
-        "typeof(input_json)!='text' OR input_json='' OR "
+        "typeof(input_json)!='text' OR octet_length(input_json)=0 OR "
         "typeof(input_hash)!='text' OR typeof(output_hash)!='text'",
     ),
 )
