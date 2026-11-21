@@ -201,6 +201,49 @@ companions. Keep exclusive control of the destination directory. Compare
 representative game, provenance, review, training, and schedule records in the
 restored database. Copying only a WAL database's main file is insufficient.
 
+A separate composite gzip route is available for a standalone DELETE-journal
+database when its preflight allows it. After stopping and verifying the same
+five units, choose new project-local destinations for the compressed backup and
+the separate restored SQLite file:
+
+```sh
+release="$PWD/.runtime/releases/<reviewed-sha>/venv/bin/python"
+"$release" -I -B -m chess_coach.cli backup-gzip-verify SOURCE ARCHIVE.sqlite.gz RESTORED.sqlite --project-root "$PWD" --check-only
+"$release" -I -B -m chess_coach.cli backup-gzip-verify SOURCE ARCHIVE.sqlite.gz RESTORED.sqlite --project-root "$PWD"
+```
+
+The estimate is `conditional`, not a promise that compression will fit. It
+reserves the full separate restore, working space and the operating reserve;
+the command refuses to exceed its compressed-output allowance. Stop other
+project writers while this runs because the project limit is not an enforced
+filesystem quota. The command rejects WAL mode and SQLite companions; use the
+ordinary native backup for WAL databases. It holds the original read snapshot
+through compression, separate restoration, integrity and foreign-key checks,
+and the existing typed schema and row comparison. It publishes the archive,
+restored file and `ARCHIVE.sqlite.gz.manifest.json` without overwriting; an
+archive without its matching manifest is incomplete, not a verified backup.
+The archive and restored file must share a filesystem. Keep both verified
+artifacts and compare representative records as above. This route does not
+itself free storage or establish that a production-sized run fits. Measure real
+peak and runtime only after maintenance is authorized and sufficient capacity is
+established.
+
+To restore a retained gzip archive later, keep its adjacent `.manifest.json`
+file and choose another new project-local database path:
+
+```sh
+"$release" -I -B -m chess_coach.cli restore-gzip ARCHIVE.sqlite.gz NEW_RESTORED.sqlite --project-root "$PWD" --check-only
+"$release" -I -B -m chess_coach.cli restore-gzip ARCHIVE.sqlite.gz NEW_RESTORED.sqlite --project-root "$PWD"
+```
+
+This does not need the original database. It checks manifest version and sizes,
+archive and restored hashes, SQLite metadata, integrity and foreign keys before
+publishing the new file. The typed comparison to the original was performed
+when the archive was created; the later restore does not repeat that comparison.
+Hashes detect corruption, not a malicious replacement of both archive and
+manifest. Stop project writers and keep exclusive control of the destination
+while restoring, since capacity checks are not a filesystem quota.
+
 For a release explicitly reviewed for schema-32 compatibility, an operator may
 select CHESS_SCHEMA_COMPAT=32 for the configured service database. This mode
 does not migrate the database, enable compact storage, or replace the backup and
