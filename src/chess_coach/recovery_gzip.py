@@ -1,8 +1,9 @@
-"""Create a gzip backup and verify one separate SQLite restore."""
+"""Create a compressed backup and verify one separate SQLite restore."""
 
 from pathlib import Path
 
 from .recovery_capacity import MIN_WORKING
+from .recovery_codec import routines
 from .recovery_deadline import Deadline
 from .recovery_gzip_capacity import estimate, pinned_plan
 from .recovery_gzip_execute import create
@@ -12,8 +13,9 @@ from .recovery_physical import physical
 from .recovery_verify import require_standalone
 
 
-def compressed_recovery(source, archive, restored, *, project_root, check_only=False):
+def compressed_recovery(source, archive, restored, *, project_root, check_only=False, codec="gzip"):
     """Back up a pinned DELETE database and verify an independent restore."""
+    compressor, restorer, _ = routines(codec)
     source, archive, restored, manifest, root = _paths(source, archive, restored, project_root)
     deadline = Deadline()
     _companions(source)
@@ -30,7 +32,17 @@ def compressed_recovery(source, archive, restored, *, project_root, check_only=F
         report = pinned_plan(reader, root, archive, deadline)
         if report["status"] != "conditional":
             raise ValueError("recovery capacity unavailable; no destination was created")
-        return create(reader, raw, metadata, root, (archive, restored, manifest), report, deadline)
+        return create(
+            reader,
+            raw,
+            metadata,
+            root,
+            (archive, restored, manifest),
+            report,
+            deadline,
+            compressor=compressor,
+            restorer=restorer,
+        )
 
 
 def _paths(source, archive, restored, project_root):

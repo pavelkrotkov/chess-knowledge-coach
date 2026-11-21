@@ -379,9 +379,52 @@ def test_cli_backup_and_restore_do_not_initialize_or_upgrade_source(tmp_path):
     assert json.loads(check_later.stdout)["status"] == "fits" and not later_restore.exists()
     done_later = subprocess.run(restore_command, capture_output=True, text=True, check=True)
     assert json.loads(done_later.stdout) == {"status": "verified"}
+    zstd_archive = tmp_path / "backup.sqlite.zst"
+    zstd_restored = tmp_path / "zstd-restored.sqlite"
+    zstd_command = [
+        sys.executable,
+        "-m",
+        "chess_coach.cli",
+        "--db",
+        str(sentinel),
+        "backup-zstd-verify",
+        str(source),
+        str(zstd_archive),
+        str(zstd_restored),
+        "--project-root",
+        str(tmp_path),
+    ]
+    zstd_check = subprocess.run(
+        [*zstd_command, "--check-only"], capture_output=True, text=True, check=True
+    )
+    assert json.loads(zstd_check.stdout)["status"] == "conditional" and not zstd_archive.exists()
+    zstd_done = subprocess.run(zstd_command, capture_output=True, text=True, check=True)
+    assert json.loads(zstd_done.stdout) == {"status": "verified"}
+    zstd_later = tmp_path / "zstd-later.sqlite"
+    zstd_restore = [
+        sys.executable,
+        "-m",
+        "chess_coach.cli",
+        "--db",
+        str(sentinel),
+        "restore-zstd",
+        str(zstd_archive),
+        str(zstd_later),
+        "--project-root",
+        str(tmp_path),
+    ]
+    later_check = subprocess.run(
+        [*zstd_restore, "--check-only"], capture_output=True, text=True, check=True
+    )
+    assert json.loads(later_check.stdout)["status"] == "fits" and not zstd_later.exists()
+    later_done = subprocess.run(zstd_restore, capture_output=True, text=True, check=True)
+    assert json.loads(later_done.stdout) == {"status": "verified"}
+    assert (
+        "fixture" not in zstd_check.stdout + zstd_check.stderr + zstd_done.stdout + zstd_done.stderr
+    )
     assert "fixture" not in check.stdout + check.stderr + done.stdout + done.stderr
     assert not sentinel.exists()
-    for path in (source, backup, restored):
+    for path in (source, backup, restored, zstd_restored, zstd_later):
         with sqlite3.connect(path) as db:
             assert db.execute("PRAGMA user_version").fetchone()[0] == 1
             assert db.execute("SELECT value FROM old_data").fetchone()[0] == "fixture"
