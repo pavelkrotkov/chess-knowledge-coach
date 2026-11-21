@@ -69,11 +69,13 @@ def _loop(db, state, learner, summary, counts, corpus, budget, check, progress):
             budget,
             check if budget is not None else None,
         )
-        if reason is None and budget is not None:
-            check()
+        _check_completed(reason, budget, check)
         progress["items"].extend(found)
         progress["statuses"][phase] = status
         progress["focuses"][phase] = focus
+        if _fill_quota(state, reason):
+            progress["reason"] = None
+            continue
         if reason == "family_quota_complete":
             reason = None
         reason = _reason(state, reason)
@@ -81,6 +83,17 @@ def _loop(db, state, learner, summary, counts, corpus, budget, check, progress):
         if reason is not None or state["family_index"] == 3:
             break
         _advance(state)
+
+
+# Each successful item in final fill is its own durable cursor checkpoint.
+def _fill_quota(state, reason):
+    return reason == "family_quota_complete" and state["family_index"] == 3
+
+
+# Do not publish a just-completed item after its shared deadline.
+def _check_completed(reason, budget, check):
+    if budget is not None and reason in {None, "family_quota_complete"}:
+        check()
 
 
 def _reason(state, reason):

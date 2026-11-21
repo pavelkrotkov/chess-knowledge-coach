@@ -13,7 +13,13 @@ def new_page(
     if status != "available":
         return [], status, None
     items, counts, reason = scan_new(
-        db, state, summary, scan["scheduled_examined"], check=check, quota=quota
+        db,
+        state,
+        summary,
+        scan["scheduled_examined"],
+        check=check,
+        quota=quota,
+        corpus_examined=scan["corpus_examined"],
     )
     scan.update(counts)
     scan["corpus_incomplete"] = reason == "corpus_scan_incomplete"
@@ -47,7 +53,7 @@ def checked_page(db, state, summary, counts, corpus, check):
             work_counts,
             corpus,
             check=check,
-            quota=1 if state["family_index"] < 3 else None,
+            quota=1,
         )
     except (PreviewUnavailable, sqlite3.OperationalError):
         state["pending"] = working["pending"]

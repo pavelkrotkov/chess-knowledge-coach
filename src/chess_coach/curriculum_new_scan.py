@@ -7,20 +7,28 @@ from .db import Database
 
 
 def scan_new(
-    db: Database, state: dict, summary: dict, scheduled_examined: int, *, check=None, quota=None
+    db: Database,
+    state: dict,
+    summary: dict,
+    scheduled_examined: int,
+    *,
+    check=None,
+    quota=None,
+    corpus_examined=0,
 ) -> tuple[list[dict], dict, str | None]:
-    rows = new_page(db, state["corpus_version"], state["new_after"], state["scan_limit"])
+    remaining = state["scan_limit"] - corpus_examined
+    rows = new_page(db, state["corpus_version"], state["new_after"], remaining)
     if state["pending"] is not None and not rows:
         raise ValueError("curriculum candidate changed; restart the plan")
     selected = []
     seen = set(state["seen"])
     counts = {
-        "corpus_examined": 0,
+        "corpus_examined": corpus_examined,
         "scheduled_examined": scheduled_examined,
         "scheduled_unavailable_item_id": None,
     }
     # The last processed corpus coordinate remains the continuation point.
-    for row in rows[: state["scan_limit"]]:
+    for row in rows[:remaining]:
         _check(check)
         if len(row["puzzle_id"]) > 256:
             raise ValueError("puzzle ID is too long for bounded continuation")
@@ -40,7 +48,7 @@ def scan_new(
             state["seen"] = sorted(seen)
             return selected, counts, reason
     state["seen"] = sorted(seen)
-    return selected, counts, "corpus_scan_incomplete" if len(rows) > state["scan_limit"] else None
+    return selected, counts, "corpus_scan_incomplete" if len(rows) > remaining else None
 
 
 def _check(check):

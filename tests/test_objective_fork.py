@@ -1263,6 +1263,7 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
         )
     for name, solution in (
         ("candidate", "b7b5 c5f8"),
+        ("candidate2", "h8g8 c5c8"),
         ("three", "b7b6 c5f8"),
         ("four", "b7b6 c5f8"),
     ):
@@ -1347,6 +1348,53 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
     )
     resumed_corpus = corpus_page(interrupted_again["next_cursor"], scan_limit=3)
     assert any(item.get("puzzle_id") == "candidate" for item in resumed_corpus["items"])
+
+    # Final corpus fill can publish an earlier candidate even if a later
+    # bound candidate hits the shared deadline on the same page.
+    from chess_coach.curriculum_cursor import new_state
+    from chess_coach.curriculum_cursor_codec import encode_cursor
+
+    fill_state = new_state(db, SUBJECT, "broad", 5, 200, corpus_time)
+    fill_state.update(phase="new", family_index=3, new_after=[1100, "b-nonmate"])
+    fill_cursor = encode_cursor(db, fill_state)
+    original_scheduled = consider.scheduled_page
+    calls = [0]
+    clock[0] = 0.0
+
+    def expire_second(*args, **kwargs):
+        calls[0] += 1
+        if calls[0] == 2:
+            clock[0] = 3.0
+            kwargs["check"]()
+        return original_scheduled(*args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(family_mix, "time", SimpleNamespace(monotonic=lambda: clock[0]))
+        patch.setattr(consider, "scheduled_page", expire_second)
+        filled = corpus_page(fill_cursor, scan_limit=200)
+    assert [item["puzzle_id"] for item in filled["items"]] == ["candidate"]
+    fill_pending = decode_cursor(db, filled["next_cursor"])
+    assert fill_pending["new_after"] == [1200, "candidate"]
+    assert fill_pending["pending"][:2] == [1200, "candidate2"]
+    assert filled["items"][0]["prompt_key"] in fill_pending["seen"]
+    after_fill = corpus_page(filled["next_cursor"], scan_limit=200)
+    assert any(item.get("puzzle_id") == "candidate2" for item in after_fill["items"])
+
+    # Repeated one-item checkpoints retain one shared page work allowance.
+    one_state = new_state(db, SUBJECT, "broad", 5, 1, corpus_time)
+    one_state.update(phase="new", family_index=3, new_after=[1100, "b-nonmate"])
+    page_cursor = encode_cursor(db, one_state)
+    found = []
+    for _ in range(12):
+        next_page = corpus_page(page_cursor, scan_limit=1)
+        assert next_page["scan"]["corpus_examined"] <= 1
+        assert next_page["scan"]["scheduled_examined"] <= 1
+        found.extend(item.get("puzzle_id") for item in next_page["items"])
+        if "candidate2" in found:
+            break
+        page_cursor = next_page["next_cursor"]
+        assert page_cursor
+    assert found[:2] == ["candidate", "candidate2"]
 
     app = create_app(
         db_path=path,
