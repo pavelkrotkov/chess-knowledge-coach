@@ -18,7 +18,7 @@ from .opening_snapshot import GRAPH_SHA256, VERSION
 TRANSFORM = "v2:32MB-decoded;5000-records;1000-games;40-parent-plies;12-window-plies;512-game-plies"
 
 
-def store(path, records, coverage):
+def store(path, records, coverage, *, transform=TRANSFORM):
     db = sqlite3.connect(path)
     try:
         db.executescript("""
@@ -36,7 +36,7 @@ def store(path, records, coverage):
             "source_month": SOURCE_MONTH,
             "license": LICENSE,
             "license_url": LICENSE_URL,
-            "transform": TRANSFORM,
+            "transform": transform,
             "opening_graph": GRAPH_SHA256,
             "opening_version": VERSION,
             "structure_version": STRUCTURE_VERSION,

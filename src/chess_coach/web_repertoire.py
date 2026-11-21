@@ -88,10 +88,13 @@ def opening_decision(game_id: int, position_id: int):
         )
     except (Exception, PreviewDeadline):
         comparisons = {}
+    from .web_opening_later import opportunity
+
     return render_template(
         "opening_decision.html",
         decision=result,
         comparisons=comparisons,
+        opportunity=opportunity(result, comparisons, request.args.get("opportunities")),
         qualifies_experiment=qualifies_experiment,
         board=board_rows(result["fen"], result["color"]),
     )
