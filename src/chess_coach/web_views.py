@@ -55,8 +55,12 @@ def evidence_detail(evidence_id: int):
     except ValueError:
         abort(404)
     from .material_created_exposure import explain as created_exposure
+    from .objective_pin_slide_display import available as slide_available
 
     evidence["created_material_exposure"] = created_exposure(
+        database(), evidence, current_app.config["SUBJECT"]
+    )
+    evidence["pin_slide_available"] = slide_available(
         database(), evidence, current_app.config["SUBJECT"]
     )
     return render_evidence(evidence)

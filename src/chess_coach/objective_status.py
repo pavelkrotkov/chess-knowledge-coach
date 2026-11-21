@@ -37,9 +37,11 @@ def inspect(db, subject, attempt, event):
 def _checked_view(db, session, row):
     view = _view(row)
     from .objective_created_feedback import annotate
+    from .objective_pin_slide_feedback import annotate as annotate_pin_slide
 
     # Add only a revalidated named-piece witness to the private result.
     annotate(view, session, row)
+    annotate_pin_slide(view, session, row)
     if session["objective"] != "execute_named_fork" or view.get("status") != "incorrect":
         return view
     from .fork_history_result import result

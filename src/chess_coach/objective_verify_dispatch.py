@@ -21,6 +21,8 @@ from .objective_pin_contract import OBJECTIVE as PIN_OBJECTIVE
 from .objective_pin_judge import verify as verify_pin
 from .objective_pin_prevent_contract import OBJECTIVE as PIN_PREVENT_OBJECTIVE
 from .objective_pin_prevent_judge import verify as verify_pin_prevent
+from .objective_pin_slide_contract import OBJECTIVE as PIN_SLIDE_OBJECTIVE
+from .objective_pin_slide_judge import verify as verify_pin_slide
 from .objective_promotion_contract import VERSION as PROMOTION_VERSION
 from .objective_promotion_judge import judge as judge_promotion
 from .objective_protection_contract import OBJECTIVE as PROTECTION_OBJECTIVE
@@ -35,6 +37,7 @@ def verify(board, move, request, events, clock, start, seconds, base, session):
         CREATED_OBJECTIVE: verify_created,
         PIN_OBJECTIVE: verify_pin,
         PIN_PREVENT_OBJECTIVE: verify_pin_prevent,
+        PIN_SLIDE_OBJECTIVE: verify_pin_slide,
         FORK_OBJECTIVE: verify_fork,
         FORK_DEFENSE_OBJECTIVE: verify_fork_defense,
         FORK_AVOIDANCE_OBJECTIVE: verify_fork_avoidance,

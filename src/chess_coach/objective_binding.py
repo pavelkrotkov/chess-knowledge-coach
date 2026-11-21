@@ -18,6 +18,8 @@ from .objective_pin_contract import OBJECTIVE as PIN_OBJECTIVE
 from .objective_pin_contract import VERSION as PIN_VERSION
 from .objective_pin_prevent_contract import OBJECTIVE as PIN_PREVENT_OBJECTIVE
 from .objective_pin_prevent_contract import VERSION as PIN_PREVENT_VERSION
+from .objective_pin_slide_contract import OBJECTIVE as PIN_SLIDE_OBJECTIVE
+from .objective_pin_slide_contract import VERSION as PIN_SLIDE_VERSION
 from .objective_promotion_binding import public_binding, public_scope
 from .objective_protection_contract import OBJECTIVE as PROTECTION_OBJECTIVE
 from .objective_protection_contract import VERSION as PROTECTION_VERSION
@@ -58,6 +60,7 @@ def _binding(session, data, request):
             *FORK_BINDINGS,
             (PIN_VERSION, PIN_OBJECTIVE),
             (PIN_PREVENT_VERSION, PIN_PREVENT_OBJECTIVE),
+            (PIN_SLIDE_VERSION, PIN_SLIDE_OBJECTIVE),
             (PAWN_VERSION, PAWN_OBJECTIVE),
             (PROTECTION_VERSION, PROTECTION_OBJECTIVE),
             (TARGET_VERSION, TARGET_OBJECTIVE),

@@ -2,7 +2,7 @@
 
 
 def add_fields(result, row, provenance):
-    if row["objective"] != "prevent_named_pin":
+    if row["objective"] not in {"prevent_named_pin", "defend_relative_pin_slide"}:
         return
     named = provenance["pin_prevention"]
     for key in ("origin", "attacker", "pinned", "rear", "kind"):

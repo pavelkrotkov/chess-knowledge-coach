@@ -9,6 +9,7 @@ from .objective_fork_defense_contract import is_source as fork_defense_source
 from .objective_pawn_contract import is_source as pawn_source
 from .objective_pin_contract import is_source as pin_source
 from .objective_pin_prevent_contract import is_source as pin_prevent_source
+from .objective_pin_slide_contract import is_source as pin_slide_source
 from .objective_protection_contract import VERSION as PROTECTION_VERSION
 from .objective_short_source import VERSION as SHORT_VERSION
 from .related_capture_objective import is_source as capture_assessment
@@ -38,7 +39,7 @@ def objective_assistance(row):
 
 
 def _pin_family(row):
-    return pin_source(row) or pin_prevent_source(row)
+    return pin_source(row) or pin_prevent_source(row) or pin_slide_source(row)
 
 
 def _fork_family(row):
