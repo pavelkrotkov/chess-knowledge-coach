@@ -162,6 +162,52 @@ def test_private_access_and_csrf(setup, tmp_path, monkeypatch):
         "VALUES(1,'fixture','v1','{}')"
     )
     destination.commit()
+    # A large but valid inline value must not be loaded merely to test emptiness.
+    from chess_coach.schema_compat_scan import inspect
+
+    destination.execute("UPDATE analysis_runs SET config_json=? WHERE id=1", ("x" * 131072,))
+    destination.execute("UPDATE detector_runs SET input_json=? WHERE id=1", ("x" * 131072,))
+    destination.execute("UPDATE mapping_runs SET input_json=? WHERE id=1", ("x" * 131072,))
+    old_limit = destination.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, 65536)
+    try:
+        assert inspect(destination) == destination.execute("PRAGMA schema_version").fetchone()[0]
+        for column in ("nnue", "compatibility_json"):
+            destination.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, old_limit)
+            destination.execute(
+                "UPDATE analysis_runs SET config_json=?,nnue=?,compatibility_json=? WHERE id=1",
+                ("", "", ""),
+            )
+            destination.execute(f"UPDATE analysis_runs SET {column}=? WHERE id=1", ("x" * 131072,))
+            destination.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, 65536)
+            inspect(destination)
+    finally:
+        destination.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, old_limit)
+    destination.execute(
+        "UPDATE analysis_runs SET config_json=?,nnue=?,compatibility_json=? WHERE id=1",
+        ("\x00", "", ""),
+    )
+    for table in ("detector_runs", "mapping_runs"):
+        assert (
+            destination.execute(f"UPDATE {table} SET input_json=? WHERE id=1", ("\x00",)).rowcount
+            == 1
+        )
+    inspect(destination)  # Embedded NUL is nonempty text.
+    for table in ("detector_runs", "mapping_runs"):
+        for value in ("", b"non-text"):
+            destination.execute(f"UPDATE {table} SET input_json=? WHERE id=1", (value,))
+            with pytest.raises(ValueError, match="representation"):
+                inspect(destination)
+        destination.execute(f"UPDATE {table} SET input_json=? WHERE id=1", ("ok",))
+    destination.execute(
+        "UPDATE analysis_runs SET config_json=?,nnue=?,compatibility_json=? WHERE id=1",
+        ("", "", ""),
+    )
+    with pytest.raises(ValueError, match="representation"):
+        inspect(destination)
+    destination.execute("UPDATE analysis_runs SET config_json=? WHERE id=1", (b"non-text",))
+    with pytest.raises(ValueError, match="representation"):
+        inspect(destination)
+    destination.rollback()
     destination.close()
     monkeypatch.setenv("CHESS_PROJECT_ROOT", str(root))
     monkeypatch.setenv("CHESS_DB", str(legacy))
