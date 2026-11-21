@@ -488,7 +488,7 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
         assert len(resolutions) == 1
     with monkeypatch.context() as patch:
         patch.setattr(
-            tactical_course, "candidates", lambda *_a: ([fork_group, capture_group], coverage)
+            tactical_course, "candidates", lambda *_a, **_k: ([fork_group, capture_group], coverage)
         )
         original_owned = tactical_course_resolve.owned
 

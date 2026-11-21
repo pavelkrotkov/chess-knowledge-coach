@@ -253,7 +253,9 @@ def test_private_access_and_csrf(setup, tmp_path, monkeypatch):
 
     envelope = {"preview": "fixture"}
     monkeypatch.setenv("CHESS_CORPUS", "fixture-v1")
-    monkeypatch.setattr(tactical_study_current, "preview", lambda *_args: {})
+    monkeypatch.setattr(
+        tactical_study_current, "preview", lambda *_args: {"kind": "local-tactical-course-v1"}
+    )
 
     def study_build(db, *_args):
         assert db.connection.execute("PRAGMA query_only").fetchone()[0] == 1
