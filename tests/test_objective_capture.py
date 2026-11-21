@@ -2228,6 +2228,8 @@ def _scheduled_deadline_controls(db, tmp_path, monkeypatch, now):
     import chess_coach.curriculum_unified_owned as owned
     import chess_coach.fork_proof as fork_proof
     import chess_coach.material_reply_guard as reply_guard
+    import chess_coach.material_threat_actions as threat_actions
+    import chess_coach.objective_capture_snapshot as capture_snapshot
     from chess_coach.curriculum import daily_plan
     from chess_coach.curriculum_conflicts import scheduled_page
     from chess_coach.curriculum_cursor_codec import decode_cursor
@@ -2255,6 +2257,8 @@ def _scheduled_deadline_controls(db, tmp_path, monkeypatch, now):
     inside = [False]
     visited = []
     original_capture, original_reply = owned.capture_candidate, reply_guard._unresolved
+    original_gain, original_judge = threat_actions._gain, capture_snapshot.judge
+    in_judge = [False]
 
     def scheduled_capture(*args, **kwargs):
         inside[0] = True
@@ -2263,9 +2267,42 @@ def _scheduled_deadline_controls(db, tmp_path, monkeypatch, now):
         finally:
             inside[0] = False
 
+    def gain(*args, **kwargs):
+        if inside[0] and kwargs.get("check") is not None:
+            original_check = kwargs["check"]
+
+            def expire():
+                visited.append(True)
+                clock[0] = 3.0
+                original_check()
+
+            kwargs["check"] = expire
+        return original_gain(*args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(new_capture, "time", SimpleNamespace(monotonic=lambda: clock[0]))
+        patch.setattr(owned, "capture_candidate", scheduled_capture)
+        patch.setattr(threat_actions, "_gain", gain)
+        currentness_expired = page(second["next_cursor"])
+    assert visited and currentness_expired["continuation_reason"] == "capture_scan_incomplete"
+    currentness_state = decode_cursor(db, currentness_expired["next_cursor"])
+    assert (currentness_state["capture_pending"], currentness_state["scheduled_after"]) == (
+        before["capture_pending"],
+        before["scheduled_after"],
+    )
+    clock[0] = 0.0
+    visited.clear()
+
+    def judge(*args, **kwargs):
+        in_judge[0] = True
+        try:
+            return original_judge(*args, **kwargs)
+        finally:
+            in_judge[0] = False
+
     def reply(*args, **kwargs):
         result = original_reply(*args, **kwargs)
-        if inside[0]:
+        if inside[0] and in_judge[0]:
             visited.append(True)
             clock[0] = 3.0
         return result
@@ -2273,6 +2310,7 @@ def _scheduled_deadline_controls(db, tmp_path, monkeypatch, now):
     with monkeypatch.context() as patch:
         patch.setattr(new_capture, "time", SimpleNamespace(monotonic=lambda: clock[0]))
         patch.setattr(owned, "capture_candidate", scheduled_capture)
+        patch.setattr(capture_snapshot, "judge", judge)
         patch.setattr(reply_guard, "_unresolved", reply)
         expired = page(second["next_cursor"])
     assert visited and expired["continuation_reason"] == "capture_scan_incomplete"

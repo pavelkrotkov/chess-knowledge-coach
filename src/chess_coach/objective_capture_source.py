@@ -14,14 +14,14 @@ def resolve(db, version, key, subject, *, check=None):
         raise ValueError("capture objective unavailable")
     _check(check)
     evidence_id = int(key)
-    view, review = current(db, evidence_id, subject)
+    options = {"check": check} if check is not None else {}
+    view, review = current(db, evidence_id, subject, **options)
     board = decision_board(db, position_row(db, view["position_id"]))
     if not history_known(board) or board.fen() != view["decision_fen"]:
         raise ValueError("capture history unavailable")
-    options = {"check": check} if check is not None else {}
     result = snapshot(board, view, review, evidence_id, version, **options)
     _check(check)
-    if (view, review) != current(db, evidence_id, subject):
+    if (view, review) != current(db, evidence_id, subject, **options):
         raise ValueError("capture source changed")
     _check(check)
     return result

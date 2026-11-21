@@ -7,8 +7,9 @@ from .material_defense_result import assess
 from .material_lines import continuation, unopposed_material_loss
 
 
-def defense_observation(board, played, best_line, played_line):
-    probe = candidate(board, played)
+def defense_observation(board, played, best_line, played_line, *, check=None):
+    options = {"check": check} if check is not None else {}
+    probe = candidate(board, played, **options)
     if probe is None or "outcome" in probe:
         return probe
     played_pv = continuation(board, played_line, played, allow_checks=True)
@@ -16,16 +17,17 @@ def defense_observation(board, played, best_line, played_line):
     if played_pv is None:
         return ambiguous("material_protection", "continuation_unavailable")
     outcome = assess(board, probe, best_pv, played_pv)
-    reason = _failure_reason(outcome, board, probe, best_pv, best_line, played_line)
+    reason = _failure_reason(outcome, board, probe, best_pv, best_line, played_line, check)
     if reason:
         return ambiguous("material_protection", reason)
     return outcome
 
 
-def _failure_reason(outcome, board, probe, best_pv, best_line, played_line):
+def _failure_reason(outcome, board, probe, best_pv, best_line, played_line, check):
     if outcome["outcome"] != "failure":
         return None
-    if not best_protects(board, probe, best_pv):
+    options = {"check": check} if check is not None else {}
+    if not best_protects(board, probe, best_pv, **options):
         return "alternative_defense_unverified"
     if not unopposed_material_loss(best_line, played_line):
         return "engine_disagreement_or_compensation"

@@ -8,15 +8,17 @@ from .material_capture_rules import conflict
 from .material_lines import continuation
 
 
-def capture_observation(board, candidate, actual, best_line, played_line):
+def capture_observation(board, candidate, actual, best_line, played_line, *, check=None):
     target = board.piece_at(candidate.to_square)
-    gain, reason, check_proof = capture_gain(board, candidate, target)
+    gain, reason, check_proof = capture_gain(board, candidate, target, check=check)
     if reason:
         return ambiguous("material_capture", reason)
     played_pv, best_pv, reason = _lines(board, candidate, actual, best_line, played_line)
     if reason:
         return ambiguous("material_capture", reason)
-    reason = conflict(board, candidate, actual, best_line, played_line, best_pv, played_pv)
+    reason = conflict(
+        board, candidate, actual, best_line, played_line, best_pv, played_pv, check=check
+    )
     if reason:
         return ambiguous("material_capture", reason)
     return {

@@ -7,9 +7,17 @@ from .unified_own_game_evidence import _inspect
 
 
 def current(
-    db, evidence_id, subject, *, kind="material_capture", operation="execute", _history=None
+    db,
+    evidence_id,
+    subject,
+    *,
+    kind="material_capture",
+    operation="execute",
+    _history=None,
+    check=None,
 ):
-    view, review, reasons = _inspect(db, evidence_id, subject, history=_history)
+    options = {"check": check} if check is not None else {}
+    view, review, reasons = _inspect(db, evidence_id, subject, history=_history, **options)
     if reasons or view["objective"]["kind"] != kind:
         raise ValueError("capture source unavailable")
     row = db.connection.execute(

@@ -8,11 +8,13 @@ from .unified_own_game_evidence import LIMIT, _inspect, _rows
 from .unified_own_game_snapshot import snapshot
 
 
-def source_for_position(db, subject, position, *, check=lambda: None):
+def source_for_position(db, subject, position, *, check=None):
+    tick = check or (lambda: None)
     for row in _rows(db, subject, position)[:LIMIT]:
-        check()
-        view, review, reasons = _inspect(db, row["id"], subject)
-        check()
+        tick()
+        options = {"check": check} if check is not None else {}
+        view, review, reasons = _inspect(db, row["id"], subject, **options)
+        tick()
         if (
             not reasons
             and view["outcome"] == "failure"

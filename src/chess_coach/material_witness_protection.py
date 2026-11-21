@@ -3,14 +3,15 @@
 from .material_defense import defense_observation
 
 
-def protection_witness(prepared, fact):
+def protection_witness(prepared, fact, *, check=None):
     role = "played" if fact["outcome"] == "success" else "best"
     line = fact.get(role) or {}
     moves = line.get("uci") or []
     if not moves:
         return None
     source = prepared[role]
-    trial = defense_observation(prepared["board"], moves[0], prepared["best"], source)
+    options = {"check": check} if check is not None else {}
+    trial = defense_observation(prepared["board"], moves[0], prepared["best"], source, **options)
     if trial is None or trial.get("outcome") != "success":
         return None
     return {"role": role, "uci": moves, "san": line.get("san", [])}

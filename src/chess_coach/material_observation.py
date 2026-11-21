@@ -7,14 +7,15 @@ from .material_defense import defense_observation
 from .material_observation_fallback import fallback_observation
 
 
-def material_observation(board, played, best_line, played_line):
+def material_observation(board, played, best_line, played_line, *, check=None):
     try:
         actual = chess.Move.from_uci(played)
     except ValueError:
         return ambiguous("material_capture", "invalid_root")
     if actual not in board.legal_moves:
         return ambiguous("material_capture", "illegal_or_pinned_root")
-    defense = defense_observation(board, played, best_line, played_line)
+    options = {"check": check} if check is not None else {}
+    defense = defense_observation(board, played, best_line, played_line, **options)
     if defense is not None and defense.get("outcome") == "success":
         return defense
-    return fallback_observation(board, played, actual, best_line, played_line, defense)
+    return fallback_observation(board, played, actual, best_line, played_line, defense, **options)

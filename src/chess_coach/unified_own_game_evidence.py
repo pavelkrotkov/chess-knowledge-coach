@@ -50,9 +50,12 @@ def _reasons(view):
     return [reason for failed, reason in checks if failed]
 
 
-def _inspect(db, evidence_id, subject, history=None):
+def _inspect(db, evidence_id, subject, history=None, *, check=None):
     try:
-        view = inspect_material_opportunity(db, evidence_id, learner=subject, _history=history)
+        options = {"_check": check} if check is not None else {}
+        view = inspect_material_opportunity(
+            db, evidence_id, learner=subject, _history=history, **options
+        )
         review = _review(db, evidence_id)
         reasons = _reasons(view)
         if not reasons:

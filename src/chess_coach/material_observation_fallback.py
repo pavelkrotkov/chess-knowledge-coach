@@ -7,16 +7,17 @@ from .material_capture import capture_observation
 from .material_unavailable import without_best
 
 
-def fallback_observation(board, played, actual, best_line, played_line, defense):
+def fallback_observation(board, played, actual, best_line, played_line, defense, *, check=None):
+    options = {"check": check} if check is not None else {}
     if board.is_capture(actual):
-        return capture_observation(board, actual, actual, best_line, played_line)
+        return capture_observation(board, actual, actual, best_line, played_line, **options)
     best = _best_move(board, best_line)
     if best is False:
         return ambiguous("material_capture", "illegal_or_pinned_root")
     if best is None:
         return defense or without_best(board, played, best_line, played_line)
     if board.is_capture(best):
-        return capture_observation(board, best, actual, best_line, played_line)
+        return capture_observation(board, best, actual, best_line, played_line, **options)
     return defense
 
 
