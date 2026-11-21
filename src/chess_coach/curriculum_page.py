@@ -31,7 +31,7 @@ def build_page(db: Database, state: dict, learner: str, now: datetime, budget=No
         if reason is None and scan["due_incomplete"] and len(state["seen"]) < state["limit"]:
             reason = "due_scan_incomplete"
     # Old signed continuations keep their original two-phase selection.
-    if state["v"] == 3 and state["phase"] != "due" and reason is None:
+    if state["v"] in {3, 4} and state["phase"] != "due" and reason is None:
         return _mixed_page(db, state, learner, now, budget, summary, status, items, scan)
     return _legacy_page(db, state, learner, now, budget, summary, status, items, scan, reason)
 
@@ -77,6 +77,7 @@ def _mixed_page(db, state, learner, now, budget, summary, corpus, items, scan):
         "capture_focus": focuses.get("capture"),
         "capture_generation": capture_generation(budget, statuses.get("capture")),
         "fork_focus": focuses.get("fork"),
+        "prerequisite": statuses.get("prerequisite"),
         "fork_generation": capture_generation(budget, statuses.get("fork")),
         "scan": scan,
         "items": items,

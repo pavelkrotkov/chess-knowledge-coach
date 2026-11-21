@@ -23,11 +23,22 @@ def validate_state(state) -> None:
     }
     if not isinstance(state, dict) or type(state.get("v")) is not int:
         raise ValueError("invalid cursor fields")
-    if state["v"] in {2, 3}:
+    if state["v"] in {2, 3, 4}:
         fields.add("capture_pending")
-    if state["v"] == 3:
+    if state["v"] in {3, 4}:
         fields.update({"fork_pending", "family_turn", "family_index"})
-    if state["v"] not in {1, 2, 3} or set(state) != fields:
+    if state["v"] == 4:
+        fields.update(
+            {
+                "prerequisite_policy",
+                "prerequisite_graph",
+                "prerequisite_scope",
+                "prerequisite_checked",
+                "prerequisite_offered",
+                "prerequisite_deferred",
+            }
+        )
+    if state["v"] not in {1, 2, 3, 4} or set(state) != fields:
         raise ValueError("invalid cursor fields")
     validate_scope(state)
     validate_positions(state)

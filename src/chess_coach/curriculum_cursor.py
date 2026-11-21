@@ -10,8 +10,16 @@ from .mastery_time import parse_utc
 def new_state(
     db: Database, learner: str, version: str, limit: int, scan_limit: int, now: datetime
 ) -> dict:
+    from .curriculum_prerequisite_source import POLICY, graph
+
     return {
-        "v": 3,
+        "v": 4,
+        "prerequisite_policy": POLICY,
+        "prerequisite_graph": graph(),
+        "prerequisite_scope": None,
+        "prerequisite_checked": False,
+        "prerequisite_offered": False,
+        "prerequisite_deferred": False,
         "subject_hash": digest(learner),
         "corpus_version": version,
         "limit": limit,
@@ -59,4 +67,9 @@ def resume_state(
         raise ValueError("curriculum cursor time changed; restart the plan")
     if state["revision"] != revision(db):
         raise ValueError("curriculum sources changed; restart the plan")
+    if state["v"] == 4:
+        from .curriculum_prerequisite_source import POLICY, graph
+
+        if (state["prerequisite_policy"], state["prerequisite_graph"]) != (POLICY, graph()):
+            raise ValueError("curriculum prerequisite policy changed; restart the plan")
     return state, now

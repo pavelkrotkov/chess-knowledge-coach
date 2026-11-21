@@ -9,9 +9,9 @@ def validate_scope(state: dict) -> None:
     if not integer(state["revision"], 0, 2**63 - 1):
         raise ValueError("invalid revision")
     phases = {"due", "new"}
-    if state["v"] in {2, 3}:
+    if state["v"] in {2, 3, 4}:
         phases.add("capture")
-    if state["v"] == 3:
+    if state["v"] in {3, 4}:
         phases.add("fork")
     if state["phase"] not in phases:
         raise ValueError("invalid phase")

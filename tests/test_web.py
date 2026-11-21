@@ -482,6 +482,7 @@ def test_private_access_and_csrf(setup, tmp_path, monkeypatch):
     legacy_plan = daily_plan(compat_db, subject="learner", corpus_version="fixture-v1")
     assert legacy_plan["capture_status"] == "learning_unavailable"
     assert legacy_plan["fork_status"] == "learning_unavailable"
+    assert legacy_plan["prerequisite"]["state"] == "learning_unavailable"
     assert all(item.get("source_type") != "own-game" for item in legacy_plan["items"])
     # The genuine legacy database can still offer an ordinary fork rehearsal.
     # The existing fork finder is represented by a deterministic synthetic result.
