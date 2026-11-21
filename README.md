@@ -757,7 +757,10 @@ reports a separately versioned, bounded same-square exchange certificate or unkn
 A guard witness requires a newly legal recapture by the moved piece. The result
 covers legal target captures within the reported node, ply and time limits; quiet
 alternatives, compensation and later play remain outside its scope. It does not
-change the profile, existing grading, evidence or scheduling.
+change the profile, existing grading, evidence or scheduling. On Hermes, run
+this command with the reviewed frozen release interpreter and the selected
+private compatibility profile for its database; the selected profile is checked
+before ordinary CLI initialization.
 
 Method `style-choices-v2` compares exact centipawn scores within 50 cp at
 minimum depth four and replays four legal PV plies per choice. It uses conventional
