@@ -3,11 +3,12 @@
 from .objective_current import current
 from .objective_pin_prevent_budget import BudgetExceeded
 from .objective_pin_prevent_contract import OBJECTIVE
+from .objective_pin_slide_contract import OBJECTIVE as SLIDE_OBJECTIVE
 from .objective_verify import unresolved
 
 
 def current_existing(db, request, result):
-    if request["objective_version"] != OBJECTIVE:
+    if request["objective_version"] not in {OBJECTIVE, SLIDE_OBJECTIVE}:
         return result
     try:
         current(db, request)

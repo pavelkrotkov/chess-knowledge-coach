@@ -574,7 +574,9 @@ def _slide_transfer(monkeypatch, black, absolute=False):
     from tests.test_pin_pipeline import Engine
 
     board = chess.Board(
-        "4r2k/5p2/8/8/8/8/4RP2/4K3 w - - 0 1" if absolute else "4r2k/5p2/8/8/4R3/8/8/K3Q3 w - - 0 1"
+        "4r2k/5p2/8/8/8/8/4RP2/4K3 w - - 0 1"
+        if absolute
+        else "4r2k/5p2/8/8/4R3/8/PPP5/K3Q3 w - - 0 1"
     )
     good, bad, capture, final = (
         ("e2e3", "e2e4", "e8e4", "e3e2") if absolute else ("e4e3", "e4f4", "e8e1", "e3e7")
@@ -780,7 +782,201 @@ def _slide_transfer(monkeypatch, black, absolute=False):
     db.connection.commit()
     empty = preview(db, SUBJECT, evidence, "empty", mechanism="slide")
     assert empty["items"] == [] and "insufficient" in empty["status"]
+
+    if not absolute:
+        from chess_coach import (
+            objective_pin_slide_budget,
+            web_unified_actions,
+            web_unified_practice,
+        )
+        from chess_coach.objective_pin_slide_contract import VERSION as SLIDE_VERSION
+        from chess_coach.objective_pin_slide_proof import prove
+        from chess_coach.objective_worker import process
+        from chess_coach.unified_sessions import start
+        from tests.test_web import token
+
+        monkeypatch.setattr(web_unified_practice, "database", lambda: db)
+        monkeypatch.setattr(web_unified_actions, "database", lambda: db)
+        counts = {
+            table: db.connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+            for table in ("evidence_mappings", "mastery_events", "training_attempts")
+        }
+        evidence_page = client.get(f"/evidence/{evidence}", base_url=base, headers=headers)
+        assert b"Practice a relative-pin slide defense" in evidence_page.data
+        with client.session_transaction(base_url=base) as session:
+            csrf = session["csrf"]
+        started = client.post(
+            "/unified/start",
+            base_url=base,
+            headers=headers | {"Origin": base},
+            data={
+                "csrf": csrf,
+                "source_type": "own-game",
+                "version": SLIDE_VERSION,
+                "key": str(evidence),
+            },
+        )
+        assert started.status_code == 303
+        practice = client.get(started.headers["Location"], base_url=base, headers=headers)
+        assert b"that recapturing piece must not be captured immediately" in practice.data
+        with client.session_transaction(base_url=base) as session:
+            own_attempt = session["unified_attempt"]
+        exemplar = json.loads(
+            db.connection.execute(
+                "SELECT lines_json FROM unified_sessions WHERE attempt_id=?", (own_attempt,)
+            ).fetchone()[0]
+        )[0][0]
+        alternative = uci("e4e3")
+        assert alternative != exemplar
+        response = client.post(
+            "/unified/move",
+            base_url=base,
+            headers=headers | {"Origin": base},
+            data={
+                "csrf": token(practice, "csrf"),
+                "attempt": own_attempt,
+                "event": "owned-alternative",
+                "move": alternative,
+            },
+        )
+        assert response.status_code == 303
+        queued = submit(db, own_attempt, SUBJECT, event_id="owned-alternative", move=alternative)
+        assert queued["feedback"] == "needs_verification"
+        assert process(db, SUBJECT)["outcomes"] == {"correct": 1}
+        verified = show(db, own_attempt, SUBJECT)["verification"]
+        assert verified["status"] == "correct"
+        saved_proof = json.loads(
+            db.connection.execute(
+                "SELECT result_json FROM objective_results WHERE attempt_id=?", (own_attempt,)
+            ).fetchone()[0]
+        )
+        witnesses = saved_proof["recaptures"]
+        assert witnesses
+        after_slide = board.copy(stack=True)
+        after_slide.push_uci(alternative)
+        target = chess.Move.from_uci(alternative).to_square
+        attacks = {
+            move.uci()
+            for move in after_slide.legal_moves
+            if after_slide.is_capture(move) and move.to_square == target
+        }
+        assert {item["capture"] for item in witnesses} == attacks
+        from chess_coach.material_lines import material
+
+        for item in witnesses:
+            reply_board = after_slide.copy(stack=True)
+            attacker = reply_board.turn
+            initial = material(reply_board, attacker)
+            reply_board.push(reply_board.parse_uci(item["capture"]))
+            recapture = reply_board.parse_uci(item["recapture"])
+            assert reply_board.is_capture(recapture) and recapture.to_square == target
+            reply_board.push(recapture)
+            assert material(reply_board, attacker) - initial <= 0
+            assert not any(
+                move.to_square == target and reply_board.is_capture(move)
+                for move in reply_board.legal_moves
+            )
+        assert (
+            submit(db, own_attempt, SUBJECT, event_id="owned-alternative", move=alternative)
+            == queued
+        )
+        page = client.get(response.headers["Location"], base_url=base, headers=headers)
+        assert b"checked captures can be met by recapturing without losing material" in page.data
+
+        for attempt, answer, outcome in (
+            ("slide-loss", uci(bad), "incorrect"),
+            ("slide-unresolved", uci("e4e5"), "unresolved"),
+        ):
+            start(
+                db,
+                attempt_id=attempt,
+                subject=SUBJECT,
+                source_type="own-game",
+                version=SLIDE_VERSION,
+                key=str(evidence),
+            )
+            submit(db, attempt, SUBJECT, event_id="answer", move=answer)
+            assert process(db, SUBJECT)["outcomes"] == {outcome: 1}
+            if outcome == "incorrect":
+                saved_loss = json.loads(
+                    db.connection.execute(
+                        "SELECT result_json FROM objective_results WHERE attempt_id=?", (attempt,)
+                    ).fetchone()[0]
+                )
+                assert saved_loss["proof"]["move"] == uci(capture)
+                feedback = show(db, attempt, SUBJECT)["verification"]
+                assert feedback["capture_san"]
+                loss_page = client.get(f"/unified/{attempt}", base_url=base, headers=headers)
+                assert feedback["capture_san"].encode() in loss_page.data
+
+        from chess_coach.unified_session_events import hint
+
+        start(
+            db,
+            attempt_id="slide-assisted",
+            subject=SUBJECT,
+            source_type="own-game",
+            version=SLIDE_VERSION,
+            key=str(evidence),
+        )
+        hint(db, "slide-assisted", SUBJECT, event_id="hint")
+        submit(db, "slide-assisted", SUBJECT, event_id="answer", move=alternative)
+        assert process(db, SUBJECT)["outcomes"] == {"correct": 1}
+        assert show(db, "slide-assisted", SUBJECT)["verification"]["assistance"] == "hinted"
+
+        start(
+            db,
+            attempt_id="slide-budget",
+            subject=SUBJECT,
+            source_type="own-game",
+            version=SLIDE_VERSION,
+            key=str(evidence),
+        )
+        submit(db, "slide-budget", SUBJECT, event_id="answer", move=alternative)
+        with monkeypatch.context() as limited:
+            limited.setattr(objective_pin_slide_budget, "LIMIT", 0)
+            assert process(db, SUBJECT)["outcomes"] == {"unresolved": 1}
+        assert (
+            show(db, "slide-budget", SUBJECT)["verification"]["reason"]
+            == "pin_proof_budget_exhausted"
+        )
+
+        bound = json.loads(
+            db.connection.execute(
+                "SELECT provenance_json FROM unified_sessions WHERE attempt_id=?", (own_attempt,)
+            ).fetchone()[0]
+        )["pin_prevention"]
+        unknown_history = chess.Board(board.fen().replace(" 0 1", " 7 1"))
+        with objective_pin_slide_budget.scope():
+            assert prove(unknown_history, unknown_history.parse_uci(alternative), bound) is None
+            assert prove(board, board.parse_uci(uci("e4h4")), bound) is None
+
+        start(
+            db,
+            attempt_id="slide-stale",
+            subject=SUBJECT,
+            source_type="own-game",
+            version=SLIDE_VERSION,
+            key=str(evidence),
+        )
+        stale = submit(db, "slide-stale", SUBJECT, event_id="answer", move=alternative)
+        assert counts == {
+            table: db.connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+            for table in counts
+        }
+
     review_evidence(db, evidence, decision="reject", actor="fixture_reviewer")
+    if not absolute:
+        assert process(db, SUBJECT)["outcomes"] == {"unresolved": 1}
+        stored = json.loads(
+            db.connection.execute(
+                "SELECT response_json FROM unified_session_events WHERE attempt_id=? AND event_id=?",
+                ("slide-stale", "answer"),
+            ).fetchone()[0]
+        )
+        assert stored == stale
+        with pytest.raises(ValueError, match="stale"):
+            show(db, "slide-stale", SUBJECT)
     with pytest.raises(ValueError, match="stale"):
         show(db, browser_attempt, SUBJECT)
     db.close()

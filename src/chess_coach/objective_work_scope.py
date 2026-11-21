@@ -8,6 +8,8 @@ from .objective_fork_defense_contract import OBJECTIVE as FORK_OBJECTIVE
 from .objective_pin_prevent_budget import BudgetExceeded as PinBudgetExceeded
 from .objective_pin_prevent_budget import scope as pin_scope
 from .objective_pin_prevent_contract import OBJECTIVE as PIN_OBJECTIVE
+from .objective_pin_slide_budget import scope as slide_scope
+from .objective_pin_slide_contract import OBJECTIVE as SLIDE_OBJECTIVE
 
 
 def scope(request):
@@ -15,6 +17,7 @@ def scope(request):
         FORK_OBJECTIVE: fork_scope,
         AVOIDANCE_OBJECTIVE: fork_scope,
         PIN_OBJECTIVE: pin_scope,
+        SLIDE_OBJECTIVE: slide_scope,
     }.get(request["objective_version"], nullcontext)()
 
 

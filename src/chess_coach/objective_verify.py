@@ -9,6 +9,7 @@ from .objective_fork_defense_contract import OBJECTIVE as FORK_DEFENSE_OBJECTIVE
 from .objective_history_dispatch import replay, supported
 from .objective_pin_prevent_budget import BudgetExceeded as PinBudgetExceeded
 from .objective_pin_prevent_contract import OBJECTIVE as PIN_PREVENT_OBJECTIVE
+from .objective_pin_slide_contract import OBJECTIVE as PIN_SLIDE_OBJECTIVE
 from .objective_provenance import SECONDS as SECONDS
 from .objective_provenance import VERSION as VERSION
 from .objective_provenance import provenance as provenance
@@ -24,6 +25,7 @@ def compute(db, request, clock, *, seconds=SECONDS):
             FORK_DEFENSE_OBJECTIVE,
             FORK_AVOIDANCE_OBJECTIVE,
             PIN_PREVENT_OBJECTIVE,
+            PIN_SLIDE_OBJECTIVE,
         }:
             with read_snapshot(db):
                 return _compute(db, request, clock, seconds=seconds)

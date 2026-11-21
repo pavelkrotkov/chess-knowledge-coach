@@ -10,6 +10,8 @@ from .objective_pin_contract import GOAL as PIN_GOAL
 from .objective_pin_contract import VERSION as PIN_VERSION
 from .objective_pin_prevent_contract import GOAL as PIN_PREVENT_GOAL
 from .objective_pin_prevent_contract import VERSION as PIN_PREVENT_VERSION
+from .objective_pin_slide_contract import GOAL as PIN_SLIDE_GOAL
+from .objective_pin_slide_contract import VERSION as PIN_SLIDE_VERSION
 from .objective_protection_contract import VERSION as PROTECTION_VERSION
 from .objective_short_source import VERSION as SHORT_VERSION
 
@@ -26,6 +28,7 @@ def owned_source(session):
         *FORK_SCOPES,
         (PIN_VERSION, PIN_GOAL),
         (PIN_PREVENT_VERSION, PIN_PREVENT_GOAL),
+        (PIN_SLIDE_VERSION, PIN_SLIDE_GOAL),
         (PAWN_VERSION, "preserve_pawn_win"),
         (PAWN_VERSION, "preserve_pawn_draw"),
         (PROTECTION_VERSION, "protect_threatened_piece"),

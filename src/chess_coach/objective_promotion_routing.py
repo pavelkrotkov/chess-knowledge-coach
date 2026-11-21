@@ -6,6 +6,7 @@ from .objective_fork_defense_contract import is_source as owned_fork_defense
 from .objective_pawn_contract import is_source as owned_pawn
 from .objective_pin_contract import is_source as owned_pin
 from .objective_pin_prevent_contract import is_source as owned_pin_prevent
+from .objective_pin_slide_contract import is_source as owned_pin_slide
 from .objective_promotion_contract import OBJECTIVES
 from .related_capture_objective import is_source as capture_assessment
 from .related_created_objective import is_source as created_assessment
@@ -29,11 +30,10 @@ def _existing(row):
         or owned_fork_defense(row)
         or owned_fork_avoidance(row)
         or owned_pawn(row)
-        or owned_pin(row)
-        or owned_pin_prevent(row)
+        or owned_pin_family(row)
         or (row["source_type"] == "public" and row["objective"] in OBJECTIVES)
     )
 
 
 def owned_pin_family(row):
-    return owned_pin(row) or owned_pin_prevent(row)
+    return owned_pin(row) or owned_pin_prevent(row) or owned_pin_slide(row)
