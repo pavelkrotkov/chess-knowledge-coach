@@ -155,6 +155,59 @@ def test_end_to_end_replay_review_and_version_changes(tmp_path, monkeypatch):
     fork_ids = evidence_ids(db, "fork-opportunity-mapper")
     assert len(ids) == len(fork_ids) == 3
     assert result["forks"]["outcomes"] == {"ambiguous": 3}
+
+    # Tactical checkpoints fingerprint only active mate output for this game.
+    from chess_coach.fact_fingerprint import canonical, digest
+    from chess_coach.pipeline_checkpoint import current
+    from chess_coach.pipeline_output import tactical_output_hash
+
+    connection = db.connection
+    stages = connection.execute(
+        "SELECT game_id,input_hash,output_hash FROM pipeline_stages WHERE stage=? ORDER BY game_id",
+        ("tactical",),
+    ).fetchall()
+    target, other = stages[:2]
+    positions = [
+        connection.execute(
+            "SELECT id FROM positions WHERE game_id=?", (stage["game_id"],)
+        ).fetchone()[0]
+        for stage in (target, other)
+    ]
+    detector_ids = [
+        connection.execute(
+            "SELECT id FROM detector_runs WHERE position_id=? AND producer=? AND status=?",
+            (position, "mate-in-one", "active"),
+        ).fetchone()[0]
+        for position in positions
+    ]
+    mapping_ids = [
+        connection.execute(
+            "SELECT id FROM mapping_runs WHERE position_id=? AND producer=? AND status=?",
+            (position, "mate-in-one-mapper", "active"),
+        ).fetchone()[0]
+        for position in positions
+    ]
+    expected = digest(canonical({"facts": detector_ids[:1], "mappings": mapping_ids[:1]}))
+    assert target["output_hash"] == expected
+    assert current(connection, target["game_id"], "tactical", target["input_hash"]) is not None
+    connection.execute("SAVEPOINT fingerprint_probe")
+    connection.execute(
+        "UPDATE positions SET game_id=?,ply=ply+1 WHERE id=?", (target["game_id"], positions[1])
+    )
+    assert tactical_output_hash(connection, target["game_id"]) == digest(
+        canonical({"facts": sorted(detector_ids), "mappings": sorted(mapping_ids)})
+    )
+    assert current(connection, target["game_id"], "tactical", target["input_hash"]) is None
+    connection.execute(
+        "UPDATE detector_runs SET status=? WHERE id=?", ("superseded", detector_ids[1])
+    )
+    connection.execute(
+        "UPDATE mapping_runs SET status=? WHERE id=?", ("superseded", mapping_ids[1])
+    )
+    assert tactical_output_hash(connection, target["game_id"]) == expected
+    assert current(connection, target["game_id"], "tactical", target["input_hash"]) is not None
+    connection.execute("ROLLBACK TO fingerprint_probe")
+    connection.execute("RELEASE fingerprint_probe")
     for evidence in ids:
         review_evidence(db, evidence, decision="accept", actor="fixture-reviewer")
     replay = process_pipeline(db, config, transport=network)
