@@ -1076,6 +1076,7 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
     )
     for index in (2, 3):
         game = chess.pgn.read_game(io.StringIO(source))
+        assert game is not None
         game.headers["UTCDate"] = f"2026.01.0{index}"
         game.headers["UTCTime"] = "12:00:00"
         ingest_pgn(db, str(game))
@@ -1100,6 +1101,7 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
     for owner in (SUBJECT, "capture_learner"):
         for day in ("01", "02"):
             game = chess.pgn.read_game(io.StringIO(material_pgn.replace(LEARNER, owner)))
+            assert game is not None
             game.headers["UTCDate"] = f"2026.01.{day}"
             ingest_pgn(db, str(game))
             game_id = db.connection.execute("SELECT max(id) FROM games").fetchone()[0]
