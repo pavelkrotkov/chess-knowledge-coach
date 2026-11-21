@@ -27,13 +27,23 @@ def consider(
     summary: dict,
     seen: set[str],
     counts: dict,
+    *,
+    check=None,
 ) -> tuple[str | None, list[dict], set[str]]:
     if candidate is None or candidate["prompt_key"] in seen:
         _clear_pending(state)
         return None, [], seen
+    # Bind a corpus candidate before a deadline can interrupt conflict checks.
+    if check is not None and state["pending"] is None:
+        state["pending"] = [row["rating"], row["puzzle_id"], digest(candidate["prompt_key"])]
     budget = state["scan_limit"] - counts["scheduled_examined"]
     matched, after, more, examined, unavailable = scheduled_page(
-        db, candidate["prompt_key"], state["scheduled_after"], budget, state["subject_hash"]
+        db,
+        candidate["prompt_key"],
+        state["scheduled_after"],
+        budget,
+        state["subject_hash"],
+        check=check,
     )
     counts["scheduled_examined"] += examined
     if unavailable is not None:

@@ -22,11 +22,9 @@ def focus(db, result, current_focus):
     if not room_after_due(result) or result.get("capture_status") == "offered":
         return None, None
     version = generation(db)
-    options = {}
-    if result.get("capture_status") not in {None, "learning_unavailable"}:
-        if version is None or version != result.get("capture_generation"):
-            return None, version
-        options["capture_override"] = result["capture_focus"]
+    options = _overrides(result, version)
+    if options is None:
+        return None, version
     focus = current_focus(
         db,
         current_app.config["SUBJECT"],
@@ -34,4 +32,34 @@ def focus(db, result, current_focus):
         include_optional=False,
         **options,
     )
-    return focus, version
+    return (None if _duplicate(focus, result) else focus), version
+
+
+def _duplicate(focus, result):
+    if not focus or focus.get("selected") != "fork" or not focus.get("fork"):
+        return False
+    evidence = focus["fork"]["source"]["evidence_id"]
+    return any(item.get("source_evidence_id") == evidence for item in result["items"])
+
+
+def _overrides(result, version):
+    # Reuse only checks from the same database generation.
+    options = {}
+    if result.get("capture_status") not in {None, "learning_unavailable"}:
+        if version is None or version != result.get("capture_generation"):
+            return None
+        options["capture_override"] = result["capture_focus"]
+    if not _fork_override(result, version, options):
+        return None
+    return options
+
+
+def _fork_override(result, version, options):
+    if "fork_status" not in result or result["fork_status"] == "learning_unavailable":
+        return True
+    if result["fork_status"] is not None and (
+        version is None or version != result.get("fork_generation")
+    ):
+        return False
+    options["fork_override"] = result.get("fork_focus")
+    return True

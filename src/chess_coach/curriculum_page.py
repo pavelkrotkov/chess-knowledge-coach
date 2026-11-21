@@ -4,6 +4,7 @@ from datetime import datetime
 
 from .curriculum_due_scan import scan_due
 from .curriculum_evidence import evidence_summary
+from .curriculum_family_mix import scan as scan_families
 from .curriculum_new_capture import scan as scan_capture
 from .curriculum_new_page import diagnostic, new_page
 from .curriculum_page_state import (
@@ -29,6 +30,13 @@ def build_page(db: Database, state: dict, learner: str, now: datetime, budget=No
         )
         if reason is None and scan["due_incomplete"] and len(state["seen"]) < state["limit"]:
             reason = "due_scan_incomplete"
+    # Old signed continuations keep their original two-phase selection.
+    if state["v"] == 3 and state["phase"] != "due" and reason is None:
+        return _mixed_page(db, state, learner, now, budget, summary, status, items, scan)
+    return _legacy_page(db, state, learner, now, budget, summary, status, items, scan, reason)
+
+
+def _legacy_page(db, state, learner, now, budget, summary, status, items, scan, reason):
     capture_status = capture_focus = None
     if should_scan_capture(state, reason):
         capture_items, capture_status, reason, capture_focus = scan_capture(
@@ -47,6 +55,29 @@ def build_page(db: Database, state: dict, learner: str, now: datetime, budget=No
         "capture_status": capture_status,
         "capture_focus": capture_focus,
         "capture_generation": capture_generation(budget, capture_status),
+        "scan": scan,
+        "items": items,
+        "next_cursor": next_cursor(db, state, reason),
+        "continuation_reason": reason,
+        "diagnostic": diagnostic(reason),
+    }
+
+
+def _mixed_page(db, state, learner, now, budget, summary, corpus, items, scan):
+    new_items, statuses, focuses, reason = scan_families(
+        db, state, learner, summary, scan, corpus, budget
+    )
+    items.extend(new_items)
+    return {
+        "as_of": now.isoformat(),
+        "evidence": summary,
+        "corpus_status": statuses.get("new", "not_scanned" if corpus == "available" else corpus),
+        "capture_status": statuses.get("capture"),
+        "fork_status": statuses.get("fork"),
+        "capture_focus": focuses.get("capture"),
+        "capture_generation": capture_generation(budget, statuses.get("capture")),
+        "fork_focus": focuses.get("fork"),
+        "fork_generation": capture_generation(budget, statuses.get("fork")),
         "scan": scan,
         "items": items,
         "next_cursor": next_cursor(db, state, reason),

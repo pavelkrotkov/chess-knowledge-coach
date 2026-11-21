@@ -2078,6 +2078,7 @@ def _daily_capture_workflow(tmp_path, monkeypatch):
     db.connection.execute("UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus,))
     db.connection.commit()
     now = datetime.now(UTC)
+    now -= timedelta(days=now.date().toordinal() % 3)
     for name in ("first", "second"):
         item = create_training_item(
             db,
@@ -2093,10 +2094,24 @@ def _daily_capture_workflow(tmp_path, monkeypatch):
     )
     assert initial["capture_status"] == "deferred" and initial["next_cursor"]
     state = decode_cursor(db, initial["next_cursor"])
-    assert state["v"] == 2 and state["phase"] == "capture"
+    assert state["v"] == 3 and state["phase"] == "capture"
     assert len(state["capture_pending"]) == 64
     assert "fixture_learner" not in initial["next_cursor"]
     assert db.connection.total_changes == before
+    v2 = dict(state)
+    v2["v"] = 2
+    for field in ("fork_pending", "family_turn", "family_index"):
+        del v2[field]
+    legacy_v2 = daily_plan(
+        db,
+        subject=LEARNER,
+        corpus_version="plan-fixture",
+        limit=5,
+        scan_limit=1,
+        as_of=now,
+        cursor=encode_cursor(db, v2),
+    )
+    assert any(item["skill"] == "hanging_piece" for item in legacy_v2["items"])
     db.connection.execute("BEGIN")
     review_evidence(db, evidence, decision="accept", actor="fixture")
     with pytest.raises(ValueError, match="sources changed"):
@@ -2128,7 +2143,8 @@ def _daily_capture_workflow(tmp_path, monkeypatch):
 
     v1 = new_state(db, LEARNER, "plan-fixture", 5, 1, now)
     v1["v"] = 1
-    del v1["capture_pending"]
+    for field in ("capture_pending", "fork_pending", "family_turn", "family_index"):
+        del v1[field]
     v1["phase"] = "new"
     legacy = daily_plan(
         db,
@@ -2225,6 +2241,7 @@ def _scheduled_deadline_controls(db, tmp_path, monkeypatch, now):
     from types import SimpleNamespace
 
     import chess_coach.curriculum_capture_source as capture_source
+    import chess_coach.curriculum_family_mix as family_mix
     import chess_coach.curriculum_new_capture as new_capture
     import chess_coach.curriculum_unified_owned as owned
     import chess_coach.fork_proof as fork_proof
@@ -2291,6 +2308,7 @@ def _scheduled_deadline_controls(db, tmp_path, monkeypatch, now):
 
     with monkeypatch.context() as patch:
         patch.setattr(new_capture, "time", SimpleNamespace(monotonic=lambda: clock[0]))
+        patch.setattr(family_mix, "time", SimpleNamespace(monotonic=lambda: clock[0]))
         patch.setattr(capture_source, "resolve_source", admission_resolve)
         patch.setattr(threat_actions, "_gain", gain)
         admission_expired = page(second["next_cursor"])
@@ -2306,6 +2324,7 @@ def _scheduled_deadline_controls(db, tmp_path, monkeypatch, now):
 
     with monkeypatch.context() as patch:
         patch.setattr(new_capture, "time", SimpleNamespace(monotonic=lambda: clock[0]))
+        patch.setattr(family_mix, "time", SimpleNamespace(monotonic=lambda: clock[0]))
         patch.setattr(owned, "capture_candidate", scheduled_capture)
         patch.setattr(threat_actions, "_gain", gain)
         currentness_expired = page(second["next_cursor"])
@@ -2334,6 +2353,7 @@ def _scheduled_deadline_controls(db, tmp_path, monkeypatch, now):
 
     with monkeypatch.context() as patch:
         patch.setattr(new_capture, "time", SimpleNamespace(monotonic=lambda: clock[0]))
+        patch.setattr(family_mix, "time", SimpleNamespace(monotonic=lambda: clock[0]))
         patch.setattr(owned, "capture_candidate", scheduled_capture)
         patch.setattr(capture_snapshot, "judge", judge)
         patch.setattr(reply_guard, "_unresolved", reply)

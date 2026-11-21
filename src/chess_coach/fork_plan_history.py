@@ -71,12 +71,16 @@ def _attempt(db, subject, corpus, row, evidence, check):
 def report(db, subject, corpus, evidence, budget):
     budget.expires = min(budget.expires, time.monotonic() + SECONDS)
     with budget.scope(snapshot=False):
-        matches, boundary = _candidates(db, subject, evidence, budget.check)
-        for index, row in enumerate(matches):
-            if _ambiguous(matches[index : index + 2], boundary):
-                break
-            budget.check()
-            result = _attempt(db, subject, corpus, row, evidence, budget.check)
-            if result["status"] != "unknown":
-                return result
-        return {"status": "unknown"}
+        return checked(db, subject, corpus, evidence, budget.check)
+
+
+def checked(db, subject, corpus, evidence, check):
+    matches, boundary = _candidates(db, subject, evidence, check)
+    for index, row in enumerate(matches):
+        if _ambiguous(matches[index : index + 2], boundary):
+            break
+        check()
+        result = _attempt(db, subject, corpus, row, evidence, check)
+        if result["status"] != "unknown":
+            return result
+    return {"status": "unknown"}

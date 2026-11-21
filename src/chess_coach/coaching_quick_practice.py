@@ -6,13 +6,14 @@ from .preview_snapshot import preview_history
 EXAMPLE_LIMIT = 3
 
 
-def choose(db, learner, group, check):
+def choose(db, learner, group, check, *, source_check=False):
     lesson = group["lesson"]
     with preview_history(db, learner):
         for example in lesson["examples"][:EXAMPLE_LIMIT]:
             check()
             try:
-                item = resolve_example(db, learner, lesson, example)
+                options = {"check": check} if source_check else {}
+                item = resolve_example(db, learner, lesson, example, **options)
             except (ValueError, KeyError, TypeError, IndexError):
                 continue
             check()

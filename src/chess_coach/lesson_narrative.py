@@ -27,11 +27,8 @@ def build(db, learner, group, *, _history=None, check=None):
     for candidate in group["lesson_examples"]:
         if check is not None:
             check()
-        inspected = (
-            source(db, learner, candidate)
-            if _history is None
-            else source(db, learner, candidate, _history=_history)
-        )
+        # Reuse the caller's proof deadline when resolving this source.
+        inspected = _source(db, learner, candidate, _history, check)
         if check is not None:
             check()
         if inspected:
@@ -55,3 +52,10 @@ def build(db, learner, group, *, _history=None, check=None):
         "practice": practice,
         "qualification": qualification(group["family"]),
     }
+
+
+def _source(db, learner, candidate, history, check):
+    options = {} if history is None else {"_history": history}
+    if check is not None:
+        options["check"] = check
+    return source(db, learner, candidate, **options)

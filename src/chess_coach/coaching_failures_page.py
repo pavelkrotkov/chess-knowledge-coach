@@ -25,7 +25,11 @@ def collect_page(db, learner, history, rows, groups, excluded, seen, *, check=la
             excluded["duplicate decision"] += 1
             continue
         inspected = source(
-            db, learner, {"id": item["id"], "position_id": item["position_id"]}, _history=history
+            db,
+            learner,
+            {"id": item["id"], "position_id": item["position_id"]},
+            _history=history,
+            check=check,
         )
         check()
         example = describe(inspected) if inspected else None

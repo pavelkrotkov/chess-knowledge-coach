@@ -59,14 +59,24 @@ def next_focus():
     )
 
 
-def current_focus(db, subject, corpus, *, include_optional=True, capture_override=_CAPTURE_UNSET):
+def current_focus(
+    db,
+    subject,
+    corpus,
+    *,
+    include_optional=True,
+    capture_override=_CAPTURE_UNSET,
+    fork_override=_CAPTURE_UNSET,
+):
     try:
-        return _current_focus(db, subject, corpus, include_optional, capture_override)
+        return _current_focus(
+            db, subject, corpus, include_optional, capture_override, fork_override
+        )
     except sqlite3.Error:
         return _unavailable()
 
 
-def _current_focus(db, subject, corpus, include_optional, capture_override):
+def _current_focus(db, subject, corpus, include_optional, capture_override, fork_override):
     # Independent family checks must describe one unchanged database generation.
     version = db.connection.execute("PRAGMA data_version").fetchone()[0]
     capture = (
@@ -80,7 +90,11 @@ def _current_focus(db, subject, corpus, include_optional, capture_override):
     initial = choose(capture, protection, assessment, None)
     fork = None
     if include_optional or needs_fork(initial, capture, assessment):
-        fork = fork_recommendation(db, subject, corpus)
+        fork = (
+            fork_recommendation(db, subject, corpus)
+            if fork_override is _CAPTURE_UNSET
+            else fork_override
+        )
     if db.connection.execute("PRAGMA data_version").fetchone()[0] != version:
         return _unavailable()
     selected, rotated_from = choose(capture, protection, assessment, fork)
