@@ -7,14 +7,15 @@ from .material_exchange import exchange
 from .material_exchange_rules import has_legal_recapture
 
 
-def collect(probe, *, check=None):
+def collect(probe, *, check=None, exclude_target=None):
     targets = {}
     uncertain = {}
     for index, move in enumerate(probe.generate_pseudo_legal_captures()):
         if check is not None:
             check(index)
         target = probe.piece_at(move.to_square)
-        if not _supported_target(target):
+        # An excluded named target is checked separately by its caller.
+        if move.to_square == exclude_target or not _supported_target(target):
             continue
         value = _gain(probe, move)
         if check is not None:

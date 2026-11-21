@@ -4,6 +4,8 @@
 def configure(sub):
     style = sub.add_parser("style-choices", help="Report bounded descriptive choice comparisons")
     style.add_argument("--learner", required=True)
+    style.add_argument("--protection-evidence", type=int)
+    style.add_argument("--response", help="Inspect one proposed UCI response")
     validate = sub.add_parser("validate-evidence")
     validate.add_argument("evidence_id", type=int)
     validate.add_argument("--actor", required=True)

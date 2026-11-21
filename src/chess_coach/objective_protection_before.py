@@ -6,10 +6,10 @@ from .objective_protection_hypothetical import supported
 MAX_CAPTURES = 64
 
 
-def probe(board):
+def probe(board, *, check=None):
     if board.is_game_over(claim_draw=True) or board.is_repetition(2):
         return None
-    result = threats(board, hypothetical=True)
+    result = threats(board, hypothetical=True, check=check)
     if not _valid(result):
         return None
     if not supported(board, next(iter(result["targets"]))):
