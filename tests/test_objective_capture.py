@@ -61,6 +61,58 @@ def test_owned_session_immutable_retry_and_stale_review(tmp_path, monkeypatch, v
     )
     assert db.connection.execute("SELECT COUNT(*) FROM mastery_events").fetchone()[0] == before
     assert show(db, "one", LEARNER)["verification"]["status"] == outcome["status"]
+    if version == TARGET_VERSION:
+        with pytest.raises(ValueError, match="qualified mate training is unavailable"):
+            start(
+                db,
+                attempt_id="closed-enrollment",
+                subject=LEARNER,
+                source_type="own-game",
+                version=version,
+                key=str(evidence),
+                training=True,
+            )
+        assert (
+            db.connection.execute(
+                "SELECT 1 FROM unified_sessions WHERE attempt_id='closed-enrollment'"
+            ).fetchone()
+            is None
+        )
+        from chess_coach.training import create_training_item
+        from chess_coach.unified_session_state import now, session_row
+        from chess_coach.unified_training_item import source_ref
+        from chess_coach.unified_training_owned_capture import SOURCE
+
+        for attempt in ("legacy-exemplar", "enrolled-exemplar"):
+            start(
+                db,
+                attempt_id=attempt,
+                subject=LEARNER,
+                source_type="own-game",
+                version=version,
+                key=str(evidence),
+            )
+        enrolled = session_row(db, "enrolled-exemplar", LEARNER)
+        exemplar = json.loads(enrolled["lines_json"])[0][0]
+        item_id = create_training_item(
+            db,
+            source_type=SOURCE,
+            source_ref=source_ref(LEARNER, version, str(evidence), enrolled["snapshot_hash"]),
+            skill="hanging_piece",
+            operation="execute",
+        )
+        db.connection.execute(
+            "INSERT INTO unified_training_enrollments VALUES(?,?,?,?)",
+            ("enrolled-exemplar", item_id, LEARNER, now()),
+        )
+        db.connection.commit()
+        legacy = submit(db, "legacy-exemplar", LEARNER, event_id="answer", move=exemplar)
+        assert legacy["feedback"] == "objective_verified"
+        queued = submit(db, "enrolled-exemplar", LEARNER, event_id="answer", move=exemplar)
+        assert queued["feedback"] == "needs_verification"
+        assert process(db, LEARNER)["outcomes"] == {"correct": 1}
+        assert inspect(db, LEARNER, "enrolled-exemplar", "answer")["status"] == "correct"
+        assert submit(db, "enrolled-exemplar", LEARNER, event_id="answer", move=exemplar) == queued
     review_evidence(db, evidence, decision="reject", actor="fixture_reviewer")
     with pytest.raises(ValueError):
         show(db, "one", LEARNER)

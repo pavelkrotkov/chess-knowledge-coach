@@ -6,7 +6,7 @@ from .puzzle_session_validate import legal_move
 from .unified_session_branch import move_state
 
 
-def apply_move(row, lines, candidates, submitted):
+def apply_move(row, lines, candidates, submitted, *, queue_first=False):
     board = chess.Board(row["current_fen"])
     try:
         move = legal_move(board, submitted)
@@ -14,4 +14,4 @@ def apply_move(row, lines, candidates, submitted):
         return move_state(board, "illegal", "active", row["next_index"], candidates)
     from .unified_session_legal_move import apply
 
-    return apply(row, board, lines, candidates, move)
+    return apply(row, board, lines, candidates, move, queue_first=queue_first)
