@@ -15,6 +15,7 @@ from .tactical_course_budget import PreviewUnavailable
 from .web_db import database
 
 protection_plan = Blueprint("protection_plan", __name__)
+_CAPTURE_UNSET = object()
 
 
 @protection_plan.get("/plan/protection")
@@ -58,17 +59,19 @@ def next_focus():
     )
 
 
-def current_focus(db, subject, corpus, *, include_optional=True):
+def current_focus(db, subject, corpus, *, include_optional=True, capture_override=_CAPTURE_UNSET):
     try:
-        return _current_focus(db, subject, corpus, include_optional)
+        return _current_focus(db, subject, corpus, include_optional, capture_override)
     except sqlite3.Error:
         return _unavailable()
 
 
-def _current_focus(db, subject, corpus, include_optional):
+def _current_focus(db, subject, corpus, include_optional, capture_override):
     # Independent family checks must describe one unchanged database generation.
     version = db.connection.execute("PRAGMA data_version").fetchone()[0]
-    capture = admissible(db, subject, corpus)
+    capture = (
+        admissible(db, subject, corpus) if capture_override is _CAPTURE_UNSET else capture_override
+    )
     try:
         protection = report(db, subject)
     except (sqlite3.Error, ValueError, TypeError, KeyError, IndexError, PreviewUnavailable):

@@ -11,7 +11,7 @@ def new_state(
     db: Database, learner: str, version: str, limit: int, scan_limit: int, now: datetime
 ) -> dict:
     return {
-        "v": 1,
+        "v": 2,
         "subject_hash": digest(learner),
         "corpus_version": version,
         "limit": limit,
@@ -19,6 +19,7 @@ def new_state(
         "as_of": now.isoformat(),
         "revision": revision(db),
         "phase": "due",
+        "capture_pending": None,
         "due_after": None,
         "new_after": None,
         "pending": None,

@@ -2,6 +2,7 @@
 
 from datetime import datetime
 
+from .curriculum_cursor_phase import after_due
 from .curriculum_due import due_candidate, due_page
 from .curriculum_due_schedule import check_schedule, eligible
 from .curriculum_selection import select
@@ -32,5 +33,5 @@ def scan_due(db: Database, state: dict, now: datetime, summary: dict, scan: dict
     state["seen"] = sorted(seen)
     incomplete = reason is not None or len(rows) > examined
     if not incomplete:
-        state["phase"] = "new"
+        state["phase"] = after_due(state)
     return selected, examined, incomplete, reason

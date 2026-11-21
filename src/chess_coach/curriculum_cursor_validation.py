@@ -21,12 +21,11 @@ def validate_state(state) -> None:
         "scheduled_best",
         "seen",
     }
-    if (
-        not isinstance(state, dict)
-        or set(state) != fields
-        or type(state["v"]) is not int
-        or state["v"] != 1
-    ):
+    if not isinstance(state, dict) or type(state.get("v")) is not int:
+        raise ValueError("invalid cursor fields")
+    if state["v"] == 2:
+        fields.add("capture_pending")
+    if state["v"] not in {1, 2} or set(state) != fields:
         raise ValueError("invalid cursor fields")
     validate_scope(state)
     validate_positions(state)

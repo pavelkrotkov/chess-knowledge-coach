@@ -9,6 +9,7 @@ from .curriculum_request import validate_plan_request
 from .curriculum_snapshot import plan_snapshot
 from .db import Database
 from .mastery_time import parse_utc
+from .opening_queue_budget import BrowserBudget
 
 
 def daily_plan(
@@ -21,6 +22,9 @@ def daily_plan(
     as_of: datetime | None = None,
     cursor: str | None = None,
 ) -> dict:
+    budget = None
+    if not db.compat32 and not db.connection.in_transaction:
+        budget = BrowserBudget(db)
     with plan_snapshot(db):
         prior = decode_cursor(db, cursor) if cursor is not None else None
         requested_time = (
@@ -33,4 +37,4 @@ def daily_plan(
             state = new_state(db, learner, corpus_version, limit, scan_limit, now)
         else:
             state, now = resume_state(db, prior, learner, corpus_version, limit, scan_limit, now)
-        return build_page(db, state, learner, now)
+        return build_page(db, state, learner, now, budget)

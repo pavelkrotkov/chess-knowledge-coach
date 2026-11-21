@@ -32,6 +32,8 @@ def evaluate(board, move, objective="capture_named_target", target="d4"):
 
 @pytest.mark.parametrize("version", [TARGET_VERSION, GAIN_VERSION])
 def test_owned_session_immutable_retry_and_stale_review(tmp_path, monkeypatch, version):
+    if version == TARGET_VERSION:
+        _daily_capture_workflow(tmp_path, monkeypatch)
     db = make_game(tmp_path / "capture.sqlite", monkeypatch)
     evidence = process_decision(db, 1, LEARNER)["evidence_ids"][0]
     state = start(
@@ -1958,7 +1960,7 @@ def test_capture_plan_uses_independent_current_sources_and_is_lazy(tmp_path, mon
     assert b"Check your next non-mate practice focus" not in continuation.data
 
     # Incomplete or full due coverage never triggers the added source check.
-    from chess_coach.plan_page import _room_after_due
+    from chess_coach.plan_page_focus import room_after_due as _room_after_due
 
     due = {
         "objective": "Due",
@@ -2025,4 +2027,194 @@ def test_capture_plan_uses_independent_current_sources_and_is_lazy(tmp_path, mon
     )
     assert stale_replay.status_code == 400
     assert db.connection.execute("SELECT count(*) FROM unified_sessions").fetchone()[0] == 1
+    db.close()
+
+
+def _daily_capture_workflow(tmp_path, monkeypatch):
+    import sys
+    from datetime import UTC, datetime, timedelta
+
+    from chess_coach.curriculum import daily_plan
+    from chess_coach.curriculum_cursor import new_state
+    from chess_coach.curriculum_cursor_codec import decode_cursor, encode_cursor
+    from chess_coach.ingest import ingest_pgn
+    from chess_coach.pipeline_config import PipelineConfig
+    from chess_coach.pipeline_inputs import engine_identity, game_input
+    from chess_coach.pipeline_work import run_analysis
+    from chess_coach.training import create_training_item, review_item
+    from chess_coach.web import create_app
+    from tests.test_unified_sessions import token
+
+    path = tmp_path / "capture-plan.sqlite"
+    db = make_game(path, monkeypatch)
+    evidence = process_decision(db, 1, LEARNER)["evidence_ids"][0]
+    cold = daily_plan(db, subject=LEARNER, corpus_version="plan-fixture")
+    assert cold["capture_status"] == "no_source"
+    assert all(item["skill"] != "hanging_piece" for item in cold["items"])
+    pgn = db.connection.execute("SELECT pgn FROM games WHERE id=1").fetchone()[0]
+    ingest_pgn(db, pgn.replace("2026.01.01", "2026.01.02"))
+    config = PipelineConfig(learner=LEARNER, engine_path=sys.executable, nodes=100)
+    assert (
+        run_analysis(db, 2, game_input(db, 2), config, engine_identity(sys.executable))["status"]
+        == "complete"
+    )
+    second = db.connection.execute(
+        "SELECT id FROM positions WHERE game_id=2 ORDER BY ply LIMIT 1"
+    ).fetchone()[0]
+    process_decision(db, second, LEARNER)
+
+    corpus = db.connection.execute(
+        "INSERT INTO puzzle_corpora(version,source,checksum,state) "
+        "VALUES('plan-fixture','fixture','checksum','staging')"
+    ).lastrowid
+    db.connection.executemany(
+        """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,
+        rating_deviation,themes_json,objective) VALUES(?,?,?,'fixture',?,1200,80,'[]','unknown')""",
+        [
+            (name, corpus, "7k/1p6/6K1/2Q5/8/8/8/8 b - - 17 14", "b7b6 c5f8")
+            for name in ("first", "second")
+        ],
+    )
+    db.connection.execute("UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus,))
+    db.connection.commit()
+    now = datetime.now(UTC)
+    for name in ("first", "second"):
+        item = create_training_item(
+            db,
+            source_type="puzzle",
+            source_ref=json.dumps(["plan-fixture", name]),
+            skill="mate_in_one",
+            operation="execute",
+        )
+        review_item(db, item, "good", reviewed_at=now)
+    before = db.connection.total_changes
+    initial = daily_plan(
+        db, subject=LEARNER, corpus_version="plan-fixture", limit=5, scan_limit=1, as_of=now
+    )
+    assert initial["capture_status"] == "deferred" and initial["next_cursor"]
+    state = decode_cursor(db, initial["next_cursor"])
+    assert state["v"] == 2 and state["phase"] == "capture"
+    assert len(state["capture_pending"]) == 64
+    assert "fixture_learner" not in initial["next_cursor"]
+    assert db.connection.total_changes == before
+    db.connection.execute("BEGIN")
+    review_evidence(db, evidence, decision="accept", actor="fixture")
+    with pytest.raises(ValueError, match="sources changed"):
+        daily_plan(
+            db,
+            subject=LEARNER,
+            corpus_version="plan-fixture",
+            limit=5,
+            scan_limit=1,
+            as_of=now,
+            cursor=initial["next_cursor"],
+        )
+    db.connection.rollback()
+    before = db.connection.total_changes
+    continuation = daily_plan(
+        db,
+        subject=LEARNER,
+        corpus_version="plan-fixture",
+        limit=5,
+        scan_limit=1,
+        as_of=now,
+        cursor=initial["next_cursor"],
+    )
+    capture = next(item for item in continuation["items"] if item["skill"] == "hanging_piece")
+    assert capture["kind"] == "new" and capture["source_version"] == TARGET_VERSION
+    assert capture["source_review"] == "unreviewed" and capture["independent_games"] == 2
+    assert "Provisional diagnostic" in capture["reason"] and "mastery" in capture["reason"]
+    assert db.connection.total_changes == before
+
+    v1 = new_state(db, LEARNER, "plan-fixture", 5, 1, now)
+    v1["v"] = 1
+    del v1["capture_pending"]
+    v1["phase"] = "new"
+    legacy = daily_plan(
+        db,
+        subject=LEARNER,
+        corpus_version="plan-fixture",
+        limit=5,
+        scan_limit=1,
+        as_of=now,
+        cursor=encode_cursor(db, v1),
+    )
+    assert all(item["skill"] != "hanging_piece" for item in legacy["items"])
+
+    app = create_app(
+        db_path=path,
+        subject=LEARNER,
+        actor="fixture",
+        corpus="plan-fixture",
+        login="login",
+        origin="https://coach.invalid",
+    )
+    client = app.test_client()
+    assert client.get("/plan", base_url="https://coach.invalid").status_code == 403
+    page = client.get(
+        "/plan", base_url="https://coach.invalid", headers={"Tailscale-User-Login": "login"}
+    )
+    assert page.status_code == 200
+    assert page.data.count(b"<h3>Capture practice</h3>") == 1
+    form = page.data.split(b"Capture the queen on d4.", 1)[1].split(b"</form>", 1)[0]
+    assert b'name="training" value="1"' in form and b'name="item_id"' not in form
+    csrf = token(page, "csrf")
+    response = client.post(
+        "/unified/start",
+        base_url="https://coach.invalid",
+        headers={"Tailscale-User-Login": "login", "Origin": "https://coach.invalid"},
+        data={
+            "csrf": csrf,
+            "source_type": "own-game",
+            "version": capture["source_version"],
+            "key": capture["source_key"],
+            "training": "1",
+        },
+    )
+    assert response.status_code == 303
+    attempt = response.headers["Location"].rstrip("/").rsplit("/", 1)[-1]
+    state = show(db, attempt, LEARNER)
+    item_id = state["learning"]["item_id"]
+    exemplar = db.connection.execute(
+        "SELECT lines_json FROM unified_sessions WHERE attempt_id=?", (attempt,)
+    ).fetchone()[0]
+    submit(db, attempt, LEARNER, event_id="answer", move=json.loads(exemplar)[0][0])
+    process(db, LEARNER)
+    assert show(db, attempt, LEARNER)["learning"]["item_id"] == item_id
+    already = daily_plan(db, subject=LEARNER, corpus_version="plan-fixture")
+    assert already["capture_status"] == "already_scheduled"
+    assert not any(
+        item["kind"] == "new" and item["prompt_key"] == capture["prompt_key"]
+        for item in already["items"]
+    )
+    due_plan = daily_plan(
+        db,
+        subject=LEARNER,
+        corpus_version="plan-fixture",
+        limit=1,
+        as_of=datetime.now(UTC) + timedelta(days=2),
+    )
+    assert due_plan["items"] and due_plan["items"][0]["kind"] == "due"
+    assert all(item["kind"] != "new" for item in due_plan["items"])
+    again = daily_plan(
+        db,
+        subject=LEARNER,
+        corpus_version="plan-fixture",
+        as_of=datetime.now(UTC) + timedelta(days=2),
+    )
+    assert any(item.get("item_id") == item_id for item in again["items"])
+    review_evidence(db, int(capture["source_key"]), decision="reject", actor="fixture")
+    stale = client.post(
+        "/unified/start",
+        base_url="https://coach.invalid",
+        headers={"Tailscale-User-Login": "login", "Origin": "https://coach.invalid"},
+        data={
+            "csrf": csrf,
+            "source_type": "own-game",
+            "version": capture["source_version"],
+            "key": capture["source_key"],
+            "training": "1",
+        },
+    )
+    assert stale.status_code == 400
     db.close()

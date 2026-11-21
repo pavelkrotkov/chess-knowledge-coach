@@ -479,7 +479,9 @@ def test_private_access_and_csrf(setup, tmp_path, monkeypatch):
     from chess_coach.curriculum import daily_plan
     from chess_coach.unified_sessions import start as start_unified
 
-    daily_plan(compat_db, subject="learner", corpus_version="fixture-v1")
+    legacy_plan = daily_plan(compat_db, subject="learner", corpus_version="fixture-v1")
+    assert legacy_plan["capture_status"] == "learning_unavailable"
+    assert all(item.get("source_type") != "own-game" for item in legacy_plan["items"])
     with pytest.raises(ValueError, match="qualified mate training is unavailable"):
         start_unified(
             compat_db,
