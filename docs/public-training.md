@@ -48,6 +48,46 @@ a failure. Completing an unverified line does not establish its objective or
 mastery. Own-game sources, general alternative-aware grading and scheduling
 remain separate work.
 
+## Explicit standalone public mate-in-one practice
+
+The separate objective public_mate_in_one_standalone_v1 is an operator
+declaration that the licensed task is external public material and that its
+prompt is a fresh standalone chess position. This declaration does not
+reconstruct earlier games or prove that upstream licensing was granted.
+Canonical project-authored material must keep its own source identity and must
+not be relabeled as this external policy. The importer keeps the original
+license, attribution, source and content checksums. An imported task qualifies
+only if its FEN is legal and nonterminal, its halfmove clock is zero, its
+fullmove number is positive, its castling/en-passant rights and clocks are
+retained, and every supplied line is one legal immediate checkmate. The
+standalone declaration means no earlier repetition is assumed; it is not a
+statement about an actual played game's repetition history.
+
+| Situation | Practice contract |
+| --- | --- |
+| Exact ready external-public source and declared standalone objective | Each legal first move is checked for checkmate; any mating alternative succeeds. |
+| Legal first move that is not mate | The announced immediate-mate objective is missed. |
+| Illegal move | Remains active; it is not an accepted answer. |
+| Hint or reveal | Each accepted event and the whole assistance history remain part of the attempt. |
+| Generic checkmate, multi-ply line, other source or missing history declaration | This policy does not apply. |
+| Changed, unavailable or unlicensed source | The session cannot be revalidated as current. |
+
+This version permits ordinary practice only. Adaptive enrollment and scheduling
+remain closed until the dependent implementation is independently qualified.
+That implementation must bind the normalized owner, exact public source and
+immutable snapshot, goal and verifier versions, legal terminal answer and its
+accepted time, and all accepted hints/reveals. It must revalidate source and
+history in the completion transaction, preserve original event responses,
+reject conflicting attempt/event/source identities, and atomically create at
+most one unreviewed evidence record, FSRS update and completion receipt.
+For a complete unassisted attempt, legal immediate mate maps to success/Good
+and a legal nonmate to failure/Again. Any accepted hint or reveal makes the
+whole attempt assisted: record the assessment without evidence or a schedule
+update, leaving an existing due item unchanged. Unsupported, stale or
+nonterminal attempts receive no success or failure grade. Same-item due
+reopening must be owner-bound and idempotent. No result here
+accepts evidence or establishes mastery.
+
 ## Prepared material
 
 The project-local pinned [CrispChess drill source](https://github.com/CrispStrobe/CrispChess/blob/0d01798daf9661076675f8505b4cc6995a6529da/lib/chess/drill.dart)

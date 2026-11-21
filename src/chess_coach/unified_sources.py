@@ -2,9 +2,7 @@
 
 import chess
 
-from .objective_promotion_source import decorate
-from .public_training_query import task as public_task
-from .public_training_validate import validate_task
+from .public_training_source import resolve as _public
 from .puzzle_session_validate import CORPUS_PLIES_LIMIT, solution_moves, validate_line
 
 
@@ -35,27 +33,6 @@ def _corpus(db, version, key):
     prompt = validate_line(row["fen"], row["solution"])
     line = " ".join(moves[1:])
     return _snapshot(prompt, "legal_line", [line], {"corpus_checksum": row["checksum"]})
-
-
-def _public(db, version, key):
-    row = public_task(db, version, key)
-    if row is None:
-        raise ValueError("practice source is unavailable")
-    candidate = validate_task(
-        {"id": key, "fen": row["prompt_fen"], "objective": row["objective"], "lines": row["lines"]}
-    )
-    fields = (
-        "source_url",
-        "source_revision",
-        "source_sha256",
-        "content_sha256",
-        "license",
-        "attribution",
-        "license_notice",
-    )
-    provenance = {field: row[field] for field in fields}
-    decorate(provenance, row, candidate, version, key)
-    return _snapshot(candidate["fen"], candidate["objective"], candidate["lines"], provenance)
 
 
 def _snapshot(prompt, objective, lines, provenance):
