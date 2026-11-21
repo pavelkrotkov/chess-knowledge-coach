@@ -27,8 +27,6 @@ def prove(board, move, named):
 
 
 def _witnesses(board, attacks, target):
-    if not attacks:
-        return None
     witnesses = []
     for attack in sorted(attacks, key=lambda item: item.uci()):
         witness = recapture(board, attack, target)
