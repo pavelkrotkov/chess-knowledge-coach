@@ -275,6 +275,25 @@ before an authorized run, stop other project writers, and preserve the normal
 operating reserve. Neither a sizing estimate nor a successful compressed
 backup establishes that the subsequent native migration fits.
 
+For a coordinated read-only inventory of a project-contained schema-32 source,
+without initializing or migrating it, use the dedicated process:
+
+~~~sh
+"$release" -I -B -m chess_coach.native_upgrade_check SOURCE --project-root "$PWD"
+~~~
+
+To revalidate a retained current archive and its separate restore against the
+pinned source, add `--archive ARCHIVE --restored RESTORED --codec gzip` (or
+`--codec zstd`). This may scan the complete source and recovery files within its
+deadline; coordinate it with other database work. The command checks the pinned
+SQLite build, supported layout, bounded complete index-key counts and retained
+recovery fidelity. It returns only aggregate metadata, applies process and
+SQLite memory limits, and reports unknown when a check is unavailable. Its
+status is always unknown for migration admission: it does not establish a
+journal or filesystem allocation bound, reserve space, verify all maintenance
+preconditions, or authorize an upgrade. A separate reviewed operator and a
+fresh verified recovery remain required.
+
 To estimate a future analysis-history compaction without changing the database,
 use the read-only planner against a project-contained file:
 
