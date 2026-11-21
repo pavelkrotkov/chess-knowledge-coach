@@ -214,6 +214,15 @@ def test_private_access_and_csrf(setup, tmp_path, monkeypatch):
     ).fetchall()
     assert any("idx_detector_run_active" in row[3] for row in plan)
     compat_db.initialize()
+    from chess_coach.opening_profile_cli_db import open_database
+
+    read_only, selected_database = open_database(root)
+    assert selected_database == legacy
+    assert read_only.execute("PRAGMA query_only").fetchone()[0] == 1
+    assert read_only.execute("PRAGMA user_version").fetchone()[0] == 32
+    with pytest.raises(sqlite3.OperationalError):
+        read_only.execute("CREATE TABLE forbidden_write(id INTEGER)")
+    read_only.close()
     from chess_coach.course_pgn import chapter as make_chapter
 
     snapshot = {"prompt_fen": chess.STARTING_FEN, "learner_color": "white", "lines": ["e2e4"]}
