@@ -20,6 +20,10 @@ def create(*, limit=MAX_WORK):
         "multiple_sources": 0,
         "unsupported": 0,
         "completed": 0,
+        "exchange_examined": 0,
+        "exchange_supported": 0,
+        "exchange_unknown": 0,
+        "exchange_nodes": 0,
     }
 
 

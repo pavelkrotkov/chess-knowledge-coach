@@ -1,6 +1,7 @@
 """Apply ordinary-first precedence independently for each protection dimension."""
 
 from .style_protection_choices import NAMES
+from .style_protection_guard import eligible as guard_eligible
 
 
 def merge(key, item, ordinary, state):
@@ -19,11 +20,14 @@ def merge(key, item, ordinary, state):
 
 
 def _replaceable(item):
-    supported = _supported(item)
-    return [name for name in NAMES if not supported or item["choices"][name] == "ambiguous"]
+    return [
+        name for name in NAMES if not _supported(item, name) or item["choices"][name] == "ambiguous"
+    ]
 
 
-def _supported(item):
+def _supported(item, name):
+    if name == "protect_guard":
+        return bool(item["pairs"]) and all(guard_eligible(pair) for pair in item["pairs"])
     return bool(item["pairs"]) and all(
         pair[side].get("protection", {}).get("status") == "supported"
         for pair in item["pairs"]

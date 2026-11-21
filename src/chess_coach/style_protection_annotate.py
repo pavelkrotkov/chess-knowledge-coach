@@ -1,5 +1,6 @@
 """Attach the bounded proof results without treating unknown as a choice."""
 
+from .style_protection_guard import classify as guard
 from .style_protection_snapshot import inspect
 
 
@@ -18,6 +19,7 @@ def annotate(db, learner, context, board, deep, compared, budget, *, history=Non
         pair["alternative"]["protection"] = results.get(
             pair["alternative_line"]["root_move"], unknown
         )
+        pair["guard_comparison"] = guard(pair)
     if results and all(item["status"] == "supported" for item in results.values()):
         budget["completed"] += 1
     elif results:

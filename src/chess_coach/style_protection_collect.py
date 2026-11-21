@@ -2,6 +2,7 @@
 
 import chess
 
+from .style_protection_exchange import qualify
 from .style_protection_proof import original, proof
 from .style_protection_source import load, recheck
 
@@ -23,10 +24,21 @@ def collect(db, learner, context, board, compared, evidence, budget, *, source=N
     if before is None:
         return None
     results = _qualify(board, target, before, evidence, compared, budget)
-    if not recheck(db, learner, evidence, source["provenance"], budget, history=history):
+    exchange = qualify(board, target, before, list(results), evidence, source["provenance"], budget)
+    for root, result in results.items():
+        result["exchange"] = exchange[root]
+    current = recheck(db, learner, evidence, source["provenance"], budget, history=history)
+    _account_exchange(budget, exchange, current)
+    if not current:
         return None
     _attach_source(results, source["provenance"])
     return results
+
+
+def _account_exchange(budget, exchange, current):
+    # A source that changed during proof cannot count as a supported result.
+    count = sum(item["status"] == "supported" for item in exchange.values())
+    budget["exchange_supported" if current else "exchange_unknown"] += count
 
 
 def _qualify(board, target, before, evidence, compared, budget):

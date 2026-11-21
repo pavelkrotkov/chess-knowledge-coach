@@ -17,7 +17,7 @@ from .style_schedule_status import status as schedule_status
 from .style_sources import source_games
 from .style_summary import summarize
 
-VERSION = "style-choices-v13"
+VERSION = "style-choices-v14"
 MATE_SEARCH_LIMIT = 100
 
 
@@ -134,13 +134,15 @@ def _style_report(db, learner, *, max_games):
             "The same-search choices are compared only when each bounded verifier supports "
             "the same originally threatened piece. Moving that piece and capturing a proved "
             "immediate attacker are distinct, potentially overlapping events. An unmoved "
-            "piece is not proof of a guard; guard, checking counterplay, compensation, "
-            "other captures and longer threats remain unknown where the model cannot prove "
-            "them. The result concerns supported immediate captures only, not overall "
+            "piece is not proof of a guard. A separate bounded exchange proof can identify "
+            "a newly legal recapture by the moved piece; both responses must qualify. "
+            "Checking counterplay, compensation, other captures and later threats remain "
+            "unknown where the model cannot prove them. This is not overall "
             "safety or the outcome of the game. At most 20 report-wide source-lookup, "
             "source-resolution, threat-probe and proof work units are reserved; source "
             "resolution includes currentness and witness checks and an exemplar proof; "
-            "root proofs use a one-second limit. Skipped and unsupported decisions are "
+            "exchange proofs share 64 nodes and one second across compared roots. "
+            "Skipped and unsupported decisions are "
             "unknown. The work limit is not a wall-clock guarantee."
         ),
         "sample_note": (

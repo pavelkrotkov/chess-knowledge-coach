@@ -760,7 +760,10 @@ alternatives, compensation and later play remain outside its scope. It does not
 change the profile, existing grading, evidence or scheduling. On Hermes, run
 this command with the reviewed frozen release interpreter and the selected
 private compatibility profile for its database; the selected profile is checked
-before ordinary CLI initialization.
+before ordinary CLI initialization. The choice profile can separately count a
+newly added defender against a credible move-away or countercapture only when
+both responses pass the current bounded exchange check. These source-linked
+counts and context strata do not estimate preference or trend direction.
 
 Method `style-choices-v2` compares exact centipawn scores within 50 cp at
 minimum depth four and replays four legal PV plies per choice. It uses conventional

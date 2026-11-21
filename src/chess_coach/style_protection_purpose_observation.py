@@ -4,6 +4,7 @@ from .style_context import describe_context
 from .style_dimensions import dimensions
 from .style_opening import current_opening
 from .style_protection_choices import NAMES
+from .style_protection_guard import classify as guard
 from .style_protection_purpose_compare import comparison
 from .style_protection_purpose_source import inspect
 from .style_protection_schedule_status_fields import provenance
@@ -22,18 +23,32 @@ def observation(db, learner, context, slot, snapshot, view, budget, history, cac
         return "duplicate", None, True
     if budget["skipped"] > before:
         budget["skipped_decisions"] += 1
-    if not _supported(proofs):
+    if not _supported(proofs, compared):
         budget["unsupported"] += 1
         return state if state != "current" else "unsupported", None, state == "current"
     budget["completed"] += 1
     for pair in compared["pairs"]:
         pair["played"]["protection"] = proofs[compared["played"]["root_move"]]
         pair["alternative"]["protection"] = proofs[pair["alternative_line"]["root_move"]]
+        pair["guard_comparison"] = guard(pair)
     return "comparable", _item(db, context, slot, snapshot, view, compared), True
 
 
-def _supported(proofs):
-    return bool(proofs) and all(item["status"] == "supported" for item in proofs.values())
+def _supported(proofs, compared):
+    if not proofs:
+        return False
+    # Preserve the existing v1 path and its conservative verdicts.
+    if all(item["status"] == "supported" for item in proofs.values()):
+        return True
+    # A qualified exchange contrast can coexist with an unresolved v1 guard.
+    played = proofs[compared["played"]["root_move"]]
+    for pair in compared["pairs"]:
+        alternative = proofs[pair["alternative_line"]["root_move"]]
+        candidate = {"played": {"protection": played}, "alternative": {"protection": alternative}}
+        # Never infer a contrast when either response is unknown.
+        if guard(candidate) not in (None, "ambiguous"):
+            return True
+    return False
 
 
 def _item(db, context, slot, snapshot, view, compared):
