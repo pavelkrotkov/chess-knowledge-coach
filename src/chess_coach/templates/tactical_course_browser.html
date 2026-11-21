@@ -19,10 +19,9 @@
 {% if recorded %}<small>Previous preparation: {{ recorded[0].status }}{% if recorded[0].examined is not none %}, {{ recorded[0].examined }} source records examined{% endif %}.{% set matching = course.patterns|selectattr("skill", "equalto", skill)|selectattr("operation", "equalto", operation)|list %}{% if matching %} {{ matching[0].independent_games }} independently supported games.{% endif %}</small>{% else %}<small>Source coverage not yet prepared.</small>{% endif %}<br>{% endfor %}
 </fieldset><button>Prepare selected focuses</button></form>
 {% endif %}
-{% if preparation_details %}<p>The selected preparation could not produce a course. Recorded source coverage:</p><ul>
-{% for row in preparation_details.coverage %}<li>{{ row.skill|replace('_', ' ') }} · {{ row.operation|replace('_', ' ') }}: {{ row.status }}{% if row.examined is not none %}; {{ row.examined }} source records examined{% endif %}</li>{% endfor %}
-{% for item in preparation_details.unavailable %}<li>{{ item.skill|replace('_', ' ') }} · {{ item.operation|replace('_', ' ') }}: {{ item.reason }}</li>{% endfor %}
-</ul><p>A complete scan may have too few independently supported examples.</p>{% endif %}
+{% if preparation_details %}<p>The {{ "default" if preparation_details.default else "selected" }} preparation could not produce a course. Recorded source coverage:</p><ul>
+{% for row in preparation_details.coverage %}{% set gaps = preparation_details.unavailable|selectattr("skill", "equalto", row.skill)|selectattr("operation", "equalto", row.operation)|list %}<li>{{ row.skill|replace('_', ' ') }} - {{ row.operation|replace('_', ' ') }}: {% if row.status != "complete" %}deferred{% elif gaps %}{{ gaps[0].reason }}{% else %}no qualified group in the checked sample{% endif %}{% if row.examined is not none %}; {{ row.examined }} source records examined{% endif %}{% if row.limited %}; sample limit reached{% endif %}</li>{% endfor %}
+</ul><p>These are historical checks within bounded samples, not a current eligibility check or proof of no weakness. Excluded, rejected, stale and unchecked work remains unknown.</p>{% endif %}
 <p>Preparation is local. Requesting a private Study is a separate action.</p>
 {% if not course %}
 <p>No current prepared course is available.</p>

@@ -54,7 +54,9 @@ def finish(directory, database, learner, corpus, requested, old_offer, result, p
         write(slot, {**pending, "state": "complete"})
 
 
-def failed(directory, database, learner, corpus, requested, *, selection=None):
+def failed(
+    directory, database, learner, corpus, requested, *, selection=None, old_offer=None, budget=None
+):
     with lock(directory):
         slot = directory / PREPARE_SLOT
         current = read(slot)
@@ -63,6 +65,9 @@ def failed(directory, database, learner, corpus, requested, *, selection=None):
                 return
             failed_item = {**current, "state": "unavailable"}
             if selection is not None:
+                if budget is None or read(directory / SLOT) != old_offer:
+                    raise ValueError("course offer changed")
+                budget.check()
                 failed_item["coverage"] = selection["coverage"]
                 failed_item["unavailable"] = selection["unavailable"]
             write(slot, failed_item)

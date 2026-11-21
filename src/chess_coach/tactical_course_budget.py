@@ -14,6 +14,14 @@ class PreviewUnavailable(Exception):
     """A tactical preview could not be built safely."""
 
 
+class NoPatterns(PreviewUnavailable):
+    """A checked default preview had no assembled pattern."""
+
+    def __init__(self, selection):
+        super().__init__("no supported recurring patterns")
+        self.selection = selection
+
+
 class Budget:
     def __init__(self, db, *, slice_seconds=None):
         if db.connection.in_transaction:
