@@ -38,7 +38,7 @@ def _schedule(db, row, item, fact, review):
         raise ValueError("terminal time is unavailable")
     evidence = _evidence(db, row, fact, observed)
     rating = "good" if fact["played_checkmate"] else "again"
-    schedule = review(db, item["item_id"], rating, reviewed_at=datetime.fromisoformat(now()))
+    schedule = review(db, item["item_id"], rating, reviewed_at=datetime.fromisoformat(observed))
     return evidence, rating, schedule
 
 

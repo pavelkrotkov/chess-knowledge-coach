@@ -4,13 +4,17 @@ import json
 import sqlite3
 from contextlib import suppress
 
+from .mastery_time import parse_utc
+
 
 def status(db, attempt_id):
     if db.compat32:
         return None
     row = db.connection.execute(
-        """SELECT e.item_id,c.response_json,s.status FROM unified_training_enrollments e
+        """SELECT e.item_id,c.response_json,s.status,s.finished_at,s.hints_used,i.last_review
+        FROM unified_training_enrollments e
         JOIN unified_sessions s ON s.attempt_id=e.attempt_id
+        JOIN training_items i ON i.id=e.item_id
         LEFT JOIN unified_training_completions c ON c.attempt_id=e.attempt_id WHERE e.attempt_id=?""",
         (attempt_id,),
     ).fetchone()
@@ -18,10 +22,20 @@ def status(db, attempt_id):
         return None
     if row["response_json"] is None:
         return {
-            "state": "in_progress" if row["status"] == "active" else "pending",
+            "state": _pending_state(row),
             "item_id": row["item_id"],
         }
     return {"state": "completed", **json.loads(row["response_json"])}
+
+
+def _pending_state(row):
+    if row["status"] == "active":
+        return "in_progress"
+    answered = parse_utc(row["finished_at"])
+    reviewed = parse_utc(row["last_review"])
+    if not row["hints_used"] and answered and reviewed and reviewed > answered:
+        return "superseded"
+    return "pending"
 
 
 def finish(db, row, attempt_id, subject, event_id, result):

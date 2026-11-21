@@ -925,7 +925,74 @@ def test_private_browser_starts_and_completes_direct_prompt(tmp_path, capsys, mo
         == 0
     )
     assert unified_training_complete.review_item_in_transaction is real_review
-    assert complete(db, "pending-learning", "learner")["outcome"] == "success"
+    from chess_coach import unified_training_receipt
+
+    answered_at = db.connection.execute(
+        "SELECT finished_at FROM unified_sessions WHERE attempt_id='pending-learning'"
+    ).fetchone()[0]
+    completed_at = (datetime.fromisoformat(answered_at) + timedelta(hours=1)).isoformat()
+    with monkeypatch.context() as patch:
+        patch.setattr(unified_training_receipt, "now", lambda: completed_at)
+        assert complete(db, "pending-learning", "learner")["outcome"] == "success"
+    recorded = db.connection.execute("""SELECT s.finished_at,e.observation_at,t.reviewed_at,c.created_at
+        FROM unified_training_completions c JOIN unified_sessions s ON s.attempt_id=c.attempt_id
+        JOIN evidence_mappings e ON e.id=c.evidence_id JOIN training_attempts t ON t.id=c.training_attempt_id
+        WHERE c.attempt_id='pending-learning'""").fetchone()
+    assert tuple(recorded) == (answered_at, answered_at, answered_at, completed_at)
+
+    start(
+        db,
+        attempt_id="older-pending",
+        goal="mate_in_one",
+        training=True,
+        item_id=receipt["item_id"],
+        **source,
+    )
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            unified_training_complete,
+            "review_item_in_transaction",
+            lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("synthetic")),
+        )
+        assert (
+            submit(db, "older-pending", "learner", event_id="answer", move="c5c8")["learning"][
+                "state"
+            ]
+            == "pending"
+        )
+    start(
+        db,
+        attempt_id="newer-review",
+        goal="mate_in_one",
+        training=True,
+        item_id=receipt["item_id"],
+        **source,
+    )
+    assert (
+        submit(db, "newer-review", "learner", event_id="answer", move="c5c8")["learning"]["rating"]
+        == "good"
+    )
+    newer_item = tuple(
+        db.connection.execute(
+            "SELECT last_review,due FROM training_items WHERE id=?", (receipt["item_id"],)
+        ).fetchone()
+    )
+    before_retry = db.connection.execute("SELECT COUNT(*) FROM evidence_mappings").fetchone()[0]
+    with pytest.raises(ValueError, match="cannot precede"):
+        complete(db, "older-pending", "learner")
+    assert (
+        db.connection.execute("SELECT COUNT(*) FROM evidence_mappings").fetchone()[0]
+        == before_retry
+    )
+    assert (
+        tuple(
+            db.connection.execute(
+                "SELECT last_review,due FROM training_items WHERE id=?", (receipt["item_id"],)
+            ).fetchone()
+        )
+        == newer_item
+    )
+    assert show(db, "older-pending", "learner")["learning"]["state"] == "superseded"
     assert start(db, attempt_id="ordinary-mate", **source)["objective"] == "legal_line"
     from chess_coach.cli_unified_practice import handle_move
 
@@ -966,6 +1033,10 @@ def test_private_browser_starts_and_completes_direct_prompt(tmp_path, capsys, mo
     )
     client = app.test_client()
     headers = {"Tailscale-User-Login": "fixture"}
+    older_page = client.get(
+        "/unified/older-pending", base_url="https://coach.invalid", headers=headers
+    )
+    assert b"A newer review was already saved" in older_page.data
     library = client.get("/library", base_url="https://coach.invalid", headers=headers)
     assert library.status_code == 200 and b"Practice mate" in library.data
     assert library.data.count(b"Practice mate in one") == 1
