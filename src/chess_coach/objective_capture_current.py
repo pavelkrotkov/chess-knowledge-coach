@@ -38,6 +38,6 @@ def current(
     return view, dict(review) if review else None
 
 
-def require_protection_scope(db, evidence_id, subject, kind):
+def require_protection_scope(db, evidence_id, subject, kind, *, check=None):
     if kind == "material_protection":
-        current(db, evidence_id, subject, kind=kind, operation="prevent")
+        current(db, evidence_id, subject, kind=kind, operation="prevent", check=check)

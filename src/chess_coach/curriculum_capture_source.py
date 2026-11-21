@@ -15,7 +15,7 @@ def read(db, subject, corpus, check):
     if not report:
         return None, "no_source", None
     source = report["source"]
-    resolve_source(db, "own-game", source["version"], source["key"], subject=subject)
+    resolve_source(db, "own-game", source["version"], source["key"], subject=subject, check=check)
     check()
     history = report["history"]
     if history.get("status") in {"stale", "pending", "incomplete"}:

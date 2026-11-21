@@ -2224,6 +2224,7 @@ def _daily_capture_workflow(tmp_path, monkeypatch):
 def _scheduled_deadline_controls(db, tmp_path, monkeypatch, now):
     from types import SimpleNamespace
 
+    import chess_coach.curriculum_capture_source as capture_source
     import chess_coach.curriculum_new_capture as new_capture
     import chess_coach.curriculum_unified_owned as owned
     import chess_coach.fork_proof as fork_proof
@@ -2278,6 +2279,30 @@ def _scheduled_deadline_controls(db, tmp_path, monkeypatch, now):
 
             kwargs["check"] = expire
         return original_gain(*args, **kwargs)
+
+    original_resolve = capture_source.resolve_source
+
+    def admission_resolve(*args, **kwargs):
+        inside[0] = True
+        try:
+            return original_resolve(*args, **kwargs)
+        finally:
+            inside[0] = False
+
+    with monkeypatch.context() as patch:
+        patch.setattr(new_capture, "time", SimpleNamespace(monotonic=lambda: clock[0]))
+        patch.setattr(capture_source, "resolve_source", admission_resolve)
+        patch.setattr(threat_actions, "_gain", gain)
+        admission_expired = page(second["next_cursor"])
+    assert visited and admission_expired["continuation_reason"] == "capture_scan_incomplete"
+    admission_state = decode_cursor(db, admission_expired["next_cursor"])
+    assert (admission_state["capture_pending"], admission_state["scheduled_after"]) == (
+        before["capture_pending"],
+        before["scheduled_after"],
+    )
+    assert page(admission_expired["next_cursor"])["capture_status"] == "already_scheduled"
+    clock[0] = 0.0
+    visited.clear()
 
     with monkeypatch.context() as patch:
         patch.setattr(new_capture, "time", SimpleNamespace(monotonic=lambda: clock[0]))
