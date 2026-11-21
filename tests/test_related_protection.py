@@ -199,11 +199,214 @@ def _guard_inspection_workflow(tmp_path, monkeypatch, capsys):
         )
 
 
+def _guard_style_report_workflow(tmp_path, monkeypatch):
+    import chess.engine
+    import chess.pgn
+
+    from chess_coach.db import Database
+    from chess_coach.deep_execution_worker import run_deep
+    from chess_coach.deep_selection import select_deep
+    from chess_coach.ingest import ingest_pgn
+    from chess_coach.pipeline_config import PipelineConfig
+    from chess_coach.pipeline_inputs import engine_identity, game_input
+    from chess_coach.pipeline_work import run_analysis
+    from chess_coach.style_report import style_report
+    from chess_coach.web import create_app
+    from tests.test_deep_execution import options
+
+    cases = (
+        (
+            "white",
+            ["e2e4", "b8c6", "f1c4", "c6a5"],
+            "c4d3",
+            "d1e2",
+            ["c4d3", "g8f6", "d1e2", "e7e6"],
+            ["d1e2", "a5c4", "e2c4", "g8f6"],
+        ),
+        (
+            "black",
+            ["a2a3", "e7e5", "b1c3", "f8c5", "c3a4"],
+            "c5d6",
+            "d8e7",
+            ["c5d6", "g1f3", "d8e7", "d2d3"],
+            ["d8e7", "a4c5", "e7c5", "g1f3"],
+        ),
+    )
+    for color, prefix, played, guard, played_pv, guard_pv in cases:
+        board = chess.Board()
+        game = chess.pgn.Game()
+        game.headers["White"] = LEARNER if color == "white" else "fixture_opponent"
+        game.headers["Black"] = LEARNER if color == "black" else "fixture_opponent"
+        game.headers["UTCDate"] = "2026.01.01"
+        game.headers["UTCTime"] = "12:00:00"
+        game.headers["Result"] = "*"
+        node = game
+        moves = [*prefix, played]
+        for text in moves:
+            move = board.parse_uci(text)
+            node = node.add_variation(move)
+            board.push(move)
+        target_ply = len(prefix)
+        target_fen = chess.Board()
+        for text in prefix:
+            target_fen.push_uci(text)
+
+        target_text = target_fen.fen()
+
+        class FixtureEngine:
+            def __init__(
+                self,
+                target=target_text,
+                played=played,
+                guard=guard,
+                moves=tuple(moves),
+                played_pv=tuple(played_pv),
+                guard_pv=tuple(guard_pv),
+            ):
+                self.id = {"name": "Synthetic"}
+                self.options = {}
+                self.target, self.played, self.guard = target, played, guard
+                self.moves, self.played_pv, self.guard_pv = moves, played_pv, guard_pv
+
+            def configure(self, _settings):
+                pass
+
+            def analyse(self, position, limit, multipv, root_moves=None):
+                if position.fen() == self.target:
+                    roots = (
+                        root_moves
+                        or [chess.Move.from_uci(self.played), chess.Move.from_uci(self.guard)][
+                            :multipv
+                        ]
+                    )
+                else:
+                    actual = position.parse_uci(self.moves[len(position.move_stack)])
+                    roots = (
+                        root_moves
+                        or [actual, *(move for move in position.legal_moves if move != actual)][
+                            :multipv
+                        ]
+                    )
+                result = []
+                for root in roots:
+                    if position.fen() == self.target and root.uci() in {self.played, self.guard}:
+                        pv = self.played_pv if root.uci() == self.played else self.guard_pv
+                        line = [chess.Move.from_uci(text) for text in pv]
+                    else:
+                        line = [root]
+                        cursor = position.copy()
+                        cursor.push(root)
+                        for _ in range(3):
+                            reply = next(iter(cursor.legal_moves))
+                            line.append(reply)
+                            cursor.push(reply)
+                    result.append(
+                        {
+                            "score": chess.engine.PovScore(chess.engine.Cp(0), position.turn),
+                            "pv": line,
+                            "nodes": 100,
+                            "depth": 5,
+                            "time": 0.01,
+                        }
+                    )
+                return result
+
+            def quit(self):
+                pass
+
+        path = tmp_path / ("guard-style-" + color + ".sqlite")
+        db = Database(path)
+        db.initialize()
+        ingest_pgn(db, str(game))
+        monkeypatch.setattr(
+            chess.engine.SimpleEngine, "popen_uci", lambda *_args, **_kwargs: FixtureEngine()
+        )
+        config = PipelineConfig(learner=LEARNER, engine_path=sys.executable, nodes=100)
+        assert (
+            run_analysis(db, 1, game_input(db, 1), config, engine_identity(sys.executable))[
+                "status"
+            ]
+            == "complete"
+        )
+        position = db.connection.execute(
+            "SELECT id FROM positions WHERE game_id=1 AND ply=?", (target_ply + 1,)
+        ).fetchone()[0]
+        selected = select_deep(db, [1], learner=LEARNER, per_game=4, total=4)
+        selection = selected["games"][0]["selection_id"]
+        assert run_deep(db, selection, learner=LEARNER, options=options(max_jobs=4, multipv=2))[
+            "status"
+        ] in {"complete", "partial"}
+        evidence = process_decision(db, position, LEARNER)["evidence_ids"][0]
+        monkeypatch.setattr(
+            chess.engine.SimpleEngine,
+            "popen_uci",
+            lambda *_args, **_kwargs: pytest.fail("report must not run an engine"),
+        )
+        before = db.connection.total_changes
+        report = style_report(db, LEARNER)
+        assert db.connection.total_changes == before
+        item = next(value for value in report["observations"] if value["position_id"] == position)
+        assert item["choices"]["protect_guard"] == "moved_target"
+        pair = next(
+            value for value in item["pairs"] if value["alternative_line"]["root_move"] == guard
+        )
+        assert pair["played"]["protection"]["exchange"]["status"] == "supported"
+        assert pair["alternative"]["protection"]["exchange"]["guard_witness"]
+        assert pair["guard_comparison"] == "moved_target"
+        assert report["dimensions"]["protect_guard"]["direction"] is None
+        assert report["dimensions"]["protect_guard"]["trend"] is None
+        assert report["protection_coverage"]["used"] <= 20
+        from chess_coach import style_report as style_report_module
+
+        with monkeypatch.context() as limited:
+            limited.setattr(
+                style_report_module,
+                "PROTECTION_WORK_LIMIT",
+                report["protection_coverage"]["used"] - 1,
+            )
+            partial = style_report(db, LEARNER)
+        assert partial["protection_coverage"]["exchange_unknown"] > 0
+        assert not any(
+            value["choices"].get("protect_guard") == "moved_target"
+            for value in partial["observations"]
+        )
+        app = create_app(
+            db_path=path,
+            subject=LEARNER,
+            actor="fixture",
+            corpus="test",
+            login="fixture",
+            origin="https://coach.invalid",
+        )
+        page = app.test_client().get(
+            "/style-choices",
+            base_url="https://coach.invalid",
+            headers={"Tailscale-User-Login": "fixture"},
+        )
+        assert page.status_code == 200 and b"adds a defender" in page.data
+        section = page.data.split(b"<h3>Adding a defender</h3>", 1)[1].split(b"</section>", 1)[0]
+        assert b"These are descriptive counts, not a preference estimate." in section
+        assert b"no direction estimated" in section
+        assert b"No trend direction is estimated" in section
+        assert b"Sample direction:" not in section and b"direction None" not in section
+        assert b"Other quiet moves, compensation and later threats remain unknown" in page.data
+        assert f"/evidence/{evidence}".encode() in page.data
+        review_evidence(db, evidence, decision="accept", actor="fixture")
+        review_evidence(db, evidence, decision="revoke", actor="fixture")
+        stale = style_report(db, LEARNER)
+        assert not any(
+            value["choices"].get("protect_guard") == "moved_target"
+            for value in stale["observations"]
+        )
+        db.close()
+
+
 def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
     from chess_coach.cli import main
     from chess_coach.web import create_app
 
     _guard_inspection_workflow(tmp_path, monkeypatch, capsys)
+    _guard_style_report_workflow(tmp_path, monkeypatch)
 
     # A threatened piece may itself capture the attacker.
     fen = "4k3/8/8/2b5/3Q4/8/P7/7K w - - 0 1"

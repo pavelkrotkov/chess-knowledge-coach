@@ -12,7 +12,9 @@ def summarize(observations):
         name: {
             **counts(_eligible(observations, name), name),
             "strata": strata(_eligible(observations, name), name),
-            "trend": trend(_eligible(observations, name), name),
+            "trend": None
+            if name == "protect_guard"
+            else trend(_eligible(observations, name), name),
         }
         for name in (
             "simplification",

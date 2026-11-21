@@ -19,8 +19,15 @@ def counts(items, dimension):
         "ambiguous": kinds["ambiguous"],
         "no_contrast": kinds[None],
         "sufficient": enough,
-        "direction": _direction(counts) if enough else None,
+        "direction": _direction_for(dimension, counts, enough),
     }
+
+
+def _direction_for(dimension, counts, enough):
+    # Guard comparisons are descriptive counts, not a preference estimate.
+    if dimension == "protect_guard" or not enough:
+        return None
+    return _direction(counts)
 
 
 def _direction(counts):
