@@ -9,6 +9,10 @@ from .recovery_gzip_single import restore_backup
 
 
 def configure(sub):
+    parser = sub.add_parser("plan-analysis-history")
+    parser.add_argument("source", type=Path)
+    parser.add_argument("--project-root", type=Path, required=True)
+
     for name in ("backup-db", "restore-db", "restore-gzip", "restore-zstd"):
         parser = sub.add_parser(name)
         parser.add_argument("source", type=Path)
@@ -81,7 +85,14 @@ def _restore(args):
     print(json.dumps(result if args.check_only else {"status": "verified"}))
 
 
+def _plan_analysis_history(args):
+    from .analysis_history_plan import plan
+
+    print(json.dumps(plan(args.source, args.project_root)))
+
+
 COMMANDS = {
+    "plan-analysis-history": _plan_analysis_history,
     "backup-db": _backup,
     "restore-db": _restore,
     "backup-gzip-verify": _gzip,
