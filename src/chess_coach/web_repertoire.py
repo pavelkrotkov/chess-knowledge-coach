@@ -94,7 +94,12 @@ def opening_decision(game_id: int, position_id: int):
         "opening_decision.html",
         decision=result,
         comparisons=comparisons,
-        opportunity=opportunity(result, comparisons, request.args.get("opportunities")),
+        opportunity=opportunity(
+            result,
+            comparisons,
+            request.args.get("opportunities"),
+            request.args.get("reference", "broadcast"),
+        ),
         qualifies_experiment=qualifies_experiment,
         board=board_rows(result["fen"], result["color"]),
     )

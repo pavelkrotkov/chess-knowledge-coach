@@ -2125,6 +2125,146 @@ def _opening_fit_route(monkeypatch, tmp_path):
                 )
                 assert b"lacks a current qualified same-search rehearsal" in rejected.data
 
+            # Acquire, decode and index a recent CC0 prefix using a synthetic HTTP provider.
+            import base64
+            import random
+            import subprocess
+
+            import httpx
+
+            from chess_coach.opening_recent_acquire import acquire
+            from chess_coach.opening_recent_index import build as build_recent
+            from chess_coach.opening_recent_source import PREFIX_BYTES, PREFIX_NAME, URL
+
+            def rated_game(branch, number, control, *, missing_rating=False, berserk=False):
+                game = chess.pgn.Game()
+                game.headers.update(
+                    Event="Rated Blitz game",
+                    White=f"Reference {branch}-{number}",
+                    Black=f"Peer {branch}-{number}",
+                    Result="1-0",
+                    Date="2026.10.01",
+                    TimeControl=control,
+                    WhiteElo="1700",
+                    BlackElo="1650",
+                )
+                if missing_rating:
+                    del game.headers["WhiteElo"]
+                if berserk:
+                    game.headers["WhiteBerserk"] = "true"
+                board, node = game.board(), game
+                for san in lines[branch].split():
+                    move = board.parse_san(san)
+                    node = node.add_variation(move)
+                    board.push(move)
+                return str(game)
+
+            rated_games = [rated_game(0, i, "300+0") for i in range(12)]
+            rated_games += [rated_game(0, 100, "600+0", berserk=True)]
+            rated_games += [rated_game(0, 101, "600+0", missing_rating=True)]
+            rated_games += [
+                rated_game(branch, 200 + i, "600+0") for branch in (0, 1) for i in range(5)
+            ]
+            noise = base64.b64encode(random.Random(743).randbytes(1_400_000)).decode()
+            synthetic = ("\n\n".join(rated_games) + "\n\n{" + noise).encode()
+            compressed = subprocess.run(
+                ["/usr/bin/zstd", "-q", "-c"], input=synthetic, stdout=subprocess.PIPE, check=True
+            ).stdout
+            assert len(compressed) > PREFIX_BYTES
+            prefix = compressed[:PREFIX_BYTES]
+            recent_root = tmp_path / "recent"
+            recent_planning = recent_root / ".runtime" / "planning"
+            recent_planning.mkdir(parents=True, mode=0o700)
+            requests = []
+
+            def respond(request):
+                requests.append(request)
+                assert str(request.url) == URL
+                assert request.headers["range"] == f"bytes=0-{PREFIX_BYTES - 1}"
+                assert "authorization" not in request.headers and "cookie" not in request.headers
+                return httpx.Response(
+                    206,
+                    headers={
+                        "Content-Range": f"bytes 0-{PREFIX_BYTES - 1}/{PREFIX_BYTES * 2}",
+                        "Content-Length": str(PREFIX_BYTES),
+                        "ETag": '"synthetic"',
+                    },
+                    content=prefix,
+                    request=request,
+                )
+
+            invalid_root = tmp_path / "invalid-response"
+            (invalid_root / ".runtime" / "planning").mkdir(parents=True, mode=0o700)
+            with (
+                httpx.Client(
+                    transport=httpx.MockTransport(
+                        lambda request: httpx.Response(200, content=b"not a range", request=request)
+                    )
+                ) as fake,
+                pytest.raises(ValueError, match="requested range"),
+            ):
+                acquire(invalid_root, "learner", client=fake)
+            assert not (invalid_root / ".runtime" / "planning" / PREFIX_NAME).exists()
+            retry_root = tmp_path / "retry-response"
+            (retry_root / ".runtime" / "planning").mkdir(parents=True, mode=0o700)
+            with httpx.Client(
+                transport=httpx.MockTransport(
+                    lambda request: httpx.Response(
+                        429, headers={"Retry-After": "120"}, request=request
+                    )
+                )
+            ) as fake:
+                with pytest.raises(ValueError, match="retry delay"):
+                    acquire(retry_root, "learner", client=fake)
+                with pytest.raises(ValueError, match="remains active"):
+                    acquire(retry_root, "learner", client=fake)
+            with httpx.Client(transport=httpx.MockTransport(respond)) as fake:
+                receipt = acquire(recent_root, "learner", client=fake)
+                with pytest.raises(ValueError, match="already exists"):
+                    acquire(recent_root, "learner", client=fake)
+            assert len(requests) == 1 and not receipt["whole_archive_checksum_verified"]
+            assert (recent_planning / PREFIX_NAME).stat().st_size == PREFIX_BYTES
+            coverage = build_recent(recent_root, "learner")
+            assert coverage["accepted"] == 24 and coverage["truncated"]
+            import tempfile
+
+            from chess_coach.opening_reference_decode import decode
+
+            with tempfile.TemporaryFile(dir=recent_planning) as broken:
+                broken.write(b"invalid compressed data")
+                broken.seek(0)
+                with pytest.raises(ValueError, match="could not be decoded"):
+                    decode(broken, allow_partial=True)
+            recent = later_assess(owned, recent_root, "learner", decision, choice, source="recent")
+            assert recent["status"] == "checked"
+            assert recent["public"]["g1f3"]["excluded_context"] == 13
+            assert recent["public"]["g1f3"]["unknown_context"] == 1
+            assert recent["public"]["g1f3"]["matched_candidates"] == 5
+            assert recent["public"]["g1f3"]["available"] == 5
+            assert recent["recommended"] == "g1f3"
+            comparison["lines"][1]["score_value"] = 0
+            with patch.context() as browser:
+                browser.setattr(repertoire_web, "database", lambda: owned)
+                browser.setattr(later_web, "database", lambda: owned)
+                browser.setattr(repertoire_web, "inspect", lambda *_args, **_kwargs: decision)
+                browser.setattr(
+                    repertoire_web, "statuses", lambda *_args, **_kwargs: {"f1c4": comparison}
+                )
+                browser.setitem(app.config, "PROJECT_ROOT", str(recent_root))
+                page = client.get(
+                    browser_url + "&reference=recent",
+                    base_url="https://coach.invalid",
+                    headers=headers,
+                )
+                assert page.status_code == 200 and b"Recent CC0 standard-rated source" in page.data
+                assert b"whole archive checksum was not verified" in page.data
+                assert b"13 excluded and 1 with missing context" in page.data
+                assert b"Recorded source ratings range from 1650 to 1700" in page.data
+                assert (
+                    b"nominal time control does not establish actual thinking time"
+                    in page.data.lower()
+                )
+
     finally:
         public.close()
         owned.close()

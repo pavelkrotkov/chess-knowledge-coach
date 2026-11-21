@@ -5,7 +5,7 @@ import sqlite3
 import time
 
 from .named_structures import VERSION as STRUCTURE_VERSION
-from .opening_profile_center import summarize as center_summary
+from .opening_profile_metadata import summarize_profile
 from .opening_profile_play import PARENT_PLIES, STORED_PLIES, WINDOW_PLIES
 from .opening_profile_store import TRANSFORM
 from .opening_reference_source import (
@@ -39,16 +39,9 @@ def lookup(path, parent, move, *, expires=None, extended=False):
             GROUP BY game_id ORDER BY game_id LIMIT ?""",
             (parent, move, PARENT_PLIES, MAX_GAMES + 1),
         ).fetchall()
-        from .opening_profile_summary import summarize
-
-        summary = summarize(db, rows[:MAX_GAMES])
-        if extended:
-            from .opening_profile_extended import summarize as extended_summary
-
-            summary.update(extended_summary(db, rows[:MAX_GAMES]))
+        summary = summarize_profile(db, rows[:MAX_GAMES], parent, move, extended)
         return {
             **summary,
-            "center": center_summary(db, rows[:MAX_GAMES], parent, move),
             "more_matches": len(rows) > MAX_GAMES,
             "coverage": metadata["coverage"],
             "source": SOURCE,
@@ -60,7 +53,7 @@ def lookup(path, parent, move, *, expires=None, extended=False):
         db.close()
 
 
-def _validate(metadata, *, transform=TRANSFORM):
+def _validate(metadata, *, transform=TRANSFORM, source_metadata=None):
     expected = {
         "source_sha256": SOURCE_SHA256,
         "source_url": SOURCE,
@@ -76,6 +69,8 @@ def _validate(metadata, *, transform=TRANSFORM):
         "window_plies": WINDOW_PLIES,
         "stored_plies": STORED_PLIES,
     }
+    if source_metadata is not None:
+        expected.update(source_metadata)
     if any(metadata.get(key) != value for key, value in expected.items()):
         raise ValueError("ordered profile source differs")
     if not isinstance(metadata.get("coverage"), dict):

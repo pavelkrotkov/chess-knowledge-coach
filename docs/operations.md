@@ -610,6 +610,24 @@ index is unchanged; if v3 is absent, the comparison uses v2 with its control
 coverage unknown. Neither an absent header nor an unsupported control is treated
 as a match. The import refuses to overwrite an existing v3 artifact.
 
+An optional separate recent standard-rated CC0 sample can be prepared outside
+browser requests after checking project capacity:
+
+```sh
+"$release" -I -B -m chess_coach.ops_opening_recent_import acquire --project-root "$PWD"
+"$release" -I -B -m chess_coach.ops_opening_recent_import build --project-root "$PWD"
+```
+
+Acquisition requests only bytes 0–1048575 from the fixed October 2026 export,
+without credentials. It preserves the received prefix and receipt without
+replacement; the prefix hash does not verify the whole archive. The bounded
+index retains legal complete games, actual nominal control, ratings and known
+context, and leaves missing values unknown. It is selected explicitly in the
+comparison; broadcast sources and existing course bindings are unchanged.
+Respect the retained retry deadline if the provider asks for a delay. The prefix
+is a biased convenience sample and a nominal control does not prove actual
+thinking time.
+
 To publish a reviewed unfamiliar-opening course, set `preview_version` to the
 version shown on its private course preview and use the existing Study credentials:
 
