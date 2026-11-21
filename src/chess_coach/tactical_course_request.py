@@ -8,9 +8,22 @@ from .opening_queue_files import read
 from .opening_queue_location import location
 from .opening_queue_lock import lock
 from .opening_queue_write import write
+from .tactical_course_choice import normalize
 from .tactical_course_offer import PREPARE_SLOT, SLOT
 
 VERSION = "tactical-course-request-v1"
+SELECTED_VERSION = "tactical-course-request-v2"
+
+
+def _selection_valid(item):
+    try:
+        if item.get("version") == VERSION:
+            return item.get("selection") is None
+        return item.get("version") == SELECTED_VERSION and (
+            normalize(item.get("selection")) == item.get("selection")
+        )
+    except (ValueError, TypeError):
+        return False
 
 
 def valid(item, database, learner, corpus):
@@ -19,39 +32,52 @@ def valid(item, database, learner, corpus):
     request_id = item.get("id")
     identity = (item.get("version"), item.get("database"), item.get("owner"), item.get("corpus"))
     return (
-        identity == (VERSION, database, learner_key(learner), corpus)
+        _selection_valid(item)
+        and identity == (item["version"], database, learner_key(learner), corpus)
         and item.get("state") in {"queued", "running", "complete", "unavailable"}
         and isinstance(request_id, str)
         and re.fullmatch(r"[0-9a-f]{32}", request_id) is not None
     )
 
 
-def enqueue(db, root, learner, corpus):
+def enqueue(db, root, learner, corpus, *, selected=None):
     """Coalesce pending requests; never replace an unrecognized private slot."""
     if not isinstance(corpus, str) or not corpus:
         raise ValueError("course corpus unavailable")
+    # A repeated request is coalesced only when its exact selection matches.
+    chosen = None if selected is None else normalize(selected)
     directory, database = location(db, root, learner)
     with lock(directory):
         slot = directory / PREPARE_SLOT
         old = read(slot)
-        # An invalid or legacy slot may contain user data; never replace it.
-        if slot.exists() or slot.is_symlink():
-            if not valid(old, database, learner, corpus):
-                raise ValueError("course request unavailable")
-            # Multiple clicks represent one pending preparation, not more jobs.
-            if old["state"] in {"queued", "running"} and _pending(old, directory):
-                return
-        write(
-            slot,
-            {
-                "version": VERSION,
-                "database": database,
-                "owner": learner_key(learner),
-                "corpus": corpus,
-                "state": "queued",
-                "id": secrets.token_hex(16),
-            },
-        )
+        if _coalesced(slot, old, directory, database, learner, corpus, chosen):
+            return
+        # Keep legacy requests recognizable and give selected requests their own
+        # version so retries preserve the chosen weaknesses exactly.
+        item = {
+            "version": VERSION if chosen is None else SELECTED_VERSION,
+            "database": database,
+            "owner": learner_key(learner),
+            "corpus": corpus,
+            "state": "queued",
+            "id": secrets.token_hex(16),
+        }
+        if chosen is not None:
+            item["selection"] = chosen
+        write(slot, item)
+
+
+def _coalesced(slot, old, directory, database, learner, corpus, chosen):
+    # Never replace an unrecognized slot, or coalesce a different selection.
+    if not slot.exists() and not slot.is_symlink():
+        return False
+    if not valid(old, database, learner, corpus):
+        raise ValueError("course request unavailable")
+    if old["state"] in {"queued", "running"} and _pending(old, directory):
+        if old.get("selection") != chosen:
+            raise ValueError("another course selection is pending")
+        return True
+    return False
 
 
 def _pending(item, directory):
@@ -75,6 +101,8 @@ def status(db, root, learner, corpus, offered=None):
 
 
 def _state(item, offered):
+    # A saved completion belongs only to its matching offer. If the offer was
+    # replaced, report that change instead of attributing the newer course to it.
     if item.get("offer"):
         if offered == item["offer"]:
             return "complete"

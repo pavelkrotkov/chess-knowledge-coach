@@ -488,7 +488,7 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
         assert len(resolutions) == 1
     with monkeypatch.context() as patch:
         patch.setattr(
-            tactical_course, "candidates", lambda *_a: ([fork_group, capture_group], coverage)
+            tactical_course, "candidates", lambda *_a, **_k: ([fork_group, capture_group], coverage)
         )
         original_owned = tactical_course_resolve.owned
 
@@ -541,7 +541,9 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
         patch.setattr(tactical_course_familiar_games, "LIMIT", 1)
         patch.setattr(tactical_course_familiar, "_games", counted_games)
         for index, order in enumerate(((capture_group, fork_group), (fork_group, capture_group))):
-            patch.setattr(tactical_course, "candidates", lambda *_a, order=order: (order, coverage))
+            patch.setattr(
+                tactical_course, "candidates", lambda *_a, order=order, **_k: (order, coverage)
+            )
             mixed = tactical_preview(db, LEARNER, "test")
             assert [p["kind"] for p in mixed["preview"]["patterns"]] == (
                 ["capture", "fork"] if index == 0 else ["fork", "capture"]
@@ -1408,6 +1410,121 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
                 ).data
             )
 
+    # A selected course uses the same background and exact-offer publication flow.
+    selected_form = {"csrf": course_csrf, "mode": "selected", "pair": "fork:execute"}
+    assert (
+        course_client.post(
+            local_url,
+            data={
+                **selected_form,
+                "pair": [
+                    "fork:execute",
+                    "calculation:execute",
+                    "mate_in_one:execute",
+                    "hanging_piece:execute",
+                ],
+            },
+            base_url="https://coach.invalid",
+            headers=post_headers,
+        ).status_code
+        == 409
+    )
+    assert (
+        course_client.post(
+            local_url, data=selected_form, base_url="https://coach.invalid", headers=post_headers
+        ).status_code
+        == 303
+    )
+    tactical_course_worker.run(db, LEARNER, project)
+    assert offer_slot.read_bytes() == original_offer
+    unavailable_page = course_client.get(
+        course_url, base_url="https://coach.invalid", headers=course_headers
+    )
+    assert b"selected preparation could not produce a course" in unavailable_page.data
+    assert b"source records examined" in unavailable_page.data
+
+    selected_form["pair"] = ["fork:execute", "hanging_piece:execute"]
+    assert (
+        course_client.post(
+            local_url, data=selected_form, base_url="https://coach.invalid", headers=post_headers
+        ).status_code
+        == 303
+    )
+    selected_request = request_file.read_bytes()
+    assert (
+        course_client.post(
+            local_url, data=selected_form, base_url="https://coach.invalid", headers=post_headers
+        ).status_code
+        == 303
+    )
+    assert request_file.read_bytes() == selected_request
+    assert (
+        course_client.post(
+            local_url,
+            data={**selected_form, "pair": list(reversed(selected_form["pair"]))},
+            base_url="https://coach.invalid",
+            headers=post_headers,
+        ).status_code
+        == 303
+    )
+    assert request_file.read_bytes() == selected_request
+    assert (
+        course_client.post(
+            local_url,
+            data={**selected_form, "pair": "fork:execute"},
+            base_url="https://coach.invalid",
+            headers=post_headers,
+        ).status_code
+        == 409
+    )
+    assert request_file.read_bytes() == selected_request
+
+    # An altered same-id request cannot receive another selection's result.
+    original_build = tactical_course_worker.build_preview
+
+    def changed_selection(*args, **kwargs):
+        candidate = original_build(*args, **kwargs)
+        altered = json.loads(request_file.read_text())
+        altered["selection"] = ["fork:execute"]
+        request_file.write_text(json.dumps(altered))
+        return candidate
+
+    with monkeypatch.context() as patch:
+        patch.setattr(tactical_course_worker, "build_preview", changed_selection)
+        tactical_course_worker.run(db, LEARNER, project)
+    assert offer_slot.read_bytes() == original_offer
+    assert json.loads(request_file.read_text())["selection"] == ["fork:execute"]
+    request_file.write_bytes(selected_request)
+
+    tactical_course_worker.run(db, LEARNER, project)
+    selected_offer = json.loads(offer_slot.read_text())
+    selected_path = planning / selected_offer["file"]
+    selected_export = json.loads(selected_path.read_text())
+    selected_v5_hash = selected_export["export_sha256"]
+    selected_scope = selected_export["export"]["selection"]
+    assert selected_export["kind"] == "local-tactical-course-export-v5"
+    assert selected_scope["pairs"] == [["hanging_piece", "execute"], ["fork", "execute"]]
+    assert selected_scope["work_policy"] == "selected-tactical-work-v1"
+    assert (selected_scope["related_match_seconds"], selected_scope["total_seconds"]) == (8, 60)
+    assert selected_export["export"]["patterns"][0]["kind"] == "capture"
+    assert "Worked example, ungraded" in selected_export["export"]["chapters"][0]["pgn"]
+    with monkeypatch.context() as patch:
+        patch.setenv("LICHESS_STUDY_TOKEN", "fixture-token")
+        patch.setenv("CHESS_PROJECT_ROOT", str(project))
+        assert (
+            course_client.post(
+                course_url + "/study",
+                data={"csrf": course_csrf, "version": selected_v5_hash},
+                base_url="https://coach.invalid",
+                headers=post_headers,
+            ).status_code
+            == 303
+        )
+        selected_study_request = json.loads(request_slot.read_text())
+        assert selected_study_request["version"] == selected_v5_hash
+        assert selected_study_request["file"] == selected_path.name
+    offer_slot.write_bytes(original_offer)
+
     # A saved v1 preview retains its exact scope, hash, export and Study reconstruction.
     from chess_coach.tactical_course_budget import Budget
     from chess_coach.tactical_export import build as build_export
@@ -1455,6 +1572,26 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
 
     with study_revalidate(path, legacy_export, legacy_export["export_sha256"]) as check:
         check()
+    selected_preview = study_preview(selected_export, selected_v5_hash)
+    selected_preview_file = planning / "selected-preview.json"
+    selected_preview_file.write_text(json.dumps(selected_preview))
+    selected_preview_file.chmod(0o600)
+    selected_copy = planning / "selected-export.json"
+    export_candidate(
+        project, selected_preview_file, selected_preview["preview_sha256"], selected_copy
+    )
+    assert json.loads(selected_copy.read_text()) == selected_export
+    with study_revalidate(path, selected_export, selected_v5_hash) as check:
+        check()
+    changed_policy = json.loads(json.dumps(selected_preview))
+    changed_policy["preview"]["selection"]["related_match_seconds"] = 9
+    changed_policy["preview_sha256"] = preview_hash(changed_policy["preview"])
+    from chess_coach.tactical_course_choice import SLICE_SECONDS as SELECTED_SECONDS
+
+    with pytest.raises(ValueError):
+        build_export(
+            db, LEARNER, "test", changed_policy, Budget(db, slice_seconds=SELECTED_SECONDS)
+        )
     assert export_path.stat().st_mode & 0o777 == 0o400
     with pytest.raises(ValueError):
         export_candidate(project, first_preview, preview["preview_sha256"], export_path)
@@ -1607,6 +1744,22 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
         with pytest.raises(ValueError):
             tactical_session.publish_locked(project, related_output, "0" * 64)
         assert len(calls) == 2 and not calls[0][1].exists()
+    selected_calls = []
+
+    def selected_publish(database, intent_path, course, *, action, check=None):
+        selected_calls.append((intent_path, course, action, check))
+        return "selected destination"
+
+    with monkeypatch.context() as patch:
+        patch.setattr(tactical_session, "_publish", selected_publish)
+        assert (
+            tactical_session.publish_locked(project, selected_path, selected_v5_hash)
+            == "selected destination"
+        )
+    assert selected_calls[0][1]["course_sha256"] == selected_v5_hash
+    assert selected_calls[0][2].keywords["strict"] is True
+    assert selected_calls[0][3] is selected_calls[0][2].keywords["check"]
+
     legacy_path = planning / "legacy-export.json"
     legacy_path.write_text(json.dumps(legacy_export))
     legacy_path.chmod(0o600)
@@ -1679,6 +1832,8 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
 
     other_id = next(item["evidence_id"] for item in supports if item["evidence_id"] != selected_id)
     review_evidence(db, other_id, decision="accept", actor="fixture")
+    with pytest.raises(ValueError), study_revalidate(path, selected_export, selected_v5_hash):
+        pass
     with monkeypatch.context() as patch:
         patch.setattr(tactical_session, "_publish", synthetic_publish)
         with pytest.raises(ValueError):

@@ -8,6 +8,21 @@
 {% elif preparation == "unavailable" %}<p>Course preparation is unavailable.{% if course %} The previous course remains available.{% endif %} You can try again.</p>
 {% elif preparation == "superseded" %}<p>A newer course replaced the prepared offer.</p>{% endif %}
 {% if preparation not in ["queued", "running"] %}<form method="post" action="{{ url_for('tactical_course_views.prepare') }}"><input type="hidden" name="csrf" value="{{ csrf }}"><button>Prepare a current course</button></form>{% endif %}
+{% if preparation not in ["queued", "running"] %}
+<form method="post" action="{{ url_for('tactical_course_views.prepare') }}">
+<input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="mode" value="selected">
+<fieldset><legend>Choose one to three training focuses</legend>
+<p>Each focus will be checked for recurring support in your games.</p>
+{% set focus_names = {"hanging_piece:execute": "Finding material gains", "hanging_piece:prevent": "Protecting your pieces", "fork:execute": "Finding forks", "mate_in_one:execute": "Finding mate in one", "calculation:execute": "Finding short checkmates"} %}
+{% for skill, operation in choices %}{% set focus_key = skill ~ ":" ~ operation %}<label><input type="checkbox" name="pair" value="{{ focus_key }}"> {{ focus_names.get(focus_key, focus_key) }}</label>
+{% set recorded = course.selection.coverage|selectattr("skill", "equalto", skill)|selectattr("operation", "equalto", operation)|list if course else [] %}
+{% if recorded %}<small>Previous preparation: {{ recorded[0].status }}{% if recorded[0].examined is not none %}, {{ recorded[0].examined }} source records examined{% endif %}.{% set matching = course.patterns|selectattr("skill", "equalto", skill)|selectattr("operation", "equalto", operation)|list %}{% if matching %} {{ matching[0].independent_games }} independently supported games.{% endif %}</small>{% else %}<small>Source coverage not yet prepared.</small>{% endif %}<br>{% endfor %}
+</fieldset><button>Prepare selected focuses</button></form>
+{% endif %}
+{% if preparation_details %}<p>The selected preparation could not produce a course. Recorded source coverage:</p><ul>
+{% for row in preparation_details.coverage %}<li>{{ row.skill|replace('_', ' ') }} · {{ row.operation|replace('_', ' ') }}: {{ row.status }}{% if row.examined is not none %}; {{ row.examined }} source records examined{% endif %}</li>{% endfor %}
+{% for item in preparation_details.unavailable %}<li>{{ item.skill|replace('_', ' ') }} · {{ item.operation|replace('_', ' ') }}: {{ item.reason }}</li>{% endfor %}
+</ul><p>A complete scan may have too few independently supported examples.</p>{% endif %}
 <p>Preparation is local. Requesting a private Study is a separate action.</p>
 {% if not course %}
 <p>No current prepared course is available.</p>
@@ -24,6 +39,7 @@
 {% elif study.state == "unavailable" %}<p>Publication status is unavailable.</p>{% endif %}
 {% if not study.configured %}<p>Study credentials or account configuration are unavailable.</p>{% else %}<p>Study credentials are configured; permissions are checked when publishing.</p>{% if study.state not in ["queued", "incomplete", "complete", "stale", "unavailable", "blocked"] %}<form method="post" action="{{ url_for('tactical_course_views.submit') }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="version" value="{{ offer.hash }}"><button>Request a private Study</button></form>{% endif %}{% endif %}
 {% endif %}
+<details><summary>Recorded source coverage</summary><ul>{% for row in course.selection.coverage %}<li>{{ row.skill|replace('_', ' ') }} · {{ row.operation|replace('_', ' ') }}: {{ row.status }}{% if row.examined is not none %}; {{ row.examined }} source records examined{% endif %}{% set matching = course.patterns|selectattr("skill", "equalto", row.skill)|selectattr("operation", "equalto", row.operation)|list %}{% if row.status == "complete" and not matching %}; no qualified pattern included{% endif %}</li>{% endfor %}</ul></details>
 {% if course.selection.unavailable %}<details><summary>Recorded omissions</summary><ul>{% for item in course.selection.unavailable %}<li>{{ item.skill|replace('_', ' ') }} · {{ item.operation|replace('_', ' ') }}: {{ item.reason }}</li>{% endfor %}</ul></details>{% endif %}
 <nav aria-label="Course chapters"><h3>Chapters</h3><ol>{% for chapter in course.chapters %}<li>{% if loop.index0 == shown.index %}<strong>{{ chapter.title }}</strong>{% else %}<a href="{{ url_for('tactical_course_views.show', version=offer.hash, chapter=loop.index0) }}">{{ chapter.title }}</a>{% endif %}</li>{% endfor %}</ol></nav>
 <section><h3>{{ shown.chapter.title }}</h3>

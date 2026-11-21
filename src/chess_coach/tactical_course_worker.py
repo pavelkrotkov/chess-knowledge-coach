@@ -7,6 +7,7 @@ from .opening_queue_location import location
 from .tactical_course import build as build_preview
 from .tactical_course_budget import Budget
 from .tactical_course_capacity import output
+from .tactical_course_choice import SLICE_SECONDS as SELECTED_SECONDS
 from .tactical_course_deadline import PreviewDeadline
 from .tactical_course_publish import publish
 from .tactical_course_worker_state import claim, failed, finish
@@ -24,14 +25,29 @@ def run(db, learner, root):
         return
     requested, old_offer = claimed
     try:
-        budget = Budget(db)
-        candidate = build_preview(db, learner, corpus, budget=budget)
-        result = build_export(db, learner, corpus, candidate, budget)
-        if not result["export"]["chapters"]:
-            raise ValueError("no supported chapters")
-        path, needed = output(root, directory, result, budget)
-        if needed:
-            publish(path, result, budget, readonly=True)
-        finish(directory, database, learner, corpus, requested, old_offer, result, path, budget)
+        _prepare(db, learner, corpus, root, directory, database, requested, old_offer)
     except (Exception, PreviewDeadline):
         failed(directory, database, learner, corpus, requested)
+
+
+def _prepare(db, learner, corpus, root, directory, database, requested, old_offer):
+    selected = requested.get("selection")
+    budget = Budget(db, slice_seconds=SELECTED_SECONDS if selected is not None else None)
+    candidate = build_preview(db, learner, corpus, budget=budget, selected=selected)
+    if not candidate["preview"]["chapters"]:
+        failed(
+            directory,
+            database,
+            learner,
+            corpus,
+            requested,
+            selection=candidate["preview"]["selection"],
+        )
+        return
+    result = build_export(db, learner, corpus, candidate, budget)
+    if not result["export"]["chapters"]:
+        raise ValueError("no supported chapters")
+    path, needed = output(root, directory, result, budget)
+    if needed:
+        publish(path, result, budget, readonly=True)
+    finish(directory, database, learner, corpus, requested, old_offer, result, path, budget)

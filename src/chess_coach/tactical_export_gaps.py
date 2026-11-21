@@ -33,7 +33,7 @@ RELATED = {
 def _valid_reason(pair, reason, pairs, modern):
     # Only v2 non-protection matchers can omit work for the shared history cap.
     if reason == HISTORY_LIMIT:
-        return pairs == CURRENT_PAIRS and (modern or pair != ("hanging_piece", "prevent"))
+        return modern or (pairs == CURRENT_PAIRS and pair != ("hanging_piece", "prevent"))
     if reason in {PROTECTION_CORPUS, PROTECTION_EMPTY, PROTECTION_LIMIT, PROTECTION_SOURCE}:
         return modern and pair == ("hanging_piece", "prevent")
     if reason in {FORK_CORPUS, FORK_EMPTY}:

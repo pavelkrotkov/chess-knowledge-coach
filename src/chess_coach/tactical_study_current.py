@@ -7,7 +7,9 @@ from types import SimpleNamespace
 
 from .fact_fingerprint import canonical
 from .schema_compat import readonly
+from .tactical_course import SELECTED_VERSION
 from .tactical_course_budget import Budget
+from .tactical_course_choice import SLICE_SECONDS as SELECTED_SECONDS
 from .tactical_export import build
 from .tactical_study_preview import preview
 
@@ -21,7 +23,10 @@ def revalidate(path, envelope, expected, *, with_budget=False):
     connection.execute("PRAGMA query_only=ON")
     try:
         db = SimpleNamespace(connection=connection)
-        budget = Budget(db)
+        budget = Budget(
+            db,
+            slice_seconds=SELECTED_SECONDS if saved_preview["kind"] == SELECTED_VERSION else None,
+        )
         current = build(
             db, os.environ["CHESS_SUBJECT"], os.environ["CHESS_CORPUS"], saved_preview, budget
         )

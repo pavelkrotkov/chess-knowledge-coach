@@ -3,7 +3,9 @@
 from .course_preview import preview_hash
 from .learner_identity import normalize_identity
 from .tactical_course import PROTECTION_VERSION as PROTECTION_PREVIEW_VERSION
+from .tactical_course import SELECTED_VERSION as SELECTED_PREVIEW_VERSION
 from .tactical_course import VERSION as PREVIEW_VERSION
+from .tactical_course_choice import check_budget
 from .tactical_export_chapters import verify
 from .tactical_export_contract import contract as _contract
 from .tactical_export_contract import validate
@@ -20,6 +22,8 @@ PROTECTION_VERSION = "local-tactical-course-export-v3"
 PROTECTION_POLICY = "tactical-export-verification-v3"
 VERSION = "local-tactical-course-export-v4"
 POLICY = "tactical-export-verification-v4"
+SELECTED_VERSION = "local-tactical-course-export-v5"
+SELECTED_POLICY = "tactical-export-verification-v5"
 
 
 def _chapters(chapters, index):
@@ -38,13 +42,15 @@ def build(db, subject, corpus, envelope, budget):
     with budget.scope(snapshot=False):
         body = validate(envelope, corpus)
     pairs = selection(body, corpus)
+    check_budget(body["kind"] == SELECTED_PREVIEW_VERSION, budget)
     index, seen = 0, set()
-    modern = body["kind"] in {PROTECTION_PREVIEW_VERSION, PREVIEW_VERSION}
+    # Selected courses use the same source and chapter proofs as modern defaults.
+    modern = body["kind"] in {PROTECTION_PREVIEW_VERSION, PREVIEW_VERSION, SELECTED_PREVIEW_VERSION}
     gaps = omissions(
         body["selection"],
         pairs=pairs,
         modern=modern,
-        owned_deadline=body["kind"] == PREVIEW_VERSION,
+        owned_deadline=body["kind"] in {PREVIEW_VERSION, SELECTED_PREVIEW_VERSION},
     )
     for pattern in body["patterns"]:
         pair = (pattern["skill"], pattern["operation"])
