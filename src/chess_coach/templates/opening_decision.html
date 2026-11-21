@@ -16,7 +16,7 @@
 {% for line in comparison.lines %}{% if line.root_move == item.uci %}alternative {{ line.score_value }} cp{% else %}played {{ line.score_value }} cp{% endif %}{% if not loop.last %}; {% endif %}{% endfor %}.
 These are estimates for the selected moves, not a recommendation or proof of opening fit.</p>
 <p>The shared search reported {{ comparison.work.nodes }} nodes{% if comparison.work.requested_nodes is defined %} with a requested cap of {{ comparison.work.requested_nodes }}{% endif %}.</p>
-{% if qualifies_experiment(decision, item, comparison) %}<p><a href="{{ url_for('opening_experiments.show', game_id=decision.game_id, position_id=decision.position_id, move=item.uci) }}">Rehearse this opening experiment</a></p>{% else %}<p>Worked rehearsal is unavailable because the measured lines or score difference do not meet its checks.</p>{% endif %}
+{% if qualifies_experiment(decision, item, comparison) %}<p><a href="{{ url_for('opening_experiments.show', game_id=decision.game_id, position_id=decision.position_id, move=item.uci) }}">Rehearse this opening experiment</a> · <a href="{{ url_for('opening_experiments.course', game_id=decision.game_id, position_id=decision.position_id, move=item.uci) }}">Open the revision course</a> · <a href="{{ url_for('repertoire_views.opening_decision', game_id=decision.game_id, position_id=decision.position_id, opportunities=item.uci) }}">Compare later center opportunities</a></p>{% else %}<p>Worked rehearsal is unavailable because the measured lines or score difference do not meet its checks.</p>{% endif %}
 {% elif comparison.status == "queued" %}<p>Comparison queued for a later worker run.</p>
 {% elif comparison.status == "unavailable" %}<p>Comparison unavailable.{% if comparison.retry_available %} You may retry.{% else %} The retry limit was reached.{% endif %}</p>
 {% elif comparison.status == "stale" %}<p>The earlier comparison is stale; request a current one.</p>{% endif %}
@@ -27,5 +27,6 @@ These are estimates for the selected moves, not a recommendation or proof of ope
 <button type="submit">{% if comparison.status == "unavailable" %}Retry{% else %}Compare this move{% endif %}</button>
 </form>{% endif %}
 {% if item.analysis %} Played {{ item.analysis.played }} cp; alternative {{ item.analysis.alternative }} cp at depth {{ item.analysis.depth }}. Recorded continuation: {{ item.analysis.line|join(" ") }}.{% else %} No qualified same-search comparison for this move.{% endif %}</li>{% else %}<li>No verified alternative catalog move in this bounded scan.</li>{% endfor %}</ul>
+{% if opportunity %}{% include "opening_later_opportunities.html" %}{% endif %}
 {% if decision.catalog.truncated %}<p>Additional catalog moves were not shown.</p>{% endif %}
 {% endblock %}

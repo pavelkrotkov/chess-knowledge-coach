@@ -60,7 +60,7 @@ def lookup(path, parent, move, *, expires=None, extended=False):
         db.close()
 
 
-def _validate(metadata):
+def _validate(metadata, *, transform=TRANSFORM):
     expected = {
         "source_sha256": SOURCE_SHA256,
         "source_url": SOURCE,
@@ -68,7 +68,7 @@ def _validate(metadata):
         "source_month": SOURCE_MONTH,
         "license": LICENSE,
         "license_url": LICENSE_URL,
-        "transform": TRANSFORM,
+        "transform": transform,
         "opening_graph": GRAPH_SHA256,
         "opening_version": VERSION,
         "structure_version": STRUCTURE_VERSION,

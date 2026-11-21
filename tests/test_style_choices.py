@@ -470,7 +470,7 @@ def test_profile_uses_owned_current_deep_results_and_private_browser(tmp_path, m
         assert b"control diagnostic" in page.data
 
 
-def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch):
+def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch, tmp_path):
     from chess_coach import style_schedule_candidates, style_schedule_control
     from chess_coach.style_early_center_compare import observation as early_observation
     from chess_coach.style_schedule_candidate import candidate
@@ -1499,7 +1499,7 @@ def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch):
         with pytest.raises(ValueError, match="verified source changed"):
             request_purpose(budget_db, decisions[0], LEARNER)
     budget_db.close()
-    _opening_fit_route(monkeypatch)
+    _opening_fit_route(monkeypatch, tmp_path)
 
 
 def test_report_engine_digest_reuse_and_freshness(tmp_path, monkeypatch):
@@ -1596,7 +1596,7 @@ def test_report_engine_digest_reuse_and_freshness(tmp_path, monkeypatch):
     db.close()
 
 
-def _opening_fit_route(monkeypatch):
+def _opening_fit_route(monkeypatch, tmp_path):
     """A normal choices request admits current owned evidence and public windows in memory."""
     import html
     import re
@@ -1912,6 +1912,219 @@ def _opening_fit_route(monkeypatch):
             assert rank(candidates, overlap, summarize(rows)) is None
             tied = {**counts, "low": {"sampled": 10, "valid": 10, "available": 10}}
             assert rank(candidates, tied, summarize(rows)) is None
+
+            # Later-branch fit uses real imported PGNs and current owned choice reports.
+            import hashlib
+
+            import chess_coach.opening_reference_source as reference_source
+            import chess_coach.web_opening_later as later_web
+            import chess_coach.web_repertoire as repertoire_web
+            from chess_coach.opening_fit_context_index import build as build_context
+            from chess_coach.opening_fit_later import assess as later_assess
+            from chess_coach.opening_profile_index import build as build_previous
+            from chess_coach.opening_reference_source import SOURCE_NAME
+
+            lines = (
+                "e4 e5 Nf3 d5 exd5 Qxd5 Nc3 Qe6+ Be2 Nf6 O-O Bd6 d4 e4 Ne5 O-O Bf4 Nbd7 Nxd7 Bxd7",
+                "e4 e5 Bc4 Nc6 Nf3 Nf6 d3 Be7 O-O O-O Re1 d6 c3 a6 Nbd2 b5 Bb3 Be6 Bc2 d5",
+            )
+
+            def make_public(unknown):
+                values = []
+                for branch, text in enumerate(lines):
+                    for index in range(5):
+                        game = chess.pgn.Game()
+                        game.headers.update(
+                            White=f"Public {branch}-{index}",
+                            Black=f"Other {branch}-{index}",
+                            Result="1-0",
+                            Date="2026.09.01",
+                        )
+                        if not (unknown and branch == 1 and index == 0):
+                            game.headers["TimeControl"] = "600+0"
+                        board, node = game.board(), game
+                        for san in text.split():
+                            move = board.parse_san(san)
+                            node = node.add_variation(move)
+                            board.push(move)
+                        values.append(str(game))
+                return "\n\n".join(values)
+
+            for name, unknown in (("known", False), ("unknown", True), ("legacy", False)):
+                root_path = tmp_path / name
+                directory = root_path / ".runtime" / "planning"
+                directory.mkdir(parents=True, mode=0o700)
+                archive = directory / SOURCE_NAME
+                archive.write_bytes(b"synthetic bounded archive")
+                sample_pgn = make_public(unknown)
+                with patch.context() as source_patch:
+                    source_patch.setattr(reference_source, "SOURCE_BYTES", archive.stat().st_size)
+                    source_patch.setattr(
+                        reference_source,
+                        "SOURCE_SHA256",
+                        hashlib.sha256(archive.read_bytes()).hexdigest(),
+                    )
+                    source_patch.setattr(
+                        reference_source,
+                        "_decode",
+                        lambda _file, value=sample_pgn: (value.encode(), False),
+                    )
+                    build = build_previous if name == "legacy" else build_context
+                    assert build(root_path, "learner")["accepted"] == 10
+
+            def later_execute(_db, snapshot, _config, _deadline):
+                board, position = snapshot["board"], snapshot["position"]
+                pvs = ("e4d5 d8d5 b1c3 d5d6", "b1c3 d5e4 c3e4 f8b4")
+                raw = [
+                    {
+                        "pv": [chess.Move.from_uci(move) for move in line.split()],
+                        "score": chess.engine.PovScore(chess.engine.Cp(0), board.turn),
+                        "nodes": 500,
+                        "depth": 5,
+                        "time": 0.05,
+                    }
+                    for line in pvs
+                ]
+                lines, invalid = native(position, board, raw)
+                assert not invalid
+                return (
+                    "complete",
+                    "comparable",
+                    {
+                        "scout": {"lines": lines},
+                        "final": {"lines": lines, "roots": ["e4d5", "b1c3"]},
+                        "engine": {},
+                        "runtime_engine": {},
+                    },
+                )
+
+            later_games = []
+            patch.setattr(purpose_worker, "execute", later_execute)
+            for index in range(3):
+                own_pgn = (
+                    f'[Event "Later fixture"]\n[White "learner"]\n[Black "later-{index}"]\n'
+                    f'[UTCDate "2026.01.02"]\n[UTCTime "12:00:0{index}"]\n'
+                    '[TimeControl "600+0"]\n[Result "*"]\n\n'
+                    "1. e4 e5 2. Nf3 d5 3. exd5 Qxd5 4. Nc3 Qe6+ *\n"
+                )
+                ingest_pgn(owned, own_pgn)
+                game_id = owned.connection.execute("SELECT MAX(id) FROM games").fetchone()[0]
+                decision_id = owned.connection.execute(
+                    "SELECT id FROM positions WHERE game_id=? AND ply=3", (game_id,)
+                ).fetchone()[0]
+                capture_id = owned.connection.execute(
+                    "SELECT id FROM positions WHERE game_id=? AND ply=5", (game_id,)
+                ).fetchone()[0]
+                request_id = create(owned, capture_id, "learner", engine_path=sys.executable)[
+                    "request_id"
+                ]
+                assert purpose_worker.run(owned, request_id, "learner")["status"] == "complete"
+                cycle = owned.connection.execute(
+                    "INSERT INTO style_schedule_cycles(learner_key,sequence,coverage_json) VALUES(?,?,?)",
+                    (
+                        learner_key("learner"),
+                        101 + 4 * index,
+                        json.dumps(
+                            {
+                                "early_center_policy": "early-center-v1",
+                                "early_center_targeted": True,
+                            }
+                        ),
+                    ),
+                ).lastrowid
+                owned.connection.execute(
+                    "INSERT INTO style_schedule_slots(cycle_id,kind,game_id,position_id,status,detail,request_id) VALUES(?,'control',?,?,'complete','fixture',?)",
+                    (cycle, game_id, capture_id, request_id),
+                )
+                owned.connection.commit()
+                later_games.append((game_id, decision_id))
+            board = chess.Board()
+            board.push_san("e4")
+            board.push_san("e5")
+            choice = {"uci": "f1c4", "san": "Bc4", "child": "synthetic"}
+            decision = {
+                "game_id": later_games[0][0],
+                "position_id": later_games[0][1],
+                "ply": 3,
+                "color": "white",
+                "fen": board.fen(),
+                "played": "Nf3",
+                "played_uci": "g1f3",
+                "opening": {
+                    "source_url": "https://example.invalid",
+                    "version": "fixture",
+                    "content_revision": 1,
+                },
+                "analysis": {"status": "unavailable"},
+                "catalog": {"parent": position_key(board), "items": [choice], "truncated": False},
+            }
+            outcome = later_assess(owned, tmp_path / "known", "learner", decision, choice)
+            assert outcome["status"] == "checked"
+            assert outcome["owned"]["branches"]["g1f3"]["games"] == 3
+            assert outcome["owned"]["branches"]["g1f3"]["played_capture"] == 3
+            assert outcome["public"]["g1f3"]["available"] == 5
+            assert outcome["public"]["f1c4"]["available"] == 0
+            assert outcome["recommended"] == "g1f3"
+            uncertain = later_assess(owned, tmp_path / "unknown", "learner", decision, choice)
+            assert uncertain["public"]["f1c4"]["unknown_control"] == 1
+            assert uncertain["recommended"] is None
+            with patch.context() as legacy_source:
+                legacy_source.setattr(sqlite3, "connect", real_connect)
+                legacy = later_assess(owned, tmp_path / "legacy", "learner", decision, choice)
+            assert legacy["public"]["g1f3"]["unknown_control"] == 5
+            assert legacy["recommended"] is None
+
+            # A qualifying choice before a later decision is not attributed to that branch.
+            later_board = chess.Board()
+            for san in lines[0].split()[:6]:
+                later_board.push_san(san)
+            later_decision = {
+                **decision,
+                "ply": 7,
+                "fen": later_board.fen(),
+                "played_uci": "b1c3",
+                "catalog": {**decision["catalog"], "parent": position_key(later_board)},
+            }
+            later_outcome = later_assess(
+                owned, tmp_path / "known", "learner", later_decision, choice
+            )
+            assert later_outcome["public"]["b1c3"]["valid"] == 5
+            assert later_outcome["public"]["b1c3"]["available"] == 0
+            assert later_outcome["owned"]["excluded"]["before_decision"] >= 3
+            assert later_outcome["recommended"] is None
+
+            # Existing browser gating accepts the qualified legal same-search rehearsal.
+            comparison = {
+                "status": "complete",
+                "work": {"nodes": 100},
+                "lines": [
+                    {"root_move": "g1f3", "pv": "g1f3 d7d5 e4d5", "score_value": 0, "depth": 5},
+                    {"root_move": "f1c4", "pv": "f1c4 b8c6 g1f3", "score_value": 0, "depth": 5},
+                ],
+            }
+            with patch.context() as browser:
+                browser.setattr(repertoire_web, "database", lambda: owned)
+                browser.setattr(later_web, "database", lambda: owned)
+                browser.setattr(repertoire_web, "inspect", lambda *_args, **_kwargs: decision)
+                browser.setattr(
+                    repertoire_web, "statuses", lambda *_args, **_kwargs: {"f1c4": comparison}
+                )
+                browser.setitem(app.config, "PROJECT_ROOT", str(tmp_path / "known"))
+                browser_url = f"/repertoire/games/{later_games[0][0]}/openings/{later_games[0][1]}?opportunities=f1c4"
+                before_read = (owned.connection.total_changes, public.total_changes)
+                page = client.get(browser_url, base_url="https://coach.invalid", headers=headers)
+                assert (
+                    page.status_code == 200 and b"Later center-learning opportunities" in page.data
+                )
+                assert b"5 of 5 valid public examples" in page.data
+                assert b"bounded examples support more later opportunities for Nf3" in page.data
+                assert (owned.connection.total_changes, public.total_changes) == before_read
+                comparison["lines"][1]["score_value"] = -51
+                rejected = client.get(
+                    browser_url, base_url="https://coach.invalid", headers=headers
+                )
+                assert b"lacks a current qualified same-search rehearsal" in rejected.data
+
     finally:
         public.close()
         owned.close()

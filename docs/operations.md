@@ -598,6 +598,18 @@ parent-and-move matches from the first 40 plies, at most ten deduplicated public
 games, and up to twelve post-move positions per game, starting with the matching move. Named geometry is descriptive
 of this convenience sample; no private game data enters the index.
 
+For the optional later-opening opportunity comparison, prepare a separate v3
+ordered index from that same pinned archive:
+
+```sh
+"$release" -I -B -m chess_coach.ops_opening_fit_context_import --project-root "$PWD"
+```
+
+It preserves a time-control header only when the public PGN supplies one. The v2
+index is unchanged; if v3 is absent, the comparison uses v2 with its control
+coverage unknown. Neither an absent header nor an unsupported control is treated
+as a match. The import refuses to overwrite an existing v3 artifact.
+
 To publish a reviewed unfamiliar-opening course, set `preview_version` to the
 version shown on its private course preview and use the existing Study credentials:
 
