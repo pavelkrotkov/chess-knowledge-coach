@@ -4,7 +4,8 @@ from flask import Blueprint, abort, current_app, render_template, request
 
 from .opening_decision import inspect
 from .opening_explore_comparison import comparison
-from .opening_profile_read import profile
+from .opening_profile_source import deadline as profile_deadline
+from .opening_profile_source import profile
 from .web_db import database
 
 opening_profiles = Blueprint("opening_profiles", __name__)
@@ -28,13 +29,18 @@ def show(game_id: int, position_id: int):
     except ValueError:
         abort(404)
     root, subject = current_app.config["PROJECT_ROOT"], current_app.config["SUBJECT"]
-    parent = decision["catalog"]["parent"]
-    played = profile(root, subject, parent, decision["played_uci"], extended=True)
+    reference = request.args.get("reference", "broadcast")
+    if reference not in {"broadcast", "recent"}:
+        abort(400)
+    deadline = profile_deadline(reference)
+    played = profile(db, root, subject, decision, decision["played_uci"], reference, deadline)
     items = decision["catalog"]["items"]
     selected = request.args.get("alternative")
     alternative = _alternative(items, selected)
     other = (
-        profile(root, subject, parent, alternative["uci"], extended=True) if alternative else None
+        profile(db, root, subject, decision, alternative["uci"], reference, deadline)
+        if alternative
+        else None
     )
     measured = comparison(db, root, subject, decision, alternative) if alternative else None
     if db.connection.execute("PRAGMA data_version").fetchone()[0] != version:
@@ -47,4 +53,5 @@ def show(game_id: int, position_id: int):
         selected=selected is not None,
         other=other,
         measured=measured,
+        reference=reference,
     )

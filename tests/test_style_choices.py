@@ -1601,6 +1601,7 @@ def _opening_fit_route(monkeypatch, tmp_path):
     import html
     import re
     import sqlite3
+    import time
     from contextlib import nullcontext
     from pathlib import Path
 
@@ -2136,7 +2137,9 @@ def _opening_fit_route(monkeypatch, tmp_path):
             from chess_coach.opening_recent_index import build as build_recent
             from chess_coach.opening_recent_source import PREFIX_BYTES, PREFIX_NAME, URL
 
-            def rated_game(branch, number, control, *, missing_rating=False, berserk=False):
+            def rated_game(
+                branch, number, control, *, missing_rating=False, berserk=False, moves=None
+            ):
                 game = chess.pgn.Game()
                 game.headers.update(
                     Event="Rated Blitz game",
@@ -2153,7 +2156,7 @@ def _opening_fit_route(monkeypatch, tmp_path):
                 if berserk:
                     game.headers["WhiteBerserk"] = "true"
                 board, node = game.board(), game
-                for san in lines[branch].split():
+                for san in (moves or lines[branch]).split():
                     move = board.parse_san(san)
                     node = node.add_variation(move)
                     board.push(move)
@@ -2164,6 +2167,33 @@ def _opening_fit_route(monkeypatch, tmp_path):
             rated_games += [rated_game(0, 101, "600+0", missing_rating=True)]
             rated_games += [
                 rated_game(branch, 200 + i, "600+0") for branch in (0, 1) for i in range(5)
+            ]
+            queenless = "e4 e5 Nf3 Nc6 Bb5 a6 Bxc6 dxc6 Nxe5 Qd4 Nf3 Qxe4+ Qe2 Qxe2+ Kxe2 Kd7"
+            promotion = "e4 e5 Nf3 h5 a4 h4 a5 h3 a6 hxg2 axb7 gxh1=Q bxa8=Q"
+            long_board = chess.Board()
+            long_moves = []
+            for san in lines[0].split():
+                move = long_board.parse_san(san)
+                long_moves.append(long_board.san(move))
+                long_board.push(move)
+            while len(long_moves) < 55:
+                for move in sorted(long_board.legal_moves, key=lambda value: value.uci()):
+                    if move.promotion:
+                        continue
+                    following = long_board.copy()
+                    following.push(move)
+                    if not following.is_repetition(2) and not following.is_game_over(
+                        claim_draw=True
+                    ):
+                        long_moves.append(long_board.san(move))
+                        long_board.push(move)
+                        break
+                else:
+                    pytest.fail("synthetic legal continuation unavailable")
+            rated_games += [
+                rated_game(0, 300, "600+0", moves=queenless),
+                rated_game(0, 301, "600+0", moves=promotion),
+                rated_game(0, 302, "600+0", moves=" ".join(long_moves)),
             ]
             noise = base64.b64encode(random.Random(743).randbytes(1_400_000)).decode()
             synthetic = ("\n\n".join(rated_games) + "\n\n{" + noise).encode()
@@ -2225,7 +2255,7 @@ def _opening_fit_route(monkeypatch, tmp_path):
             assert len(requests) == 1 and not receipt["whole_archive_checksum_verified"]
             assert (recent_planning / PREFIX_NAME).stat().st_size == PREFIX_BYTES
             coverage = build_recent(recent_root, "learner")
-            assert coverage["accepted"] == 24 and coverage["truncated"]
+            assert coverage["accepted"] == 27 and coverage["truncated"]
             import tempfile
 
             from chess_coach.opening_reference_decode import decode
@@ -2239,9 +2269,129 @@ def _opening_fit_route(monkeypatch, tmp_path):
             assert recent["status"] == "checked"
             assert recent["public"]["g1f3"]["excluded_context"] == 13
             assert recent["public"]["g1f3"]["unknown_context"] == 1
-            assert recent["public"]["g1f3"]["matched_candidates"] == 5
-            assert recent["public"]["g1f3"]["available"] == 5
+            assert recent["public"]["g1f3"]["matched_candidates"] == 8
+            assert recent["public"]["g1f3"]["available"] == 6
             assert recent["recommended"] == "g1f3"
+            from chess_coach.opening_profile_source import profile as matched_profile
+
+            profile = matched_profile(
+                owned, recent_root, "learner", decision, "g1f3", "recent", time.monotonic() + 30
+            )
+            assert profile["decision_ply"] == 3 and profile["control"] == "600+0"
+            assert (
+                profile["matched_candidates"],
+                profile["excluded_context"],
+                profile["unknown_context"],
+            ) == (8, 13, 1)
+            assert profile["games"] == 8 and profile["source_metadata"]["source_month"] == "2026-10"
+            assert all(not item["site"] for item in profile["examples"])
+            assert profile["queens"]["one_each"] == 8
+            assert profile["queens"]["queenless_observed"] == 1
+            assert profile["queens"]["one_or_imbalanced"] == 1
+            assert profile["queens"]["unsupported"] == 1
+            assert profile["queens"]["ended"] == 6 and profile["queens"]["cutoff"] == 1
+            from chess_coach.opening_profile_recent import profile as recent_profile
+
+            qboard = chess.Board()
+            for san in queenless.split()[:14]:
+                qboard.push_san(san)
+            qdecision = {"ply": 15, "catalog": {"parent": position_key(qboard)}}
+            on_capture = recent_profile(
+                recent_root, "learner", qdecision, "e1e2", "600+0", time.monotonic() + 30
+            )
+            assert on_capture["games"] == 1
+            assert on_capture["queens"]["start_imbalanced"] == 1
+            assert on_capture["queens"]["queenless_observed"] == 1
+            qboard.push_san("Kxe2")
+            qdecision = {"ply": 16, "catalog": {"parent": position_key(qboard)}}
+            already = recent_profile(
+                recent_root, "learner", qdecision, "e8d7", "600+0", time.monotonic() + 30
+            )
+            assert already["queens"]["preexisting_queenless"] == 1
+            assert already["queens"]["queenless_observed"] == 0
+            frontier_board = chess.Board()
+            for san in long_moves[:19]:
+                frontier_board.push_san(san)
+            frontier_move = frontier_board.parse_san(long_moves[19]).uci()
+            frontier = recent_profile(
+                recent_root,
+                "learner",
+                {"ply": 20, "catalog": {"parent": position_key(frontier_board)}},
+                frontier_move,
+                "600+0",
+                time.monotonic() + 30,
+            )
+            assert frontier["queens"]["frontier"] == 1
+            owned.connection.execute("BEGIN")
+            owned.connection.execute(
+                "UPDATE games SET time_control=NULL WHERE id=?", (decision["game_id"],)
+            )
+            unknown_control = matched_profile(
+                owned,
+                recent_root,
+                "learner",
+                decision,
+                "g1f3",
+                "recent",
+                time.monotonic() + 30,
+            )
+            assert unknown_control["control"] == "unknown" and unknown_control["games"] == 0
+            assert unknown_control["unknown_context"] >= 8
+            owned.connection.rollback()
+            import chess_coach.opening_profile_recent as recent_reader
+
+            locate = recent_reader.locate
+            calls = []
+
+            def changed_source(*args):
+                current = locate(*args)
+                calls.append(current)
+                return current if len(calls) == 1 else (current[0], ("changed",), *current[2:])
+
+            with patch.context() as changed:
+                changed.setattr(recent_reader, "locate", changed_source)
+                assert (
+                    matched_profile(
+                        owned,
+                        recent_root,
+                        "learner",
+                        decision,
+                        "g1f3",
+                        "recent",
+                        time.monotonic() + 30,
+                    )
+                    is None
+                )
+            missing = matched_profile(
+                owned,
+                tmp_path / "not-present",
+                "learner",
+                decision,
+                "g1f3",
+                "recent",
+                time.monotonic() + 30,
+            )
+            assert missing is None
+            exact_later = matched_profile(
+                owned,
+                recent_root,
+                "learner",
+                later_decision,
+                "b1c3",
+                "recent",
+                time.monotonic() + 30,
+            )
+            assert exact_later["decision_ply"] == 7 and exact_later["games"] == 6
+            wrong_ply = matched_profile(
+                owned,
+                recent_root,
+                "learner",
+                {**later_decision, "ply": 9},
+                "b1c3",
+                "recent",
+                time.monotonic() + 30,
+            )
+            assert wrong_ply["games"] == 0
             comparison["lines"][1]["score_value"] = 0
             with patch.context() as browser:
                 browser.setattr(repertoire_web, "database", lambda: owned)
@@ -2251,6 +2401,17 @@ def _opening_fit_route(monkeypatch, tmp_path):
                     repertoire_web, "statuses", lambda *_args, **_kwargs: {"f1c4": comparison}
                 )
                 browser.setitem(app.config, "PROJECT_ROOT", str(recent_root))
+                import chess_coach.web_opening_profile as profile_web
+
+                browser.setattr(profile_web, "database", lambda: owned)
+                browser.setattr(profile_web, "inspect", lambda *_args, **_kwargs: decision)
+                import chess_coach.opening_explore_comparison as profile_comparison
+
+                browser.setattr(
+                    profile_comparison,
+                    "statuses",
+                    lambda *_args, **_kwargs: {"f1c4": comparison},
+                )
                 page = client.get(
                     browser_url + "&reference=recent",
                     base_url="https://coach.invalid",
@@ -2264,6 +2425,49 @@ def _opening_fit_route(monkeypatch, tmp_path):
                     b"nominal time control does not establish actual thinking time"
                     in page.data.lower()
                 )
+                match = re.search(
+                    r'<a href="([^"]+)">Source and branch examples</a>', page.get_data(as_text=True)
+                )
+                assert match and "reference=recent" in html.unescape(match.group(1))
+                profile_page = client.get(
+                    html.unescape(match.group(1)), base_url="https://coach.invalid", headers=headers
+                )
+                assert profile_page.status_code == 200
+                assert b"Recent rated sample for the exact move at ply 3" in profile_page.data
+                assert b"Individual game links were not retained" in profile_page.data
+                assert b"Observed queenless positions" in profile_page.data
+                assert b"A later queenless position was observed in 1 games" in profile_page.data
+                assert b"Rehearse the checked lines" in profile_page.data
+                comparison["lines"][1]["score_value"] = -51
+                blocked = client.get(
+                    html.unescape(match.group(1)), base_url="https://coach.invalid", headers=headers
+                )
+                assert b"Rehearse the checked lines" not in blocked.data
+                comparison["lines"][1]["score_value"] = 0
+
+            # The standalone command reopens a project-contained copy read-only and
+            # derives the decision from the actual classified owned game.
+            from chess_coach.opening_classification import classify_game
+            from chess_coach.opening_profile_cli_report import report as cli_profile
+            from chess_coach.opening_snapshot import SOURCE, VERSION
+
+            classify_game(owned, later_games[0][0], version=VERSION, source_url=SOURCE)
+            data = recent_root / ".runtime" / "data"
+            data.mkdir()
+            db_path = data / "synthetic.sqlite"
+            copied = real_connect(db_path)
+            owned.connection.backup(copied)
+            copied.close()
+            before = hashlib.sha256(db_path.read_bytes()).hexdigest()
+            with patch.context() as cli:
+                cli.setenv("CHESS_DB", str(db_path))
+                cli.delenv("CHESS_SCHEMA_COMPAT", raising=False)
+                report = cli_profile(recent_root, "learner", *later_games[0], "f1c4", "recent")
+                assert report["decision_ply"] == 3 and report["played"]["games"] == 8
+                assert report["played"]["queens"]["queenless_observed"] == 1
+                with pytest.raises(ValueError):
+                    cli_profile(recent_root, "other", *later_games[0], "f1c4", "recent")
+            assert hashlib.sha256(db_path.read_bytes()).hexdigest() == before
 
     finally:
         public.close()

@@ -1,5 +1,6 @@
 """Read a single selected exact-exemplar comparison for the profile."""
 
+from .opening_experiment import qualified
 from .opening_queue_view import statuses
 from .tactical_course_deadline import PreviewDeadline
 
@@ -24,4 +25,12 @@ def comparison(db, root, learner, exemplar, alternative):
         "played": played["score_value"],
         "alternative": other["score_value"],
         "depth": played["depth"],
+        "rehearsal": _rehearsal(exemplar, alternative, state),
     }
+
+
+def _rehearsal(decision, alternative, state):
+    try:
+        return qualified(decision, alternative, state) is not None
+    except (ValueError, TypeError, KeyError, IndexError):
+        return False

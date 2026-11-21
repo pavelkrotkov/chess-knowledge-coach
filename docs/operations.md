@@ -628,6 +628,22 @@ Respect the retained retry deadline if the provider asks for a delay. The prefix
 is a biased convenience sample and a nominal control does not prove actual
 thinking time.
 
+To read a source-matched private profile without initializing or changing the
+selected database, set the configured `CHESS_DB` and `CHESS_SUBJECT`, then use
+the owned game, decision position and catalog alternative:
+
+```sh
+"$release" -I -B -m chess_coach.ops_opening_profile --project-root "$PWD" \
+  --game-id "$game_id" --position-id "$position_id" --alternative "$uci" --reference recent
+```
+
+The command rechecks the owned decision, nominal control and source receipt,
+and prints bounded queen-state observations and their limits as JSON. It uses a
+read-only database connection; an explicitly selected schema-32 installation
+requires the existing compatibility attestation. Omit `--reference recent`
+for the unchanged broadcast profile. Recent indexed examples retain source
+context and an archive link, but not individual game URLs.
+
 To publish a reviewed unfamiliar-opening course, set `preview_version` to the
 version shown on its private course preview and use the existing Study credentials:
 
