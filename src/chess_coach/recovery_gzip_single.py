@@ -1,10 +1,11 @@
-"""Restore a retained gzip backup without requiring the original database."""
+"""Restore a retained compressed backup without the original database."""
 
 import sqlite3
 from contextlib import closing
 from pathlib import Path
 
 from .recovery import _publish
+from .recovery_codec import routines
 from .recovery_deadline import Deadline
 from .recovery_gzip_capacity import restore_plan
 from .recovery_gzip_files import sync, temporary
@@ -16,10 +17,11 @@ from .recovery_paths import recovery_paths
 from .recovery_verify import require_standalone, verify_database
 
 
-def restore_backup(archive, destination, *, project_root, check_only=False):
+def restore_backup(archive, destination, *, project_root, check_only=False, codec="gzip"):
+    _, decoder, validator = routines(codec)
     root = Path(project_root).resolve(strict=True)
     archive, target = recovery_paths(archive, destination, root)
-    manifest = load(archive)
+    manifest = load(archive, validator=validator)
     probe()
     deadline = Deadline()
     report = restore_plan(manifest["raw_bytes"], root, target, deadline)
@@ -27,15 +29,16 @@ def restore_backup(archive, destination, *, project_root, check_only=False):
         return report
     if report["status"] != "fits":
         raise ValueError("recovery capacity unavailable; no destination was created")
-    return _write(archive, target, root, manifest, report, deadline)
+    return _write(archive, target, root, manifest, report, deadline, decoder=decoder)
 
 
-def _write(archive, target, root, manifest, report, deadline):
+def _write(archive, target, root, manifest, report, deadline, *, decoder=None):
+    decoder = decoder or restore
     staged = temporary(target)
     try:
         guard = Guard(root, target, report, deadline)
         guard.check(manifest["raw_bytes"], force=True)
-        restore(archive, staged, manifest, guard, deadline)
+        decoder(archive, staged, manifest, guard, deadline)
         sync(staged)
         require_standalone(staged)
         with closing(sqlite3.connect(staged.as_uri() + "?mode=ro", uri=True, timeout=5)) as reader:

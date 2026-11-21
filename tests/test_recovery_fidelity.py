@@ -44,6 +44,7 @@ def test_typed_rows_hidden_rowids_and_without_rowid_preserved(tmp_path, monkeypa
     left.close()
     right.close()
     _compressed_recovery_checks(tmp_path, source, monkeypatch)
+    _zstd_recovery_checks(tmp_path, source, monkeypatch)
 
 
 def _compressed_recovery_checks(tmp_path, source, monkeypatch):
@@ -269,6 +270,195 @@ def _compressed_recovery_checks(tmp_path, source, monkeypatch):
         compressed_recovery(
             wal, tmp_path / "wal.gz", tmp_path / "wal-restored", project_root=tmp_path
         )
+
+
+def _zstd_recovery_checks(tmp_path, source, monkeypatch):
+    import hashlib
+    import io
+    import json
+    import shutil
+    import subprocess
+    import time
+
+    import pytest
+
+    from chess_coach import recovery_gzip, recovery_gzip_capacity, recovery_physical
+    from chess_coach.recovery_deadline import Deadline
+    from chess_coach.recovery_gzip import compressed_recovery
+    from chess_coach.recovery_gzip_single import restore_backup
+    from chess_coach.recovery_zstd_process import transform
+
+    # This disposable test database is distinct from the preserved original fixture.
+    synthetic_source = tmp_path / "zstd-source.sqlite"
+    shutil.copyfile(source, synthetic_source)
+    archive = tmp_path / "backup.sqlite.zst"
+    restored = tmp_path / "zstd-verified.sqlite"
+    manifest_path = Path(str(archive) + ".manifest.json")
+    report = compressed_recovery(
+        synthetic_source, archive, restored, project_root=tmp_path, codec="zstd", check_only=True
+    )
+    assert report["status"] == "conditional"
+    assert not archive.exists() and not restored.exists() and not manifest_path.exists()
+    assert compressed_recovery(
+        synthetic_source, archive, restored, project_root=tmp_path, codec="zstd"
+    ) == {"status": "verified"}
+    manifest = json.loads(manifest_path.read_text())
+    assert manifest["version"] == "sqlite-zstd-recovery-v1"
+    assert (manifest["codec"], manifest["compression_level"], manifest["threads"]) == ("zstd", 6, 1)
+    assert manifest["checksum"] == "xxh64" and manifest["typed_fidelity"] == "ok"
+    assert manifest["raw_sha256"] == hashlib.sha256(synthetic_source.read_bytes()).hexdigest()
+    assert manifest["raw_sha256"] == hashlib.sha256(restored.read_bytes()).hexdigest()
+    assert manifest["archive_sha256"] == hashlib.sha256(archive.read_bytes()).hexdigest()
+    synthetic_source.unlink()
+    assert not synthetic_source.exists()
+    recovered = tmp_path / "zstd-standalone.sqlite"
+    assert (
+        restore_backup(archive, recovered, project_root=tmp_path, codec="zstd", check_only=True)[
+            "status"
+        ]
+        == "fits"
+    )
+    assert restore_backup(archive, recovered, project_root=tmp_path, codec="zstd") == {
+        "status": "verified"
+    }
+    assert hashlib.sha256(recovered.read_bytes()).hexdigest() == manifest["raw_sha256"]
+    with sqlite3.connect(source) as original, sqlite3.connect(recovered) as result:
+        original.text_factory = result.text_factory = bytes
+        query = 'SELECT rowid,x,y,z FROM "odd""name" ORDER BY rowid'
+        assert result.execute(query).fetchall() == original.execute(query).fetchall()
+        result.text_factory = str
+        assert result.execute("PRAGMA integrity_check").fetchall() == [("ok",)]
+        assert result.execute("PRAGMA foreign_key_check").fetchall() == []
+    with pytest.raises(ValueError, match="manifest invalid"):
+        restore_backup(archive, tmp_path / "wrong-format.sqlite", project_root=tmp_path)
+    with pytest.raises(ValueError, match="manifest invalid"):
+        restore_backup(
+            tmp_path / "backup.sqlite.gz",
+            tmp_path / "wrong-zstd.sqlite",
+            project_root=tmp_path,
+            codec="zstd",
+        )
+    unchecked = subprocess.run(
+        ["/usr/bin/zstd", "-q", "--no-check", "-c"],
+        input=source.read_bytes(),
+        capture_output=True,
+        check=True,
+        timeout=10,
+    ).stdout
+    no_checksum = tmp_path / "no-checksum.zst"
+    no_checksum.write_bytes(unchecked)
+    Path(str(no_checksum) + ".manifest.json").write_text(
+        json.dumps(
+            {
+                **manifest,
+                "archive_bytes": len(unchecked),
+                "archive_sha256": hashlib.sha256(unchecked).hexdigest(),
+            }
+        )
+    )
+    with pytest.raises(ValueError, match="checksum"):
+        restore_backup(
+            no_checksum, tmp_path / "no-checksum.sqlite", project_root=tmp_path, codec="zstd"
+        )
+    assert not (tmp_path / "no-checksum.sqlite").exists()
+    existing = tmp_path / "zstd-existing.sqlite"
+    existing.write_bytes(b"preserved")
+    with pytest.raises(FileExistsError):
+        restore_backup(archive, existing, project_root=tmp_path, codec="zstd")
+    assert existing.read_bytes() == b"preserved"
+    for name, data in (
+        ("truncated", archive.read_bytes()[:-1]),
+        (
+            "corrupt",
+            archive.read_bytes()[: len(archive.read_bytes()) // 2]
+            + bytes([archive.read_bytes()[len(archive.read_bytes()) // 2] ^ 1])
+            + archive.read_bytes()[len(archive.read_bytes()) // 2 + 1 :],
+        ),
+    ):
+        damaged = tmp_path / (name + ".zst")
+        damaged.write_bytes(data)
+        Path(str(damaged) + ".manifest.json").write_text(
+            json.dumps(
+                {
+                    **manifest,
+                    "archive_bytes": len(data),
+                    "archive_sha256": hashlib.sha256(data).hexdigest(),
+                }
+            )
+        )
+        destination = tmp_path / (name + ".sqlite")
+        with pytest.raises(ValueError):
+            restore_backup(damaged, destination, project_root=tmp_path, codec="zstd")
+        assert not destination.exists()
+    with monkeypatch.context() as patch:
+        patch.setattr(recovery_gzip_capacity, "PROJECT_LIMIT", 1)
+        patch.setattr(recovery_physical, "PROJECT_LIMIT", 1)
+        blocked = tmp_path / "zstd-no-space.zst"
+        assert (
+            compressed_recovery(
+                source,
+                blocked,
+                tmp_path / "zstd-no-space.sqlite",
+                project_root=tmp_path,
+                codec="zstd",
+                check_only=True,
+            )["status"]
+            == "insufficient"
+        )
+        with pytest.raises(ValueError, match="capacity unavailable"):
+            compressed_recovery(
+                source,
+                blocked,
+                tmp_path / "zstd-no-space.sqlite",
+                project_root=tmp_path,
+                codec="zstd",
+            )
+    assert not blocked.exists()
+    original_plan = recovery_gzip.pinned_plan
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            recovery_gzip,
+            "pinned_plan",
+            lambda *args: {**original_plan(*args), "archive_limit_bytes": 1},
+        )
+        capped = tmp_path / "zstd-capped.zst"
+        with pytest.raises(ValueError, match="output exceeds"):
+            compressed_recovery(
+                source, capped, tmp_path / "zstd-capped.sqlite", project_root=tmp_path, codec="zstd"
+            )
+    assert not capped.exists() and not (tmp_path / "zstd-capped.sqlite").exists()
+    assert not Path(str(capped) + ".manifest.json").exists()
+    from chess_coach import recovery_zstd_process
+
+    processes = []
+    popen = subprocess.Popen
+
+    def start(*args, **kwargs):
+        process = popen(*args, **kwargs)
+        processes.append(process)
+        return process
+
+    class Guard:
+        def check(self, *_args, **_kwargs):
+            pass
+
+    expired = Deadline()
+    expired.end = time.monotonic() - 1
+    with monkeypatch.context() as patch:
+        patch.setattr(recovery_zstd_process.subprocess, "Popen", start)
+        with pytest.raises(TimeoutError):
+            transform(
+                io.BytesIO(b"data"),
+                io.BytesIO(),
+                ["-q", "-c"],
+                4,
+                100,
+                Guard(),
+                expired,
+                restoring=False,
+            )
+    assert processes and processes[0].poll() is not None
+    assert not list(tmp_path.glob(".chess-recovery-*"))
 
 
 def _gzip_resource_checks(tmp_path, source, monkeypatch):

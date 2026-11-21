@@ -246,6 +246,35 @@ Hashes detect corruption, not a malicious replacement of both archive and
 manifest. Stop project writers and keep exclusive control of the destination
 while restoring, since capacity checks are not a filesystem quota.
 
+The explicit Zstandard route has the same pinned-snapshot, separate-restore,
+integrity, foreign-key and typed-row fidelity requirements:
+
+```sh
+"$release" -I -B -m chess_coach.cli backup-zstd-verify SOURCE ARCHIVE.sqlite.zst RESTORED.sqlite --project-root "$PWD" --check-only
+"$release" -I -B -m chess_coach.cli backup-zstd-verify SOURCE ARCHIVE.sqlite.zst RESTORED.sqlite --project-root "$PWD"
+"$release" -I -B -m chess_coach.cli restore-zstd ARCHIVE.sqlite.zst NEW_RESTORED.sqlite --project-root "$PWD" --check-only
+"$release" -I -B -m chess_coach.cli restore-zstd ARCHIVE.sqlite.zst NEW_RESTORED.sqlite --project-root "$PWD"
+```
+
+It uses the installed `/usr/bin/zstd` and `/usr/bin/prlimit`: level 6,
+single-threaded, a 2-MiB encoder window, frame checksum, 8-MiB decoder-window
+limit and a 48-MiB codec process address-space limit. The recovery deadline
+bounds the process lifetime. The distinct Zstandard manifest records the codec
+version and policy, exact sizes and hashes, and completed verification flags.
+Restore requires a complete, single checksummed frame, verifies the archive
+and raw bytes, then checks the separate SQLite file before non-overwriting
+publication. It does not need the original database. A missing manifest,
+partial frame, unsupported codec policy, or failed verification is not a
+backup. Keep previous verified archives until a replacement and its separate
+restore have both been verified.
+
+The reported compressed-size allowance is conditional: actual compression may
+not fit, and it does not reserve migration-index, journal or other upgrade
+work. Measure current allocated space and filesystem availability immediately
+before an authorized run, stop other project writers, and preserve the normal
+operating reserve. Neither a sizing estimate nor a successful compressed
+backup establishes that the subsequent native migration fits.
+
 For a release explicitly reviewed for schema-32 compatibility, an operator may
 select CHESS_SCHEMA_COMPAT=32 for the configured service database. This mode
 does not migrate the database, enable compact storage, or replace the backup and

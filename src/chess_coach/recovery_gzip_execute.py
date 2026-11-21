@@ -23,7 +23,11 @@ def _verify(reader, path, deadline):
         verify_fidelity(reader, restored, deadline)
 
 
-def create(reader, raw, metadata, root, targets, report, deadline):
+def create(
+    reader, raw, metadata, root, targets, report, deadline, *, compressor=None, restorer=None
+):
+    compressor = compressor or compress
+    restorer = restorer or restore
     temporary = []
     published = []
     try:
@@ -32,9 +36,9 @@ def create(reader, raw, metadata, root, targets, report, deadline):
         archive, restored, manifest_path = temporary
         guard = Guard(root, archive, report, deadline)
         guard.check(metadata["raw_bytes"], force=True)
-        manifest = compress(raw, archive, metadata, report, guard, deadline)
+        manifest = compressor(raw, archive, metadata, report, guard, deadline)
         sync(archive)
-        restore(archive, restored, manifest, guard, deadline)
+        restorer(archive, restored, manifest, guard, deadline)
         sync(restored)
         _verify(reader, restored, deadline)
         guard.check(0, force=True)

@@ -7,14 +7,14 @@ from pathlib import Path
 from .recovery_gzip_manifest_check import validate
 
 
-def load(archive):
+def load(archive, *, validator=validate):
     path = Path(str(archive) + ".manifest.json")
     info = path.lstat()
     if not stat.S_ISREG(info.st_mode) or info.st_size > 1024 * 1024:
         raise ValueError("compressed backup manifest unavailable")
     with path.open("r", encoding="utf-8") as stream:
         value = json.load(stream)
-    validate(value)
+    validator(value)
     if archive.stat().st_size != value["archive_bytes"]:
         raise ValueError("compressed archive verification failed")
     return value
