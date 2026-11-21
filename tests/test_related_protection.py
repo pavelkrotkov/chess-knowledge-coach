@@ -384,6 +384,11 @@ def _guard_style_report_workflow(tmp_path, monkeypatch):
             headers={"Tailscale-User-Login": "fixture"},
         )
         assert page.status_code == 200 and b"adds a defender" in page.data
+        section = page.data.split(b"<h3>Adding a defender</h3>", 1)[1].split(b"</section>", 1)[0]
+        assert b"These are descriptive counts, not a preference estimate." in section
+        assert b"no direction estimated" in section
+        assert b"No trend direction is estimated" in section
+        assert b"Sample direction:" not in section and b"direction None" not in section
         assert b"Other quiet moves, compensation and later threats remain unknown" in page.data
         assert f"/evidence/{evidence}".encode() in page.data
         review_evidence(db, evidence, decision="accept", actor="fixture")
