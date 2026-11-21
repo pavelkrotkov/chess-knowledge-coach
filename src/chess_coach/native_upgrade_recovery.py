@@ -21,6 +21,8 @@ def verify(connection, root, source, archive, restored, deadline, *, codec):
         (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns)
         for s in (path.stat() for path in paths)
     ]
+    if before[0][:2] == before[3][:2]:
+        raise ValueError("recovery manifest shares source storage")
     _, _, validator = routines(codec)
     manifest = load(archive, validator=validator)
     if manifest["user_version"] != 32:

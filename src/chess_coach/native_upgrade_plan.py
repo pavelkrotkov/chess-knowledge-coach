@@ -16,12 +16,12 @@ from .recovery_fidelity import MAX_RECORD_BYTES
 INVENTORY_SECONDS = 60
 
 
-def _inspect(connection, source, root, deadline):
+def _inspect(connection, source, raw, root, deadline):
     until = min(time.monotonic() + INVENTORY_SECONDS, deadline.end)
     connection.set_progress_handler(lambda: int(time.monotonic() >= until), 1000)
     connection.setlimit(sqlite3.SQLITE_LIMIT_LENGTH, MAX_RECORD_BYTES)
     try:
-        layout = inspect_layout(connection, source)
+        layout = inspect_layout(connection, source, raw)
         counts = inventory(connection)
         if time.monotonic() >= until:
             raise TimeoutError("inventory deadline reached")
@@ -46,9 +46,10 @@ def plan(source, project_root, *, archive=None, restored=None, codec="gzip"):
     try:
         source, root = path(source, project_root)
         before = source.stat()
-        with pinned(source, deadline, require_memory=True) as connection:
+        # Any same-inode raw descriptor must outlive SQLite's POSIX read lock.
+        with source.open("rb") as raw, pinned(source, deadline, require_memory=True) as connection:
             connection.execute("PRAGMA query_only=ON")
-            report = _inspect(connection, source, root, deadline)
+            report = _inspect(connection, source, raw, root, deadline)
             if check_recovery(connection, root, source, archive, restored, deadline, codec):
                 report["recovery_current"] = True
                 report["project_allocated_bytes"] = allocated(root, deadline)
