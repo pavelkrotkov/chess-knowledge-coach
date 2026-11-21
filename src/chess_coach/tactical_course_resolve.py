@@ -31,17 +31,38 @@ def own(db, subject, group, budget):
         raise PreviewUnavailable("lesson source changed") from None
 
 
-def related(db, subject, corpus, choice, budget):
+def _source(db, subject, choice, budget, thematic):
+    if choice["kind"] != "protection":
+        return None
+    with budget.scope(snapshot=True):
+        try:
+            return teaching_source(db, subject, choice)
+        except ContextUnavailable:
+            if not thematic:
+                raise
+    return None
+
+
+def _match(db, subject, corpus, choice, source, familiar_data, thematic, artifact):
+    if source is None and choice["kind"] == "protection":
+        result = (None, PROTECTION_SOURCE)
+    else:
+        result = with_reason(
+            db, subject, corpus, choice, familiar_data=familiar_data, teaching_source=source
+        )
+    if thematic and choice["kind"] == "protection":
+        from .tactical_course_thematic import fallback
+
+        return fallback(db, subject, corpus, choice, familiar_data, result, artifact=artifact)
+    return result
+
+
+def related(db, subject, corpus, choice, budget, *, thematic=False, artifact=None):
     try:
-        source = None
-        if choice["kind"] == "protection":
-            with budget.scope(snapshot=True):
-                source = teaching_source(db, subject, choice)
+        source = _source(db, subject, choice, budget, thematic)
         familiar_data = familiarity(db, subject, budget)
         with budget.scope(snapshot=False):
-            return with_reason(
-                db, subject, corpus, choice, familiar_data=familiar_data, teaching_source=source
-            )
+            return _match(db, subject, corpus, choice, source, familiar_data, thematic, artifact)
     except ContextUnavailable:
         return None, PROTECTION_SOURCE
     except PreviewDeadline:

@@ -68,3 +68,17 @@ def challenge(choice, *, protection=False):
     if choice["kind"] in {"mate", "short_mate"}:
         return f"/evidence/{choice['evidence_id']}/related-mates"
     return None
+
+
+def thematic_note(rating, lower, upper, limited, exposure, first):
+    return (
+        "Thematic defensive practice, not a matched test of the same mechanism. "
+        f"Follow the supplied defensive line from {first}; "
+        "other legal moves and later risks are ungraded. "
+        f"Difficulty {rating}, selected from {lower}-{upper}; "
+        f"bounded corpus scan {'limited' if limited else 'complete'}. "
+        "Recorded owned positions, practice and known prior deliveries are excluded. "
+        f"Delivered-material coverage: {exposure.replace('_', ' ')}. "
+        "Earlier or external exposure may be unknown. "
+        "Source: Lichess open puzzle database, CC0."
+    )

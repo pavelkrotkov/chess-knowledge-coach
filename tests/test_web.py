@@ -376,6 +376,12 @@ def test_private_access_and_csrf(setup, tmp_path, monkeypatch):
     assert page.status_code == 200 and b"Chess position" in page.data
     compat_db = Database(legacy, compatibility=True)
     before = compat_db.connection.execute("PRAGMA schema_version").fetchone()[0]
+    from chess_coach.related_capture_position import prompt_key
+    from chess_coach.tactical_course_thematic_exposure import exposure as course_exposure
+
+    assert course_exposure(compat_db, "learner", prompt_key(FEN), None) == "legacy_coverage_unknown"
+    assert compat_db.connection.execute("PRAGMA user_version").fetchone()[0] == 32
+    assert compat_db.connection.execute("PRAGMA schema_version").fetchone()[0] == before
     plan = compat_db.connection.execute(
         "EXPLAIN QUERY PLAN SELECT input_json FROM detector_runs_read "
         "WHERE producer=? AND position_id=? AND status='active'",
