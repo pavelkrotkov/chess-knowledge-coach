@@ -1,6 +1,7 @@
 """Rebuild and compare the exact source-linked worked chapters."""
 
 from .course_guidance import challenge
+from .objective_fork_contract import VERSION as LEGACY_FORK_VERSION
 from .tactical_course_chapters import owned_chapter
 from .tactical_course_familiar import familiarity
 from .tactical_course_protection import source as teaching_source
@@ -10,11 +11,7 @@ from .tactical_export_sources import choice
 
 
 def verify(db, subject, corpus, pattern, lesson, chapters, budget, *, modern=False):
-    selected = choice(db, subject, lesson, budget)
-    if selected["kind"] != pattern["kind"] or pattern["local_challenge"] != challenge(
-        selected, protection=modern
-    ):
-        raise ValueError("selected source differs")
+    selected = _selected(db, subject, pattern, lesson, chapters[0], budget, modern)
     with budget.scope(snapshot=True):
         owned = owned_chapter(
             db, subject, {"lesson": lesson}, selected, pattern["supporting_sources"]
@@ -34,3 +31,15 @@ def verify(db, subject, corpus, pattern, lesson, chapters, budget, *, modern=Fal
         if related is None:
             raise ValueError("related source unavailable")
         compare(chapters[1], related)
+
+
+def _selected(db, subject, pattern, lesson, chapter, budget, modern):
+    selected = choice(db, subject, lesson, budget)
+    if selected["kind"] != pattern["kind"] or pattern["local_challenge"] != challenge(
+        selected, protection=modern
+    ):
+        raise ValueError("selected source differs")
+    # Existing worked chapters retain the source version they recorded.
+    if selected["kind"] == "fork" and chapter["source"]["version"] == LEGACY_FORK_VERSION:
+        selected = {**selected, "version": LEGACY_FORK_VERSION}
+    return selected

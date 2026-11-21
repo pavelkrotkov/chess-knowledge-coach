@@ -2,7 +2,7 @@
 
 from .fork_contract import MAPPER
 from .learner_identity import normalize_identity
-from .objective_fork_contract import VERSION
+from .objective_fork_contract import MISS_VERSION as VERSION
 
 
 def candidates(db, subject):

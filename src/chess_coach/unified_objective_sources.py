@@ -8,6 +8,7 @@ from .objective_defense_source import VERSION as DEFENSE_VERSION
 from .objective_defense_source import resolve as resolve_defense
 from .objective_fork_avoidance_contract import VERSION as FORK_AVOIDANCE_VERSION
 from .objective_fork_avoidance_source import resolve as resolve_fork_avoidance
+from .objective_fork_contract import MISS_VERSION as FORK_MISS_VERSION
 from .objective_fork_contract import VERSION as FORK_VERSION
 from .objective_fork_defense_contract import VERSION as FORK_DEFENSE_VERSION
 from .objective_fork_defense_source import resolve as resolve_fork_defense
@@ -29,6 +30,7 @@ OBJECTIVE_RESOLVERS = {
     DISCOVERY_MATERIAL_VERSION: resolve_discovery_material,
     DISCOVERY_DEFENSE_VERSION: resolve_discovery_defense,
     FORK_VERSION: resolve_fork,
+    FORK_MISS_VERSION: resolve_fork,
     FORK_DEFENSE_VERSION: resolve_fork_defense,
     FORK_AVOIDANCE_VERSION: resolve_fork_avoidance,
     PIN_VERSION: resolve_pin,

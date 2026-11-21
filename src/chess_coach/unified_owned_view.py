@@ -27,7 +27,7 @@ def add_fields(result, row):
             "boundary": "History replay, hypothetical enumeration and material checks are separate.",
         }
     if row["objective"] == "execute_named_fork":
-        add_fork_fields(result, provenance)
+        add_fork_fields(result, provenance, row=row)
     if row["objective"] in {"capture_named_target", "protect_threatened_piece"}:
         result["objective_target"] = provenance["objective_target"]
     if row["objective"] in {

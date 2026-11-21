@@ -5,7 +5,7 @@ from .objective_capture_contract import TARGET_VERSION
 from .objective_capture_current import current
 from .objective_contract import VERSION as MATE_VERSION
 from .objective_defense_source import VERSION as DEFENSE_VERSION
-from .objective_fork_contract import VERSION as FORK_VERSION
+from .objective_fork_contract import MISS_VERSION as FORK_VERSION
 from .objective_short_source import VERSION as SHORT_VERSION
 from .unified_own_game import VERSION as MATERIAL_VERSION
 from .unified_own_game_snapshot import key_for

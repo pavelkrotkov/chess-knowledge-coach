@@ -57,7 +57,7 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
     from chess_coach.coaching_report import report as coaching_report
     from chess_coach.evidence_review import review_evidence
     from chess_coach.ingest import ingest_pgn
-    from chess_coach.objective_fork_contract import VERSION as FORK_VERSION
+    from chess_coach.objective_fork_contract import MISS_VERSION as FORK_VERSION
     from chess_coach.pipeline_inputs import engine_identity, game_input
     from chess_coach.pipeline_work import run_analysis
     from chess_coach.web import create_app
@@ -303,9 +303,22 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
     exported = tactical_export(db, LEARNER, "test", course, Budget(db))
     assert exported["kind"] == "local-tactical-course-export-v4"
     assert study_preview(exported, exported["export_sha256"]) == course
+
+    # Previously saved v1 worked chapters still rebuild exactly after v2 becomes the default.
+    from chess_coach.objective_fork_contract import VERSION as LEGACY_FORK_VERSION
+
+    with monkeypatch.context() as patch:
+        patch.setattr("chess_coach.coaching_practice_identity.FORK_VERSION", LEGACY_FORK_VERSION)
+        legacy_course = tactical_preview(db, LEARNER, "test")
+    assert legacy_course["preview"]["chapters"][0]["source"]["version"] == LEGACY_FORK_VERSION
+    legacy_export = tactical_export(db, LEARNER, "test", legacy_course, Budget(db))
+    assert study_preview(legacy_export, legacy_export["export_sha256"]) == legacy_course
+
     monkeypatch.setenv("CHESS_SUBJECT", LEARNER)
     monkeypatch.setenv("CHESS_CORPUS", "test")
     with revalidate(path, exported, exported["export_sha256"]) as check:
+        check()
+    with revalidate(path, legacy_export, legacy_export["export_sha256"]) as check:
         check()
 
     # A commit between the source and chapter slices invalidates the preview.

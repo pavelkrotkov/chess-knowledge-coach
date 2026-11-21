@@ -8,7 +8,7 @@ from .objective_contract import OWNED_HISTORY
 from .objective_fork_contract import GOAL, OBJECTIVE
 
 
-def snapshot(db, board, evidence, fact):
+def snapshot(db, board, evidence, fact, *, objective=OBJECTIVE):
     original = fact["payload"]["proof"]
     move = board.parse_uci(original["move"])
     if fork_proof(board, move) != original:
@@ -32,7 +32,7 @@ def snapshot(db, board, evidence, fact):
             "fact_id": fact["id"],
             "detector_run_id": fact["detector_run_id"],
             "fork_certificate": original,
-            "objective_version": OBJECTIVE,
+            "objective_version": objective,
             "history_mode": OWNED_HISTORY,
             "fork_attacker": chess.square_name(move.from_square),
             "fork_anchor": anchor,

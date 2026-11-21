@@ -10,6 +10,7 @@ from .objective_defense_judge import verify as verify_defense
 from .objective_defense_source import OBJECTIVE as DEFENSE_OBJECTIVE
 from .objective_fork_avoidance_contract import OBJECTIVE as FORK_AVOIDANCE_OBJECTIVE
 from .objective_fork_avoidance_judge import verify as verify_fork_avoidance
+from .objective_fork_contract import MISS_OBJECTIVE as FORK_MISS_OBJECTIVE
 from .objective_fork_contract import OBJECTIVE as FORK_OBJECTIVE
 from .objective_fork_defense_contract import OBJECTIVE as FORK_DEFENSE_OBJECTIVE
 from .objective_fork_defense_judge import verify as verify_fork_defense
@@ -39,6 +40,7 @@ def verify(board, move, request, events, clock, start, seconds, base, session):
         PIN_PREVENT_OBJECTIVE: verify_pin_prevent,
         PIN_SLIDE_OBJECTIVE: verify_pin_slide,
         FORK_OBJECTIVE: verify_fork,
+        FORK_MISS_OBJECTIVE: verify_fork,
         FORK_DEFENSE_OBJECTIVE: verify_fork_defense,
         FORK_AVOIDANCE_OBJECTIVE: verify_fork_avoidance,
     }
