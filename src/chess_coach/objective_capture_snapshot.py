@@ -9,21 +9,24 @@ from .objective_capture_judge import judge
 from .objective_contract import OWNED_HISTORY
 
 
-def snapshot(board, view, review, evidence_id, version):
+def snapshot(board, view, review, evidence_id, version, *, check=None):
     objective = "capture_named_target" if version == TARGET_VERSION else "bounded_material_gain"
     target = view["objective"]["target"]
     square = chess.parse_square(target)
     witness = view["objective_witness"]["uci"][0]
+    clock = _clock(check)
+    options = {"check": check} if check is not None else {}
     result = judge(
         board,
         board.parse_uci(witness),
         objective,
         square,
         3,
-        time.monotonic,
-        time.monotonic(),
+        clock,
+        clock(),
         5.0,
         {},
+        **options,
     )
     if result["status"] != "correct":
         raise ValueError("capture exemplar unavailable")
@@ -46,3 +49,14 @@ def snapshot(board, view, review, evidence_id, version):
             "gain_threshold": 3,
         },
     }
+
+
+def _clock(check):
+    if check is None:
+        return time.monotonic
+
+    def read():
+        check()
+        return time.monotonic()
+
+    return read

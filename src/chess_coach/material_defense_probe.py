@@ -3,11 +3,12 @@
 from .material_ambiguity import ambiguous
 from .material_defense_rules import before_reason, target
 from .material_defense_safety import new_other_threat, safe_defense_move
-from .material_threats import threats
+from .material_threats import check_options, threats
 
 
-def candidate(board, played):
-    before = threats(board, hypothetical=True)
+def candidate(board, played, *, check=None):
+    options = check_options(check)
+    before = threats(board, hypothetical=True, **options)
     reason = before_reason(before)
     if reason:
         return ambiguous("material_protection", reason)
@@ -15,19 +16,21 @@ def candidate(board, played):
         move = board.parse_uci(played)
     except ValueError:
         return ambiguous("material_protection", "invalid_played_move")
-    if not safe_defense_move(board, move, before):
+    options = {"check": check} if check is not None else {}
+    if not safe_defense_move(board, move, before, **options):
         return (
             ambiguous("material_protection", "checking_or_capturing_defense")
             if before["targets"]
             else None
         )
-    return _after_candidate(board, move, before)
+    return _after_candidate(board, move, before, check)
 
 
-def _after_candidate(board, move, before):
+def _after_candidate(board, move, before, check):
     after = board.copy()
     after.push(move)
-    following = threats(after, hypothetical=False)
+    options = check_options(check)
+    following = threats(after, hypothetical=False, **options)
     if following is None:
         return (
             ambiguous("material_protection", "post_move_attack_unresolved")

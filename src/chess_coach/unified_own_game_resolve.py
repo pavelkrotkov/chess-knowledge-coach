@@ -12,23 +12,24 @@ from .unified_own_game_legacy import _legacy
 from .unified_own_game_snapshot import group_for, snapshot
 
 
-def _current(db, subject, rows, kind, evidence_id):
+def _current(db, subject, rows, kind, evidence_id, *, check=None):
     seen = set()
+    # Check before each row; even duplicate groups need a currentness proof.
     for row in rows[:LIMIT]:
-        view, review, reasons = _inspect(db, row["id"], subject)
+        if check is not None:
+            check()
+        view, review, reasons = _inspect(db, row["id"], subject, check=check)
         if reasons or view["objective"]["kind"] != kind:
             continue
         group = group_for(view)
-        if group in seen:
-            continue
-        seen.add(group)
-        if row["id"] == evidence_id:
-            require_protection_scope(db, evidence_id, subject, kind)
+        if group not in seen and row["id"] == evidence_id:
+            require_protection_scope(db, evidence_id, subject, kind, check=check)
             return snapshot(view, review, row["id"])
+        seen.add(group)
     raise ValueError("practice source unavailable")
 
 
-def resolve(db, version, key, subject):
+def resolve(db, version, key, subject, *, check=None):
     if version in ENDGAME_VERSIONS:
         return resolve_endgame(db, version, key, subject)
     position, kind, suffix = _parts(key)
@@ -41,4 +42,4 @@ def resolve(db, version, key, subject):
         return _legacy(db, subject, rows, (position, kind, suffix))
     if version != VERSION:
         raise ValueError("practice source unavailable")
-    return _current(db, subject, rows, kind, _positive(suffix))
+    return _current(db, subject, rows, kind, _positive(suffix), check=check)

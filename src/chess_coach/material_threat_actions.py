@@ -7,7 +7,7 @@ from .material_exchange import exchange
 from .material_exchange_rules import has_legal_recapture
 
 
-def collect(probe, *, check=None, exclude_target=None):
+def collect(probe, *, check=None, exclude_target=None, inner_check=None):
     targets = {}
     uncertain = {}
     for index, move in enumerate(probe.generate_pseudo_legal_captures()):
@@ -17,7 +17,7 @@ def collect(probe, *, check=None, exclude_target=None):
         # An excluded named target is checked separately by its caller.
         if move.to_square == exclude_target or not _supported_target(target):
             continue
-        value = _gain(probe, move)
+        value = _gain(probe, move, check=inner_check)
         if check is not None:
             check(index)
         if value is None:
@@ -31,12 +31,12 @@ def _supported_target(target):
     return target is not None and target.piece_type not in {chess.PAWN, chess.KING}
 
 
-def _gain(probe, move):
+def _gain(probe, move, *, check=None):
     if move not in probe.legal_moves:
         return None
     if probe.gives_check(move):
-        proof = checking_capture(probe, move)
+        proof = checking_capture(probe, move, check=check)
         return proof["minimum_gain"] if proof else None
-    if has_legal_recapture(probe, move):
+    if has_legal_recapture(probe, move, check=check):
         return None
-    return exchange(probe, move)
+    return exchange(probe, move, check=check)

@@ -9,10 +9,11 @@ from .objective_source_budget import within_budget
 from .pawn_scope import history_known
 
 
-def resolve(db, version, key, subject):
+def resolve(db, version, key, subject, *, check=None):
     if not _valid_key(version, key) or not within_budget(db, int(key), subject):
         raise ValueError("fork objective unavailable")
-    evidence, fact = current(db, int(key), subject)
+    options = {"check": check} if check is not None else {}
+    evidence, fact = current(db, int(key), subject, **options)
     board = decision_board(db, position_row(db, evidence["position_id"]))
     if not history_known(board) or board.fen() != evidence["decision_fen"]:
         raise ValueError("fork history unavailable")
@@ -22,8 +23,9 @@ def resolve(db, version, key, subject):
         evidence,
         fact,
         objective=MISS_OBJECTIVE if version == MISS_VERSION else OBJECTIVE,
+        **options,
     )
-    if (evidence, fact) != current(db, int(key), subject):
+    if (evidence, fact) != current(db, int(key), subject, **options):
         raise ValueError("fork source changed")
     return result
 

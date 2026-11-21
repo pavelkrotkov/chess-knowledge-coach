@@ -5,7 +5,7 @@ import chess
 from .material_exchange_rules import has_legal_recapture
 
 
-def safe_defense_move(board, move, before):
+def safe_defense_move(board, move, before, *, check=None):
     if not _ordinary(board, move):
         return False
     if not board.is_capture(move):
@@ -15,7 +15,8 @@ def safe_defense_move(board, move, before):
         for moves in before["targets"].values()
         for text in moves
     }
-    return move.to_square in attackers and not has_legal_recapture(board, move)
+    options = {"check": check} if check is not None else {}
+    return move.to_square in attackers and not has_legal_recapture(board, move, **options)
 
 
 def new_other_threat(before, following, protected):

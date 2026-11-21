@@ -5,14 +5,16 @@ from .material_source_marker import source_marker
 from .material_witness import verified_witness
 
 
-def verify_current(db, learner, evidence, fact, source, result, history=None):
+def verify_current(db, learner, evidence, fact, source, result, history=None, *, check=None):
     if evidence["lifecycle_status"] != "active" or fact["detector_status"] != "active":
         return
     try:
         prepared = prepare(db, evidence["position_id"], learner, history=history)
+        if check is not None:
+            check()
         if not _same_source(prepared, source):
             return
-        witness = verified_witness(prepared, fact["payload"])
+        witness = verified_witness(prepared, fact["payload"], check=check)
         if (
             source_marker(db, evidence["position_id"], evidence["game_id"], learner)
             != prepared["source_marker"]
