@@ -140,6 +140,7 @@ def test_private_access_and_csrf(setup, tmp_path, monkeypatch):
         destination.execute(f"DROP VIEW {name}")
     for name in TABLES:
         destination.execute(f"DROP TABLE {name}")
+    destination.execute("DROP INDEX IF EXISTS idx_engine_outputs_position_id")
     destination.execute("PRAGMA user_version=32")
     destination.execute(
         "INSERT INTO analysis_runs(game_id,engine,engine_version,config_json) "
@@ -168,6 +169,7 @@ def test_private_access_and_csrf(setup, tmp_path, monkeypatch):
 
     with monkeypatch.context() as preflight:
         preflight.setattr(db_recent, "add_digest_storage", newer_migration)
+        preflight.setattr(db_recent, "add_engine_output_position_index", newer_migration)
         attest(legacy, read)
     read.close()
     compat_app = create_app(
@@ -210,6 +212,10 @@ def test_private_access_and_csrf(setup, tmp_path, monkeypatch):
         assert record_fact_run(compat_db, **args) == {**result, "replayed": True}
     assert compat_db.connection.execute("PRAGMA user_version").fetchone()[0] == 32
     assert compat_db.connection.execute("PRAGMA schema_version").fetchone()[0] == before
+    assert not any(
+        row[1] == "idx_engine_outputs_position_id"
+        for row in compat_db.connection.execute("PRAGMA index_list(engine_outputs)")
+    )
     compat_db.close()
     raw = sqlite3.connect(legacy.as_uri() + "?mode=ro", uri=True)
     from chess_coach.schema_compat import readonly

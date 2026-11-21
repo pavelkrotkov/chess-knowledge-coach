@@ -8,3 +8,9 @@ def add_decision_columns(connection: sqlite3.Connection) -> None:
     for column in ("decision_fen", "score_pov"):
         if column not in columns:
             connection.execute(f"ALTER TABLE engine_outputs ADD COLUMN {column} TEXT")
+
+
+def add_engine_output_position_index(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_engine_outputs_position_id ON engine_outputs(position_id)"
+    )

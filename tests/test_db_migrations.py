@@ -81,7 +81,7 @@ def test_populated_legacy_upgrade_is_repeatable_and_preserves_history(
     }
     db.initialize()
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 35
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 36
     assert dict(db.connection.execute("SELECT * FROM analysis_runs").fetchone()) == old_run
     assert dict(db.connection.execute("SELECT * FROM analysis_runs_read").fetchone()) == old_run
     assert (
@@ -169,7 +169,65 @@ def test_populated_legacy_upgrade_is_repeatable_and_preserves_history(
     fresh = Database(":memory:")
     fresh.initialize()
     assert schema_columns(db) == schema_columns(fresh)
+    _position_index_upgrade()
     _current_schema_contention(tmp_path)
+
+
+def _position_index_upgrade():
+    from chess_coach.pipeline_config import PipelineConfig
+    from chess_coach.pipeline_inputs import tactical_input
+
+    db = Database(":memory:")
+    db.initialize()
+    connection = db.connection
+    connection.executemany(
+        "INSERT INTO games (source_id,pgn,white,black,result) VALUES (?, ?, ?, ?, ?)",
+        [("first", "synthetic", "A", "B", "*"), ("second", "synthetic", "C", "D", "*")],
+    )
+    connection.executemany(
+        "INSERT INTO positions (game_id,ply,fen,san,uci) VALUES (?,?,?,?,?)",
+        [(1, 1, "fen1", "a", "a1a2"), (1, 2, "fen2", "b", "b1b2"), (2, 1, "fen3", "c", "c1c2")],
+    )
+    connection.executemany(
+        "INSERT INTO analysis_runs (game_id,engine,engine_version,config_json) VALUES (?,?,?,?)",
+        [(1, "fixture", "v1", "{}"), (2, "fixture", "v1", "{}")],
+    )
+    connection.executemany(
+        "INSERT INTO engine_outputs (id,run_id,position_id,best_move,decision_fen,score_pov,multipv) VALUES (?,?,?,?,?,?,?)",
+        [
+            (11, 2, 2, "a2a3", "first", "white", 1),
+            (4, 1, 1, "b2b3", "second", "black", 1),
+            (8, 1, 3, "c2c3", "third", "white", 1),
+            (7, 2, 1, "d2d3", "fourth", "black", 2),
+        ],
+    )
+    connection.execute("DROP INDEX IF EXISTS idx_engine_outputs_position_id")
+    connection.execute("PRAGMA user_version=35")
+    connection.commit()
+    before = {
+        table: [tuple(row) for row in connection.execute(f"SELECT * FROM {table} ORDER BY id")]
+        for table in ("analysis_runs", "positions", "engine_outputs")
+    }
+    config = PipelineConfig(learner="fixture")
+    hashes = [tactical_input(db, game, "fixture-hash", config, 1) for game in (1, 2)]
+    db.initialize()
+    db.initialize()
+    assert connection.execute("PRAGMA user_version").fetchone()[0] == 36
+    assert {
+        table: [tuple(row) for row in connection.execute(f"SELECT * FROM {table} ORDER BY id")]
+        for table in before
+    } == before
+    assert [tactical_input(db, game, "fixture-hash", config, 1) for game in (1, 2)] == hashes
+    query = (
+        "SELECT e.id,e.position_id,e.best_move,e.decision_fen,e.score_pov,e.multipv "
+        "FROM engine_outputs e JOIN positions p ON p.id=e.position_id "
+        "WHERE p.game_id=? ORDER BY e.id"
+    )
+    assert [row[0] for row in connection.execute(query, (1,))] == [4, 7, 11]
+    assert [row[0] for row in connection.execute(query, (2,))] == [8]
+    plan = connection.execute("EXPLAIN QUERY PLAN " + query, (1,)).fetchall()
+    assert any("idx_engine_outputs_position_id" in row[3] for row in plan)
+    db.close()
 
 
 def _current_schema_contention(tmp_path):
@@ -313,3 +371,49 @@ def test_failed_upgrade_rolls_back_schema_and_data(monkeypatch: pytest.MonkeyPat
         )
         == before_v35
     )
+
+    # A failed v36 index creation preserves schema 35 and existing rows.
+    monkeypatch.setattr(db_recent, "add_digest_storage", add_digests)
+    recent.initialize()
+    recent.connection.execute(
+        "INSERT INTO games (source_id,pgn,white,black,result) VALUES (?,?,?,?,?)",
+        ("rollback", "synthetic", "A", "B", "*"),
+    )
+    recent.connection.execute(
+        "INSERT INTO positions (game_id,ply,fen,san,uci) VALUES (1,1,?,?,?)",
+        ("fen", "a", "a1a2"),
+    )
+    recent.connection.execute(
+        "INSERT INTO analysis_runs (game_id,engine,engine_version,config_json) VALUES (1,?,?,?)",
+        ("fixture", "v1", "{}"),
+    )
+    recent.connection.execute(
+        "INSERT INTO engine_outputs (run_id,position_id,score_cp) VALUES (1,1,17)"
+    )
+    recent.connection.execute("DROP INDEX idx_engine_outputs_position_id")
+    recent.connection.execute("PRAGMA user_version=35")
+    recent.connection.commit()
+    before_rows = {
+        table: rows(recent, table)
+        for table in ("games", "positions", "analysis_runs", "engine_outputs")
+    }
+    before_v36 = list(
+        recent.connection.execute("SELECT type,name,sql FROM sqlite_master ORDER BY type,name")
+    )
+    add_position_index = db_recent.add_engine_output_position_index
+
+    def fail_after_position_index(connection):
+        add_position_index(connection)
+        raise RuntimeError("injected position index migration failure")
+
+    monkeypatch.setattr(db_recent, "add_engine_output_position_index", fail_after_position_index)
+    with pytest.raises(RuntimeError, match="position index migration failure"):
+        recent.initialize()
+    assert recent.connection.execute("PRAGMA user_version").fetchone()[0] == 35
+    assert (
+        list(
+            recent.connection.execute("SELECT type,name,sql FROM sqlite_master ORDER BY type,name")
+        )
+        == before_v36
+    )
+    assert {table: rows(recent, table) for table in before_rows} == before_rows
