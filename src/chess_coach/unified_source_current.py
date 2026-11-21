@@ -6,6 +6,7 @@ import json
 from .objective_fork_defense_budget import BudgetExceeded
 from .objective_pin_prevent_budget import BudgetExceeded as PinBudgetExceeded
 from .objective_promotion_contract import OBJECTIVES as PROMOTION_OBJECTIVES
+from .public_training_source import mate as public_mate
 from .unified_corpus_mate_current import require_current as require_corpus_mate
 from .unified_corpus_rehearsal import direct_corpus
 from .unified_sources import resolve_source
@@ -24,19 +25,38 @@ def require_current(db, row, *, related_cache=None, related_check=None):
     require_transfers_current(
         db, row, snapshot_hash, fork_check=related_check, fork_cache=related_cache
     )
-    public = row["source_type"] == "public" and row["objective"] in PROMOTION_OBJECTIVES
-    if row["source_type"] != "own-game" and not public and not direct_corpus(row):
+    if not _needs_current(row):
         return
     try:
-        snapshot = resolve_source(
-            db, row["source_type"], row["source_version"], row["source_key"], subject=row["subject"]
-        )
+        snapshot = _snapshot(db, row)
         if snapshot_hash(snapshot) != row["snapshot_hash"]:
             raise ValueError
     except (BudgetExceeded, PinBudgetExceeded):
         raise
     except ValueError:
         raise ValueError("practice source unavailable or stale") from None
+
+
+def _needs_current(row):
+    return (
+        row["source_type"] == "own-game"
+        or (
+            row["source_type"] == "public"
+            and (row["objective"] in PROMOTION_OBJECTIVES or public_mate(row))
+        )
+        or direct_corpus(row)
+    )
+
+
+def _snapshot(db, row):
+    if public_mate(row):
+        # The immutable exact snapshot was proved at admission; GET only rebinds it.
+        from .unified_sources import _public
+
+        return _public(db, row["source_version"], row["source_key"], verify=False)
+    return resolve_source(
+        db, row["source_type"], row["source_version"], row["source_key"], subject=row["subject"]
+    )
 
 
 def _related_source(db, row, binding, cache, check):
