@@ -171,8 +171,167 @@ def test_populated_legacy_upgrade_is_repeatable_and_preserves_history(
     fresh.initialize()
     assert schema_columns(db) == schema_columns(fresh)
     _fork_index_upgrade(monkeypatch)
+    _native_upgrade_inventory(tmp_path)
     _position_index_upgrade()
     _current_schema_contention(tmp_path)
+
+
+def _native_upgrade_inventory(tmp_path):
+    from chess_coach.analysis_schema import add_decision_columns
+    from chess_coach.db_recent import upgrade_recent
+    from chess_coach.lichess_schema import add_sync_progress
+    from chess_coach.native_upgrade_build import supported
+    from chess_coach.native_upgrade_plan import plan
+    from chess_coach.recovery_gzip import compressed_recovery
+
+    path = tmp_path / "native-upgrade-inventory.sqlite"
+    db = Database(path)
+    db.connection.execute("BEGIN")
+    db_migrations.upgrade_v1(db.connection, SCHEMA)
+    add_decision_columns(db.connection)
+    add_sync_progress(db.connection)
+    upgrade_recent(db.connection, 3, through=32)
+    db.connection.execute(
+        "INSERT INTO games(source_id,pgn,white,black,result) VALUES('sample','synthetic','A','B','*')"
+    )
+    db.connection.execute(
+        "INSERT INTO positions(game_id,ply,fen,san,uci) VALUES(1,1,'fen','a','a1a2')"
+    )
+    db.connection.execute(
+        "INSERT INTO analysis_runs(game_id,engine,engine_version,config_json) VALUES(1,'fixture','v1','{}')"
+    )
+    db.connection.execute("INSERT INTO engine_outputs(run_id,position_id) VALUES(1,1)")
+    db.connection.executemany(
+        "INSERT INTO training_items(source_type,source_ref,skill,operation,due,scheduler_version) "
+        "VALUES (?,?,?,?,?,?)",
+        [
+            ("puzzle", "mate", "mate_in_one", "execute", "2026-01-01", "v1"),
+            ("unified_owned_capture", "capture", "hanging_piece", "execute", "2026-01-01", "v1"),
+            ("unified_owned_fork", "fork", "fork", "execute", "2026-01-01", "v1"),
+        ],
+    )
+    db.connection.execute("ANALYZE")
+    db.connection.commit()
+    db.close()
+    original = path.read_bytes()
+    result = plan(path, tmp_path)
+    with sqlite3.connect(":memory:") as probe:
+        if not supported(probe):
+            assert result == {"status": "unknown", "inventory_complete": False}
+            assert path.read_bytes() == original
+            return
+    assert result["status"] == "unknown" and result["inventory_complete"]
+    assert (
+        result["engine_rows"],
+        result["mate_rows"],
+        result["capture_rows"],
+        result["fork_rows"],
+    ) == (1, 1, 1, 1)
+    assert result["page_size"] == 4096 and result["metadata_pages"] > 0
+    assert result["metadata_pages"] <= result["metadata_sector_pages"] <= result["page_count"]
+    assert path.read_bytes() == original
+
+    import json
+    import subprocess
+    import sys
+
+    command = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-B",
+            "-m",
+            "chess_coach.native_upgrade_check",
+            str(path),
+            "--project-root",
+            str(tmp_path),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=30,
+    )
+    inspected = json.loads(command.stdout)
+    assert inspected["status"] == "unknown" and inspected["inventory_complete"]
+    assert inspected["process_address_limit_bytes"] == 1024 * 1024 * 1024
+    assert inspected["sqlite_hard_heap_limit_bytes"] == 512 * 1024 * 1024
+    assert path.read_bytes() == original
+    archive = tmp_path / "native-backup.gz"
+    restored = tmp_path / "native-restore.sqlite"
+    assert compressed_recovery(path, archive, restored, project_root=tmp_path) == {
+        "status": "verified"
+    }
+    recovered = plan(path, tmp_path, archive=archive, restored=restored)
+    assert recovered["status"] == "unknown" and recovered["recovery_current"]
+    zstd_archive = tmp_path / "native-backup.zst"
+    zstd_restore = tmp_path / "native-zstd-restore.sqlite"
+    assert compressed_recovery(
+        path, zstd_archive, zstd_restore, project_root=tmp_path, codec="zstd"
+    ) == {"status": "verified"}
+    zstd_plan = plan(path, tmp_path, archive=zstd_archive, restored=zstd_restore, codec="zstd")
+    assert zstd_plan["status"] == "unknown" and zstd_plan["recovery_current"]
+    verified_command = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-B",
+            "-m",
+            "chess_coach.native_upgrade_check",
+            str(path),
+            "--project-root",
+            str(tmp_path),
+            "--archive",
+            str(zstd_archive),
+            "--restored",
+            str(zstd_restore),
+            "--codec",
+            "zstd",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=30,
+    )
+    checked = json.loads(verified_command.stdout)
+    assert (
+        checked["recovery_current"] and checked["sqlite_hard_heap_limit_bytes"] == 512 * 1024 * 1024
+    )
+
+    import gzip
+    import hashlib
+
+    manifest_path = archive.with_name(archive.name + ".manifest.json")
+    previous_archive, previous_manifest = archive.read_bytes(), manifest_path.read_bytes()
+    different = gzip.compress(b"different synthetic content")
+    manifest = json.loads(previous_manifest)
+    manifest["archive_bytes"] = len(different)
+    manifest["archive_sha256"] = hashlib.sha256(different).hexdigest()
+    archive.write_bytes(different)
+    manifest_path.write_text(json.dumps(manifest))
+    assert plan(path, tmp_path, archive=archive, restored=restored) == {
+        "status": "unknown",
+        "inventory_complete": False,
+    }
+    archive.write_bytes(previous_archive)
+    manifest_path.write_bytes(previous_manifest)
+
+    limited = Database(path)
+    pages = limited.connection.execute("PRAGMA page_count").fetchone()[0]
+    assert limited.connection.execute(f"PRAGMA max_page_count={pages}").fetchone()[0] == pages
+    with pytest.raises(sqlite3.OperationalError) as failure:
+        limited.initialize()
+    assert failure.value.sqlite_errorcode == sqlite3.SQLITE_FULL
+    assert limited.connection.execute("PRAGMA user_version").fetchone()[0] == 32
+    assert limited.connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+    assert limited.connection.execute("PRAGMA foreign_key_check").fetchall() == []
+    assert limited.connection.execute("SELECT count(*) FROM engine_outputs").fetchone()[0] == 1
+    limited.close()
+    assert path.read_bytes() == original
+
+    with sqlite3.connect(path) as connection:
+        connection.execute("PRAGMA foreign_keys=OFF")
+        connection.execute("UPDATE engine_outputs SET position_id='invalid'")
+    assert plan(path, tmp_path) == {"status": "unknown", "inventory_complete": False}
 
 
 def _fork_index_upgrade(monkeypatch):
