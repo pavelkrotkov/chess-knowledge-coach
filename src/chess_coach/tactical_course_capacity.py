@@ -53,7 +53,7 @@ def _reserve(root, remaining):
         check=True,
         capture_output=True,
         text=True,
-        timeout=min(8, max(0.001, remaining)),
+        timeout=max(0.001, remaining),
     )
     allocated = int(usage.stdout.split()[0]) * 1024
     if allocated + RESERVE > PROJECT_LIMIT or shutil.disk_usage(root).free < RESERVE:
