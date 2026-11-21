@@ -18,7 +18,7 @@ from .opening_snapshot import GRAPH_SHA256, VERSION
 TRANSFORM = "v2:32MB-decoded;5000-records;1000-games;40-parent-plies;12-window-plies;512-game-plies"
 
 
-def store(path, records, coverage, *, transform=TRANSFORM):
+def store(path, records, coverage, *, transform=TRANSFORM, source_metadata=None):
     db = sqlite3.connect(path)
     try:
         db.executescript("""
@@ -45,6 +45,8 @@ def store(path, records, coverage, *, transform=TRANSFORM):
             "stored_plies": STORED_PLIES,
             "coverage": coverage,
         }
+        if source_metadata is not None:
+            metadata.update(source_metadata)
         db.executemany(
             "INSERT INTO metadata VALUES (?,?)", [(k, json.dumps(v)) for k, v in metadata.items()]
         )

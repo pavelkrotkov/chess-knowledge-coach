@@ -6,9 +6,9 @@ import time
 from .opening_fit import _owned_scope
 from .opening_fit_later_index import locate
 from .opening_fit_later_owned import collect
+from .opening_fit_later_public import samples
 from .opening_fit_later_rank import rank
 from .opening_fit_owned_summary import _control
-from .opening_fit_reference import sample
 from .opening_queue_budget import BrowserBudget
 from .style_schedule_budget import BudgetExceeded
 from .style_time_candidates import verified
@@ -18,14 +18,14 @@ from .tactical_course_budget import PreviewUnavailable
 SECONDS = 12
 
 
-def assess(db, root, learner, decision, choice):
+def assess(db, root, learner, decision, choice, *, source="broadcast"):
     budget = BrowserBudget(db)
     budget.expires = min(budget.expires, time.monotonic() + SECONDS)
     result = {"status": "unavailable"}
     try:
         if not 1 <= decision["ply"] <= 20:
             return result
-        index = locate(root, learner)
+        index = locate(root, learner, source)
         game = load_game(db.connection, decision["game_id"])
         if verified(game, learner) != decision["color"]:
             return result
@@ -33,21 +33,9 @@ def assess(db, root, learner, decision, choice):
         moves = [decision["played_uci"], choice["uci"]]
         with _owned_scope(db, budget):
             owned = collect(db, learner, decision, moves)
-        public = {}
-        for move in moves:
-            budget.check()
-            public[move] = sample(
-                index[0],
-                decision["catalog"]["parent"],
-                move,
-                decision["color"],
-                control,
-                budget.expires,
-                decision_ply=decision["ply"],
-                transform=index[2],
-            )
+        public = samples(index, decision, moves, control, budget, source)
         budget.check()
-        if locate(root, learner) != index:
+        if locate(root, learner, source) != index:
             raise ValueError("public opening source changed")
         winner = rank(moves, owned.get("branches", {}), public, control)
         return {
@@ -56,6 +44,8 @@ def assess(db, root, learner, decision, choice):
             "public": public,
             "control": control,
             "recommended": winner,
+            "reference": source,
+            "source_metadata": index[3] if source == "recent" else None,
         }
     except (
         PreviewUnavailable,

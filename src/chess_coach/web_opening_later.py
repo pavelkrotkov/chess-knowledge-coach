@@ -7,7 +7,7 @@ from .opening_fit_later import assess
 from .web_db import database
 
 
-def opportunity(decision, comparisons, requested):
+def opportunity(decision, comparisons, requested, reference="broadcast"):
     if not requested:
         return None
     choice = next((item for item in decision["catalog"]["items"] if item["uci"] == requested), None)
@@ -21,5 +21,6 @@ def opportunity(decision, comparisons, requested):
             current_app.config["SUBJECT"],
             decision,
             choice,
+            source=reference,
         ),
     }
