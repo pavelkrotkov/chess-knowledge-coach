@@ -1,6 +1,7 @@
 """Command-line entry point."""
 
 import json
+import os
 
 from . import cli_commands_datasets as datasets
 from . import cli_commands_games as games
@@ -91,7 +92,7 @@ COMMANDS = {
 COMMANDS.update(RELATED_COMMANDS)
 
 
-def main(*, compatibility: bool = False) -> None:
+def main(*, compatibility: bool | None = None) -> None:
     args = build_parser().parse_args()
     if args.command == "capabilities":
         print(json.dumps(capability_report(), indent=2))
@@ -99,20 +100,32 @@ def main(*, compatibility: bool = False) -> None:
     if args.command == "competencies":
         print(json.dumps(competency_report(), indent=2))
         return
-    if args.command == "seed-competencies":
-        db = Database(args.db, compatibility=compatibility)
-        db.initialize()
-        print(json.dumps({"skills": seed_competency_graph(db)}))
-        return
+    # These commands do not initialize the CLI target database.
     if args.command in recovery.COMMANDS:
         recovery.COMMANDS[args.command](args)
         return
     if args.command in snapshot.COMMANDS:
         snapshot.COMMANDS[args.command](args)
         return
+    # Only an omitted selection consults the configured private profile.
+    if compatibility is None:
+        compatibility = _configured_compatibility(args.db)
     db = Database(args.db, compatibility=compatibility)
     db.initialize()
-    COMMANDS[args.command](db, args)
+    if args.command == "seed-competencies":
+        print(json.dumps({"skills": seed_competency_graph(db)}))
+    else:
+        COMMANDS[args.command](db, args)
+
+
+def _configured_compatibility(path):
+    from .schema_compat import configured
+
+    selected = configured(path)
+    # A selected profile must not silently migrate a different target.
+    if not selected and os.environ.get("CHESS_SCHEMA_COMPAT") is not None:
+        raise ValueError("selected compatibility database differs from the CLI target")
+    return selected
 
 
 if __name__ == "__main__":

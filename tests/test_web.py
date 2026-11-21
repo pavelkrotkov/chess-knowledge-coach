@@ -237,6 +237,126 @@ def test_private_access_and_csrf(setup, tmp_path, monkeypatch):
         preflight.setattr(db_recent, "add_fork_indexes", newer_migration)
         attest(legacy, read)
     read.close()
+
+    # The standalone entry point must honor the same selected schema-32 profile.
+    import contextlib
+    import io
+    import json
+    import sys
+
+    from chess_coach import cli
+    from chess_coach.db_versioning import CURRENT_VERSION
+
+    def cli_run(target, *arguments, override=None):
+        with monkeypatch.context() as patch, contextlib.redirect_stdout(io.StringIO()) as out:
+            patch.setattr(sys, "argv", ["chess-coach", "--db", str(target), *arguments])
+            if override is None:
+                cli.main()
+            else:
+                cli.main(compatibility=override)
+        return json.loads(out.getvalue())
+
+    def legacy_state(path):
+        connection = sqlite3.connect(path)
+        try:
+            return (
+                connection.execute("PRAGMA user_version").fetchone()[0],
+                connection.execute("PRAGMA schema_version").fetchone()[0],
+                connection.execute(
+                    "SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name"
+                ).fetchall(),
+                connection.execute(
+                    "SELECT id,typeof(pgn),pgn,typeof(source_id),source_id FROM games ORDER BY id"
+                ).fetchall(),
+                connection.execute(
+                    "SELECT id,typeof(config_json),config_json,typeof(nnue),nnue,typeof(compatibility_json),compatibility_json FROM analysis_runs ORDER BY id"
+                ).fetchall(),
+                connection.execute(
+                    "SELECT id,typeof(input_json),input_json,typeof(input_hash),input_hash FROM detector_runs ORDER BY id"
+                ).fetchall(),
+                connection.execute(
+                    "SELECT id,typeof(input_json),input_json,typeof(output_hash),output_hash FROM mapping_runs ORDER BY id"
+                ).fetchall(),
+            )
+        finally:
+            connection.close()
+
+    baseline = legacy_state(legacy)
+    assert baseline[0] == 32
+    report = cli_run(
+        legacy,
+        "style-choices",
+        "--learner",
+        "learner",
+        "--protection-evidence",
+        "1",
+        "--response",
+        "c1c4",
+    )
+    assert report["status"] == "unknown"
+    assert legacy_state(legacy) == baseline
+    cli_run(legacy, "evidence-report", override=True)
+    assert legacy_state(legacy) == baseline
+
+    # A stale release attestation or malformed profile fails before initialization.
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            schema_compat_identity,
+            "release_info",
+            lambda: {
+                "commit": "b" * 40,
+                "module_path": str(root / ".runtime" / "releases" / ("b" * 40) / "module.py"),
+            },
+        )
+        with pytest.raises(ValueError, match="attestation"):
+            cli_run(legacy, "evidence-report")
+    with monkeypatch.context() as patch:
+        patch.setenv("CHESS_SCHEMA_COMPAT", "invalid")
+        with pytest.raises(ValueError, match="unsupported"):
+            cli_run(legacy, "evidence-report")
+        missing = root / "unrelated.sqlite"
+        cli_run(missing, "capabilities")
+        cli_run(missing, "competencies")
+        assert cli_run(missing, "acquisition-status", "--project-root", str(root)) == []
+        destination = root / "check-only-backup.sqlite"
+        assert isinstance(
+            cli_run(
+                missing,
+                "backup-db",
+                str(legacy),
+                str(destination),
+                "--project-root",
+                str(root),
+                "--check-only",
+            ),
+            dict,
+        )
+        assert not missing.exists() and not destination.exists()
+    assert legacy_state(legacy) == baseline
+
+    # A selected profile for one file cannot silently migrate a different file.
+    wrong = data / "other.sqlite"
+    source = sqlite3.connect(legacy)
+    destination = sqlite3.connect(wrong)
+    source.backup(destination)
+    source.close()
+    destination.close()
+    wrong_before = legacy_state(wrong)
+    with pytest.raises(ValueError, match="differs"):
+        cli_run(wrong, "evidence-report")
+    assert legacy_state(wrong) == wrong_before
+    cli_run(wrong, "evidence-report", override=False)
+    assert legacy_state(wrong)[0] == CURRENT_VERSION
+
+    # With no profile, ordinary CLI startup still initializes a native database.
+    native = data / "native.sqlite"
+    with monkeypatch.context() as patch:
+        patch.delenv("CHESS_SCHEMA_COMPAT")
+        cli_run(native, "evidence-report")
+    assert legacy_state(native)[0] == CURRENT_VERSION
+    cli_run(legacy, "seed-competencies")
+    assert legacy_state(legacy) == baseline
+
     compat_app = create_app(
         db_path=legacy,
         subject="learner",
@@ -405,9 +525,8 @@ def test_private_access_and_csrf(setup, tmp_path, monkeypatch):
     raw.close()
 
     # Both scheduled entry points receive the same verified connection mode.
-    import sys
 
-    from chess_coach import cli, ops_retry, ops_worker, tactical_study_current
+    from chess_coach import ops_retry, ops_worker, tactical_study_current
 
     calls = []
 
