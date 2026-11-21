@@ -1908,6 +1908,60 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
             time.sleep(0.05)
     assert not db.connection.in_transaction
 
+    # SQLite wraps a signal raised inside a UDF; ordinary callback errors remain errors.
+    import signal
+
+    old_handler = signal.getsignal(signal.SIGALRM)
+
+    def alarm_in_callback():
+        signal.raise_signal(signal.SIGALRM)
+
+    db.connection.create_function("synthetic_course_callback", 0, alarm_in_callback)
+    with pytest.raises(PreviewDeadline), Budget(db).scope(snapshot=True):
+        db.connection.execute("SELECT synthetic_course_callback()").fetchone()
+    assert signal.getsignal(signal.SIGALRM) == old_handler
+    assert signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0)
+    assert not db.connection.in_transaction
+
+    with monkeypatch.context() as patch:
+        real_monotonic = time.monotonic
+        with pytest.raises(PreviewDeadline), Budget(db).scope(snapshot=True):
+            patch.setattr(time, "monotonic", lambda: real_monotonic() + 100)
+            db.connection.execute(
+                "WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL "
+                "SELECT x+1 FROM n WHERE x<10000) SELECT sum(x) FROM n"
+            ).fetchone()
+    assert not db.connection.in_transaction
+
+    with monkeypatch.context() as patch:
+        real_monotonic = time.monotonic
+
+        def bad_callback():
+            patch.setattr(time, "monotonic", lambda: real_monotonic() + 100)
+            raise ValueError("synthetic invalid data")
+
+        db.connection.create_function("synthetic_course_callback", 0, bad_callback)
+        with (
+            pytest.raises(sqlite3.OperationalError, match="user-defined function raised exception"),
+            Budget(db).scope(snapshot=True),
+        ):
+            db.connection.execute("SELECT synthetic_course_callback()").fetchone()
+    assert not db.connection.in_transaction
+    assert signal.getsignal(signal.SIGALRM) == old_handler
+    assert signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0)
+    assert db.connection.execute("SELECT 1").fetchone()[0] == 1
+
+    from chess_coach.tactical_course_deadline import DeadlineConflict
+
+    signal.setitimer(signal.ITIMER_REAL, 30)
+    try:
+        with pytest.raises(DeadlineConflict), Budget(db).scope(snapshot=True):
+            pass
+        assert signal.getitimer(signal.ITIMER_REAL)[0] > 0
+        assert signal.getsignal(signal.SIGALRM) == old_handler
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+
     original_stage = tactical_publish.stage
 
     def concurrent_stage(output, value):
