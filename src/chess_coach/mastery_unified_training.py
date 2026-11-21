@@ -13,6 +13,12 @@ from .unified_training_terminal import terminal
 
 def _lineage(db, evidence, completion):
     row = session_row(db, completion["attempt_id"], completion["session_subject"])
+    from .unified_training_owned_capture import is_source as capture_source
+
+    if capture_source(row):
+        from .mastery_unified_capture import lineage
+
+        return lineage(db, evidence, completion, row)
     if not is_source(row):
         raise ValueError("source is not qualified")
     require_current(db, row)

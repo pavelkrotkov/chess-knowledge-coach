@@ -27,7 +27,9 @@ def record_event(db, row, event_id, kind, move):
         if assistance(row):
             detail["assistance_kind"] = "revealed" if move == "reveal" else "hinted"
     else:
-        detail = apply_move(row, lines, candidates, move)
+        from .unified_training_owned_capture import enrolled
+
+        detail = apply_move(row, lines, candidates, move, queue_first=enrolled(db, row))
         _save_move(db, row, detail)
     result = view(session_row(db, row["attempt_id"], row["subject"])) | {
         key: value

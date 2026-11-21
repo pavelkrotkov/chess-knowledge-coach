@@ -64,6 +64,7 @@ def render(db, subject, family, before):
     return render_template(
         "library_owned.html",
         family=family,
+        unified_learning_available=not db.compat32,
         pawn_before=before,
         pawn_objective_version=PAWN_OBJECTIVE_VERSION,
         **{field: value},

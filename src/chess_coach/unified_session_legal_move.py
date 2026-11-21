@@ -7,7 +7,7 @@ from .unified_session_unmatched import short_assessment
 from .unified_session_unmatched import unmatched as _unmatched
 
 
-def apply(row, board, lines, candidates, move):
+def apply(row, board, lines, candidates, move, *, queue_first=False):
     board.push(move)
     index = row["next_index"]
     if discovery_mate(row):
@@ -18,7 +18,7 @@ def apply(row, board, lines, candidates, move):
     final = _short_final(row, board, index, candidates)
     if final is not None:
         return final
-    if needs_verification(row):
+    if queue_first or needs_verification(row):
         return move_state(board, "needs_verification", "needs_verification", index, candidates)
     matched = _matches(lines, candidates, index, move)
     if not matched:

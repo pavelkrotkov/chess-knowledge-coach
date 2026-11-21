@@ -1,4 +1,4 @@
-"""Process a small subject-owned queue without touching learning state."""
+"""Process a small subject-owned verification queue and qualified learning receipts."""
 
 import time
 
@@ -42,4 +42,8 @@ def process(db, subject, *, limit=4, clock=time.monotonic, seconds=SECONDS, veri
 def _process_one(db, row, clock, seconds, verifier):
     with work_scope(row):
         result = verifier(db, row, clock, seconds=seconds)
-        return publish(db, row, result)
+        published = publish(db, row, result)
+    from .unified_capture_worker import finish_objective
+
+    finish_objective(db, row, published)
+    return published
