@@ -43,11 +43,18 @@ def scan(db, state, learner, summary, counts, corpus, budget):
         if time.monotonic() >= expires:
             raise PreviewUnavailable("request deadline reached")
 
-    # A single scope and clock cover every family on this response page.
+    # A single scope and clock cover the topic and every family on this page.
     progress = {"items": [], "statuses": {}, "focuses": {}, "reason": None, "checkpoint": None}
     scope = budget.scope(snapshot=False) if budget is not None else nullcontext()
     try:
         with scope:
+            # Topic preparation precedes selection, but never changes grading.
+            if state["v"] == 4:
+                from .curriculum_prerequisite import prepare
+
+                progress["statuses"]["prerequisite"] = prepare(
+                    db, state, learner, summary, check if budget is not None else None
+                )
             _loop(db, state, learner, summary, counts, corpus, budget, check, progress)
     except PreviewUnavailable:
         _timeout(db, state, counts, budget, progress)
@@ -70,6 +77,12 @@ def _loop(db, state, learner, summary, counts, corpus, budget, check, progress):
             check if budget is not None else None,
         )
         _check_completed(reason, budget, check)
+        from .curriculum_prerequisite import offer_items
+
+        # Bind the optional diagnostic only after candidate selection succeeds.
+        found = offer_items(
+            db, state, learner, found, phase, progress["statuses"].get("prerequisite"), check
+        )
         progress["items"].extend(found)
         progress["statuses"][phase] = status
         progress["focuses"][phase] = focus

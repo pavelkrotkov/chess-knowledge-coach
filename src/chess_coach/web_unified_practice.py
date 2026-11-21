@@ -28,6 +28,8 @@ from .web_unified_unavailable import unavailable
 def begin():
     attempt = secrets.token_urlsafe(24)
     try:
+        token = request.form.get("prerequisite_token")
+        options = {"diagnostic": token} if token else {}
         start(
             database(),
             attempt_id=attempt,
@@ -38,6 +40,7 @@ def begin():
             goal=request.form.get("goal") or None,
             training=request.form.get("training") == "1",
             item_id=training_item_id(),
+            **options,
         )
     except ValueError:
         return render_template("error.html", message="That practice source is unavailable."), 400

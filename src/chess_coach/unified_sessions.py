@@ -12,7 +12,17 @@ from .unified_sources import resolve_source
 
 
 def start(
-    db, *, attempt_id, subject, source_type, version, key, goal=None, training=False, item_id=None
+    db,
+    *,
+    attempt_id,
+    subject,
+    source_type,
+    version,
+    key,
+    goal=None,
+    training=False,
+    item_id=None,
+    diagnostic=None,
 ):
     validate_goal(source_type, goal)
     if not all(
@@ -22,8 +32,10 @@ def start(
         raise ValueError("practice identity is invalid")
     if db.connection.in_transaction:
         raise RuntimeError("cannot start during an existing transaction")
+    budget = _diagnostic_budget(db, diagnostic, source_type, goal, training, item_id)
     try:
         db.connection.execute("BEGIN IMMEDIATE")
+        _diagnostic_check(db, subject, version, key, diagnostic, budget)
         old = db.connection.execute(
             "SELECT * FROM unified_sessions WHERE attempt_id=?", (attempt_id,)
         ).fetchone()
@@ -95,3 +107,20 @@ def _create(
             now(),
         ),
     )
+
+
+def _diagnostic_budget(db, diagnostic, source_type, goal, training, item_id):
+    if diagnostic is None:
+        return None
+    if (source_type, goal, training, item_id) != ("corpus", "mate_in_one", True, None):
+        raise ValueError("diagnostic launch unavailable")
+    from .opening_queue_budget import BrowserBudget
+
+    return BrowserBudget(db)
+
+
+def _diagnostic_check(db, subject, version, key, diagnostic, budget):
+    if budget is not None:
+        from .curriculum_prerequisite_launch import validate_start
+
+        validate_start(db, subject, version, key, diagnostic, budget)

@@ -2094,13 +2094,23 @@ def _daily_capture_workflow(tmp_path, monkeypatch):
     )
     assert initial["capture_status"] == "deferred" and initial["next_cursor"]
     state = decode_cursor(db, initial["next_cursor"])
-    assert state["v"] == 3 and state["phase"] == "capture"
+    assert state["v"] == 4 and state["phase"] == "capture"
     assert len(state["capture_pending"]) == 64
     assert "fixture_learner" not in initial["next_cursor"]
     assert db.connection.total_changes == before
     v2 = dict(state)
     v2["v"] = 2
-    for field in ("fork_pending", "family_turn", "family_index"):
+    for field in (
+        "fork_pending",
+        "family_turn",
+        "family_index",
+        "prerequisite_policy",
+        "prerequisite_graph",
+        "prerequisite_scope",
+        "prerequisite_checked",
+        "prerequisite_offered",
+        "prerequisite_deferred",
+    ):
         del v2[field]
     legacy_v2 = daily_plan(
         db,
@@ -2143,7 +2153,18 @@ def _daily_capture_workflow(tmp_path, monkeypatch):
 
     v1 = new_state(db, LEARNER, "plan-fixture", 5, 1, now)
     v1["v"] = 1
-    for field in ("capture_pending", "fork_pending", "family_turn", "family_index"):
+    for field in (
+        "capture_pending",
+        "fork_pending",
+        "family_turn",
+        "family_index",
+        "prerequisite_policy",
+        "prerequisite_graph",
+        "prerequisite_scope",
+        "prerequisite_checked",
+        "prerequisite_offered",
+        "prerequisite_deferred",
+    ):
         del v1[field]
     v1["phase"] = "new"
     legacy = daily_plan(
@@ -2156,6 +2177,27 @@ def _daily_capture_workflow(tmp_path, monkeypatch):
         cursor=encode_cursor(db, v1),
     )
     assert all(item["skill"] != "hanging_piece" for item in legacy["items"])
+    v3 = dict(state)
+    v3["v"] = 3
+    for field in (
+        "prerequisite_policy",
+        "prerequisite_graph",
+        "prerequisite_scope",
+        "prerequisite_checked",
+        "prerequisite_offered",
+        "prerequisite_deferred",
+    ):
+        del v3[field]
+    legacy_v3 = daily_plan(
+        db,
+        subject=LEARNER,
+        corpus_version="plan-fixture",
+        limit=5,
+        scan_limit=1,
+        as_of=now,
+        cursor=encode_cursor(db, v3),
+    )
+    assert any(item["skill"] == "hanging_piece" for item in legacy_v3["items"])
 
     app = create_app(
         db_path=path,
