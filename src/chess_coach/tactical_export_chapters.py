@@ -6,11 +6,24 @@ from .tactical_course_chapters import owned_chapter
 from .tactical_course_familiar import familiarity
 from .tactical_course_protection import source as teaching_source
 from .tactical_course_related import unfamiliar
+from .tactical_course_resolve import related as current_related
 from .tactical_export_compare import compare
 from .tactical_export_sources import choice
 
 
-def verify(db, subject, corpus, pattern, lesson, chapters, budget, *, modern=False):
+def verify(
+    db,
+    subject,
+    corpus,
+    pattern,
+    lesson,
+    chapters,
+    budget,
+    *,
+    modern=False,
+    thematic=False,
+    artifact=None,
+):
     selected = _selected(db, subject, pattern, lesson, chapters[0], budget, modern)
     with budget.scope(snapshot=True):
         owned = owned_chapter(
@@ -20,17 +33,37 @@ def verify(db, subject, corpus, pattern, lesson, chapters, budget, *, modern=Fal
         compare(chapters[0], owned)
     if len(chapters) == 1:
         return
-    source = None
-    if modern and selected["kind"] == "protection":
-        with budget.scope(snapshot=True):
-            source = teaching_source(db, subject, selected)
-    familiar_data = familiarity(db, subject, budget)
+    _related(db, subject, corpus, selected, chapters[1], budget, modern, thematic, artifact)
+
+
+def _is_thematic(chapter, enabled):
+    if not enabled:
+        return False
+    from .tactical_course_thematic import VERSION as THEMATIC_BINDING
+
+    return chapter["source"].get("binding", {}).get("version") == THEMATIC_BINDING
+
+
+def _related(db, subject, corpus, selected, saved, budget, modern, thematic, artifact):
+    if _is_thematic(saved, thematic):
+        related, _ = current_related(
+            db, subject, corpus, selected, budget, thematic=True, artifact=artifact
+        )
+    else:
+        source = None
+        if modern and selected["kind"] == "protection":
+            with budget.scope(snapshot=True):
+                source = teaching_source(db, subject, selected)
+        familiar_data = familiarity(db, subject, budget)
+        with budget.scope(snapshot=False):
+            options = {"teaching_source": source} if source is not None else {}
+            related = unfamiliar(
+                db, subject, corpus, selected, familiar_data=familiar_data, **options
+            )
+    if related is None:
+        raise ValueError("related source unavailable")
     with budget.scope(snapshot=False):
-        options = {"teaching_source": source} if source is not None else {}
-        related = unfamiliar(db, subject, corpus, selected, familiar_data=familiar_data, **options)
-        if related is None:
-            raise ValueError("related source unavailable")
-        compare(chapters[1], related)
+        compare(saved, related)
 
 
 def _selected(db, subject, pattern, lesson, chapter, budget, modern):

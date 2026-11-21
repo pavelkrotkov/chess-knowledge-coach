@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 from .fact_fingerprint import canonical
 from .schema_compat import readonly
-from .tactical_course import SELECTED_VERSION
+from .tactical_course import SELECTED_VERSION, THEMATIC_SELECTED_VERSION, THEMATIC_VERSION
 from .tactical_course_budget import Budget
 from .tactical_course_choice import SLICE_SECONDS as SELECTED_SECONDS
 from .tactical_export import build
@@ -22,13 +22,25 @@ def revalidate(path, envelope, expected, *, with_budget=False):
     readonly(connection, path)
     connection.execute("PRAGMA query_only=ON")
     try:
-        db = SimpleNamespace(connection=connection)
+        db = SimpleNamespace(connection=connection, path=path)
         budget = Budget(
             db,
-            slice_seconds=SELECTED_SECONDS if saved_preview["kind"] == SELECTED_VERSION else None,
+            slice_seconds=SELECTED_SECONDS
+            if saved_preview["kind"] in {SELECTED_VERSION, THEMATIC_SELECTED_VERSION}
+            else None,
+        )
+        options = (
+            {"artifact": expected}
+            if saved_preview["kind"] in {THEMATIC_VERSION, THEMATIC_SELECTED_VERSION}
+            else {}
         )
         current = build(
-            db, os.environ["CHESS_SUBJECT"], os.environ["CHESS_CORPUS"], saved_preview, budget
+            db,
+            os.environ["CHESS_SUBJECT"],
+            os.environ["CHESS_CORPUS"],
+            saved_preview,
+            budget,
+            **options,
         )
         if canonical(current) != canonical(envelope):
             raise ValueError("tactical export changed")

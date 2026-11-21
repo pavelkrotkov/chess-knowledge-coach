@@ -1,6 +1,13 @@
 """Validate saved preview selection and coverage policy."""
 
-from .tactical_course import CONTRACTS, PROTECTION_VERSION, SELECTED_VERSION, VERSION
+from .tactical_course import (
+    CONTRACTS,
+    PROTECTION_VERSION,
+    SELECTED_VERSION,
+    THEMATIC_SELECTED_VERSION,
+    THEMATIC_VERSION,
+    VERSION,
+)
 from .tactical_course_budget import SLICE_SECONDS, TOTAL_SECONDS
 from .tactical_course_choice import SLICE_SECONDS as SELECTED_SECONDS
 from .tactical_course_choice import WORK_POLICY, from_pairs
@@ -39,7 +46,7 @@ def selection(body, corpus):
     if contract is None or body.get("policy") != contract[0]:
         raise ValueError("unsupported preview policy")
     # A selected preview must bind its canonical pairs and exact work policy.
-    selected = body["kind"] == SELECTED_VERSION
+    selected = body["kind"] in {SELECTED_VERSION, THEMATIC_SELECTED_VERSION}
     pairs = _pairs(selection, contract, selected)
     expected = [
         corpus,
@@ -66,5 +73,16 @@ def selection(body, corpus):
         raise ValueError("preview selection or bounds changed")
     # A deferred pair cannot supply a pattern; omissions must match coverage.
     coverage(selection["coverage"], pairs)
-    _omissions(selection, pairs, body["kind"] in {PROTECTION_VERSION, VERSION, SELECTED_VERSION})
+    _omissions(
+        selection,
+        pairs,
+        body["kind"]
+        in {
+            PROTECTION_VERSION,
+            VERSION,
+            SELECTED_VERSION,
+            THEMATIC_VERSION,
+            THEMATIC_SELECTED_VERSION,
+        },
+    )
     return pairs

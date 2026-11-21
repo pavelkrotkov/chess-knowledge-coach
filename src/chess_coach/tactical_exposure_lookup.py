@@ -3,15 +3,16 @@
 from .mastery_time import parse_utc
 
 
-def _times(db, identity, key):
+def _times(db, identity, key, *, ignore_artifact=None):
     kinds = ("served", "download", "study_verified", "study_pending", "historical_unknown")
     times = {}
     for kind in kinds:
         row = db.connection.execute(
             """SELECT occurred_at FROM tactical_exposures
             INDEXED BY idx_tactical_exposure_prompt
-            WHERE subject=? AND prompt_key=? AND kind=? ORDER BY occurred_at LIMIT 1""",
-            (identity, key, kind),
+            WHERE subject=? AND prompt_key=? AND kind=?
+            AND (? IS NULL OR artifact_hash<>?) ORDER BY occurred_at LIMIT 1""",
+            (identity, key, kind, ignore_artifact, ignore_artifact),
         ).fetchone()
         if row is not None:
             times[kind] = parse_utc(row[0])
@@ -27,8 +28,8 @@ def _provided(times, cutoff):
     return None
 
 
-def ledger_check(db, identity, key, cutoff, start, intent):
-    times = _times(db, identity, key)
+def ledger_check(db, identity, key, cutoff, start, intent, *, ignore_artifact=None):
+    times = _times(db, identity, key, ignore_artifact=ignore_artifact)
     outcome = _provided(times, cutoff)
     if outcome is not None:
         return outcome

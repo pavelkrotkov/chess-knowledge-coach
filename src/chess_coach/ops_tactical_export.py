@@ -8,7 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from .schema_compat import readonly
-from .tactical_course import SELECTED_VERSION
+from .tactical_course import SELECTED_VERSION, THEMATIC_SELECTED_VERSION
 from .tactical_course_budget import Budget
 from .tactical_course_choice import SLICE_SECONDS as SELECTED_SECONDS
 from .tactical_course_deadline import PreviewDeadline
@@ -37,7 +37,7 @@ def prepare(root, preview, expected_hash, output, *, offer=False):
                 or envelope.get("preview_sha256") != expected_hash
             ):
                 raise ValueError("selected preview hash differs")
-        if envelope["kind"] == SELECTED_VERSION:
+        if envelope["kind"] in {SELECTED_VERSION, THEMATIC_SELECTED_VERSION}:
             budget.slice_seconds = SELECTED_SECONDS
         result = build(
             db, os.environ["CHESS_SUBJECT"], os.environ["CHESS_CORPUS"], envelope, budget

@@ -5,8 +5,11 @@ from pathlib import Path
 
 from .deep_selection_source import learner_key
 from .fact_fingerprint import digest
+from .opening_queue_files import read
 from .opening_queue_location import location
+from .tactical_exposure_intent_identity import kind
 from .tactical_exposure_intent_source import inspect_intent
+from .tactical_exposure_intent_state import tracked
 from .tactical_study_intents import MAX_INTENTS
 
 
@@ -20,7 +23,7 @@ def _root(db):
     return path.parent.parent.parent
 
 
-def check_intents(db, subject, key, cutoff):
+def check_intents(db, subject, key, cutoff, *, ignore_artifact=None):
     root = _root(db)
     if root is None:
         return "not_recorded"
@@ -42,9 +45,26 @@ def check_intents(db, subject, key, cutoff):
         paths.append(legacy)
     owner, target, result = learner_key(subject), digest(key), "not_recorded"
     for path in paths:
+        if _own_intent(path, ignore_artifact, owner, target, cutoff):
+            continue
         found = inspect_intent(path, root, directory, database, subject, owner, target, cutoff)
         if found == "provided":
             return found
         if found != "not_recorded":
             result = found
     return result
+
+
+def _own_intent(path, artifact, owner, target, cutoff):
+    if artifact is None or path.name != f"tactical-study-{artifact}-intent.json":
+        return False
+    state = read(path)
+    source, version = kind(path, state)
+    delivery = state.get("tactical_delivery")
+    return (
+        source == "tactical"
+        and version == artifact
+        and isinstance(delivery, dict)
+        and delivery.get("owner") == owner
+        and tracked(state, owner, target, cutoff) is not None
+    )
