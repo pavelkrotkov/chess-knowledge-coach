@@ -22,7 +22,7 @@ def _pattern(group, choice, bindings):
     }
 
 
-def assemble(db, subject, corpus, groups, budget):
+def assemble(db, subject, corpus, groups, budget, *, allow_empty=False):
     patterns, chapters, unavailable = [], [], []
     for index, group in enumerate(groups):
         if len(patterns) >= MAX_PATTERNS:
@@ -51,6 +51,10 @@ def assemble(db, subject, corpus, groups, budget):
             )
         else:
             chapters.append(item)
-    if not patterns:
-        raise PreviewUnavailable("no supported recurring patterns")
+    _require_patterns(patterns, allow_empty)
     return patterns, chapters, unavailable, 0
+
+
+def _require_patterns(patterns, allow_empty):
+    if not patterns and not allow_empty:
+        raise PreviewUnavailable("no supported recurring patterns")

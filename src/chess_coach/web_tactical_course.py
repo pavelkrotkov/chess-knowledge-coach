@@ -7,8 +7,9 @@ from flask import Blueprint, Response, abort, current_app, render_template, requ
 
 from .tactical_course_display import chapter as display
 from .tactical_course_offer_read import offered
+from .tactical_course_selection import CURRENT_PAIRS
 from .tactical_study_request_status import status
-from .web_tactical_prepare import preparation, prepare
+from .web_tactical_prepare import preparation, preparation_details, prepare
 from .web_tactical_study import submit
 
 tactical_course_views = Blueprint("tactical_course_views", __name__)
@@ -52,7 +53,11 @@ def show():
         if request.args.get("download") == "1":
             abort(404, "No valid offered course is available.")
         return render_template(
-            "tactical_course_browser.html", course=None, preparation=preparation()
+            "tactical_course_browser.html",
+            course=None,
+            preparation=preparation(),
+            preparation_details=preparation_details(),
+            choices=CURRENT_PAIRS,
         ), 200
     db = SimpleNamespace(path=Path(current_app.config["DB_PATH"]))
     study = status(
@@ -71,6 +76,8 @@ def show():
         shown=shown,
         study=study,
         preparation=preparation(item),
+        preparation_details=preparation_details(),
+        choices=CURRENT_PAIRS,
     )
 
 

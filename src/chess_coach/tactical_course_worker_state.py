@@ -27,12 +27,20 @@ def claim(directory, database, learner, corpus):
         return item, old_offer
 
 
+def _same_request(current, requested):
+    return (
+        current["id"] == requested["id"]
+        and current["version"] == requested["version"]
+        and current.get("selection") == requested.get("selection")
+    )
+
+
 def finish(directory, database, learner, corpus, requested, old_offer, result, path, budget):
     """Publish only if neither the request nor the offered course changed."""
     with lock(directory):
         slot = directory / PREPARE_SLOT
         current = read(slot)
-        if not valid(current, database, learner, corpus) or current["id"] != requested["id"]:
+        if not valid(current, database, learner, corpus) or not _same_request(current, requested):
             raise ValueError("course request changed")
         # A concurrent manual offer wins; never silently replace a newer course.
         if read(directory / SLOT) != old_offer:
@@ -46,11 +54,15 @@ def finish(directory, database, learner, corpus, requested, old_offer, result, p
         write(slot, {**pending, "state": "complete"})
 
 
-def failed(directory, database, learner, corpus, requested):
+def failed(directory, database, learner, corpus, requested, *, selection=None):
     with lock(directory):
         slot = directory / PREPARE_SLOT
         current = read(slot)
-        if valid(current, database, learner, corpus) and current["id"] == requested["id"]:
+        if valid(current, database, learner, corpus) and _same_request(current, requested):
             if current.get("offer") and read(directory / SLOT) == current["offer"]:
                 return
-            write(slot, {**current, "state": "unavailable"})
+            failed_item = {**current, "state": "unavailable"}
+            if selection is not None:
+                failed_item["coverage"] = selection["coverage"]
+                failed_item["unavailable"] = selection["unavailable"]
+            write(slot, failed_item)

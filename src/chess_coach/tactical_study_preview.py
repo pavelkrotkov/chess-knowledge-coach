@@ -11,11 +11,14 @@ from .tactical_course import (
     PREVIOUS_VERSION,
     PROTECTION_POLICY,
     PROTECTION_VERSION,
+    SELECTED_POLICY,
+    SELECTED_VERSION,
     VERSION,
 )
 from .tactical_export import LEGACY_VERSION as LEGACY_EXPORT_VERSION
 from .tactical_export import PREVIOUS_VERSION as PREVIOUS_EXPORT_VERSION
 from .tactical_export import PROTECTION_VERSION as PROTECTION_EXPORT_VERSION
+from .tactical_export import SELECTED_VERSION as SELECTED_EXPORT_VERSION
 from .tactical_export import VERSION as EXPORT_VERSION
 
 
@@ -25,6 +28,7 @@ def preview(envelope, expected):
         PREVIOUS_EXPORT_VERSION: (PREVIOUS_VERSION, PREVIOUS_POLICY),
         PROTECTION_EXPORT_VERSION: (PROTECTION_VERSION, PROTECTION_POLICY),
         EXPORT_VERSION: (VERSION, POLICY),
+        SELECTED_EXPORT_VERSION: (SELECTED_VERSION, SELECTED_POLICY),
     }
     contract = contracts.get(envelope.get("kind"))
     if not re.fullmatch(r"[0-9a-f]{64}", expected) or contract is None:
