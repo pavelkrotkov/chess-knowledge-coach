@@ -8,10 +8,11 @@ from .objective_contract import OWNED_HISTORY
 from .objective_fork_contract import GOAL, OBJECTIVE
 
 
-def snapshot(db, board, evidence, fact, *, objective=OBJECTIVE):
+def snapshot(db, board, evidence, fact, *, objective=OBJECTIVE, check=None):
     original = fact["payload"]["proof"]
     move = board.parse_uci(original["move"])
-    if fork_proof(board, move) != original:
+    options = {"check": check} if check is not None else {}
+    if fork_proof(board, move, **options) != original:
         raise ValueError("fork certificate changed")
     anchor = _anchor(board, original["targets"])
     reviews = evidence["reviews"]

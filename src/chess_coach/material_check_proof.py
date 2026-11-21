@@ -6,7 +6,7 @@ from .material_lines import material
 MAX_CHECK_REPLIES = 64
 
 
-def checking_capture(board, move):
+def checking_capture(board, move, *, check=None):
     if not eligible(board, move):
         return None
     color = board.turn
@@ -20,6 +20,7 @@ def checking_capture(board, move):
         return None
     values = []
     for reply in replies:
+        _check(check)
         value = reply_value(after, reply, color, initial)
         if value is None:
             return None
@@ -30,3 +31,8 @@ def checking_capture(board, move):
 
 def _terminal(board):
     return board.is_game_over() or board.is_repetition(2) or board.is_fifty_moves()
+
+
+def _check(check):
+    if check is not None:
+        check()

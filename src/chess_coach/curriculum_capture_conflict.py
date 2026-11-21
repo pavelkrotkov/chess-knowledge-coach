@@ -12,6 +12,7 @@ def check_conflicts(db, state, scan, check, candidate, report):
         state["scheduled_after"],
         state["scan_limit"] - scan["scheduled_examined"],
         state["subject_hash"],
+        check=check,
     )
     check()
     scan["scheduled_examined"] += examined

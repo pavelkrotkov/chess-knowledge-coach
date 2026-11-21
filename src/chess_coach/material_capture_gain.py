@@ -9,23 +9,24 @@ from .material_exchange_rules import has_legal_recapture
 MIN_GAIN = 3
 
 
-def capture_gain(board, candidate, target):
+def capture_gain(board, candidate, target, *, check=None):
     if not _supported(target):
         return None, "special_capture", None
     if target.piece_type == chess.PAWN:
         return None, "pawn_capture_outside_coverage", None
     if board.gives_check(candidate):
-        return _checking_gain(board, candidate)
-    if candidate in board.legal_moves and has_legal_recapture(board, candidate):
+        return _checking_gain(board, candidate, check=check)
+    if candidate in board.legal_moves and has_legal_recapture(board, candidate, check=check):
         return None, "recapture_or_sacrifice", None
-    gain = exchange(board, candidate)
+    gain = exchange(board, candidate, check=check)
     if gain is None:
         return None, "exchange_unresolved", None
     return (None, "recapture_or_sacrifice", None) if gain < MIN_GAIN else (gain, None, None)
 
 
-def _checking_gain(board, candidate):
-    proof = checking_capture(board, candidate)
+def _checking_gain(board, candidate, *, check=None):
+    options = {"check": check} if check is not None else {}
+    proof = checking_capture(board, candidate, **options)
     return (
         (proof["minimum_gain"], None, proof)
         if proof

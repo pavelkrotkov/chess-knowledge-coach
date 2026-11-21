@@ -11,7 +11,7 @@ from .objective_short_history import history_hash
 VERSION = "capture-objective-verifier-v1"
 
 
-def judge(board, move, objective, target, threshold, clock, start, seconds, base):
+def judge(board, move, objective, target, threshold, clock, start, seconds, base, *, check=None):
     reason = scope_reason(board, move, clock, start, seconds)
     if reason:
         return unknown(base, reason)
@@ -23,7 +23,10 @@ def judge(board, move, objective, target, threshold, clock, start, seconds, base
         "san": board.san(move),
         "limits": {"plies": 2, "reply_limit": MAX_REPLIES, "compute_timeout_seconds": seconds},
     }
-    return capture(board, move, objective, target, threshold, clock, start, seconds, result)
+    options = {"check": check} if check is not None else {}
+    return capture(
+        board, move, objective, target, threshold, clock, start, seconds, result, **options
+    )
 
 
 def verify(board, move, request, events, clock, start, seconds, base, data):

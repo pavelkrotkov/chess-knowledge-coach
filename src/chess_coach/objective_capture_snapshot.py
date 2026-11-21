@@ -15,6 +15,7 @@ def snapshot(board, view, review, evidence_id, version, *, check=None):
     square = chess.parse_square(target)
     witness = view["objective_witness"]["uci"][0]
     clock = _clock(check)
+    options = {"check": check} if check is not None else {}
     result = judge(
         board,
         board.parse_uci(witness),
@@ -25,6 +26,7 @@ def snapshot(board, view, review, evidence_id, version, *, check=None):
         clock(),
         5.0,
         {},
+        **options,
     )
     if result["status"] != "correct":
         raise ValueError("capture exemplar unavailable")

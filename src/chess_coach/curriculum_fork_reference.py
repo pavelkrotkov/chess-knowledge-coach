@@ -9,12 +9,17 @@ from .unified_source_current import snapshot_hash
 from .unified_sources import resolve_source
 
 
-def candidate(db, row, ref):
+def candidate(db, row, ref, *, check=None):
     try:
         if ref[0] != MISS_VERSION:
             return None
         owner = json.loads(row["source_ref"])[0]
-        source = resolve_source(db, "own-game", ref[0], ref[1], subject=owner)
+        if check is None:
+            source = resolve_source(db, "own-game", ref[0], ref[1], subject=owner)
+        else:
+            from .objective_fork_source import resolve
+
+            source = resolve(db, ref[0], ref[1], owner, check=check)
         if snapshot_hash(source) != ref[2] or source["objective"] != GOAL:
             return None
         board = chess.Board(source["prompt_fen"])

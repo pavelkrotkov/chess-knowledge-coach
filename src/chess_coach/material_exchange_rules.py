@@ -33,9 +33,12 @@ def captures(board, square):
     ]
 
 
-def has_legal_recapture(board, move):
+def has_legal_recapture(board, move, *, check=None):
     after = board.copy()
     after.push(move)
-    return any(
-        reply.to_square == move.to_square and after.is_capture(reply) for reply in after.legal_moves
-    )
+    for reply in after.legal_moves:
+        if check is not None:
+            check()
+        if reply.to_square == move.to_square and after.is_capture(reply):
+            return True
+    return False

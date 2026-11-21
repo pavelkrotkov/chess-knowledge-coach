@@ -2203,6 +2203,7 @@ def _daily_capture_workflow(tmp_path, monkeypatch):
         as_of=datetime.now(UTC) + timedelta(days=2),
     )
     assert any(item.get("item_id") == item_id for item in again["items"])
+    _scheduled_deadline_controls(db, tmp_path, monkeypatch, now)
     review_evidence(db, int(capture["source_key"]), decision="reject", actor="fixture")
     stale = client.post(
         "/unified/start",
@@ -2218,3 +2219,102 @@ def _daily_capture_workflow(tmp_path, monkeypatch):
     )
     assert stale.status_code == 400
     db.close()
+
+
+def _scheduled_deadline_controls(db, tmp_path, monkeypatch, now):
+    from types import SimpleNamespace
+
+    import chess_coach.curriculum_new_capture as new_capture
+    import chess_coach.curriculum_unified_owned as owned
+    import chess_coach.fork_proof as fork_proof
+    import chess_coach.material_reply_guard as reply_guard
+    from chess_coach.curriculum import daily_plan
+    from chess_coach.curriculum_conflicts import scheduled_page
+    from chess_coach.curriculum_cursor_codec import decode_cursor
+    from chess_coach.fact_fingerprint import digest
+    from chess_coach.objective_fork_contract import MISS_VERSION
+    from chess_coach.tactical_course_budget import PreviewUnavailable
+    from tests.objective_fork_support import owned_fork
+
+    def page(cursor=None):
+        return daily_plan(
+            db,
+            subject=LEARNER,
+            corpus_version="plan-fixture",
+            limit=5,
+            scan_limit=1,
+            as_of=now,
+            cursor=cursor,
+        )
+
+    first = page()
+    second = page(first["next_cursor"])
+    before = decode_cursor(db, second["next_cursor"])
+    assert before["phase"] == "capture" and before["scheduled_after"] == 2
+    clock = [0.0]
+    inside = [False]
+    visited = []
+    original_capture, original_reply = owned.capture_candidate, reply_guard._unresolved
+
+    def scheduled_capture(*args, **kwargs):
+        inside[0] = True
+        try:
+            return original_capture(*args, **kwargs)
+        finally:
+            inside[0] = False
+
+    def reply(*args, **kwargs):
+        result = original_reply(*args, **kwargs)
+        if inside[0]:
+            visited.append(True)
+            clock[0] = 3.0
+        return result
+
+    with monkeypatch.context() as patch:
+        patch.setattr(new_capture, "time", SimpleNamespace(monotonic=lambda: clock[0]))
+        patch.setattr(owned, "capture_candidate", scheduled_capture)
+        patch.setattr(reply_guard, "_unresolved", reply)
+        expired = page(second["next_cursor"])
+    assert visited and expired["continuation_reason"] == "capture_scan_incomplete"
+    after = decode_cursor(db, expired["next_cursor"])
+    assert (after["capture_pending"], after["scheduled_after"]) == (
+        before["capture_pending"],
+        before["scheduled_after"],
+    )
+    resumed = page(expired["next_cursor"])
+    assert resumed["capture_status"] == "already_scheduled"
+
+    fork_db, evidence = owned_fork(
+        tmp_path / "scheduled-fork.sqlite", monkeypatch, "f6g5", with_history=True
+    )
+    start(
+        fork_db,
+        attempt_id="scheduled-fork",
+        subject=LEARNER,
+        source_type="own-game",
+        version=MISS_VERSION,
+        key=str(evidence),
+        training=True,
+    )
+    branches = []
+    original_branch = fork_proof.defense_witness
+
+    def branch(*args, **kwargs):
+        value = original_branch(*args, **kwargs)
+        branches.append(True)
+        return value
+
+    def deadline():
+        if branches:
+            raise PreviewUnavailable("fixture deadline")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(fork_proof, "defense_witness", branch)
+        with pytest.raises(PreviewUnavailable):
+            scheduled_page(fork_db, "not-a-match", 0, 1, digest(LEARNER), check=deadline)
+    assert branches
+    matched, _, more, examined, unavailable = scheduled_page(
+        fork_db, "not-a-match", 0, 1, digest(LEARNER), check=lambda: None
+    )
+    assert not matched and not more and examined == 1 and unavailable is None
+    fork_db.close()

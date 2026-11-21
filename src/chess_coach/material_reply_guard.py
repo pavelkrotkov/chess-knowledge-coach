@@ -7,7 +7,7 @@ MAX_REPLIES = 64
 MIN_GAIN = 3
 
 
-def unresolved_reply(board, move, initial=None):
+def unresolved_reply(board, move, initial=None, *, check=None):
     color = board.turn
     if initial is None:
         initial = material(board, color)
@@ -16,7 +16,12 @@ def unresolved_reply(board, move, initial=None):
     replies = list(after.legal_moves)
     if not replies or len(replies) > MAX_REPLIES:
         return True
-    return any(_unresolved(after, reply, color, initial) for reply in replies)
+    for reply in replies:
+        if check is not None:
+            check()
+        if _unresolved(after, reply, color, initial):
+            return True
+    return False
 
 
 def _unresolved(board, move, color, initial):

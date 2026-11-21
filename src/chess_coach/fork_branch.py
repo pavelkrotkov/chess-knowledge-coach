@@ -17,7 +17,8 @@ def defense_witness(board, reply, attacker, targets, color, initial, *, check=No
         return None
     for square in targets:
         tick()
-        witness = capture(after, attacker, square, color, initial)
+        options = {"check": check} if check is not None else {}
+        witness = capture(after, attacker, square, color, initial, **options)
         tick()
         if witness:
             return {

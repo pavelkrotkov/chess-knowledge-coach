@@ -4,18 +4,19 @@ from .material_capture_gain import capture_gain
 from .material_reply_guard import unresolved_reply
 
 
-def capture(board, move, objective, target, threshold, clock, start, seconds, base):
+def capture(board, move, objective, target, threshold, clock, start, seconds, base, *, check=None):
     captures = board.is_capture(move) and not board.is_en_passant(move)
     if objective == "capture_named_target" and (not captures or move.to_square != target):
         return {**base, "status": "incorrect", "reason": "named_target_not_captured"}
     if not captures:
         return unknown(base, "other_move_unresolved")
-    return _proof(board, move, threshold, clock, start, seconds, base)
+    return _proof(board, move, threshold, clock, start, seconds, base, check)
 
 
-def _proof(board, move, threshold, clock, start, seconds, base):
-    gain, reason, _ = capture_gain(board, move, board.piece_at(move.to_square))
-    if reason or unresolved_reply(board, move):
+def _proof(board, move, threshold, clock, start, seconds, base, check):
+    options = {"check": check} if check is not None else {}
+    gain, reason, _ = capture_gain(board, move, board.piece_at(move.to_square), **options)
+    if reason or unresolved_reply(board, move, **options):
         return unknown(base, reason or "reply_or_compensation_unresolved")
     if clock() - start > seconds:
         return unknown(base, "timeout")

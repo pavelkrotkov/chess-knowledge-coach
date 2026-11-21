@@ -6,14 +6,19 @@ from .db import Database
 
 
 def scheduled_page(
-    db: Database, prompt_key: str, after: int, limit: int, subject_hash: str
+    db: Database, prompt_key: str, after: int, limit: int, subject_hash: str, *, check=None
 ) -> tuple[bool, int, bool, int, int | None]:
     rows = scheduled_rows(db, after, limit)
     scanned = 0
     for row in rows[:limit]:
+        if check is not None:
+            check()
         scanned += 1
         after = row["id"]
-        visible, scheduled_prompt = source_prompt(db, row, subject_hash)
+        options = {"check": check} if check is not None else {}
+        visible, scheduled_prompt = source_prompt(db, row, subject_hash, **options)
+        if check is not None:
+            check()
         if not visible:
             continue
         if scheduled_prompt is None:
