@@ -5,6 +5,7 @@ from .study_intent import save
 from .study_inventory import named, verify_chapters
 from .study_privacy import metadata
 from .study_remote import StudyError
+from .tactical_study_exposure import verified as record_verified
 from .tactical_study_mode import verify as verify_mode
 from .tactical_study_order import verify as verify_order
 
@@ -32,6 +33,7 @@ def upload_one(remote, path, state, chapter, index, chapters, check, match, stri
         if strict:
             verify_mode(remote, study, state, chapters, index)
         check()
+        record_verified(state, index, chapter)
         state["chapters"][index] = "done"
         save(path, state)
         return
@@ -45,5 +47,6 @@ def upload_one(remote, path, state, chapter, index, chapters, check, match, stri
     if strict:
         verify_mode(remote, study, state, chapters, index)
     check()
+    record_verified(state, index, chapter)
     state["chapters"][index] = "done"
     save(path, state)

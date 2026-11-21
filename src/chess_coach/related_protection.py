@@ -103,7 +103,7 @@ def preview(db, subject, evidence_id, corpus_version, cursor=None):
     chosen = selection(db, subject, evidence_id, corpus_version)
     result = present(chosen, cursor)
     if chosen is not None:
-        _assessment_options(db, result["items"], chosen[3], cursor, result["scope"])
+        _assessment_options(db, result["items"], chosen[3], cursor, result["scope"], subject)
         result["source_outcome"] = chosen[0]["outcome"]
         result["protection_scan"] = chosen[2]["protection_scan"]
         result["corpus_limited"] = chosen[2]["limited"]

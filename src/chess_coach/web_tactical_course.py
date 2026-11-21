@@ -9,6 +9,8 @@ from .tactical_course_display import chapter as display
 from .tactical_course_offer_read import offered
 from .tactical_course_selection import CURRENT_PAIRS
 from .tactical_study_request_status import status
+from .web_db import database
+from .web_tactical_exposure import record as _record
 from .web_tactical_prepare import preparation, preparation_details, prepare
 from .web_tactical_study import submit
 
@@ -39,7 +41,7 @@ def show():
         if request.args.get("download") == "1":
             if expected != item["hash"]:
                 abort(409, "The offered course changed. Return to Coaching.")
-            return _download(course)
+            return _download(course, item["hash"])
         if expected is not None and expected != item["hash"]:
             abort(409, "The offered course changed. Return to Coaching.")
         index = _index("chapter", len(course["chapters"]))
@@ -69,7 +71,7 @@ def show():
         course,
     )
     # Only a validated current offer can confirm completion after interruption.
-    return render_template(
+    page = render_template(
         "tactical_course_browser.html",
         course=course,
         offer=item,
@@ -78,18 +80,23 @@ def show():
         preparation=preparation(item),
         preparation_details=preparation_details(),
         choices=CURRENT_PAIRS,
+        exposure_unavailable=database().compat32,
     )
+    _record(item["hash"], [(index, course["chapters"][index])], "served", line=shown["line"])
+    return page
 
 
-def _download(course):
+def _download(course, artifact):
     document = "\n\n".join(chapter["pgn"] for chapter in course["chapters"]) + "\n"
-    return Response(
+    response = Response(
         document,
         mimetype="application/x-chess-pgn",
         headers={
             "Content-Disposition": 'attachment; filename="tactical-course.pgn"',
         },
     )
+    _record(artifact, list(enumerate(course["chapters"])), "download")
+    return response
 
 
 tactical_course_views.add_url_rule(

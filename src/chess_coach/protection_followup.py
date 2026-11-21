@@ -53,7 +53,7 @@ def find(db, subject, corpus, evidence, attempt, cursor, *, harder=False):
 
             base_scope = scope(base_scope, evidence, attempt)
         result = present((*chosen[:3], filtered, base_scope, chosen[5]), cursor)
-        _assessment_options(db, result["items"], filtered, cursor, result["scope"])
+        _assessment_options(db, result["items"], filtered, cursor, result["scope"], subject)
         result.update(
             source_outcome=chosen[0]["outcome"],
             protection_scan=chosen[2]["protection_scan"],

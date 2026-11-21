@@ -1086,6 +1086,11 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
                 assert b"No current recurring practice action" in full.data
                 assert b"Optional practice: finding forks" not in full.data
 
+            from chess_coach.db_versioning import CURRENT_VERSION
+
+            db.connection.execute(f"PRAGMA user_version={CURRENT_VERSION}")
+            db.connection.commit()
+
             class Unavailable:
                 def execute(self, *_args):
                     raise sqlite3.OperationalError("synthetic unavailable database")
@@ -1188,8 +1193,9 @@ def test_successful_protection_transfer_workflow(tmp_path, monkeypatch, capsys):
                 "unavailable",
             }
             db.connection.execute(
-                "UPDATE unified_sessions SET started_at='2099-01-01T00:00:00+00:00' WHERE attempt_id=?",
-                ("verified-miss",),
+                """UPDATE unified_sessions SET started_at=(SELECT created_at FROM unified_session_events
+                WHERE attempt_id=? AND event_id='answer') WHERE attempt_id=?""",
+                ("verified-miss", "verified-miss"),
             )
             db.connection.commit()
             assert assessment_history(db, LEARNER, "test", evidence)["status"] == "incorrect"

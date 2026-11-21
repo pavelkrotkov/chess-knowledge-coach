@@ -8,8 +8,10 @@ from .fork_plan_history import _ambiguous
 from .mate_assessment_rows import LIMIT, _end
 from .opening_queue_budget import BrowserBudget
 from .protection_plan_verify import inspect
+from .protection_progress_item import _answer
 from .related_protection_objective import is_source
 from .tactical_course_budget import PreviewUnavailable
+from .tactical_exposure_progress import qualifying
 
 SECONDS = 3.0
 
@@ -45,7 +47,9 @@ def _choose(db, candidates, boundary, corpus, check):
         try:
             result = inspect(db, row, corpus, evidence)
             check()
-            return result
+            status, _ = qualifying(db, row, result["status"], _answer(db, row))
+            if status in {"correct", "incorrect"}:
+                return result
         except (ValueError, TypeError, KeyError, IndexError, AttributeError):
             continue
     return None

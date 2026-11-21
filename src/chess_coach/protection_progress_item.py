@@ -7,6 +7,7 @@ import chess
 from .mastery_time import parse_utc
 from .protection_followup_context import context
 from .protection_plan_verify import inspect
+from .tactical_exposure_progress import qualifying
 
 
 def _time(value):
@@ -63,13 +64,17 @@ def item(db, row, corpus, check):
     check()
     if result["status"] not in ("correct", "incorrect"):
         raise ValueError("assessment result unresolved")
+    answered_at = _answer(db, row)
+    status, reason = qualifying(db, row, result["status"], answered_at)
     return {
         "attempt": row["attempt_id"],
         "started_at": row["started_at"],
-        "answered_at": _answer(db, row),
-        "status": result["status"],
+        "answered_at": answered_at,
+        "status": status,
+        "grade": result["status"],
+        "eligibility_reason": reason,
         "scope": _scope(db, row, corpus, binding),
         "current": True,
         "hints": 0,
-        "outcome": "verified" if result["status"] == "correct" else "incorrect",
+        "outcome": "verified" if status == "correct" else status,
     }

@@ -2,6 +2,7 @@
 
 from .fork_history_result import details
 from .mate_assessment_events import replay
+from .tactical_exposure_progress import qualifying
 from .unified_source_current import require_current
 
 
@@ -15,7 +16,14 @@ def item(db, row, corpus, check, *, cache=None):
         if row["status"] == "active":
             require_current(db, row, related_check=check, related_cache=cache)
             return {**entry, "status": "incomplete"}
-        status, answered_at = details(db, row, check=check, cache=cache)
-        return {**entry, "status": status, "answered_at": answered_at}
+        grade, answered_at = details(db, row, check=check, cache=cache)
+        status, reason = qualifying(db, row, grade, answered_at)
+        return {
+            **entry,
+            "status": status,
+            "grade": grade,
+            "eligibility_reason": reason,
+            "answered_at": answered_at,
+        }
     except (ValueError, TypeError, KeyError, IndexError, AttributeError):
         return {**entry, "status": "stale"}

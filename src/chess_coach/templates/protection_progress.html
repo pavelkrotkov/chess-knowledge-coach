@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Unfamiliar protection assessments - Chess coach{% endblock %}
 {% block content %}
+<p>Held-out checks exclude tactical positions the coach provided before the answer. Earlier delivery history, other course types and external study history may be unknown; a provided record does not mean you viewed it.</p>
 <h2>Unfamiliar protection assessments</h2>
 <p>These are source-checked first encounters in unfamiliar protection exercises. Practice results and game observations are independent. The checks cannot establish whether a position was familiar outside recorded history.</p>
 <p><a href="{{ url_for('protection_plan.show') }}">Back to protection practice</a></p>
@@ -33,7 +34,7 @@
 </section>
 {% else %}<p>No current checks with a comparable recorded context are available yet.</p>{% endfor %}
 {% if report["items"] %}<h3>Recorded assessments</h3>
-<ul>{% for entry in report["items"] %}<li>{{ entry.started_at }} - {% if entry.status == "correct" %}Correct{% elif entry.status == "incorrect" %}Incorrect{% else %}Unfinished, assisted, repeated, stale or unavailable{% endif %}. <a href="{{ url_for('unified_practice.show_page', attempt=entry.attempt) }}">Open assessment</a></li>{% endfor %}</ul>{% endif %}
+<ul>{% for entry in report["items"] %}<li>{{ entry.started_at }} - {% if entry.eligibility_reason %}Held-out unavailable: {{ entry.eligibility_reason | replace("_", " ") }}; recorded grade {{ entry.grade }}{% elif entry.status == "correct" %}Correct{% elif entry.status == "incorrect" %}Incorrect{% else %}Unfinished, assisted, repeated, stale or unavailable{% endif %}. <a href="{{ url_for('unified_practice.show_page', attempt=entry.attempt) }}">Open assessment</a></li>{% endfor %}</ul>{% endif %}
 {% endif %}
 <h3>Independent protection-game windows</h3>
 <p>Practice and game results are separate observations; their timing cannot establish a training effect. A missed choice is a narrow observation, not a complete assessment of the move.</p>

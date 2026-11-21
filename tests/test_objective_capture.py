@@ -1339,7 +1339,12 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
             )
         assert candidate is None and used == 12 and len(proofs) == 12
         proof_quotas = []
-        fake_candidate = {"type": "corpus", "version": "fixture", "key": "fixture"}
+        fake_candidate = {
+            "type": "corpus",
+            "version": "fixture",
+            "key": "fixture",
+            "prompt_key": " ".join(chess.STARTING_FEN.split()[:4]),
+        }
 
         def per_source(_db, _selection, _deadline, remaining, _expired):
             proof_quotas.append(remaining)
@@ -1362,6 +1367,37 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
                 db, LEARNER, LEARNER, "capture", app.secret_key, {}, None, 1, lambda _: False
             )
         assert answer[0] == 2 and proof_quotas == [4, 4]
+    if mode == "correct":
+        from datetime import timedelta
+
+        from chess_coach.capture_history_item import item as history_item
+        from chess_coach.course_pgn import chapter as make_chapter
+        from chess_coach.mastery_time import parse_utc
+        from chess_coach.tactical_exposure_record import record as record_exposure
+        from chess_coach.unified_session_state import session_row
+
+        row = session_row(db, attempt, LEARNER)
+        actual = history_item(db, row, "capture", {}, lambda: None)
+        assert actual["status"] == "correct"
+        snapshot = {
+            "prompt_fen": row["prompt_fen"],
+            "learner_color": row["learner_color"],
+            "lines": [" ".join(line) for line in json.loads(row["lines_json"])],
+        }
+        taught = make_chapter("Synthetic", "Worked example", snapshot, {})
+        db.connection.commit()
+        record_exposure(db, LEARNER, "a" * 64, [(0, taught)], "served", line=0)
+        assert history_item(db, row, "capture", {}, lambda: None)["status"] == "correct"
+        answer_time = parse_utc(actual["answered_at"])
+        assert answer_time is not None
+        before_answer = (answer_time - timedelta(seconds=1)).isoformat()
+        record_exposure(db, LEARNER, "b" * 64, [(0, taught)], "served", line=0, when=before_answer)
+        withheld = history_item(db, row, "capture", {}, lambda: None)
+        assert withheld["status"] == "not_held_out" and withheld["grade"] == "correct"
+        assert withheld["eligibility_reason"] == "provided"
+        with monkeypatch.context() as patch:
+            patch.setattr("chess_coach.capture_plan_history._selected", lambda *_a, **_k: row)
+            assert latest(db, LEARNER, 1, "capture")["status"] == "not_held_out"
     review_evidence(db, evidence, decision="reject", actor="reviewer")
     with pytest.raises(ValueError):
         show(db, attempt, LEARNER)

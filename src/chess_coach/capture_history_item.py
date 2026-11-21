@@ -5,6 +5,7 @@ import json
 from .capture_plan_result import result
 from .mate_assessment_events import replay
 from .related_capture_assessment_context import VERSION
+from .tactical_exposure_progress import apply as apply_exposure
 from .unified_source_current import require_current
 
 
@@ -28,6 +29,7 @@ def item(db, row, corpus, cache, check):
             state = {"status": "incomplete"}
         else:
             state = result(db, row, observed, related_cache=cache, related_check=check)
+        state = apply_exposure(db, row, state)
         entry["rating"] = _rating(row)
         return {**entry, **state, "hints": observed["hints"], "reveals": observed["reveals"]}
     except (ValueError, TypeError, KeyError, IndexError, AttributeError):

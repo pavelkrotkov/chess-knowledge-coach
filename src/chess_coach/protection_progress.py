@@ -42,7 +42,8 @@ def _collect(db, subject, corpus, budget):
                     raise ValueError("assessment time unavailable")
                 entry = item(db, row, corpus, budget.check)
                 budget.check()
-                groups[entry["scope"]].append(entry)
+                if entry["status"] in {"correct", "incorrect"}:
+                    groups[entry["scope"]].append(entry)
             except (ValueError, TypeError, KeyError, IndexError, AttributeError):
                 entry = {
                     "attempt": row["attempt_id"],
