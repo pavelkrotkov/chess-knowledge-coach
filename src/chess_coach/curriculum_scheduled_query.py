@@ -25,4 +25,13 @@ def scheduled_rows(db, after, limit):
             (after, limit + 1),
         ).fetchall()
     )
+    rows.extend(
+        db.connection.execute(
+            """SELECT id,source_type,source_ref,last_review FROM training_items
+        INDEXED BY idx_curriculum_fork_scheduled WHERE id>?
+        AND source_type='unified_owned_fork' AND skill='fork'
+        AND operation='execute' ORDER BY id LIMIT ?""",
+            (after, limit + 1),
+        ).fetchall()
+    )
     return sorted(rows, key=lambda row: row["id"])[: limit + 1]

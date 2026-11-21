@@ -3,29 +3,30 @@
 import json
 from datetime import datetime
 
+from . import unified_capture_learning as default_policy
 from .learner_identity import normalize_identity
 from .training_review import review_item_in_transaction
 from .training_transaction import training_transaction
-from .unified_capture_learning import MAPPER, POLICY, proof
 from .unified_session_state import now, session_row
 from .unified_source_current import require_current
 
 
-def _evidence(db, row, fact, outcome, observed):
+def _evidence(db, row, fact, outcome, observed, policy):
     context = {
-        "source": "unified_owned_capture",
-        "policy_version": POLICY,
-        "mapper_version": MAPPER,
+        "source": policy.SOURCE,
+        "policy_version": policy.POLICY,
+        "mapper_version": policy.MAPPER,
         **fact,
     }
     return db.connection.execute(
         """INSERT INTO evidence_mappings
         (position_id,skill,operation,outcome,confidence,source_facts_json,mapper_version,
          context_json,subject,observation_at,mapping_run_id,source_provenance)
-        VALUES(NULL,'hanging_piece','execute',?,1.0,'[]',?,?,?, ?,NULL,'training_attempt')""",
+        VALUES(NULL,?,'execute',?,1.0,'[]',?,?,?, ?,NULL,'training_attempt')""",
         (
+            policy.SKILL,
             outcome,
-            MAPPER,
+            policy.MAPPER,
             json.dumps(context, sort_keys=True),
             normalize_identity(row["subject"]),
             observed,
@@ -33,11 +34,11 @@ def _evidence(db, row, fact, outcome, observed):
     ).lastrowid
 
 
-def _save(db, row, item, event, fact, assisted, fingerprint):
+def _save(db, row, item, event, fact, assisted, fingerprint, policy):
     outcome = "success" if fact["status"] == "correct" else "failure"
     evidence = rating = schedule = None
     if not assisted:
-        evidence = _evidence(db, row, fact, outcome, event["created_at"])
+        evidence = _evidence(db, row, fact, outcome, event["created_at"], policy)
         rating = "good" if outcome == "success" else "again"
         schedule = review_item_in_transaction(
             db, item["item_id"], rating, reviewed_at=datetime.fromisoformat(event["created_at"])
@@ -54,7 +55,7 @@ def _save(db, row, item, event, fact, assisted, fingerprint):
         "evidence_id": evidence,
         "rating": rating,
         "due": due,
-        "policy_version": POLICY,
+        "policy_version": policy.POLICY,
     }
     db.connection.execute(
         "INSERT INTO unified_training_completions VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -63,8 +64,8 @@ def _save(db, row, item, event, fact, assisted, fingerprint):
             event["event_id"],
             evidence,
             schedule["attempt_id"] if schedule else None,
-            POLICY,
-            MAPPER,
+            policy.POLICY,
+            policy.MAPPER,
             outcome,
             response["assistance"],
             reason,
@@ -76,13 +77,13 @@ def _save(db, row, item, event, fact, assisted, fingerprint):
     return response
 
 
-def complete(db, attempt_id, subject, *, event_id=None):
+def complete(db, attempt_id, subject, *, event_id=None, policy=default_policy):
     if db.compat32:
         raise ValueError("learning is unavailable in compatibility mode")
     with training_transaction(db):
         row = session_row(db, attempt_id, subject)
         require_current(db, row)
-        item, event, fact, assisted, fingerprint = proof(db, row, event_id)
+        item, event, fact, assisted, fingerprint = policy.proof(db, row, event_id)
         previous = db.connection.execute(
             "SELECT request_hash,response_json FROM unified_training_completions WHERE attempt_id=?",
             (attempt_id,),
@@ -91,4 +92,4 @@ def complete(db, attempt_id, subject, *, event_id=None):
             if previous["request_hash"] != fingerprint:
                 raise ValueError("completion conflicts with the recorded request")
             return json.loads(previous["response_json"])
-        return _save(db, row, item, event, fact, assisted, fingerprint)
+        return _save(db, row, item, event, fact, assisted, fingerprint, policy)

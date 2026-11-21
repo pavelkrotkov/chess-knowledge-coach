@@ -182,6 +182,21 @@ def test_unlisted_owned_fork_is_proved_for_success_and_miss(tmp_path, monkeypatc
         assert (
             inspect(black, SUBJECT, "black-miss", "answer")["reason"] == "named_attacker_not_moved"
         )
+        from chess_coach.unified_sessions import start
+
+        start(
+            black,
+            attempt_id="black-learning",
+            subject=SUBJECT,
+            source_type="own-game",
+            version=MISS_VERSION,
+            key=str(black_evidence),
+            training=True,
+        )
+        submit(black, "black-learning", SUBJECT, event_id="answer", move="b4d3")
+        assert process(black, SUBJECT)["outcomes"] == {"correct": 1}
+        assert show(black, "black-learning", SUBJECT)["learning"]["rating"] == "good"
+        black.close()
         anchor_db, anchor_evidence = owned_fork(
             tmp_path / "anchor.sqlite", monkeypatch, played, anchor_layout=True
         )
@@ -197,6 +212,10 @@ def test_unlisted_owned_fork_is_proved_for_success_and_miss(tmp_path, monkeypatc
         for table in before
     } == before
 
+    learning = None
+    if played == "f6g5":
+        learning = _fork_learning_workflow(db, evidence, client, headers, monkeypatch)
+
     # Revocation after a queued answer invalidates its source, without grading it.
     from chess_coach.evidence_review import review_evidence
 
@@ -205,6 +224,145 @@ def test_unlisted_owned_fork_is_proved_for_success_and_miss(tmp_path, monkeypatc
     review_evidence(db, evidence, decision="reject", actor="fixture")
     assert process(db, SUBJECT)["outcomes"] == {"unresolved": 1}
     assert inspect(db, SUBJECT, "v2-stale", "answer")["reason"] == "source_unavailable"
+    if learning:
+        from chess_coach.mastery_unified_training import training_context
+        from chess_coach.unified_training_complete import complete
+
+        with pytest.raises(ValueError):
+            complete(db, learning["attempt"], SUBJECT)
+        item = db.connection.execute(
+            "SELECT * FROM evidence_mappings WHERE id=?", (learning["evidence_id"],)
+        ).fetchone()
+        assert training_context(db, item) == (None, "invalid_training_lineage")
+
+
+def _fork_learning_workflow(db, evidence, client, headers, monkeypatch):
+    from chess_coach import unified_capture_completion
+    from chess_coach.unified_session_events import reveal
+    from chess_coach.unified_sessions import start
+    from chess_coach.unified_training_complete import complete
+
+    base = "https://coach.invalid"
+    library = client.get("/library?family=fork", base_url=base, headers=headers)
+    assert b"Practice and schedule this fork" in library.data
+    posted = client.post(
+        "/unified/start",
+        base_url=base,
+        headers=headers | {"Origin": base},
+        data={
+            "csrf": token(library, "csrf"),
+            "source_type": "own-game",
+            "version": MISS_VERSION,
+            "key": str(evidence),
+            "training": "1",
+        },
+    )
+    assert posted.status_code == 303
+    page = client.get(posted.location, base_url=base, headers=headers)
+    attempt = token(page, "attempt")
+    answer = submit(db, attempt, SUBJECT, event_id="answer", move="b5d6")
+    assert answer["status"] == "needs_verification"
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            unified_capture_completion,
+            "review_item_in_transaction",
+            lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("synthetic rollback")),
+        )
+        assert process(db, SUBJECT)["outcomes"] == {"correct": 1}
+    assert show(db, attempt, SUBJECT)["learning"]["state"] == "pending"
+    assert (
+        db.connection.execute(
+            "SELECT COUNT(*) FROM unified_training_completions WHERE attempt_id=?", (attempt,)
+        ).fetchone()[0]
+        == 0
+    )
+    receipt = complete(db, attempt, SUBJECT, event_id="answer")
+    assert receipt["outcome"] == "success" and receipt["rating"] == "good"
+    assert receipt["evidence_id"] and complete(db, attempt, SUBJECT) == receipt
+    from chess_coach.mastery_unified_training import training_context
+
+    evidence_row = db.connection.execute(
+        "SELECT * FROM evidence_mappings WHERE id=?", (receipt["evidence_id"],)
+    ).fetchone()
+    assert training_context(db, evidence_row)[0]["attempt_id"] == attempt
+    assert (
+        db.connection.execute(
+            "SELECT human_validated FROM evidence_mappings WHERE id=?", (receipt["evidence_id"],)
+        ).fetchone()[0]
+        == 0
+    )
+    db.connection.execute(
+        "UPDATE training_items SET due='2000-01-01T00:00:00+00:00' WHERE id=?",
+        (receipt["item_id"],),
+    )
+    db.connection.commit()
+    plan = client.get("/plan", base_url=base, headers=headers)
+    assert b"Execute the named fork." in plan.data
+    assert (f'name="item_id" value="{receipt["item_id"]}"').encode() in plan.data
+    reopened = client.post(
+        "/unified/start",
+        base_url=base,
+        headers=headers | {"Origin": base},
+        data={
+            "csrf": token(plan, "csrf"),
+            "source_type": "own-game",
+            "version": MISS_VERSION,
+            "key": str(evidence),
+            "training": "1",
+            "item_id": str(receipt["item_id"]),
+        },
+    )
+    assert reopened.status_code == 303
+    resumed = client.get(reopened.location, base_url=base, headers=headers)
+    assert b"piece on b5" in resumed.data and b"piece on e8" in resumed.data
+
+    source = dict(
+        subject=SUBJECT,
+        source_type="own-game",
+        version=MISS_VERSION,
+        key=str(evidence),
+        training=True,
+    )
+    start(db, attempt_id="fork-learning-miss", **source)
+    submit(db, "fork-learning-miss", SUBJECT, event_id="answer", move="e7d6")
+    assert process(db, SUBJECT)["outcomes"] == {"incorrect": 1}
+    missed = show(db, "fork-learning-miss", SUBJECT)["learning"]
+    assert missed["outcome"] == "failure" and missed["rating"] == "again"
+    start(db, attempt_id="fork-learning-assisted", **source)
+    previous = tuple(
+        db.connection.execute(
+            "SELECT due,last_review FROM training_items WHERE id=?", (receipt["item_id"],)
+        ).fetchone()
+    )
+    assert (
+        submit(db, "fork-learning-assisted", SUBJECT, event_id="illegal", move="a1a2")["feedback"]
+        == "illegal"
+    )
+    reveal(db, "fork-learning-assisted", SUBJECT, event_id="reveal")
+    submit(db, "fork-learning-assisted", SUBJECT, event_id="answer", move="b5c7")
+    assert process(db, SUBJECT)["outcomes"] == {"correct": 1}
+    assisted = show(db, "fork-learning-assisted", SUBJECT)["learning"]
+    assert assisted["assistance"] == "assisted"
+    assert assisted["rating"] is None and assisted["evidence_id"] is None
+    assert (
+        tuple(
+            db.connection.execute(
+                "SELECT due,last_review FROM training_items WHERE id=?", (receipt["item_id"],)
+            ).fetchone()
+        )
+        == previous
+    )
+    start(db, attempt_id="fork-learning-unknown", **source)
+    submit(db, "fork-learning-unknown", SUBJECT, event_id="answer", move="f6g5")
+    assert process(db, SUBJECT)["outcomes"] == {"unresolved": 1}
+    assert show(db, "fork-learning-unknown", SUBJECT)["learning"]["state"] == "unresolved"
+    with pytest.raises(ValueError):
+        complete(db, "fork-learning-unknown", SUBJECT)
+    with pytest.raises(ValueError):
+        start(db, attempt_id="fork-learning-v1", **(source | {"version": VERSION}))
+    with pytest.raises(ValueError):
+        start(db, attempt_id="fork-other-owner", **(source | {"subject": "someone-else"}))
+    return {"attempt": attempt, "evidence_id": receipt["evidence_id"]}
 
 
 @pytest.mark.parametrize("mode", ["correct", "assisted", "unresolved", "miss_piece", "miss_target"])
