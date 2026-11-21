@@ -60,7 +60,7 @@ def schema_columns(db: Database) -> dict[str, dict[str, tuple]]:
 
 @pytest.mark.parametrize("observation_column", [False, True])
 def test_populated_legacy_upgrade_is_repeatable_and_preserves_history(
-    observation_column: bool, tmp_path
+    observation_column: bool, tmp_path, monkeypatch
 ) -> None:
     db = legacy_database(observation_column=observation_column)
     db.connection.execute(
@@ -170,8 +170,102 @@ def test_populated_legacy_upgrade_is_repeatable_and_preserves_history(
     fresh = Database(":memory:")
     fresh.initialize()
     assert schema_columns(db) == schema_columns(fresh)
+    _fork_index_upgrade(monkeypatch)
     _position_index_upgrade()
     _current_schema_contention(tmp_path)
+
+
+def _fork_index_upgrade(monkeypatch):
+    from chess_coach import db_recent
+
+    db = Database(":memory:")
+    db.initialize()
+    connection = db.connection
+    connection.executemany(
+        "INSERT INTO training_items(source_type,source_ref,skill,operation,due,scheduler_version) "
+        "VALUES (?,?,?,?,?,?)",
+        [
+            ("unified_owned_fork", "first", "fork", "execute", "2026-01-01", "v1"),
+            ("unified_owned_fork", "second", "fork", "execute", "2026-01-01", "v1"),
+            ("unified_owned_fork", "future", "fork", "execute", "2027-01-01", "v1"),
+            ("unified_owned_fork", "now", "fork", "execute", "now", "v1"),
+            ("unified_owned_fork", "wrong-operation", "fork", "prevent", "2020-01-01", "v1"),
+            ("unified_owned_fork", "wrong-skill", "mate", "execute", "2020-01-01", "v1"),
+            ("puzzle", "other", "fork", "execute", "2020-01-01", "v1"),
+        ],
+    )
+    connection.execute(
+        "INSERT INTO training_attempts(item_id,rating,reviewed_at,scheduler_version) "
+        "VALUES (1,'good','2026-01-01','v1')"
+    )
+    connection.execute("DROP INDEX idx_curriculum_fork_due")
+    connection.execute("DROP INDEX idx_curriculum_fork_scheduled")
+    connection.execute("PRAGMA user_version=39")
+    connection.commit()
+    before_schema = [
+        tuple(row)
+        for row in connection.execute(
+            "SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name"
+        )
+    ]
+    before_rows = {
+        table: [tuple(row) for row in connection.execute(f"SELECT * FROM {table} ORDER BY id")]
+        for table in ("training_items", "training_attempts")
+    }
+    original = db_recent.add_fork_indexes
+
+    def fail_after_indexes(conn):
+        original(conn)
+        raise RuntimeError("injected index failure")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(db_recent, "add_fork_indexes", fail_after_indexes)
+        with pytest.raises(RuntimeError, match="injected index failure"):
+            db.initialize()
+    assert connection.execute("PRAGMA user_version").fetchone()[0] == 39
+    assert [
+        tuple(row)
+        for row in connection.execute(
+            "SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name"
+        )
+    ] == before_schema
+    db.initialize()
+    db.initialize()
+    assert connection.execute("PRAGMA user_version").fetchone()[0] == 40
+    assert [
+        tuple(row)
+        for row in connection.execute(
+            "SELECT type,name,tbl_name,sql FROM sqlite_master "
+            "WHERE name NOT IN ('idx_curriculum_fork_due','idx_curriculum_fork_scheduled') "
+            "ORDER BY type,name"
+        )
+    ] == before_schema
+    assert {
+        table: [tuple(row) for row in connection.execute(f"SELECT * FROM {table} ORDER BY id")]
+        for table in before_rows
+    } == before_rows
+    assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+    due = (
+        "SELECT id FROM training_items INDEXED BY idx_curriculum_fork_due "
+        "WHERE source_type='unified_owned_fork' AND skill='fork' AND operation='execute' "
+        "AND lower(due) != 'now' AND julianday(due) <= julianday(?) "
+        "ORDER BY julianday(due),id LIMIT ?"
+    )
+    scheduled = (
+        "SELECT id FROM training_items INDEXED BY idx_curriculum_fork_scheduled "
+        "WHERE id>? AND source_type='unified_owned_fork' AND skill='fork' "
+        "AND operation='execute' ORDER BY id LIMIT ?"
+    )
+    assert [row[0] for row in connection.execute(due, ("2026-02-01", 10))] == [1, 2]
+    assert [row[0] for row in connection.execute(scheduled, (0, 10))] == [1, 2, 3, 4]
+    for query, args, index in (
+        (due, ("2026-02-01", 10), "idx_curriculum_fork_due"),
+        (scheduled, (0, 10), "idx_curriculum_fork_scheduled"),
+    ):
+        plan = [row[3] for row in connection.execute("EXPLAIN QUERY PLAN " + query, args)]
+        assert any(index in detail for detail in plan)
+        assert not any("TEMP B-TREE" in detail for detail in plan)
+    db.close()
 
 
 def _position_index_upgrade():

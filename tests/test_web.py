@@ -143,6 +143,8 @@ def test_private_access_and_csrf(setup, tmp_path, monkeypatch):
     destination.execute("DROP INDEX IF EXISTS idx_engine_outputs_position_id")
     destination.execute("DROP INDEX IF EXISTS idx_curriculum_capture_due")
     destination.execute("DROP INDEX IF EXISTS idx_curriculum_capture_scheduled")
+    destination.execute("DROP INDEX IF EXISTS idx_curriculum_fork_due")
+    destination.execute("DROP INDEX IF EXISTS idx_curriculum_fork_scheduled")
     destination.execute("DROP INDEX IF EXISTS idx_curriculum_unified_due")
     destination.execute("DROP INDEX IF EXISTS idx_curriculum_unified_scheduled")
     destination.execute("DROP TRIGGER IF EXISTS unified_completed_training_attempt_no_update")
@@ -186,6 +188,7 @@ def test_private_access_and_csrf(setup, tmp_path, monkeypatch):
         preflight.setattr(db_recent, "add_unified_training", newer_migration)
         preflight.setattr(db_recent, "add_tactical_exposure", newer_migration)
         preflight.setattr(db_recent, "add_capture_indexes", newer_migration)
+        preflight.setattr(db_recent, "add_fork_indexes", newer_migration)
         attest(legacy, read)
     read.close()
     compat_app = create_app(
@@ -214,6 +217,13 @@ def test_private_access_and_csrf(setup, tmp_path, monkeypatch):
     ).fetchall()
     assert any("idx_detector_run_active" in row[3] for row in plan)
     compat_db.initialize()
+    assert (
+        compat_db.connection.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE name IN "
+            "('idx_curriculum_fork_due', 'idx_curriculum_fork_scheduled')"
+        ).fetchone()[0]
+        == 0
+    )
     from chess_coach.opening_profile_cli_db import open_database
 
     read_only, selected_database = open_database(root)
