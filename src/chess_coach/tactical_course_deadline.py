@@ -14,8 +14,13 @@ class DeadlineConflict(Exception):
     """The process already owns a deadline timer."""
 
 
-def _expired(_signum, _frame):
-    raise PreviewDeadline()
+def _callback_deadline(error, fired):
+    # SQLite wraps callback exceptions; only an actual alarm proves expiry.
+    return (
+        fired
+        and getattr(error, "sqlite_errorcode", None) == sqlite3.SQLITE_ERROR
+        and str(error) == "user-defined function raised exception"
+    )
 
 
 @contextmanager
@@ -24,7 +29,14 @@ def deadline(connection, seconds):
         raise PreviewDeadline()
     if any(signal.getitimer(signal.ITIMER_REAL)):
         raise DeadlineConflict("another deadline is active")
-    old = signal.signal(signal.SIGALRM, _expired)
+    fired = False
+
+    def expired(_signum, _frame):
+        nonlocal fired
+        fired = True
+        raise PreviewDeadline()
+
+    old = signal.signal(signal.SIGALRM, expired)
     until = time.monotonic() + seconds
     signal.setitimer(signal.ITIMER_REAL, seconds)
     connection.set_progress_handler(lambda: int(time.monotonic() >= until), 1000)
@@ -33,9 +45,9 @@ def deadline(connection, seconds):
         if time.monotonic() >= until:
             raise PreviewDeadline()
     except sqlite3.OperationalError as error:
-        if (
-            getattr(error, "sqlite_errorcode", None) == sqlite3.SQLITE_INTERRUPT
-            and time.monotonic() >= until
+        code = getattr(error, "sqlite_errorcode", None)
+        if (code == sqlite3.SQLITE_INTERRUPT and time.monotonic() >= until) or _callback_deadline(
+            error, fired
         ):
             raise PreviewDeadline() from None
         raise
