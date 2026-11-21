@@ -541,7 +541,9 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
         patch.setattr(tactical_course_familiar_games, "LIMIT", 1)
         patch.setattr(tactical_course_familiar, "_games", counted_games)
         for index, order in enumerate(((capture_group, fork_group), (fork_group, capture_group))):
-            patch.setattr(tactical_course, "candidates", lambda *_a, order=order: (order, coverage))
+            patch.setattr(
+                tactical_course, "candidates", lambda *_a, order=order, **_k: (order, coverage)
+            )
             mixed = tactical_preview(db, LEARNER, "test")
             assert [p["kind"] for p in mixed["preview"]["patterns"]] == (
                 ["capture", "fork"] if index == 0 else ["fork", "capture"]
