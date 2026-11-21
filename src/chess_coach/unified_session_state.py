@@ -8,6 +8,7 @@ from .related_fork_assessment_view import add as add_fork_assessment
 from .related_fork_prevention_view import add_fields as add_prevention_fields
 from .related_pin_created_view import add_fields as add_pin_contrast
 from .related_protection_view import add_fields as add_protection_fields
+from .unified_corpus_rehearsal import direct_corpus
 from .unified_owned_view import add_fields as add_owned_fields
 from .unified_public_outcome import direct as direct_public
 from .unified_public_outcome import outcome as public_outcome
@@ -47,7 +48,7 @@ def view(row):
     if public is not None:
         result["public_outcome"] = public
         result["status"] = public
-        if direct_public(row):
+        if direct_public(row) or direct_corpus(row):
             result["source_key"] = row["source_key"]
     if row["source_type"] == "corpus":
         import json
