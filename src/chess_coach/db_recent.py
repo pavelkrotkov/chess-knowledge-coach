@@ -4,6 +4,7 @@ import sqlite3
 
 from .analysis_comparison_schema import add_comparison_lines
 from .analysis_provenance_schema import add_analysis_provenance
+from .analysis_schema import add_engine_output_position_index
 from .classification_schema import add_classification_lineage
 from .curriculum_schema import add_curriculum_index
 from .deep_execution_schema import add_deep_execution
@@ -68,6 +69,7 @@ def upgrade_recent(connection: sqlite3.Connection, version: int, *, through=None
         (33, add_analysis_provenance),
         (34, add_detector_inputs),
         (35, add_digest_storage),
+        (36, add_engine_output_position_index),
     )
     for target, apply_upgrade in upgrades:
         if version < target and (through is None or target <= through):
