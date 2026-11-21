@@ -6,6 +6,7 @@ from .opening_queue_write import write
 from .tactical_course_offer import PREPARE_SLOT, SLOT, _offer_locked
 from .tactical_course_offer import item as offer_item
 from .tactical_course_request import valid
+from .tactical_course_worker_guard import save_diagnostic
 
 
 def claim(directory, database, learner, corpus):
@@ -63,11 +64,7 @@ def failed(
         if valid(current, database, learner, corpus) and _same_request(current, requested):
             if current.get("offer") and read(directory / SLOT) == current["offer"]:
                 return
-            failed_item = {**current, "state": "unavailable"}
             if selection is not None:
-                if budget is None or read(directory / SLOT) != old_offer:
-                    raise ValueError("course offer changed")
-                budget.check()
-                failed_item["coverage"] = selection["coverage"]
-                failed_item["unavailable"] = selection["unavailable"]
-            write(slot, failed_item)
+                save_diagnostic(slot, current, selection, directory / SLOT, old_offer, budget)
+                return
+            write(slot, {**current, "state": "unavailable"})

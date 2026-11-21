@@ -946,6 +946,28 @@ def _default_course_readiness_workflow(
         stale_result = json.loads(request_file.read_text())
         assert stale_result["state"] == "unavailable" and "coverage" not in stale_result
 
+        # A source commit after the JSON is staged must not publish readiness.
+        from contextlib import contextmanager
+
+        from chess_coach import tactical_course_worker_guard
+
+        real_stage = tactical_course_worker_guard.staged
+
+        @contextmanager
+        def changed_during_stage(slot, value):
+            with real_stage(slot, value) as temporary:
+                with sqlite3.connect(path) as writer:
+                    writer.execute("UPDATE games SET event=event WHERE id=1")
+                yield temporary
+
+        enqueue_default()
+        with patch.context() as staged_change:
+            staged_change.setattr(tactical_course_worker_guard, "staged", changed_during_stage)
+            tactical_course_worker.run(db, learner, project)
+        assert offer_slot.read_bytes() == old_offer
+        staged_result = json.loads(request_file.read_text())
+        assert staged_result["state"] == "unavailable" and "coverage" not in staged_result
+
         enqueue_default()
 
         def replaced_request(*args):
