@@ -10,6 +10,8 @@ from .lichess_schema import add_sync_progress
 from .schema_compat_constraints import columns, columns_match, constraints
 
 FORBIDDEN = (
+    "unified_training_enrollments",
+    "unified_training_completions",
     "analysis_provenance",
     "analysis_provenance_settings",
     "analysis_run_provenance",
@@ -22,6 +24,8 @@ FORBIDDEN = (
 )
 VIEWS = ("analysis_runs_read", "detector_runs_read", "mapping_runs_read")
 TABLES = (
+    "unified_training_completions",
+    "unified_training_enrollments",
     "analysis_run_provenance",
     "analysis_provenance_settings",
     "analysis_provenance",

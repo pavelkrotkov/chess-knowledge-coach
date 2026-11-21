@@ -6,6 +6,7 @@ import pytest
 
 from chess_coach import db_migrations
 from chess_coach.db import SCHEMA, Database
+from chess_coach.db_versioning import CURRENT_VERSION
 
 
 def legacy_database(*, observation_column: bool = False) -> Database:
@@ -81,7 +82,7 @@ def test_populated_legacy_upgrade_is_repeatable_and_preserves_history(
     }
     db.initialize()
     db.initialize()
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 36
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == CURRENT_VERSION
     assert dict(db.connection.execute("SELECT * FROM analysis_runs").fetchone()) == old_run
     assert dict(db.connection.execute("SELECT * FROM analysis_runs_read").fetchone()) == old_run
     assert (
@@ -212,7 +213,7 @@ def _position_index_upgrade():
     hashes = [tactical_input(db, game, "fixture-hash", config, 1) for game in (1, 2)]
     db.initialize()
     db.initialize()
-    assert connection.execute("PRAGMA user_version").fetchone()[0] == 36
+    assert connection.execute("PRAGMA user_version").fetchone()[0] == CURRENT_VERSION
     assert {
         table: [tuple(row) for row in connection.execute(f"SELECT * FROM {table} ORDER BY id")]
         for table in before

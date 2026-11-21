@@ -30,7 +30,12 @@ def show(db, attempt_id, subject):
     if pawn_source(row):
         return _show_pawn(db, attempt_id, subject)
     require_current(db, row)
-    return display(db, row)
+    result = display(db, row)
+    if row["source_type"] == "corpus":
+        from .unified_training_view import status
+
+        result["learning"] = status(db, attempt_id)
+    return result
 
 
 def _show_pawn(db, attempt_id, subject):
@@ -65,7 +70,9 @@ def _event(db, attempt_id, subject, event_id, kind, move):
         if previous is None:
             enqueue(db, row, event_id, result)
         db.connection.commit()
-        return result
+        from .unified_training_view import finish
+
+        return finish(db, row, attempt_id, subject, event_id, result)
     except BaseException:
         db.connection.rollback()
         raise

@@ -83,3 +83,17 @@ def request_hint():
 @unified_practice.post("/unified/reveal")
 def reveal():
     return reveal_action(_current)
+
+
+@unified_practice.post("/unified/complete-learning")
+def complete_learning():
+    from .unified_training_complete import complete
+
+    attempt = _current()
+    if request.form.get("attempt") != attempt:
+        abort(409)
+    try:
+        complete(database(), attempt, current_app.config["SUBJECT"])
+    except ValueError:
+        return render_template("error.html", message="The learning update is unavailable."), 400
+    return redirect(url_for("unified_practice.show_page", attempt=attempt), code=303)

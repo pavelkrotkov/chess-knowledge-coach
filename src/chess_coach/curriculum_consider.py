@@ -33,7 +33,7 @@ def consider(
         return None, [], seen
     budget = state["scan_limit"] - counts["scheduled_examined"]
     matched, after, more, examined, unavailable = scheduled_page(
-        db, candidate["prompt_key"], state["scheduled_after"], budget
+        db, candidate["prompt_key"], state["scheduled_after"], budget, state["subject_hash"]
     )
     counts["scheduled_examined"] += examined
     if unavailable is not None:

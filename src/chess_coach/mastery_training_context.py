@@ -8,6 +8,10 @@ from .mastery_training_validation import verified_prompt
 
 def training_context(db: Database, evidence):
     row = completion_source(db, evidence["id"])
+    if row is None and not db.compat32:
+        from .mastery_unified_training import training_context as unified_context
+
+        return unified_context(db, evidence)
     try:
         valid = valid_completion(row, evidence)
     except (ValueError, TypeError, AttributeError):

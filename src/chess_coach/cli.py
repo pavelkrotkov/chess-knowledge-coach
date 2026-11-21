@@ -13,6 +13,7 @@ from . import cli_public_training as public_training
 from . import cli_recovery as recovery
 from . import cli_snapshot as snapshot
 from . import cli_unified_practice as unified_practice
+from . import cli_unified_training as unified_training
 from .capabilities import capability_report
 from .cli_parser import build_parser
 from .cli_related_commands import COMMANDS as RELATED_COMMANDS
@@ -33,7 +34,8 @@ COMMANDS = {
     "list-fork-defense-practice": unified_practice.handle_list_fork_defense,
     "list-pin-prevention": unified_practice.handle_list_pin_prevent,
     "list-fork-avoidance-practice": unified_practice.handle_list_fork_avoidance,
-    "start-unified": unified_practice.handle_start,
+    "start-unified": unified_training.handle_start,
+    "complete-unified-learning": unified_training.handle_complete_learning,
     "show-unified": unified_practice.handle_show,
     "move-unified": unified_practice.handle_move,
     "hint-unified": unified_practice.handle_hint,

@@ -20,6 +20,7 @@ def render_library():
         return render_owned(database(), current_app.config["SUBJECT"], family, before)
     return render_template(
         "library.html",
+        unified_learning_available=not database().compat32,
         owned_families=links(),
         corpora=corpus_choices(database(), corpus_report(database())),
         public_collections=library_groups(database()),

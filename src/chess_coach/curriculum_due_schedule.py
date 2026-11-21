@@ -9,7 +9,12 @@ from .db import Database
 def check_schedule(db: Database, state: dict, candidate: dict, scan: dict) -> str | None:
     budget = state["scan_limit"] - scan["scheduled_examined"]
     best, after, more, count, unavailable = due_schedule_page(
-        db, candidate["prompt_key"], state["scheduled_after"], budget, state["scheduled_best"]
+        db,
+        candidate["prompt_key"],
+        state["scheduled_after"],
+        budget,
+        state["scheduled_best"],
+        state["subject_hash"],
     )
     scan["scheduled_examined"] += count
     state["scheduled_best"], state["scheduled_after"] = best, after

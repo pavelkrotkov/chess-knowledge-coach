@@ -33,6 +33,7 @@ from .style_time_schema import add_style_game_times
 from .training_completion_schema import add_training_completions
 from .training_schema import add_training_scheduler_config
 from .unified_session_schema import add_unified_sessions
+from .unified_training_schema import add_unified_training
 
 
 def upgrade_recent(connection: sqlite3.Connection, version: int, *, through=None) -> None:
@@ -70,6 +71,7 @@ def upgrade_recent(connection: sqlite3.Connection, version: int, *, through=None
         (34, add_detector_inputs),
         (35, add_digest_storage),
         (36, add_engine_output_position_index),
+        (37, add_unified_training),
     )
     for target, apply_upgrade in upgrades:
         if version < target and (through is None or target <= through):

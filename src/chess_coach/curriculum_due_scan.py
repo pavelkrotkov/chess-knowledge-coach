@@ -16,7 +16,7 @@ def scan_due(db: Database, state: dict, now: datetime, summary: dict, scan: dict
     reason = None
     for row in rows[: state["scan_limit"]]:
         examined += 1
-        candidate = due_candidate(db, row, now)
+        candidate = due_candidate(db, row, now, state["subject_hash"])
         if eligible(candidate, seen):
             reason = check_schedule(db, state, candidate, scan)
             if reason:

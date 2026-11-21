@@ -1,4 +1,4 @@
-"""Private direct-prompt practice without scheduling or mastery writes."""
+"""Private direct-prompt practice with optional qualified mate scheduling."""
 
 import secrets
 
@@ -20,6 +20,7 @@ from .web_board import board_rows
 from .web_db import database
 from .web_practice_history import selected_step, unified_history
 from .web_unified_actions import unified_practice
+from .web_unified_training import item_id as training_item_id
 from .web_unified_unavailable import unavailable
 
 
@@ -35,6 +36,8 @@ def begin():
             version=request.form.get("version", ""),
             key=request.form.get("key", ""),
             goal=request.form.get("goal") or None,
+            training=request.form.get("training") == "1",
+            item_id=training_item_id(),
         )
     except ValueError:
         return render_template("error.html", message="That practice source is unavailable."), 400

@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from .curriculum_reference import referenced_candidate
+from .curriculum_unified_reference import candidate as source_candidate
 from .db import Database
 from .mastery_time import parse_utc
 
@@ -26,19 +26,23 @@ def _fetch(
     *,
     order: str = "julianday(due),id",
 ):
-    query = """SELECT id,source_ref,due,julianday(due) AS due_order
-        FROM training_items INDEXED BY idx_curriculum_due
-        WHERE source_type='puzzle' AND skill='mate_in_one' AND operation='execute'
+    index = "idx_curriculum_due" if db.compat32 else "idx_curriculum_unified_due"
+    source = (
+        "source_type='puzzle'" if db.compat32 else "source_type IN ('puzzle','unified_corpus_m1')"
+    )
+    query = f"""SELECT id,source_type,source_ref,due,julianday(due) AS due_order
+        FROM training_items INDEXED BY {index}
+        WHERE {source} AND skill='mate_in_one' AND operation='execute'
         AND lower(due) != 'now' AND julianday(due) <= julianday(?)"""
     query += extra + f" ORDER BY {order} LIMIT ?"
     return list(db.connection.execute(query, [now.isoformat(), *values, limit]).fetchall())
 
 
-def due_candidate(db: Database, row, now: datetime) -> dict | None:
+def due_candidate(db: Database, row, now: datetime, subject_hash: str) -> dict | None:
     due = parse_utc(row["due"])
     if due is None or due > now:
         return None
-    candidate = referenced_candidate(db, row["source_ref"])
+    _, candidate = source_candidate(db, row, subject_hash)
     if candidate is None:
         return None
     return {**candidate, "kind": "due", "item_id": row["id"], "due": due.isoformat()}

@@ -3,9 +3,16 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.104.0"
+REGISTRY_VERSION = "1.105.0"
 
 CAPABILITIES = (
+    {
+        "id": "unified_corpus_mate_learning",
+        "area": "Training",
+        "name": "Scheduled qualified corpus mate practice",
+        "status": "supported",
+        "details": "With schema 37, explicitly enrolled current corpus mate-in-one attempts record unreviewed evidence and schedule unassisted legal answers; assisted answers do not update evidence or schedule. Other unified objectives remain ineligible. Schema-32 compatibility keeps this learning path unavailable.",
+    },
     {
         "id": "related_backrank_attack",
         "area": "Training",

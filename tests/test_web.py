@@ -141,7 +141,18 @@ def test_private_access_and_csrf(setup, tmp_path, monkeypatch):
     for name in TABLES:
         destination.execute(f"DROP TABLE {name}")
     destination.execute("DROP INDEX IF EXISTS idx_engine_outputs_position_id")
+    destination.execute("DROP INDEX IF EXISTS idx_curriculum_unified_due")
+    destination.execute("DROP INDEX IF EXISTS idx_curriculum_unified_scheduled")
+    destination.execute("DROP TRIGGER IF EXISTS unified_completed_training_attempt_no_update")
+    destination.execute("DROP TRIGGER IF EXISTS unified_completed_session_no_update")
     destination.execute("PRAGMA user_version=32")
+    destination.execute(
+        "INSERT INTO puzzle_corpora(version,source,checksum,state) VALUES('compat-mate','fixture','hash','staging')"
+    )
+    destination.execute("""INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,
+        rating_deviation,themes_json,objective) VALUES('mate',(SELECT id FROM puzzle_corpora WHERE version='compat-mate'),
+        '7k/1p6/6K1/2Q5/8/8/8/8 b - - 17 14','fixture','b7b6 c5f8',1200,80,'[]','unknown')""")
+    destination.execute("UPDATE puzzle_corpora SET state='ready' WHERE version='compat-mate'")
     destination.execute(
         "INSERT INTO analysis_runs(game_id,engine,engine_version,config_json) "
         "VALUES(1,'fixture','v1','{}')"
@@ -170,6 +181,7 @@ def test_private_access_and_csrf(setup, tmp_path, monkeypatch):
     with monkeypatch.context() as preflight:
         preflight.setattr(db_recent, "add_digest_storage", newer_migration)
         preflight.setattr(db_recent, "add_engine_output_position_index", newer_migration)
+        preflight.setattr(db_recent, "add_unified_training", newer_migration)
         attest(legacy, read)
     read.close()
     compat_app = create_app(
@@ -194,6 +206,27 @@ def test_private_access_and_csrf(setup, tmp_path, monkeypatch):
     ).fetchall()
     assert any("idx_detector_run_active" in row[3] for row in plan)
     compat_db.initialize()
+    from chess_coach.curriculum import daily_plan
+    from chess_coach.unified_sessions import start as start_unified
+
+    daily_plan(compat_db, subject="learner", corpus_version="fixture-v1")
+    with pytest.raises(ValueError, match="qualified mate training is unavailable"):
+        start_unified(
+            compat_db,
+            attempt_id="compat-learning",
+            subject="learner",
+            source_type="corpus",
+            version="compat-mate",
+            key="mate",
+            goal="mate_in_one",
+            training=True,
+        )
+    assert (
+        compat_db.connection.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE name='unified_training_completions'"
+        ).fetchone()[0]
+        == 0
+    )
     for name in ("analysis_runs", "detector_runs", "mapping_runs"):
         assert [
             tuple(row) for row in compat_db.connection.execute(f"SELECT * FROM {name} ORDER BY id")
