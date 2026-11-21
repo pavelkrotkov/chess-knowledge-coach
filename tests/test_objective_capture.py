@@ -248,6 +248,77 @@ def test_owned_session_immutable_retry_and_stale_review(tmp_path, monkeypatch, v
         show(db, "one", LEARNER)
     assert json.loads(frozen)["feedback"] == "needs_verification"
 
+    if version == TARGET_VERSION:
+        black_db = make_game(tmp_path / "black-capture.sqlite", monkeypatch, black=True)
+        black_evidence = process_decision(black_db, 1, LEARNER)["evidence_ids"][0]
+        black_state = start(
+            black_db,
+            attempt_id="black-alternative",
+            subject=LEARNER,
+            source_type="own-game",
+            version=version,
+            key=str(black_evidence),
+            training=True,
+        )
+        assert black_state["learner_color"] == "black" and black_state["objective_target"] == "d5"
+        black_row = session_row(black_db, "black-alternative", LEARNER)
+        black_exemplar = json.loads(black_row["lines_json"])[0][0]
+        board = chess.Board(black_row["prompt_fen"])
+        alternative = chess.Move.from_uci("a5d5")
+        assert black_exemplar == "d8d5" and alternative != chess.Move.from_uci(black_exemplar)
+        assert board.piece_at(alternative.from_square) == chess.Piece(chess.ROOK, chess.BLACK)
+        assert alternative in board.legal_moves and board.is_capture(alternative)
+        queued = submit(
+            black_db, "black-alternative", LEARNER, event_id="answer", move=alternative.uci()
+        )
+        assert queued["feedback"] == "needs_verification"
+        assert process(black_db, LEARNER)["outcomes"] == {"correct": 1}
+        checked = inspect(black_db, LEARNER, "black-alternative", "answer")
+        assert checked["status"] == "correct" and checked["reason"] == "bounded_capture_proved"
+        stored_proof = json.loads(
+            black_db.connection.execute(
+                "SELECT result_json FROM objective_results WHERE attempt_id=? AND event_id=?",
+                ("black-alternative", "answer"),
+            ).fetchone()[0]
+        )
+        assert stored_proof["move"] == "a5d5" and stored_proof["proven_gain_floor"] == 3
+        black_learning = show(black_db, "black-alternative", LEARNER)["learning"]
+        assert black_learning["outcome"] == "success" and black_learning["rating"] == "good"
+        assert black_learning["evidence_id"] is not None
+        assert (
+            black_db.connection.execute(
+                "SELECT human_validated FROM evidence_mappings WHERE id=?",
+                (black_learning["evidence_id"],),
+            ).fetchone()[0]
+            == 0
+        )
+        black_plan = daily_plan(
+            black_db,
+            subject=LEARNER,
+            corpus_version="fixture-v1",
+            as_of=datetime.now(UTC) + timedelta(days=2),
+        )
+        black_due = next(
+            item for item in black_plan["items"] if item.get("item_id") == black_learning["item_id"]
+        )
+        assert black_due["source_version"] == version and black_due["source_key"] == str(
+            black_evidence
+        )
+        start(
+            black_db,
+            attempt_id="black-due",
+            subject=LEARNER,
+            source_type=black_due["source_type"],
+            version=black_due["source_version"],
+            key=black_due["source_key"],
+            training=True,
+            item_id=black_due["item_id"],
+        )
+        black_relaunch = show(black_db, "black-due", LEARNER)
+        assert black_relaunch["learner_color"] == "black"
+        assert black_relaunch["learning"]["item_id"] == black_learning["item_id"]
+        black_db.close()
+
 
 def test_browser_and_cli_resume_show_the_bound_objective(tmp_path, monkeypatch, capsys):
     from argparse import Namespace

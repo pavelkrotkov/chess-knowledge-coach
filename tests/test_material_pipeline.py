@@ -24,19 +24,21 @@ LEARNER = "fixture_learner"
 
 
 class Engine:
-    def __init__(self):
+    def __init__(self, best="d1d4", reply="e8f8"):
         self.id = {"name": "Synthetic"}
         self.options = {}
+        self.best = best
+        self.reply = reply
 
     def configure(self, settings):
         pass
 
     def analyse(self, board, limit, multipv, root_moves=None):
         if not board.move_stack:
-            root = root_moves[0] if root_moves else chess.Move.from_uci("d1d4")
+            root = root_moves[0] if root_moves else chess.Move.from_uci(self.best)
             continuation = board.copy()
             continuation.push(root)
-            reply = chess.Move.from_uci("e8f8")
+            reply = chess.Move.from_uci(self.reply)
             assert reply in continuation.legal_moves
             score = 0 if root_moves else 500
             moves = [root, reply]
@@ -56,23 +58,27 @@ class Engine:
         pass
 
 
-def make_game(path, monkeypatch, *, timed=True, played="e1f1"):
-    board = chess.Board("4k3/8/8/8/3q4/8/8/3RK3 w - - 0 1")
+def make_game(path, monkeypatch, *, timed=True, played=None, black=False):
+    fen = "3rk3/8/8/r2Q4/8/8/8/4K3 b - - 0 1" if black else "4k3/8/8/8/3q4/8/8/3RK3 w - - 0 1"
+    board = chess.Board(fen)
+    if played is None:
+        played = "e8f8" if black else "e1f1"
+    best, reply = ("d8d5", "e1f1") if black else ("d1d4", "e8f8")
     game = chess.pgn.Game()
     game.setup(board)
-    game.headers["White"] = LEARNER
-    game.headers["Black"] = "fixture_opponent"
+    game.headers["White"] = "fixture_opponent" if black else LEARNER
+    game.headers["Black"] = LEARNER if black else "fixture_opponent"
     game.headers["Result"] = "*"
     if timed:
         game.headers["UTCDate"] = "2026.01.01"
         game.headers["UTCTime"] = "12:00:00"
     node = game.add_variation(board.parse_uci(played))
     board.push_uci(played)
-    node.add_variation(board.parse_uci("e8f8"))
+    node.add_variation(board.parse_uci(reply))
     db = Database(path)
     db.initialize()
     ingest_pgn(db, str(game))
-    monkeypatch.setattr(chess.engine.SimpleEngine, "popen_uci", lambda _: Engine())
+    monkeypatch.setattr(chess.engine.SimpleEngine, "popen_uci", lambda _: Engine(best, reply))
     config = PipelineConfig(learner=LEARNER, engine_path=sys.executable, nodes=100)
     result = run_analysis(db, 1, game_input(db, 1), config, engine_identity(sys.executable))
     assert result["status"] == "complete"
