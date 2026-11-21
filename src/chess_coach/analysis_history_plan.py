@@ -4,7 +4,9 @@ import sqlite3
 from pathlib import Path
 
 from .analysis_history_estimate import estimate
-from .analysis_history_stats import allocation, profiles
+from .analysis_history_inventory import inventory, limits
+from .analysis_history_layout import supported
+from .analysis_history_stats import allocation
 from .recovery_capacity import PROJECT_LIMIT, RESERVE, snapshot
 from .recovery_copy import pinned
 from .recovery_deadline import Deadline
@@ -16,7 +18,17 @@ def inspect(connection, source, root, deadline):
     pages, page_size = snapshot(connection)
     size = pages * page_size
     objects, native = allocation(connection)
-    profile = profiles(connection, deadline)
+    index = supported(connection, source, native)
+    profile = (
+        inventory(connection, deadline, native=native, engine_index=index)
+        if index is not None
+        else {"inventory_complete": False, "inventory_limits": limits()}
+    )
+    # Reconcile the full scan against both SQL's table count and dbstat leaf cells.
+    if profile["inventory_complete"]:
+        count = connection.execute("SELECT count(*) FROM analysis_runs").fetchone()[0]
+        if profile["inventory_rows"] != count or count != objects["analysis_runs"][3]:
+            profile = {"inventory_complete": False, "inventory_limits": limits()}
     (
         status,
         reusable,
@@ -28,21 +40,32 @@ def inspect(connection, source, root, deadline):
         working,
         usage,
         free,
-    ) = estimate(connection, objects, native, source, root, deadline, pages, page_size)
-
+    ) = estimate(
+        connection, objects, native, source, root, deadline, pages, page_size, profile, index
+    )
     return {
         "status": status,
         "analysis_table_bytes": objects["analysis_runs"][0],
         "analysis_table_payload_bytes": objects["analysis_runs"][1],
         "analysis_table_unused_bytes": objects["analysis_runs"][2],
         "analysis_index_bytes": index_bytes,
+        "statistics_table_bytes": sum(
+            objects.get(name, (0,))[0] for name in ("sqlite_stat1", "sqlite_stat4")
+        ),
         "analysis_run_count": run_count,
         "native_provenance_tables_available": native,
+        "supported_layout": index is not None,
+        "index_memory_temp_required": bool(index),
         "journal_affected_pages_bound": affected_pages,
         "database_bytes": size,
         "physical_file_bytes": source.stat().st_size,
         "existing_reusable_bytes": reusable,
         "replacement_and_index_bound_bytes": replacement,
+        "physical_growth_bound_bytes": replacement,
+        "future_reusable_bytes_min": 0,
+        "future_reusable_bytes_max": None,
+        "separate_restore_snapshot_bytes": size,
+        "independent_backup_bytes": None,
         "rollback_journal_bound_bytes": journal,
         "working_bytes": working,
         "reserve_bytes": RESERVE,
@@ -51,7 +74,8 @@ def inspect(connection, source, root, deadline):
         "filesystem_free_bytes": free,
         "scope": (
             "Conservative point-in-time bounds, not a reservation or predicted file reduction. "
-            "Unknown means the conservative bound did not establish a fit."
+            "Unknown means the conservative bound did not establish a fit. "
+            "Separate recovery storage is not included."
         ),
         **profile,
     }

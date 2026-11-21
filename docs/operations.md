@@ -282,12 +282,37 @@ use the read-only planner against a project-contained file:
 "$release" -I -B -m chess_coach.cli plan-analysis-history SOURCE --project-root "$PWD"
 ~~~
 
-The report measures only the analysis table and its indexes and samples at most
-1,024 resolved profiles. Its replacement and rollback-journal bounds are
-intentionally conservative, including a worst-case sector allowance. An
-incomplete sample cannot establish total deduplication or expected savings.
-Reusable SQLite pages are not filesystem truncation; no whole-database VACUUM
-is performed. Space estimates do not reserve space against other writers.
+The report measures the analysis table, its indexes and relevant provenance
+tables. It scans every run within explicit row, byte, distinct-profile and time
+limits using the shared-profile writer's canonical identity and collision rule.
+The older 1,024-row sample remains informational; it is never extrapolated.
+A limit, conflicting identity, mismatched row count, changed view, or unsupported
+layout leaves the inventory incomplete and capacity unknown. Schema 32 cannot
+be marked native-ready, even when its conditional sizing succeeds.
+
+The supported bound covers UTF-8, 4 KiB pages without reserved bytes or
+auto-vacuum, the recognized rowid tables and either no analysis index or one
+ordinary index on engine. For each tree it allows one leaf per record, at most
+one interior page per leaf, a root, plus overflow and a separate balance
+allowance. SQLite's [file format](https://www.sqlite.org/fileformat2.html)
+describes interior fanout, record payload and overflow pages; its
+[B-tree implementation](https://www3.sqlite.org/matrix/ev/src/btree.html)
+documents the five-page sibling balance bound. A 34-level allowance covers the
+32-bit page-number space. The original and replacement run trees can coexist;
+all existing links plus one new link per run and every distinct stored or
+observed profile are included. Temporary schema duplication and rebalancing are
+budgeted separately. Fixed record allowances cover SQLite's varint
+headers and integer fields; measured UTF-8 bytes cover variable fields.
+
+The supported engine-index rebuild requires memory-only SQLite temporary
+storage and a bounded index input. The original per-page rollback-journal
+allowance also includes any supported SQLite statistics tables, because a table
+drop can remove statistics for the rebuilt table; the working and operating
+allowances remain unchanged. Reusable SQLite pages are
+not filesystem truncation; their future maximum and independent compressed
+backup size are unknown. The reported standalone restore size is not included
+in the conversion allowance. No whole-database VACUUM is performed, and
+estimates do not reserve space against other writers.
 
 The conversion implementation currently accepts a fully synchronous SQLite
 connection in rollback-journal DELETE mode; it rejects unsupported write
