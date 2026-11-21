@@ -2,6 +2,8 @@
 
 from flask import Response, abort, request
 
+from .web_tactical_exposure import record
+
 
 def download(course):
     if request.args.get("version") != course["version"]:
@@ -9,7 +11,7 @@ def download(course):
     if not course["chapters"]:
         abort(404)
     document = "\n\n".join(item["pgn"] for item in course["chapters"]) + "\n"
-    return Response(
+    response = Response(
         document,
         mimetype="application/x-chess-pgn",
         headers={
@@ -17,3 +19,6 @@ def download(course):
             "Cache-Control": "private, no-store",
         },
     )
+
+    record(course["version"], list(enumerate(course["chapters"])), "download")
+    return response

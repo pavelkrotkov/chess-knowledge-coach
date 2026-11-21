@@ -1094,7 +1094,7 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         assert experiment_db.connection.total_changes == before_changes
         assert (
             experiment_db.connection.execute("PRAGMA data_version").fetchone()[0]
-            == before_data_version
+            > before_data_version
         )
         assert (planning_dir / "opening-comparison-slot.json").read_bytes() == previous_slot
 
@@ -1175,6 +1175,9 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     course_path = "/repertoire/unfamiliar/course"
     assert client_first.get(course_path, base_url="https://coach.invalid").status_code == 403
     version_before = experiment_db.connection.execute("PRAGMA data_version").fetchone()[0]
+    from datetime import UTC, datetime
+
+    before_delivery = datetime.now(UTC).isoformat()
     page = client_first.get(course_path, base_url="https://coach.invalid", headers=headers)
     assert page.status_code == 200 and b"Exploratory opening course preview" in page.data
     assert b"Play White" in page.data and b"Play Black" in page.data
@@ -1186,6 +1189,34 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     course_version = match.group(1)
     course = unfamiliar_course_preview(experiment_db, tmp_path, "learner")
     assert course["version"] == course_version and len(course["chapters"]) == 2
+    from chess_coach.tactical_exposure_admission import eligible
+    from chess_coach.tactical_exposure_check import check as exposure_check
+    from chess_coach.tactical_exposure_progress import qualifying
+
+    observed = experiment_db.connection.execute(
+        """SELECT e.prompt_key FROM tactical_exposures e
+        WHERE e.artifact_hash=? AND e.kind='served' AND NOT EXISTS
+        (SELECT 1 FROM tactical_exposures earlier WHERE earlier.subject=e.subject
+         AND earlier.prompt_key=e.prompt_key AND earlier.occurred_at<?) LIMIT 1""",
+        (course_version, before_delivery),
+    ).fetchone()
+    assert observed is not None
+    key = observed[0]
+    assert exposure_check(experiment_db, "learner", key) == "provided"
+    assert (
+        exposure_check(experiment_db, "learner", key, answered_at=before_delivery) == "not_recorded"
+    )
+    assert exposure_check(experiment_db, "other", key) == "not_recorded"
+    assert not eligible(experiment_db, "learner", {"prompt_key": key})
+    from chess_coach.related_capture_position import prompt_key
+
+    row = {"subject": "learner", "prompt_fen": course["chapters"][0]["fen"]}
+    assert qualifying(experiment_db, row, "correct", datetime.now(UTC).isoformat()) == (
+        "not_held_out",
+        "provided",
+    )
+    unprovided = prompt_key("4k3/8/8/8/8/8/4q3/4R1K1 w - - 0 1")
+    assert eligible(experiment_db, "learner", {"prompt_key": unprovided})
     assert all(
         lesson["mode"] == "conceal"
         and lesson["orientation"] == lesson["color"]
@@ -1212,7 +1243,7 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         assert parsed.comment == lesson["note"]
         assert "Exploratory" in parsed.comment and "CC BY-SA 4.0" in parsed.comment
     assert chess.pgn.read_game(stream) is None
-    assert experiment_db.connection.execute("PRAGMA data_version").fetchone()[0] == version_before
+    assert experiment_db.connection.execute("PRAGMA data_version").fetchone()[0] > version_before
 
     # The group and a nondefault one-branch course share one checked source.
     import os
@@ -3321,7 +3352,7 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     assert b"Another verified repeated branch with a ready experiment" not in exhausted.data
     assert slot_path.read_bytes() == slot_before and result_path.read_bytes() == result_before
     assert db.connection.total_changes == changes_before and len(engine_calls) == before_explore
-    assert db.connection.execute("PRAGMA data_version").fetchone()[0] == data_version
+    assert db.connection.execute("PRAGMA data_version").fetchone()[0] > data_version
     with monkeypatch.context() as patch:
         patch.setattr(
             queue_binding, "_config", lambda *args: ("engine", {"engine_path": "changed"})

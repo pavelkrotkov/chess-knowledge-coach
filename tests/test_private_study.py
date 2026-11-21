@@ -268,12 +268,33 @@ def test_private_publication_reconciles_timeouts_and_rejects_public_destination(
     from chess_coach.tactical_study_pgn import matches_mainline
     from chess_coach.tactical_study_status import status as tactical_status
 
-    upload_planning = tmp_path / ".runtime" / "planning"
-    upload_planning.chmod(0o700)
-    data = tmp_path / ".runtime" / "data"
-    data.mkdir(mode=0o700)
+    planning.chmod(0o700)
+    generic_data = tmp_path / ".runtime" / "data"
+    generic_data.mkdir(mode=0o700)
     from chess_coach.db import Database
+    from chess_coach.related_capture_position import prompt_key
+    from chess_coach.tactical_exposure_check import check as exposure_check
 
+    generic_db = Database(generic_data / "synthetic.sqlite")
+    generic_db.initialize()
+    assert exposure_check(generic_db, "learner", prompt_key(chess.STARTING_FEN)) == "provided"
+    assert exposure_check(generic_db, "other", prompt_key(chess.STARTING_FEN)) == "not_recorded"
+    generic_intent = planning / "poc-study-336-intent.json"
+    generic_saved = generic_intent.read_bytes()
+    legacy_intent = json.loads(generic_saved)
+    del legacy_intent["tactical_delivery"]
+    generic_intent.write_text(json.dumps(legacy_intent))
+    assert exposure_check(generic_db, "learner", prompt_key(chess.STARTING_FEN)) == (
+        "legacy_coverage_unknown"
+    )
+    generic_intent.write_bytes(generic_saved)
+    generic_db.close()
+
+    tactical_root = tmp_path / "tactical-scope"
+    upload_planning = tactical_root / ".runtime" / "planning"
+    upload_planning.mkdir(parents=True, mode=0o700)
+    data = tactical_root / ".runtime" / "data"
+    data.mkdir(mode=0o700)
     exposure_db = Database(data / "synthetic.sqlite")
     exposure_db.initialize()
     tactical_body = {"chapters": chapters[:4], "version": "fixture"}
@@ -416,6 +437,55 @@ def test_private_publication_reconciles_timeouts_and_rejects_public_destination(
     tactical_provider.anonymous_status = 403
     assert publish(tactical_remote, tactical_path, tactical_course, strict=True) == tactical_link
     assert len(tactical_provider.uploaded) == 4
+
+    # The same intent timeline covers opening publication and exact historical receipts.
+    opening_root = tmp_path / "opening-scope"
+    opening_planning = opening_root / ".runtime" / "planning"
+    opening_planning.mkdir(parents=True, mode=0o700)
+    opening_data = opening_root / ".runtime" / "data"
+    opening_data.mkdir(mode=0o700)
+    opening_db = Database(opening_data / "synthetic.sqlite")
+    opening_db.initialize()
+    opening_version = "e" * 64
+    opening_body = {
+        "kind": "opening-study-course-v1",
+        "preview_version": opening_version,
+        "chapters": chapters[:2],
+    }
+    opening_course = {"course": opening_body, "course_sha256": preview_hash(opening_body)}
+    frozen = opening_planning / f"opening-study-{opening_version}-course.json"
+    frozen.write_text(json.dumps(opening_course))
+    frozen.chmod(0o400)
+    opening_path = opening_planning / f"opening-study-{opening_version}-intent.json"
+    opening_provider = Provider()
+    opening_provider.timeout_create = False
+    opening_remote = Remote("fixture-token", "learner", opening_provider)
+    monkeypatch.setattr(anonymous, "request", opening_provider.anonymous)
+    with pytest.raises(StudyError, match="unknown"):
+        publish(opening_remote, opening_path, opening_course, strict=True)
+    opening_state = json.loads(opening_path.read_text())
+    sent = parse_utc(opening_state["tactical_delivery"]["chapters"]["0"]["pending_at"])
+    assert sent is not None
+    during_opening = (sent + timedelta(microseconds=1)).isoformat()
+    assert exposure_check(opening_db, "learner", key, answered_at=during_opening) == (
+        "publication_time_unknown"
+    )
+    publish(opening_remote, opening_path, opening_course, strict=True)
+    opening_state = json.loads(opening_path.read_text())
+    assert exposure_check(opening_db, "learner", key, answered_at=during_opening) == (
+        "publication_time_unknown"
+    )
+    assert exposure_check(opening_db, "learner", key) == "provided"
+    assert exposure_check(opening_db, "other", key) == "not_recorded"
+    # Historical receipts have no precise send time, even after verification.
+    del opening_state["tactical_delivery"]
+    opening_path.write_text(json.dumps(opening_state))
+    assert exposure_check(opening_db, "learner", key, answered_at=during_opening) == (
+        "publication_time_unknown"
+    )
+    assert exposure_check(opening_db, "learner", key) == "provided"
+    opening_db.close()
+    monkeypatch.setattr(anonymous, "request", tactical_provider.anonymous)
 
     from chess_coach.tactical_study_final import check as final_check
 

@@ -11,11 +11,13 @@ from flask import (
     url_for,
 )
 
+from .fact_fingerprint import digest
 from .opening_experiment_current import current
 from .opening_experiment_export import pgn
 from .tactical_course_deadline import PreviewDeadline
 from .web_board import board_rows
 from .web_db import database
+from .web_tactical_exposure import record
 
 opening_experiments = Blueprint("opening_experiments", __name__)
 
@@ -35,15 +37,15 @@ def show(game_id, position_id, move):
             position_id,
             move,
         )
-        document = (
-            pgn(decision, choice, experiment) if request.args.get("download") == "1" else None
-        )
+        document = pgn(decision, choice, experiment)
         if db.connection.execute("PRAGMA data_version").fetchone()[0] != version:
             raise ValueError("opening experiment changed")
     except (Exception, PreviewDeadline):
         abort(404)
-    if document is not None:
-        return Response(
+    chapter = [(0, {"pgn": document})]
+    artifact = digest(document)
+    if request.args.get("download") == "1":
+        response = Response(
             document,
             mimetype="application/x-chess-pgn",
             headers={
@@ -51,9 +53,12 @@ def show(game_id, position_id, move):
                 "Cache-Control": "private, no-store",
             },
         )
-    return render_template(
+        record(artifact, chapter, "download")
+        return response
+    page = render_template(
         "opening_experiment.html",
         decision=decision,
+        exposure_unavailable=database().compat32,
         choice=choice,
         experiment=experiment,
         board=board_rows(decision["fen"], decision["color"]),
@@ -65,6 +70,8 @@ def show(game_id, position_id, move):
             download=1,
         ),
     )
+    record(artifact, chapter, "served")
+    return page
 
 
 @opening_experiments.get(

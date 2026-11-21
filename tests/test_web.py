@@ -242,6 +242,42 @@ def test_private_access_and_csrf(setup, tmp_path, monkeypatch):
             headers=HEADERS,
         )
         assert worked_pgn.status_code == 200 and worked_pgn.mimetype == "application/x-chess-pgn"
+        lesson = {
+            **worked,
+            "fen": chess.STARTING_FEN,
+            "color": "white",
+            "name": "Synthetic",
+            "eco": "A00",
+            "reason": "Example",
+            "instruction": "Choose a move",
+            "san": ["e4", "e5"],
+            "revisit": "Revisit",
+            "scope": "Fixture",
+            "geometry": "Fixture",
+            "source_url": "https://example.invalid",
+            "license_url": "https://example.invalid/license",
+            "license": "Fixture",
+            "source": {
+                "record": "fixture",
+                "archive_sha256": "fixture",
+                "catalog_source": "https://example.invalid",
+            },
+        }
+        opening = {"version": "b" * 64, "chapters": [lesson], "selection": None}
+        patch.setattr("chess_coach.web_unfamiliar_course._load", lambda *_: opening)
+        opening_page = compat_client.get(
+            "/repertoire/unfamiliar/course", base_url=ORIGIN, headers=HEADERS
+        )
+        assert (
+            opening_page.status_code == 200
+            and b"Delivery tracking is unavailable" in opening_page.data
+        )
+        opening_pgn = compat_client.get(
+            "/repertoire/unfamiliar/course?download=1&version=" + opening["version"],
+            base_url=ORIGIN,
+            headers=HEADERS,
+        )
+        assert opening_pgn.status_code == 200 and opening_pgn.mimetype == "application/x-chess-pgn"
     from chess_coach.curriculum import daily_plan
     from chess_coach.unified_sessions import start as start_unified
 
