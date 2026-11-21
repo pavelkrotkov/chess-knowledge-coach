@@ -5,8 +5,10 @@ import json
 from .capture_plan_result import result
 from .mate_assessment_events import replay
 from .training_feedback_request import validate_request
+from .unified_training_owned_capture import SOURCE as SOURCE
 from .unified_training_owned_capture import binding
 
+SKILL = "hanging_piece"
 POLICY = "unified-owned-capture-schedule-v1"
 MAPPER = "unified-owned-capture-evidence-v1"
 

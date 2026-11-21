@@ -43,7 +43,7 @@ def _process_one(db, row, clock, seconds, verifier):
     with work_scope(row):
         result = verifier(db, row, clock, seconds=seconds)
         published = publish(db, row, result)
-    from .unified_capture_worker import finish_objective
+    from .unified_fork_worker import finish_objective
 
     finish_objective(db, row, published)
     return published

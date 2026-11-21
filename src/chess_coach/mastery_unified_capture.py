@@ -4,21 +4,21 @@ import json
 
 import chess
 
+from . import unified_capture_learning as default_policy
 from .learner_identity import normalize_identity
 from .mastery_position import position_key
 from .mastery_time import parse_utc
-from .unified_capture_learning import MAPPER, POLICY, proof
 from .unified_source_current import require_current
 
 
-def lineage(db, evidence, completion, row):
+def lineage(db, evidence, completion, row, *, policy=default_policy):
     require_current(db, row)
-    item, event, fact, assisted, fingerprint = proof(db, row, completion["event_id"])
+    item, event, fact, assisted, fingerprint = policy.proof(db, row, completion["event_id"])
     expected = "success" if fact["status"] == "correct" else "failure"
     context = {
-        "source": "unified_owned_capture",
-        "policy_version": POLICY,
-        "mapper_version": MAPPER,
+        "source": policy.SOURCE,
+        "policy_version": policy.POLICY,
+        "mapper_version": policy.MAPPER,
         **fact,
     }
     actual = (
@@ -43,14 +43,14 @@ def lineage(db, evidence, completion, row):
         "unassisted",
         expected,
         expected,
-        POLICY,
-        MAPPER,
-        MAPPER,
+        policy.POLICY,
+        policy.MAPPER,
+        policy.MAPPER,
         "unreviewed_evidence_recorded",
         fingerprint,
         normalize_identity(row["subject"]),
         item["item_id"],
-        "hanging_piece",
+        policy.SKILL,
         "execute",
         "good" if expected == "success" else "again",
         context,
