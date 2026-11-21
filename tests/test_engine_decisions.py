@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import subprocess
 import sys
 from pathlib import Path
 
@@ -144,8 +145,15 @@ def test_failed_engine_run_rolls_back_before_later_commit(monkeypatch):
     assert db.connection.execute("SELECT COUNT(*) FROM engine_outputs").fetchone()[0] == 0
 
 
-def test_merge_preserves_decision_provenance(monkeypatch):
-    source, target = database(), database()
+def test_merge_preserves_decision_provenance(monkeypatch, tmp_path):
+    from chess_coach import analysis_history_convert as history
+    from chess_coach.analysis_history_plan import plan
+
+    source, target = Database(tmp_path / "source.sqlite"), database()
+    source.initialize()
+    ingest_pgn(source, PGN)
+    source.connection.execute("CREATE INDEX synthetic_analysis_engine ON analysis_runs(engine)")
+    source.connection.commit()
     first = run_fake(monkeypatch, source, FakeEngine())
     legacy = dict(
         source.connection.execute("SELECT * FROM analysis_runs WHERE id=?", (first,)).fetchone()
@@ -193,6 +201,55 @@ def test_merge_preserves_decision_provenance(monkeypatch):
     with pytest.raises(sqlite3.IntegrityError, match="immutable"):
         source.connection.execute("UPDATE analysis_provenance SET nnue='changed'")
     source.connection.rollback()
+    before = [
+        tuple(row)
+        for row in source.connection.execute("SELECT * FROM analysis_runs_read ORDER BY id")
+    ]
+    estimate = plan(tmp_path / "source.sqlite", tmp_path)
+    assert estimate["sample_complete"]
+    assert estimate["sampled_rows"] == 3 and estimate["distinct_sampled_profiles"] == 1
+    assert estimate["analysis_table_bytes"] > 0 and estimate["analysis_index_bytes"] > 0
+    before_file = (tmp_path / "source.sqlite").read_bytes()
+    command = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "chess_coach.cli",
+            "plan-analysis-history",
+            str(tmp_path / "source.sqlite"),
+            "--project-root",
+            str(tmp_path),
+        ],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    assert json.loads(command.stdout)["sampled_rows"] == 3
+    assert (tmp_path / "source.sqlite").read_bytes() == before_file
+    with monkeypatch.context() as patch:
+
+        def interrupted(*_args):
+            raise RuntimeError("synthetic interruption")
+
+        patch.setattr(history, "after_swap", interrupted)
+        with pytest.raises(RuntimeError, match="synthetic interruption"):
+            history.convert(source.connection, tmp_path)
+    assert [
+        tuple(row)
+        for row in source.connection.execute("SELECT * FROM analysis_runs_read ORDER BY id")
+    ] == before
+    assert source.connection.execute("PRAGMA foreign_keys").fetchone()[0] == 1
+    result = history.convert(source.connection, tmp_path)
+    assert result["converted_rows"] == 1
+    assert source.connection.execute(
+        "SELECT 1 FROM sqlite_schema WHERE type='index' AND name='synthetic_analysis_engine'"
+    ).fetchone()
+    assert [
+        tuple(row)
+        for row in source.connection.execute("SELECT * FROM analysis_runs_read ORDER BY id")
+    ] == before
+    assert source.connection.execute("SELECT COUNT(*) FROM engine_outputs").fetchone()[0] == 6
+
     target.connection.execute("UPDATE analysis_provenance_settings SET compact=1 WHERE id=1")
     target.connection.commit()
     assert merge_analysis_outputs(target, source) == 6
@@ -224,12 +281,18 @@ def test_merge_preserves_decision_provenance(monkeypatch):
     assert rollback.connection.execute("PRAGMA user_version").fetchone()[0] == CURRENT_VERSION
 
     # A genuine pre-33 target accepts compact imports and direct engine runs inline.
-    old = database()
+    old = Database(tmp_path / "old.sqlite")
+    old.initialize()
+    ingest_pgn(old, PGN)
     old.connection.execute("DROP VIEW analysis_runs_read")
     for table in ("analysis_run_provenance", "analysis_provenance_settings", "analysis_provenance"):
         old.connection.execute(f"DROP TABLE {table}")
     old.connection.execute("PRAGMA user_version=32")
     old.connection.commit()
+    legacy_plan = plan(tmp_path / "old.sqlite", tmp_path)
+    assert legacy_plan["status"] == "unknown"
+    assert not legacy_plan["native_provenance_tables_available"]
+    assert old.connection.execute("PRAGMA user_version").fetchone()[0] == 32
     assert merge_analysis_outputs(old, source) == 6
     assert [
         tuple(row)
@@ -255,6 +318,71 @@ def test_merge_preserves_decision_provenance(monkeypatch):
     source.connection.commit()
     with pytest.raises(ValueError, match="provenance view unavailable"):
         merge_analysis_outputs(target, source)
+
+    # Repeated settings span many SQLite pages and several keyset batches.
+    large_path = tmp_path / "repeated.sqlite"
+    large = Database(large_path)
+    large.initialize()
+    ingest_pgn(large, PGN)
+    ids = [-(1 << 63), -7, 0, *range(1, 126), (1 << 63) - 1]
+    rows = [
+        (
+            run_id,
+            1,
+            "synthetic",
+            "1",
+            json.dumps(
+                {
+                    "engine": "Stockfish",
+                    "options": {"Hash": 64, "Threads": 1},
+                    "search": {"nodes": 100000, "multipv": 3},
+                    "metadata": "x" * 1024,
+                    "variant": index % 2,
+                }
+            ),
+            "net",
+            "{}",
+        )
+        for index, run_id in enumerate(ids)
+    ]
+    large.connection.executemany(
+        """INSERT INTO analysis_runs
+        (id,game_id,engine,engine_version,config_json,nnue,compatibility_json)
+        VALUES(?,?,?,?,?,?,?)""",
+        rows,
+    )
+    large.connection.commit()
+    original = [
+        tuple(row)
+        for row in large.connection.execute("SELECT * FROM analysis_runs_read ORDER BY id")
+    ]
+    sql = """SELECT sum(pgsize) FROM dbstat WHERE name IN
+        ('analysis_runs','analysis_run_provenance','analysis_provenance',
+         'sqlite_autoindex_analysis_provenance_1')"""
+    used_before = large.connection.execute(sql).fetchone()[0]
+    page_size = large.connection.execute("PRAGMA page_size").fetchone()[0]
+    free_before = large.connection.execute("PRAGMA freelist_count").fetchone()[0] * page_size
+    physical_before = large_path.stat().st_size
+    result = history.convert(large.connection, tmp_path)
+    used_after = large.connection.execute(sql).fetchone()[0]
+    assert result["all_runs_linked"] and result["converted_rows"] == len(ids)
+    assert large.connection.execute("SELECT COUNT(*) FROM analysis_provenance").fetchone()[0] == 2
+    assert [
+        tuple(row)
+        for row in large.connection.execute("SELECT * FROM analysis_runs_read ORDER BY id")
+    ] == original
+    assert used_after < used_before
+    assert result["reusable_bytes_after"] > free_before
+    assert result["physical_file_bytes_after"] == large_path.stat().st_size
+    print(
+        "Synthetic pages:",
+        used_before,
+        used_after,
+        free_before,
+        result["reusable_bytes_after"],
+        physical_before,
+        result["physical_file_bytes_after"],
+    )
 
 
 @pytest.mark.skipif(not Path("/usr/games/stockfish").is_file(), reason="Stockfish not installed")

@@ -99,6 +99,19 @@ def test_bounded_execution_preserves_cheap_and_shared_work(tmp_path, monkeypatch
     db, selection_id = prepare_selected(tmp_path / "deep.sqlite", monkeypatch)
     selection = show_selection(db, 1, LEARNER)
     first = selection["items"][0]
+    db.connection.execute(
+        """INSERT INTO evidence_mappings(position_id,skill,operation,outcome,confidence,context_json)
+        VALUES(?,?,?,?,?,?)""",
+        (
+            first["position_id"],
+            "synthetic",
+            "test",
+            "success",
+            0.8,
+            '{"analysis_run_id":' + str(selection["cheap_run_id"]) + "}",
+        ),
+    )
+    db.connection.commit()
     original_outputs = db.connection.execute("SELECT COUNT(*) FROM engine_outputs").fetchone()[0]
     original_evidence = db.connection.execute("SELECT COUNT(*) FROM evidence_mappings").fetchone()[
         0
@@ -115,6 +128,15 @@ def test_bounded_execution_preserves_cheap_and_shared_work(tmp_path, monkeypatch
     assert engine.calls[0][0].move_stack == engine.calls[1][0].move_stack
     assert engine.calls[0][1].nodes == engine.calls[1][1].nodes == 1000
     assert engine.calls[0][2] == 3 and len(engine.calls[1][3]) == 1
+    from chess_coach.analysis_history_convert import convert
+
+    result = convert(db.connection, tmp_path)
+    assert result["converted_rows"] >= 1
+    assert db.connection.execute("PRAGMA foreign_key_check").fetchall() == []
+    assert (
+        db.connection.execute("SELECT COUNT(*) FROM engine_outputs").fetchone()[0]
+        == original_outputs
+    )
     report = inspect_decision(db, first["position_id"], learner=LEARNER)
     assert report["run"]["id"] == selection["cheap_run_id"]
     assert inspect_decision(db, first["position_id"], learner="default")["deep"] is None

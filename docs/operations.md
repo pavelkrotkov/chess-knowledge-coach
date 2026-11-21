@@ -275,6 +275,29 @@ before an authorized run, stop other project writers, and preserve the normal
 operating reserve. Neither a sizing estimate nor a successful compressed
 backup establishes that the subsequent native migration fits.
 
+To estimate a future analysis-history compaction without changing the database,
+use the read-only planner against a project-contained file:
+
+~~~sh
+"$release" -I -B -m chess_coach.cli plan-analysis-history SOURCE --project-root "$PWD"
+~~~
+
+The report measures only the analysis table and its indexes and samples at most
+1,024 resolved profiles. Its replacement and rollback-journal bounds are
+intentionally conservative, including a worst-case sector allowance. An
+incomplete sample cannot establish total deduplication or expected savings.
+Reusable SQLite pages are not filesystem truncation; no whole-database VACUUM
+is performed. Space estimates do not reserve space against other writers.
+
+The conversion implementation currently accepts a fully synchronous SQLite
+connection in rollback-journal DELETE mode; it rejects unsupported write
+triggers. It has no production command. Before a later explicitly authorized
+invocation, independently complete native #703
+acceptance, verify a separate backup and restore, stop all project writers,
+and approve a fresh capacity preflight. An interruption before commit rolls back;
+older code that cannot read compact profiles requires the verified restore.
+The planner and synthetic conversion tests do not establish those prerequisites.
+
 For a release explicitly reviewed for schema-32 compatibility, an operator may
 select CHESS_SCHEMA_COMPAT=32 for the configured service database. This mode
 does not migrate the database, enable compact storage, or replace the backup and
