@@ -487,7 +487,26 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         ).status_code
         == 409
     )
-    queue_worker.run(db, config, tmp_path)
+
+    # Both measured roots reach the same structural position by different move orders.
+    class TransposingEngine(Engine):
+        def analyse(self, board, limit, *, multipv, root_moves):
+            items = super().analyse(board, limit, multipv=multipv, root_moves=root_moves)
+            lines = {
+                "d2d4": ("d2d4", "d7d5", "g1f3", "g8f6"),
+                "g1f3": ("g1f3", "g8f6", "d2d4", "d7d5"),
+            }
+            for item in items:
+                item["pv"] = [chess.Move.from_uci(move) for move in lines[item["pv"][0].uci()]]
+            return items
+
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            opening_engine,
+            "start_engine",
+            lambda *args, **kwargs: (TransposingEngine(), SimpleNamespace(id={})),
+        )
+        queue_worker.run(db, config, tmp_path)
     assert len(engine_calls) == before + 1
     queue_worker.run(db, config, tmp_path)
     assert len(engine_calls) == before + 1
@@ -496,6 +515,10 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     assert b"100000 nodes" in completed.data and b"requested cap of 200000" in completed.data
     assert len(engine_calls) == before + 1
     assert b"Rehearse this opening experiment" in completed.data
+    learning_before = tuple(
+        db.connection.execute("SELECT count(*) FROM " + table).fetchone()[0]
+        for table in ("evidence_mappings", "training_attempts")
+    )
     experiment = client.get(experiment_url, base_url="https://coach.invalid", headers=headers)
     assert experiment.status_code == 200
     assert b"played 0 cp; alternative 120 cp" in experiment.data
@@ -503,7 +526,84 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     assert b"Reveal your continuation" in experiment.data
     assert b"Overall soundness and personal fit remain unknown" in experiment.data
     assert b"alternative=g1f3" in experiment.data
+    assert b"Checked preparation scope" in experiment.data
+    assert b"not a complete opening tree" in experiment.data
     assert client.get(experiment_url, base_url="https://coach.invalid").status_code == 403
+
+    # The same versioned inventory is available through the actual private CLI.
+    import contextlib as preparation_contextlib
+    import io as preparation_io
+    import sys as preparation_sys
+
+    import chess_coach.opening_preparation_history as preparation_history
+    import chess_coach.ops_opening_profile as profile_cli
+
+    def private_inventory(patch):
+        output = preparation_io.StringIO()
+        patch.setenv("CHESS_DB", str(path))
+        patch.setattr(
+            preparation_sys,
+            "argv",
+            [
+                "opening-profile",
+                "--project-root",
+                str(tmp_path),
+                "--game-id",
+                "1",
+                "--position-id",
+                str(first_move),
+                "--alternative",
+                "g1f3",
+                "--preparation",
+            ],
+        )
+        with preparation_contextlib.redirect_stdout(output):
+            profile_cli.main()
+        return json.loads(output.getvalue())
+
+    original_recent = preparation_history.recent_games
+
+    def checked_recent(database, *args, **kwargs):
+        assert database.connection.in_transaction
+        return original_recent(database, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(preparation_history, "recent_games", checked_recent)
+        inventory = private_inventory(patch)
+    assert inventory["version"] == "opening-preparation-inventory-v1"
+    assert inventory["binding"].encode() in experiment.data
+    assert inventory["branches"]["shared_positions"] >= 2
+    assert inventory["history"]["covered_positions"] > 0
+    assert inventory["history"]["status"] == "incomplete"
+    assert inventory["history"]["not_seen_positions"] is None
+    with monkeypatch.context() as patch:
+        patch.setattr(preparation_history, "MAX_GAMES", 1)
+        limited_inventory = private_inventory(patch)
+    assert limited_inventory["history"]["uncertainty"]["game_limit_reached"]
+    assert limited_inventory["history"]["not_seen_edges"] is None
+    with monkeypatch.context() as patch:
+        patch.setattr(preparation_history, "MAX_POSITIONS", 1)
+        oversized_inventory = private_inventory(patch)
+    assert oversized_inventory["history"]["skipped_games"] > 0
+    assert oversized_inventory["history"]["not_seen_positions"] is None
+    with monkeypatch.context() as patch:
+        patch.setattr(preparation_history, "MAX_GAME_BYTES", 1)
+        excluded_inventory = private_inventory(patch)
+    assert excluded_inventory["history"]["uncertainty"]["candidate_recheck_failed"] > 0
+    assert excluded_inventory["history"]["not_seen_positions"] is None
+    with monkeypatch.context() as patch:
+        patch.setenv("CHESS_SUBJECT", "other")
+        with pytest.raises(SystemExit, match="Opening profile unavailable"):
+            private_inventory(patch)
+    with monkeypatch.context() as patch:
+        patch.setattr("chess_coach.opening_decision_budget.GRAPH_SHA256", "stale")
+        with pytest.raises(SystemExit, match="Opening profile unavailable"):
+            private_inventory(patch)
+    assert len(engine_calls) == before + 1
+    assert learning_before == tuple(
+        db.connection.execute("SELECT count(*) FROM " + table).fetchone()[0]
+        for table in ("evidence_mappings", "training_attempts")
+    )
     assert (
         client.get(
             route + "/experiment/e2e4", base_url="https://coach.invalid", headers=headers
@@ -618,7 +718,8 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     assert experiment_qualified(first, choice, borderline) is None
     with monkeypatch.context() as patch:
         patch.setattr(
-            "chess_coach.opening_experiment_current.statuses", lambda *_args: {"g1f3": borderline}
+            "chess_coach.opening_experiment_current.statuses",
+            lambda *_args, **_kwargs: {"g1f3": borderline},
         )
         assert (
             client.get(

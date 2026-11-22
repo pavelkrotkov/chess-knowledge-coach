@@ -13,10 +13,12 @@ def side_candidates(connection, subject, side, limit):
     )
 
 
-def load_game(connection, game_id):
-    return connection.execute(
-        """SELECT g.*, t.started_at AS projected_start, t.white_identity AS projected_white,
+def load_game(connection, game_id, *, max_game_bytes=None):
+    query = """SELECT g.*, t.started_at AS projected_start, t.white_identity AS projected_white,
         t.black_identity AS projected_black FROM games g JOIN style_game_times t ON t.game_id=g.id
-        WHERE g.id=? AND t.status=? AND t.version=?""",
-        (game_id, "current", VERSION),
-    ).fetchone()
+        WHERE g.id=? AND t.status=? AND t.version=?"""
+    parameters = (game_id, "current", VERSION)
+    if max_game_bytes is not None:
+        query += " AND length(CAST(g.pgn AS BLOB))<=?"
+        parameters += (max_game_bytes,)
+    return connection.execute(query, parameters).fetchone()

@@ -7,11 +7,12 @@ from .opening_queue_validate import valid
 from .opening_queue_view_state import state
 
 
-def statuses(db, root, learner, decision, *, deadline=None, with_identity=False):
+def statuses(db, root, learner, decision, *, deadline=None, with_identity=False, budget=None):
     directory, database = location(db, root, learner)
     items = decision["catalog"]["items"]
     if not items:
         return {}
+    options = {"budget": budget} if budget is not None else {}
     budget, source, config, owned = snapshot(
         db,
         database,
@@ -20,6 +21,7 @@ def statuses(db, root, learner, decision, *, deadline=None, with_identity=False)
         decision["position_id"],
         items[0]["uci"],
         deadline=deadline,
+        **options,
     )
     slot = read(directory / "opening-comparison-slot.json")
     if slot is not None and not valid(slot, slot.get("database")):

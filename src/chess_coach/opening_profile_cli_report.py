@@ -36,3 +36,18 @@ def report(root, subject, game_id, position_id, alternative, reference):
         }
     finally:
         connection.close()
+
+
+def preparation(root, subject, game_id, position_id, alternative):
+    from .opening_preparation import report as inventory
+
+    planning(root, subject)
+    connection, path = open_database(root)
+    try:
+        db = SimpleNamespace(connection=connection, path=path)
+        _, _, _, result = inventory(
+            db, root, subject, game_id, position_id, alternative, deadline=time.monotonic() + 12
+        )
+        return result
+    finally:
+        connection.close()

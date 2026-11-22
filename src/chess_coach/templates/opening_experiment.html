@@ -8,6 +8,21 @@
 {% set board_label = "Opening position; learner to move" %}{% include "board.html" %}
 <p>Two-root same-search estimates from your perspective at depth {{ experiment.depth }}: played {{ experiment.played.score }} cp; alternative {{ experiment.alternative.score }} cp. The alternative is no more than 50 cp below the played move in this estimate. These estimates cover the two shown roots at the recorded depth. Overall soundness and personal fit remain unknown.</p>
 {% if experiment.reference %}<p>The best legal root measured in the same search scored {{ experiment.reference.score }} cp. The alternative is {{ experiment.reference.score - experiment.alternative.score }} cp below it. This bounded reference is not a proof of soundness.</p>{% endif %}
+<h3>Checked preparation scope</h3>
+<p>This inventory covers only the two displayed, legally checked prefixes ({{ preparation.branches.played.plies }} and {{ preparation.branches.alternative.plies }} plies), not a complete opening tree. They contain {{ preparation.branches.unique_positions }} unique positions and {{ preparation.branches.unique_edges }} directed edges; {{ preparation.branches.shared_positions }} positions and {{ preparation.branches.shared_edges }} edges occur in both prefixes.</p>
+<p>Positions use structural transposition identity; the original game history remains part of the source binding. Repetition and draw history can differ.</p>
+{% if preparation.history.status == "checked" %}
+<p>In {{ preparation.history.checked_games }} checked games with the same learner side, {{ preparation.history.covered_positions }} positions and {{ preparation.history.covered_edges }} edges were observed. {{ preparation.history.not_seen_positions }} positions and {{ preparation.history.not_seen_edges }} edges were not seen in that checked sample. Earlier and outside practice is unknown.</p>
+{% elif preparation.history.covered_positions is defined %}
+<p>Checked history is incomplete: {{ preparation.history.covered_positions }} positions and {{ preparation.history.covered_edges }} edges were observed in {{ preparation.history.checked_games }} checked games; negative coverage is unknown.</p>
+{% else %}
+<p>Checked history is unavailable or incomplete, so coverage is unknown.</p>
+{% endif %}
+<p>The sample selects at most {{ preparation.history.limits.games }} recent owner-verified games before filtering for the same learner side, with at most {{ preparation.history.limits.positions_per_game }} stored plies, {{ preparation.history.limits.pgn_bytes }} PGN bytes per game and {{ preparation.history.limits.history_steps }} replay steps in total.</p>
+{% if preparation.history.uncertainty is defined %}
+<p>Sample limit reached: {{ "yes" if preparation.history.uncertainty.game_limit_reached else "no" }}; games skipped during history replay: {{ preparation.history.skipped_games }}; unknown-time records: at least {{ preparation.history.uncertainty.unknown_time_lower_bound }}; uncertain ownership or stale metadata: at least {{ preparation.history.uncertainty.unknown_ownership_global_lower_bound }}; candidates failing recheck or the PGN size limit: {{ preparation.history.uncertainty.candidate_recheck_failed }}{% if preparation.history.uncertainty.boundary_tie %}; the sample boundary includes a time tie{% endif %}.</p>
+{% endif %}
+<p>Inventory {{ preparation.version }} · source binding {{ preparation.binding }}. Counts describe the checked material, not effort, mastery, preference or future performance.</p>
 <h3>Played: {{ decision.played }}</h3><p>{{ experiment.played.san|join(" ") }}</p>
 <h3>Alternative: {{ choice.san }}</h3><p>{{ choice.san }} {{ experiment.alternative.san[1] }}</p><details><summary>Reveal your continuation</summary><p>{{ experiment.alternative.san[2:]|join(" ") }}</p></details>
 <p>These are bounded worked lines. Other legal continuations may occur.</p>
