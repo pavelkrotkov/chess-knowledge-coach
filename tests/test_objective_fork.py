@@ -2121,6 +2121,11 @@ def _v6_source_mix(path, planning, now, monkeypatch):
     db.connection.commit()
     _, due = plan(2)
     assert due[0]["item_id"] == row["id"] and due[0]["kind"] == "due"
+    due_full = daily_plan(
+        db, subject=SUBJECT, corpus_version="fixture", as_of=as_of, limit=1, scan_limit=200
+    )
+    assert len(due_full["items"]) == 1 and due_full["items"][0]["kind"] == "due"
+    assert due_full["limit_reached"]
     db.connection.execute("UPDATE training_items SET due=? WHERE id=?", (row["due"], row["id"]))
     db.connection.commit()
 
@@ -2319,16 +2324,16 @@ def _v6_source_mix(path, planning, now, monkeypatch):
     start(
         cold,
         attempt_id="retry",
-        subject="cold_synthetic",
+        subject="Cold_Synthetic",
         source_type="public",
         version=VERSION,
         key=cold_item["source_key"],
         training=True,
         item_id=assisted["item_id"],
     )
-    submit(cold, "retry", "cold_synthetic", event_id="answer", move="a7a8n")
-    assert process(cold, "cold_synthetic")["outcomes"] == {"correct": 1}
-    assert show(cold, "retry", "cold_synthetic")["learning"]["outcome"] == "success"
+    submit(cold, "retry", "Cold_Synthetic", event_id="answer", move="a7a8n")
+    assert process(cold, "Cold_Synthetic")["outcomes"] == {"correct": 1}
+    assert show(cold, "retry", "Cold_Synthetic")["learning"]["outcome"] == "success"
     assert (
         daily_plan(cold, subject="cold_synthetic", corpus_version="fixture")["canonical_context"]
         == "continuation"

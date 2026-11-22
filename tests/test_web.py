@@ -1,6 +1,7 @@
 """Private browser security and real review-to-practice flow."""
 
 import re
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
@@ -40,6 +41,9 @@ def setup(tmp_path):
     game.setup(board)
     game.headers["White"] = "Learner"
     game.headers["Black"] = "Opponent"
+    observed = datetime.now(UTC)
+    game.headers["UTCDate"] = observed.strftime("%Y.%m.%d")
+    game.headers["UTCTime"] = observed.strftime("%H:%M:%S")
     game.add_variation(board.parse_uci("e4d3"))
     ingest_pgn(db, str(game))
     game_id = db.connection.execute("SELECT MAX(id) FROM games").fetchone()[0]

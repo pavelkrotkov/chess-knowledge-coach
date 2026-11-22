@@ -32,8 +32,18 @@ def build_page(db: Database, state: dict, learner: str, now: datetime, budget=No
             reason = "due_scan_incomplete"
     # Old signed continuations keep their original two-phase selection.
     if state["v"] in {3, 4, 5, 6} and state["phase"] != "due" and reason is None:
-        return _mixed_page(db, state, learner, now, budget, summary, status, items, scan)
-    return _legacy_page(db, state, learner, now, budget, summary, status, items, scan, reason)
+        return _finish(
+            _mixed_page(db, state, learner, now, budget, summary, status, items, scan), state
+        )
+    return _finish(
+        _legacy_page(db, state, learner, now, budget, summary, status, items, scan, reason), state
+    )
+
+
+def _finish(page, state):
+    if state["v"] == 6:
+        page["limit_reached"] = len(state["seen"]) >= state["limit"]
+    return page
 
 
 def _legacy_page(db, state, learner, now, budget, summary, status, items, scan, reason):
