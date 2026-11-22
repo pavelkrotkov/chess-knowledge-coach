@@ -1,6 +1,7 @@
 """Explicit public promotion goals use durable bounded legal proof."""
 
 import json
+import re
 from pathlib import Path
 
 import chess
@@ -274,3 +275,212 @@ def test_imported_source_queues_exemplar_and_resumes_every_defense(tmp_path, mon
     assert (
         db.connection.execute("SELECT COUNT(*) FROM mastery_states").fetchone()[0] == mastery_before
     )
+    _canonical_learning_workflow(db, client, headers, monkeypatch)
+
+
+def _canonical_learning_workflow(db, client, headers, monkeypatch):
+    from chess_coach import unified_session_apply, unified_sessions
+    from chess_coach.objective_publication import cancel
+    from chess_coach.unified_session_events import hint, reveal
+    from chess_coach.unified_training_complete import complete
+
+    def enrolled(key, attempt, **kwargs):
+        return start(
+            db,
+            attempt_id=attempt,
+            subject=SUBJECT,
+            source_type="public",
+            version=VERSION,
+            key=key,
+            training=True,
+            **kwargs,
+        )
+
+    with pytest.raises(ValueError, match="qualified training"):
+        enrolled("forced-white", "forced-unavailable")
+    with pytest.raises(ValueError, match="qualified training"):
+        start(
+            db,
+            attempt_id="other-collection",
+            subject=SUBJECT,
+            source_type="public",
+            version="discovery-material-defense-own-v1",
+            key="direct-white",
+            training=True,
+        )
+    with monkeypatch.context() as patch:
+        patch.setattr(unified_sessions, "now", lambda: "2026-01-01T00:00:00+00:00")
+        patch.setattr(unified_session_apply, "now", lambda: "2026-01-01T00:00:00+00:00")
+        enrolled("stalemate-white", "canonical-learning")
+        illegal = submit(db, "canonical-learning", SUBJECT, event_id="illegal", move="a7a5")
+        assert illegal["feedback"] == "illegal" and illegal["status"] == "active"
+        queued = submit(db, "canonical-learning", SUBJECT, event_id="answer", move="a7a8n")
+    assert queued["status"] == "needs_verification"
+    assert show(db, "canonical-learning", SUBJECT)["learning"]["state"] == "pending"
+    assert process(db, SUBJECT)["outcomes"] == {"correct": 1}
+    result = show(db, "canonical-learning", SUBJECT)
+    learning = result["learning"]
+    assert learning["state"] == "completed" and learning["outcome"] == "success"
+    assert learning["rating"] == "good" and learning["evidence_id"]
+    assert chess.Board(result["fen"]).is_stalemate()
+    evidence = db.connection.execute(
+        "SELECT * FROM evidence_mappings WHERE id=?", (learning["evidence_id"],)
+    ).fetchone()
+    assert json.loads(evidence["context_json"])["source"] == "unified_canonical_promotion"
+    from chess_coach.mastery_unified_training import training_context
+
+    context, error = training_context(db, evidence)
+    assert context is not None and error is None
+    assert (
+        complete(db, "canonical-learning", SUBJECT, event_id="answer")["item_id"]
+        == learning["item_id"]
+    )
+    assert submit(db, "canonical-learning", SUBJECT, event_id="answer", move="a7a8n") == queued
+    reviewed = db.connection.execute(
+        "SELECT reviewed_at FROM training_attempts WHERE item_id=?", (learning["item_id"],)
+    ).fetchone()[0]
+    assert reviewed == "2026-01-01T00:00:00+00:00"
+
+    for query in (
+        "SELECT id FROM training_items INDEXED BY idx_curriculum_source_due "
+        "WHERE source_type='unified_canonical_promotion' AND skill='promotion' "
+        "AND operation='execute' AND lower(due) != 'now' AND julianday(due)<=julianday('2027-01-01') "
+        "ORDER BY julianday(due),id LIMIT 10",
+        "SELECT id FROM training_items INDEXED BY idx_curriculum_source_scheduled "
+        "WHERE source_type='unified_canonical_promotion' AND skill='promotion' "
+        "AND operation='execute' AND id>0 ORDER BY id LIMIT 10",
+    ):
+        plan = [row[3] for row in db.connection.execute("EXPLAIN QUERY PLAN " + query)]
+        assert any("idx_curriculum_source_" in detail for detail in plan)
+        assert not any("TEMP B-TREE" in detail for detail in plan)
+
+    with monkeypatch.context() as patch:
+        from chess_coach import objective_promotion_root
+
+        patch.setattr(objective_promotion_root, "scan", lambda *_: pytest.fail("solver on GET"))
+        page = client.get("/plan", base_url="https://coach.invalid", headers=headers)
+    assert page.status_code == 200 and b"Scheduled review is due." in page.data
+    assert b'name="source_type" value="public"' in page.data
+    assert f'name="item_id" value="{learning["item_id"]}"'.encode() in page.data
+    with client.session_transaction(base_url="https://coach.invalid") as browser:
+        csrf = browser["csrf"]
+    opened = client.post(
+        "/unified/start",
+        base_url="https://coach.invalid",
+        headers=headers | {"Origin": "https://coach.invalid"},
+        data={
+            "csrf": csrf,
+            "source_type": "public",
+            "version": VERSION,
+            "key": "stalemate-white",
+            "training": "1",
+            "item_id": str(learning["item_id"]),
+        },
+    )
+    assert opened.status_code == 303
+    reopened = opened.headers["Location"].rsplit("/", 1)[-1]
+    assert (
+        db.connection.execute(
+            "SELECT item_id FROM unified_training_enrollments WHERE attempt_id=?", (reopened,)
+        ).fetchone()[0]
+        == learning["item_id"]
+    )
+
+    practice = client.get(
+        opened.headers["Location"], base_url="https://coach.invalid", headers=headers
+    )
+    event_match = re.search(r'name="event" value="([^"]+)"', practice.get_data(as_text=True))
+    assert event_match is not None
+    played = client.post(
+        "/unified/move",
+        base_url="https://coach.invalid",
+        headers=headers | {"Origin": "https://coach.invalid"},
+        data={"csrf": csrf, "attempt": reopened, "event": event_match.group(1), "move": "a7a8n"},
+    )
+    assert played.status_code == 303
+    assert process(db, SUBJECT)["outcomes"] == {"correct": 1}
+    assert show(db, reopened, SUBJECT)["learning"]["item_id"] == learning["item_id"]
+    with pytest.raises(ValueError, match="training item"):
+        start(
+            db,
+            attempt_id="other-owner",
+            subject="other",
+            source_type="public",
+            version=VERSION,
+            key="stalemate-white",
+            training=True,
+            item_id=learning["item_id"],
+        )
+
+    # Every legal choice of promotion piece is a success, not a winning claim.
+    for piece in "qrbn":
+        attempt = "piece-" + piece
+        enrolled("direct-white", attempt)
+        submit(db, attempt, SUBJECT, event_id="answer", move="a7a8" + piece)
+    assert process(db, SUBJECT, limit=4)["outcomes"] == {"correct": 4}
+    for piece in "qrbn":
+        assert show(db, "piece-" + piece, SUBJECT)["learning"]["outcome"] == "success"
+
+    # A normalized worker request must still complete the exact original owner.
+    start(
+        db,
+        attempt_id="mixed-owner",
+        subject="Fixture_Learner",
+        source_type="public",
+        version=VERSION,
+        key="direct-black",
+        training=True,
+    )
+    submit(db, "mixed-owner", "Fixture_Learner", event_id="answer", move="a2a1q")
+    assert process(db, SUBJECT)["outcomes"] == {"correct": 1}
+    assert show(db, "mixed-owner", "Fixture_Learner")["learning"]["outcome"] == "success"
+
+    enrolled("capture-black", "black-learning")
+    submit(db, "black-learning", SUBJECT, event_id="answer", move="b2a1n")
+    assert process(db, SUBJECT)["outcomes"] == {"correct": 1}
+    assert show(db, "black-learning", SUBJECT)["learning"]["outcome"] == "success"
+
+    enrolled("direct-white", "assisted-learning")
+    hint(db, "assisted-learning", SUBJECT, event_id="hint")
+    reveal(db, "assisted-learning", SUBJECT, event_id="reveal")
+    submit(db, "assisted-learning", SUBJECT, event_id="answer", move="a7a8r")
+    assert process(db, SUBJECT)["outcomes"] == {"correct": 1}
+    assisted = show(db, "assisted-learning", SUBJECT)["learning"]
+    assert assisted["assistance"] == "assisted"
+    assert assisted["evidence_id"] is None and assisted["rating"] is None
+
+    enrolled("direct-white", "miss-learning")
+    submit(db, "miss-learning", SUBJECT, event_id="answer", move="h1h2")
+    assert process(db, SUBJECT)["outcomes"] == {"incorrect": 1}
+    missed = show(db, "miss-learning", SUBJECT)["learning"]
+    assert missed["outcome"] == "failure" and missed["rating"] == "again"
+    event_time = db.connection.execute(
+        "SELECT created_at FROM unified_session_events WHERE attempt_id='miss-learning' AND event_id='answer'"
+    ).fetchone()[0]
+    review_time = db.connection.execute(
+        """SELECT t.reviewed_at FROM training_attempts t JOIN unified_training_completions c
+        ON c.training_attempt_id=t.id WHERE c.attempt_id='miss-learning'"""
+    ).fetchone()[0]
+    assert event_time == review_time
+
+    enrolled("direct-black", "cancelled-learning")
+    submit(db, "cancelled-learning", SUBJECT, event_id="answer", move="a2a1q")
+    cancel(db, SUBJECT, "cancelled-learning", "answer")
+    with pytest.raises(ValueError):
+        complete(db, "cancelled-learning", SUBJECT, event_id="answer")
+    assert (
+        db.connection.execute(
+            "SELECT count(*) FROM unified_training_completions WHERE attempt_id='cancelled-learning'"
+        ).fetchone()[0]
+        == 0
+    )
+
+    enrolled("direct-black", "stale-catalog")
+    submit(db, "stale-catalog", SUBJECT, event_id="answer", move="a2a1q")
+    with monkeypatch.context() as patch:
+        patch.setattr("chess_coach.plan_promotion_catalog.TASKS", "0" * 64)
+        assert process(db, SUBJECT)["outcomes"] == {"correct": 1}
+        with pytest.raises(ValueError):
+            complete(db, "stale-catalog", SUBJECT, event_id="answer")
+        assert training_context(db, evidence) == (None, "invalid_training_lineage")
+    assert complete(db, "stale-catalog", SUBJECT, event_id="answer")["outcome"] == "success"

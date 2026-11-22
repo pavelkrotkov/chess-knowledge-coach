@@ -13,6 +13,10 @@ def candidate(db, row, subject_hash, *, check=None):
         from .curriculum_reference import referenced_candidate
 
         return True, referenced_candidate(db, ref)
+    if row["source_type"] == "unified_canonical_promotion":
+        from .curriculum_canonical_promotion_reference import candidate as canonical_candidate
+
+        return True, canonical_candidate(db, ref)
     if row["source_type"] == "unified_public_m1":
         from .curriculum_public_mate_reference import candidate as public_candidate
 

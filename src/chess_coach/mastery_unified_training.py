@@ -13,6 +13,13 @@ from .unified_training_terminal import terminal
 
 def _lineage(db, evidence, completion):
     row = session_row(db, completion["attempt_id"], completion["session_subject"])
+    from .unified_training_canonical_promotion import is_source as canonical_source
+
+    if canonical_source(row):
+        from . import unified_canonical_promotion_learning
+        from .mastery_unified_capture import lineage
+
+        return lineage(db, evidence, completion, row, policy=unified_canonical_promotion_learning)
     from .unified_training_public_mate import is_source as public_source
 
     if public_source(row):

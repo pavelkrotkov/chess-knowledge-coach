@@ -118,6 +118,21 @@ They were imported into an isolated validation database only. Production
 activation remains outstanding.
 
 
+## Canonical immediate-promotion learning
+
+The separately qualified scheduled policy is restricted to the exact pinned
+eight-task canonical collection below and its immediate promotion objective.
+Before enrollment, completion and due reopening it rechecks the catalog,
+license, source and current task snapshot. Any legal immediate promotion,
+including captures and underpromotions, meets this objective; a legal non-promoting move misses it. Stalemate is not a win. The accepted event and whole
+hint/reveal history are retained. Unassisted success/Good and miss/Again
+produce unreviewed evidence and one FSRS update; assistance produces no
+evidence or schedule update. Pending, cancelled, stale and unresolved results
+are not grades. Reopening a due item remains owner-bound. Schema-32
+compatibility keeps learning unavailable while ordinary practice remains.
+The forced-promotion continuation is a separate policy and is not enrolled by
+this feature. No assessment here establishes mastery.
+
 ## Explicit promotion objectives
 
 The separately project-authored CC0 `canonical-promotion-v1` collection lives in

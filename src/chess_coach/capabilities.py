@@ -3,9 +3,16 @@
 Update this registry alongside the feature and its behavioral tests.
 """
 
-REGISTRY_VERSION = "1.106.0"
+REGISTRY_VERSION = "1.107.0"
 
 CAPABILITIES = (
+    {
+        "id": "unified_canonical_promotion_learning",
+        "area": "Training",
+        "name": "Scheduled canonical immediate-promotion practice",
+        "status": "supported",
+        "details": "With schema 41, the exact pinned canonical immediate-promotion task can record unreviewed evidence and schedule unassisted legal answers; assisted answers do not update evidence or schedule. Promotion is not a proved win. Schema-32 compatibility keeps learning unavailable, and forced-promotion learning remains separate.",
+    },
     {
         "id": "unified_public_mate_learning",
         "area": "Training",

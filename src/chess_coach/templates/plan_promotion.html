@@ -13,6 +13,16 @@
 <input type="hidden" name="key" value="{{ promotion.key }}">
 <button>Start promotion practice</button>
 </form>
+{% if promotion.learning_available %}
+<form method="post" action="{{ url_for('unified_practice.begin') }}">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<input type="hidden" name="source_type" value="public">
+<input type="hidden" name="version" value="{{ promotion.version }}">
+<input type="hidden" name="key" value="{{ promotion.key }}">
+<input type="hidden" name="training" value="1">
+<button>Start scheduled promotion practice</button>
+</form>
+{% endif %}
 {% elif promotion.status == "complete" %}
 <p>You have completed the two-color promotion sequence without assistance.</p>
 {% else %}
