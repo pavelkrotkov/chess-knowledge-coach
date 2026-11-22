@@ -4,15 +4,18 @@ import json
 import sqlite3
 import time
 
+from .opening_check_response_summary import summarize as check_summary
 from .opening_fit_later_index import locate
 from .opening_profile_lookup import _validate, guard
 from .opening_profile_metadata import summarize_profile
 from .opening_profile_queens import summarize as queen_summary
+from .opening_public_proof_index import index_hash
 from .opening_recent_select import rows as select_rows
 
 
 def profile(root, subject, decision, move, control, deadline):
     index = locate(root, subject, "recent")
+    checksum = index_hash(index[0], deadline)
     connection = sqlite3.connect(index[0].as_uri() + "?mode=ro&immutable=1", uri=True, timeout=1)
     try:
         guard(connection, deadline)
@@ -26,6 +29,9 @@ def profile(root, subject, decision, move, control, deadline):
         selected = [(row[0], ply) for row in rows[:10]]
         summary = summarize_profile(connection, selected, parent, move, True)
         summary["queens"] = queen_summary(connection, rows[:10], decision, move, deadline)
+        summary["check_responses"] = check_summary(
+            connection, rows[:10], decision, move, control, deadline - 0.25
+        )
         result = {
             **summary,
             **context,
@@ -35,6 +41,9 @@ def profile(root, subject, decision, move, control, deadline):
             "license": metadata["license"],
             "license_url": metadata["license_url"],
             "source_sha256": metadata["source_sha256"],
+            "index_sha256": checksum,
+            "index_transform": index[2],
+            "branch_move": move,
             "source_metadata": index[3],
             "reference": "recent",
             "decision_ply": ply,

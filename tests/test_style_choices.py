@@ -2168,12 +2168,25 @@ def _opening_fit_route(monkeypatch, tmp_path):
             supported_capture = (
                 "e4 e5 Bc4 Nc6 Nf3 a6 Nc3 Na5 Nxe5 Nxc4 Nxc4 d5 exd5 Qxd5 Ne3 Qd8 O-O Nf6 Re1 Be7"
             )
+            checked_lines = (
+                lines[0] + " Bh6 Bxh2+ Kxh2 Qe5+ Kg1 Qb5 Qc1 g5 Nd1 Nd5 b3 Qb6 Qf4 a6",
+                lines[1] + " h4 g6 Nd4 Nxd4 b3 Nf3+ Qxf3 Kh8 Bb2 Qb8 Rab1 Bc5 Rec1 Kg8",
+            )
             rated_games += [
                 rated_game(
                     branch,
                     200 + i,
                     "600+0",
-                    moves=supported_capture if branch == 1 and i == 0 else None,
+                    moves=(
+                        supported_capture
+                        if branch == 1 and i == 0
+                        else checked_lines[branch]
+                        if (branch == 0 and i == 4) or (branch == 1 and i == 3)
+                        else lines[1]
+                        + " Nd4 exd4 Nf1 Bf5 h3 Bd6 Nd2 Bh2+ Kxh2 Qd6+ f4 Rfb8 Rh1 Re8"
+                        if branch == 1 and i == 4
+                        else None
+                    ),
                 )
                 for branch in (0, 1)
                 for i in range(5)
@@ -2298,6 +2311,10 @@ def _opening_fit_route(monkeypatch, tmp_path):
             assert profile["queens"]["one_each"] == 8
             assert profile["queens"]["queenless_observed"] == 1
             assert profile["queens"]["one_or_imbalanced"] == 1
+            assert profile["check_responses"]["played_king"] >= 1
+            assert profile["check_responses"]["example"]["played"]["kind"] == "king"
+            assert profile["check_responses"]["unsupported"] >= 1
+            assert len(profile["index_sha256"]) == 64
             assert profile["queens"]["unsupported"] == 1
             assert profile["queens"]["ended"] == 6 and profile["queens"]["cutoff"] == 1
             from chess_coach.opening_profile_recent import profile as recent_profile
@@ -2332,6 +2349,43 @@ def _opening_fit_route(monkeypatch, tmp_path):
                 time.monotonic() + 30,
             )
             assert frontier["queens"]["frontier"] == 1
+            assert frontier["check_responses"]["frontier"] == 1
+
+            # Checkmate is terminal; a checked final position without a reply is unknown.
+            from chess_coach.opening_check_response_replay import replay as check_replay
+
+            memory = real_connect(":memory:")
+            memory.execute(
+                "CREATE TABLE moves(game_id INTEGER, ply INTEGER, parent TEXT, uci TEXT, san TEXT)"
+            )
+            one_reply = "b3 g5 a3 Bg7 d3 Bxa1 Kd2 Be5 h3 Nf6 Ke1 Nc6 f4 d5 Bb2 gxf4 Nd2 Ng8 Nc4 e6 Nd2 Qh4+ g3"
+            for game_no, text in enumerate(
+                ("f3 e5 g4 Qh4#", "e4 e5 Bc4 Be7 d4 Bb4+", one_reply), 1
+            ):
+                board = chess.Board()
+                for ply, san in enumerate(text.split(), 1):
+                    move = board.parse_san(san)
+                    memory.execute(
+                        "INSERT INTO moves VALUES(?,?,?,?,?)",
+                        (game_no, ply, position_key(board), move.uci(), board.san(move)),
+                    )
+                    board.push(move)
+            initial = {"ply": 1, "catalog": {"parent": position_key(chess.Board())}}
+            mate = check_replay(memory, 1, 4, initial, "f2f3", time.monotonic() + 30)
+            assert mate["status"] == "ended" and mate["events"][0]["checkmate"]
+            assert mate["events"][0]["legal_responses"] == 0
+            pending = check_replay(memory, 2, 6, initial, "e2e4", time.monotonic() + 30)
+            assert pending["status"] == "ended" and pending["unanswered"]
+            assert not pending["events"]
+            forced = check_replay(memory, 3, 23, initial, "b2b3", time.monotonic() + 30)
+            assert any(item["legal_responses"] == 1 for item in forced["events"])
+            from chess_coach.opening_check_response_summary import summarize as check_summary
+
+            interrupted = check_summary(
+                memory, [(2, 6, "{}")], initial, "e2e4", "600+0", time.monotonic() - 1
+            )
+            assert interrupted["interrupted"] and interrupted["preparation_incomplete"] == 1
+            memory.close()
             owned.connection.execute("BEGIN")
             owned.connection.execute(
                 "UPDATE games SET time_control=NULL WHERE id=?", (decision["game_id"],)
@@ -2346,6 +2400,7 @@ def _opening_fit_route(monkeypatch, tmp_path):
                 time.monotonic() + 30,
             )
             assert unknown_control["control"] == "unknown" and unknown_control["games"] == 0
+            assert unknown_control["check_responses"]["status"] == "unavailable"
             assert unknown_control["unknown_context"] >= 8
             owned.connection.rollback()
             import chess_coach.opening_profile_recent as recent_reader
@@ -2446,6 +2501,9 @@ def _opening_fit_route(monkeypatch, tmp_path):
                 assert b"Recent rated sample for the exact move at ply 3" in profile_page.data
                 assert b"Individual game links were not retained" in profile_page.data
                 assert b"Observed queenless positions" in profile_page.data
+                assert b"Observed check responses" in profile_page.data
+                assert b"Public archive example" in profile_page.data
+                assert b"do not establish accuracy" in profile_page.data
                 assert b"A later queenless position was observed in 1 games" in profile_page.data
                 assert b"Rehearse the checked lines" in profile_page.data
                 comparison["lines"][1]["score_value"] = -51
@@ -2521,6 +2579,14 @@ def _opening_fit_route(monkeypatch, tmp_path):
                 assert report["decision_ply"] == 3 and report["played"]["games"] == 8
                 assert report["played"]["queens"]["queenless_observed"] == 1
                 assert report["public_preparation"] is None
+                assert report["played"]["check_responses"]["played_king"] >= 1
+                assert report["alternative"]["check_responses"]["played_capture"] >= 1
+                assert report["alternative"]["check_responses"]["played_interposition"] >= 1
+                assert report["alternative"]["check_responses"]["multiple_responses"] >= 1
+                assert (
+                    report["alternative"]["check_responses"]["example"]["played"]["kind"]
+                    == "capture"
+                )
                 with pytest.raises(ValueError):
                     cli_profile(recent_root, "other", *later_games[0], "f1c4", "recent")
 
