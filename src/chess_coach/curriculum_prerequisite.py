@@ -62,6 +62,6 @@ def offer(db, state, subject, item, info, check):
 
 
 def offer_items(db, state, subject, found, phase, info, check):
-    if phase != "new" or state["v"] != 4 or not found:
+    if phase != "new" or state["v"] not in {4, 5} or not found:
         return found
     return [offer(db, state, subject, item, info, check) for item in found]

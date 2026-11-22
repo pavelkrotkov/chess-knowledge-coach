@@ -7,11 +7,11 @@ from .curriculum_cursor_values import integer
 def validate_phase(state: dict) -> None:
     if len(state["seen"]) >= state["limit"]:
         raise ValueError("completed plans cannot continue")
-    if (state["v"] not in {3, 4} and state["phase"] in {"due", "capture"}) and (
+    if (state["v"] not in {3, 4, 5} and state["phase"] in {"due", "capture"}) and (
         state["new_after"] is not None or state["pending"] is not None
     ):
         raise ValueError("pre-corpus scan cannot contain a corpus position")
-    if state["v"] in {2, 3, 4}:
+    if state["v"] in {2, 3, 4, 5}:
         validate_capture(state)
     # Family and prerequisite bindings apply only to their cursor versions.
     _versioned(state)
@@ -22,12 +22,12 @@ def validate_phase(state: dict) -> None:
 def validate_scheduled(state: dict) -> None:
     if not integer(state["scheduled_best"], 0, 2**63 - 1):
         raise ValueError("invalid scheduled winner")
-    if state["phase"] in {"capture", "fork", "new"} and state["scheduled_best"] != 0:
+    if state["phase"] in {"capture", "fork", "public", "new"} and state["scheduled_best"] != 0:
         raise ValueError("invalid scheduled winner")
 
 
 def after_due(state):
-    if state["v"] in {3, 4}:
+    if state["v"] in {3, 4, 5}:
         from .curriculum_cursor_families import current_family
 
         return current_family(state)
@@ -35,11 +35,16 @@ def after_due(state):
 
 
 def _versioned(state):
-    if state["v"] in {3, 4}:
+    if state["v"] in {3, 4, 5}:
         from .curriculum_cursor_families import validate_families
 
         validate_families(state)
-    if state["v"] == 4:
+    if state["v"] in {4, 5}:
         from .curriculum_prerequisite_cursor import validate_prerequisite
 
         validate_prerequisite(state)
+
+    if state["v"] == 5:
+        from .curriculum_public_cursor import validate
+
+        validate(state)

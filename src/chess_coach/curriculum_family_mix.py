@@ -24,12 +24,23 @@ def _step(db, state, learner, summary, counts, corpus, budget, check):
         return items, status, reason, focus
     if phase == "fork":
         return fork(db, state, learner, counts, check)
+    if phase == "public":
+        from .curriculum_public_scan import scan
+
+        return scan(db, state, learner, counts, check)
     return checked_page(db, state, summary, counts, corpus, check)
 
 
 def _defer(state):
     phase = state["phase"]
-    pending = {"capture": "capture_pending", "fork": "fork_pending", "new": "pending"}
+    pending = {
+        "capture": "capture_pending",
+        "fork": "fork_pending",
+        "new": "pending",
+        "public": "public_pending",
+    }
+    if phase == "public":
+        state["public_status"] = "deferred"
     if state["family_index"] < 3 and state[pending[phase]] is None:
         _advance(state)
         return "family_scan_incomplete"
@@ -49,7 +60,7 @@ def scan(db, state, learner, summary, counts, corpus, budget):
     try:
         with scope:
             # Topic preparation precedes selection, but never changes grading.
-            if state["v"] == 4:
+            if state["v"] in {4, 5}:
                 from .curriculum_prerequisite import prepare
 
                 progress["statuses"]["prerequisite"] = prepare(
@@ -64,6 +75,8 @@ def scan(db, state, learner, summary, counts, corpus, budget):
 def _loop(db, state, learner, summary, counts, corpus, budget, check, progress):
     while len(state["seen"]) < state["limit"]:
         phase = state["phase"]
+        if state["v"] == 5 and phase == "new" and state["public_binding"] is not None:
+            break
         # Only a completed family can be published after a timeout.
         progress["checkpoint"] = (dict(state), dict(counts), len(progress["items"]))
         found, status, reason, focus = _step(
@@ -93,14 +106,18 @@ def _loop(db, state, learner, summary, counts, corpus, budget, check, progress):
             reason = None
         reason = _reason(state, reason)
         progress["reason"] = reason
-        if reason is not None or state["family_index"] == 3:
+        if reason is not None or _finished(state, phase):
             break
         _advance(state)
 
 
 # Each successful item in final fill is its own durable cursor checkpoint.
 def _fill_quota(state, reason):
-    return reason == "family_quota_complete" and state["family_index"] == 3
+    return state["v"] != 5 and reason == "family_quota_complete" and state["family_index"] == 3
+
+
+def _finished(state, phase):
+    return (state["v"] == 5 and phase == "new") or (state["v"] != 5 and state["family_index"] == 3)
 
 
 # Do not publish a just-completed item after its shared deadline.
@@ -110,7 +127,7 @@ def _check_completed(reason, budget, check):
 
 
 def _reason(state, reason):
-    if reason in {"capture_scan_incomplete", "fork_scan_incomplete"}:
+    if reason in {"capture_scan_incomplete", "fork_scan_incomplete", "public_scan_incomplete"}:
         return _defer(state)
     # Yield to other families only during the one-item corpus pass.
     if reason == "corpus_scan_incomplete" and state["family_index"] < 3:
@@ -128,11 +145,18 @@ def _timeout(db, state, counts, budget, progress):
     if progress["reason"] is not None:
         return
     phase = state["phase"]
-    pending_key = {"capture": "capture_pending", "fork": "fork_pending", "new": "pending"}[phase]
+    pending_key = {
+        "capture": "capture_pending",
+        "fork": "fork_pending",
+        "new": "pending",
+        "public": "public_pending",
+    }[phase]
     pending = state[pending_key]
     after = state["scheduled_after"]
     # The prior corpus coordinate and its pending candidate are one continuation.
     new_after = state["new_after"]
+    public_after = state.get("public_after")
+    public_examined = state.get("public_examined")
     # Rewind only the unfinished family; earlier checked items can still be shown.
     checkpoint = progress["checkpoint"]
     if checkpoint is not None:
@@ -140,6 +164,8 @@ def _timeout(db, state, counts, budget, progress):
         state.update(saved_state)
         counts.update(saved_counts)
         del progress["items"][size:]
+    if phase == "public" and state["phase"] == phase:
+        state["public_after"], state["public_examined"] = public_after, public_examined
     # A bound candidate must resume its conflict check before another family.
     if pending is not None and state["phase"] == phase:
         state[pending_key], state["scheduled_after"] = pending, after

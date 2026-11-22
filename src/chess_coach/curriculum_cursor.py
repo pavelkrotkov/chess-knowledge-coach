@@ -11,9 +11,11 @@ def new_state(
     db: Database, learner: str, version: str, limit: int, scan_limit: int, now: datetime
 ) -> dict:
     from .curriculum_prerequisite_source import POLICY, graph
+    from .curriculum_public_cursor import fields
 
     return {
-        "v": 4,
+        **fields(),
+        "v": 5,
         "prerequisite_policy": POLICY,
         "prerequisite_graph": graph(),
         "prerequisite_scope": None,
@@ -67,7 +69,7 @@ def resume_state(
         raise ValueError("curriculum cursor time changed; restart the plan")
     if state["revision"] != revision(db):
         raise ValueError("curriculum sources changed; restart the plan")
-    if state["v"] == 4:
+    if state["v"] in {4, 5}:
         from .curriculum_prerequisite_source import POLICY, graph
 
         if (state["prerequisite_policy"], state["prerequisite_graph"]) != (POLICY, graph()):

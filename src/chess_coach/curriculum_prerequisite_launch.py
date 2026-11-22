@@ -51,3 +51,26 @@ def validate_start(db, subject, version, key, token, budget):
             validate(db, subject, version, key, token, check)
     except PreviewUnavailable:
         raise ValueError("diagnostic launch unavailable") from None
+
+
+def budget(db, diagnostic, source_type, goal, training, item_id):
+    if diagnostic is None:
+        return None
+    if (source_type, goal, training, item_id) not in {
+        ("corpus", "mate_in_one", True, None),
+        ("public", None, True, None),
+    }:
+        raise ValueError("diagnostic launch unavailable")
+    from .opening_queue_budget import BrowserBudget
+
+    return BrowserBudget(db)
+
+
+def dispatch(db, subject, source_type, version, key, diagnostic, budget):
+    if budget is not None:
+        if source_type == "public":
+            from .curriculum_public_launch import validate_start as validate_public
+
+            validate_public(db, subject, version, key, diagnostic, budget)
+        else:
+            validate_start(db, subject, version, key, diagnostic, budget)
