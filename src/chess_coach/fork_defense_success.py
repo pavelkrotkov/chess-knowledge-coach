@@ -5,12 +5,14 @@ from .material_ambiguity import ambiguous
 from .material_lines import continuation
 
 
-def success(board, actual, played_line, candidates):
-    witness = anchor(board, candidates)
+def success(board, actual, played_line, candidates, *, check=None, on_proof=None):
+    witness = anchor(board, candidates, check=check, on_proof=on_proof)
     if witness is None:
         return ambiguous("fork_defense", "threat_anchor_unverified")
     if "reason" in witness:
         return ambiguous("fork_defense", witness["reason"])
+    if check is not None:
+        check()
     played = continuation(board, played_line, actual.uci())
     if played is None or played["material_delta"] < 0:
         return ambiguous("fork_defense", "continuation_or_compensation_unresolved")

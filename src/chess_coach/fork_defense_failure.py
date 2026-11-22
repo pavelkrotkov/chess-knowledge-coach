@@ -7,13 +7,17 @@ from .fork_defense_safety import safe_best
 from .material_ambiguity import ambiguous
 
 
-def failure(board, actual, best_line, played_line, candidates, following):
-    best = safe_best(board, best_line)
+def failure(
+    board, actual, best_line, played_line, candidates, following, *, check=None, on_proof=None
+):
+    best = safe_best(board, best_line, check=check, on_proof=on_proof)
     if best is None:
         return ambiguous("fork_defense", "alternative_defense_unverified")
     proof = _recorded_fork(played_line, following)
     if proof is None:
         return ambiguous("fork_defense", "recorded_fork_unverified")
+    if check is not None:
+        check()
     lines, reason = failed(board, actual, best, played_line, best_line, proof)
     if not lines:
         return ambiguous("fork_defense", reason)
