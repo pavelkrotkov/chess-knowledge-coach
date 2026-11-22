@@ -56,7 +56,6 @@ def _mate_relevant(state, summary, prerequisite):
         summary["state"] == "supported_weakness"
         or bool(summary["supporting_evidence_ids"])
         or bool(prerequisite and prerequisite["state"] == "available")
-        or state["canonical_context"] == "first_recorded"
     )
 
 

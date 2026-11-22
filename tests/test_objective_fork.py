@@ -2255,6 +2255,27 @@ def _v6_source_mix(path, planning, now, monkeypatch):
     cold = Database(path.parent / "cold.sqlite")
     cold.initialize()
     assert import_collection(cold, CONTENT, CONTENT, MANIFEST, project_root=ROOT)["accepted"] == 8
+    # A promotion diagnostic is not, by itself, a reason to offer generic mate practice.
+    corpus = cold.connection.execute(
+        "INSERT INTO puzzle_corpora(version,source,checksum,state) "
+        "VALUES('fixture','fixture','checksum','staging')"
+    ).lastrowid
+    cold.connection.execute(
+        """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,
+        rating_deviation,themes_json,objective)
+        VALUES('generic',?,?,'','g8h8 c5f8',500,80,'[]','execute')""",
+        (corpus, "6k1/8/6K1/2Q5/8/8/8/8 b - - 0 1"),
+    )
+    cold.connection.execute("UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus,))
+    cold.connection.commit()
+    from chess_coach.curriculum_query import corpus_status
+
+    assert corpus_status(cold, "fixture")[0] == "available"
+    first = daily_plan(cold, subject="cold_synthetic", corpus_version="fixture")
+    assert first["canonical_context"] == "first_recorded"
+    assert first["public_status"] != "offered"
+    assert any(item["skill"] == "promotion" for item in first["items"])
+    assert all(item["skill"] != "mate_in_one" for item in first["items"])
     # Unrelated recorded public work does not erase a first opportunity in
     # this exact canonical catalog or imply a general beginner state.
     from chess_coach.public_mate_contract import OBJECTIVE as PUBLIC_MATE
