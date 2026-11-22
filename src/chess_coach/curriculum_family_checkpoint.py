@@ -1,11 +1,7 @@
 """Preserve completed work and bound candidates across a plan deadline."""
 
-from .curriculum_cursor_families import current_family
-
-
-def _advance(state):
-    state["family_index"] += 1
-    state["phase"] = current_family(state)
+from .curriculum_mix_order import advance as _advance
+from .curriculum_mix_order import recovery
 
 
 def defer(state):
@@ -15,10 +11,15 @@ def defer(state):
         "fork": "fork_pending",
         "new": "pending",
         "public": "public_pending",
+        "canonical": "canonical_pending",
     }
-    if phase == "public":
-        state["public_status"] = "deferred"
-    if state["family_index"] < 3 and state[pending[phase]] is None:
+    # An unbound deadline remains deferred work, not proof of an absent source.
+    if phase in {"public", "canonical"}:
+        state[phase + "_status"] = "deferred"
+    elif state["v"] == 6 and phase in {"capture", "fork"}:
+        state[phase + "_mix"] = "deferred"
+    end = 8 if state["v"] == 6 else 3
+    if state["family_index"] < end and state[pending[phase]] is None:
         _advance(state)
         return "family_scan_incomplete"
     return f"{phase}_scan_incomplete"
@@ -35,67 +36,59 @@ def timeout(db, state, counts, budget, progress):
         return
     checkpoint = progress["checkpoint"]
     saved, _, size = checkpoint or (state, counts, 0)
-    phase = (
-        saved["phase"]
-        if saved["v"] == 5 and saved["phase"] in {"capture", "fork", "public"}
-        else state["phase"]
-    )
-    completed = len(progress["items"]) > size
+    phase, completed = recovery(state, saved, progress, size)
     pending_key = {
         "capture": "capture_pending",
         "fork": "fork_pending",
         "new": "pending",
         "public": "public_pending",
+        "canonical": "canonical_pending",
     }[phase]
     pending = state[pending_key]
     after = state["scheduled_after"]
     # The prior corpus coordinate and its pending candidate are one continuation.
     new_after = state["new_after"]
-    public_after = state.get("public_after")
-    public_examined = state.get("public_examined")
-    pending, after, public_after, public_examined = _public_rewind(
-        state, saved, counts, phase, pending, after, public_after, public_examined
-    )
+    source = _source_position(state, phase)
+    pending, after, source = _source_rewind(state, saved, counts, phase, pending, after, source)
     # Rewind only the unfinished family; earlier checked items can still be shown.
     if checkpoint is not None:
         saved_state, saved_counts, size = checkpoint
         state.update(saved_state)
         counts.update(saved_counts)
         del progress["items"][size:]
-    _restore(state, phase, pending_key, pending, after, new_after, public_after, public_examined)
+    _restore(state, phase, pending_key, pending, after, new_after, source)
     phase = state["phase"]
     progress["statuses"][phase] = "deferred"
     progress["reason"] = _retry_or_defer(state, phase, completed)
 
 
 def _retry_or_defer(state, phase, completed):
-    if completed and state["v"] == 5 and phase in {"capture", "fork"}:
+    if completed and state["v"] in {5, 6} and phase in {"capture", "fork"}:
         return f"{phase}_scan_incomplete"
     return defer(state)
 
 
-def _restore(state, phase, key, pending, after, new_after, public_after, public_examined):
+def _source_position(state, phase):
+    return state.get(phase + "_after"), state.get(phase + "_examined")
+
+
+def _restore(state, phase, key, pending, after, new_after, source):
     if state["phase"] != phase:
         return
-    if phase == "public":
-        state["public_after"], state["public_examined"] = public_after, public_examined
+    if phase in {"public", "canonical"}:
+        state[phase + "_after"], state[phase + "_examined"] = source
     if pending is not None:
         state[key], state["scheduled_after"] = pending, after
         if phase == "new":
             state["new_after"] = new_after
 
 
-def _public_rewind(state, saved, counts, phase, pending, after, public_after, public_examined):
-    if phase != "public" or not state.get("public_binding") or saved.get("public_binding"):
-        return pending, after, public_after, public_examined
-    if saved["public_pending"] is not None:
-        return (
-            saved["public_pending"],
-            saved["scheduled_after"],
-            saved["public_after"],
-            saved["public_examined"],
-        )
-    before, examined = counts.get(
-        "_public_before", (saved["public_after"], saved["public_examined"])
-    )
-    return None, 0, before, examined
+def _source_rewind(state, saved, counts, phase, pending, after, source):
+    if phase not in {"public", "canonical"}:
+        return pending, after, source
+    if not state.get(phase + "_binding") or saved.get(phase + "_binding"):
+        return pending, after, source
+    if saved[phase + "_pending"] is not None:
+        return saved[phase + "_pending"], saved["scheduled_after"], _source_position(saved, phase)
+    prior = counts.get("_" + phase + "_before", _source_position(saved, phase))
+    return None, 0, prior

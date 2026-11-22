@@ -39,6 +39,10 @@ def validate(db, subject, version, key, token, check):
 
 
 def validate_start(db, subject, version, key, token, budget):
+    bounded(budget, lambda check: validate(db, subject, version, key, token, check))
+
+
+def bounded(budget, action):
     expires = time.monotonic() + SLICE_SECONDS
 
     def check():
@@ -48,7 +52,7 @@ def validate_start(db, subject, version, key, token, budget):
 
     try:
         with budget.scope(snapshot=False):
-            validate(db, subject, version, key, token, check)
+            action(check)
     except PreviewUnavailable:
         raise ValueError("diagnostic launch unavailable") from None
 

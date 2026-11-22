@@ -10,12 +10,14 @@ from .mastery_time import parse_utc
 def new_state(
     db: Database, learner: str, version: str, limit: int, scan_limit: int, now: datetime
 ) -> dict:
+    from .curriculum_canonical_cursor import fields as canonical_fields
     from .curriculum_prerequisite_source import POLICY, graph
     from .curriculum_public_cursor import fields
 
     return {
         **fields(),
-        "v": 5,
+        **canonical_fields(),
+        "v": 6,
         "prerequisite_policy": POLICY,
         "prerequisite_graph": graph(),
         "prerequisite_scope": None,
@@ -31,7 +33,7 @@ def new_state(
         "phase": "due",
         "capture_pending": None,
         "fork_pending": None,
-        "family_turn": now.date().toordinal() % 3,
+        "family_turn": now.date().toordinal() % 4,
         "family_index": 0,
         "due_after": None,
         "new_after": None,
@@ -69,7 +71,7 @@ def resume_state(
         raise ValueError("curriculum cursor time changed; restart the plan")
     if state["revision"] != revision(db):
         raise ValueError("curriculum sources changed; restart the plan")
-    if state["v"] in {4, 5}:
+    if state["v"] in {4, 5, 6}:
         from .curriculum_prerequisite_source import POLICY, graph
 
         if (state["prerequisite_policy"], state["prerequisite_graph"]) != (POLICY, graph()):

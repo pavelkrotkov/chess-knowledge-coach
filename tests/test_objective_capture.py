@@ -2078,7 +2078,7 @@ def _daily_capture_workflow(tmp_path, monkeypatch):
     db.connection.execute("UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus,))
     db.connection.commit()
     now = datetime.now(UTC)
-    now -= timedelta(days=now.date().toordinal() % 3)
+    now -= timedelta(days=now.date().toordinal() % 4)
     for name in ("first", "second"):
         item = create_training_item(
             db,
@@ -2094,14 +2094,15 @@ def _daily_capture_workflow(tmp_path, monkeypatch):
     )
     assert initial["capture_status"] == "deferred" and initial["next_cursor"]
     state = decode_cursor(db, initial["next_cursor"])
-    assert state["v"] == 5 and state["phase"] == "capture"
+    assert state["v"] == 6 and state["phase"] == "capture"
     assert len(state["capture_pending"]) == 64
     assert "fixture_learner" not in initial["next_cursor"]
     assert db.connection.total_changes == before
+    from chess_coach.curriculum_canonical_cursor import fields as canonical_fields
     from chess_coach.curriculum_public_cursor import fields as public_fields
 
     v2 = dict(state)
-    for field in public_fields():
+    for field in (*public_fields(), *canonical_fields()):
         del v2[field]
     v2["v"] = 2
     for field in (
@@ -2156,7 +2157,7 @@ def _daily_capture_workflow(tmp_path, monkeypatch):
     assert db.connection.total_changes == before
 
     v1 = new_state(db, LEARNER, "plan-fixture", 5, 1, now)
-    for field in public_fields():
+    for field in (*public_fields(), *canonical_fields()):
         del v1[field]
     v1["v"] = 1
     for field in (
@@ -2184,7 +2185,7 @@ def _daily_capture_workflow(tmp_path, monkeypatch):
     )
     assert all(item["skill"] != "hanging_piece" for item in legacy["items"])
     v3 = dict(state)
-    for field in public_fields():
+    for field in (*public_fields(), *canonical_fields()):
         del v3[field]
     v3["v"] = 3
     for field in (

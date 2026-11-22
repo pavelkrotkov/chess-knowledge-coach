@@ -404,6 +404,7 @@ def test_private_access_and_csrf(setup, tmp_path, monkeypatch):
 
     legacy_plan = daily_plan(compat_db, subject="learner", corpus_version="fixture-v1")
     assert legacy_plan["public_status"] == "learning_unavailable"
+    assert legacy_plan["canonical_status"] == "learning_unavailable"
     assert all(item.get("source_type") != "public" for item in legacy_plan["items"])
     assert compat_db.connection.execute("PRAGMA user_version").fetchone()[0] == 32
     assert compat_db.connection.execute("PRAGMA schema_version").fetchone()[0] == before
