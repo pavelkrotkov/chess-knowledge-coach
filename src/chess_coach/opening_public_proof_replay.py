@@ -7,6 +7,8 @@ import chess
 from .fact_fingerprint import canonical, digest
 from .material_exchange_rules import ordinary_capture
 from .objective_capture_judge import judge
+from .opening_public_fork_scan import scan as scan_forks
+from .opening_public_proof_capture_scan import scan as scan_captures
 from .opening_public_proof_history import positions
 from .opening_reference_url import site as valid_site
 
@@ -49,20 +51,23 @@ def _attribution(db, game_id, context, binding, example):
 
 
 # Recorded public captures are examples, never evidence of a learner mistake.
-def replay(db, row, binding, branch, start, deadline):
+def replay(db, row, binding, branch, start, deadline, *, fork_budget=None):
     game_id, total, context = row
-    rows, candidates, censored, safe = positions(db, game_id, total, binding, branch, deadline)
-    example, reasons = None, set()
-    for ply, board, move in candidates:
-        proof, missing = _capture(board, move, start, deadline)
-        if missing:
-            reasons.add(missing)
-        if proof is not None and example is None:
-            example = {"proof": proof, "ply": ply, "history_sha256": digest(canonical(rows[:ply]))}
+    rows, candidates, censored, safe = positions(
+        db, game_id, total, binding, branch, deadline, all_moves=fork_budget is not None
+    )
+    example, reasons = scan_captures(candidates, rows, start, deadline, _capture)
     if not safe:
         reasons.add("history_or_draw_unsupported")
     if example:
         _attribution(db, game_id, context, binding, example)
+    fork = (
+        scan_forks(candidates, rows, fork_budget, deadline, safe=safe)
+        if fork_budget is not None
+        else None
+    )
+    if fork is not None and fork["example"] is not None:
+        _attribution(db, game_id, context, binding, fork["example"])
     if time.monotonic() >= deadline:
         raise TimeoutError("public proof deadline")
-    return {"unsupported": sorted(reasons), "censored": censored, "example": example}
+    return {"unsupported": sorted(reasons), "censored": censored, "example": example, "fork": fork}

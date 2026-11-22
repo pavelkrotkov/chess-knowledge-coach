@@ -21,6 +21,14 @@ def _alternative(items, selected):
     return alternative
 
 
+def _reference_options():
+    reference = request.args.get("reference", "broadcast")
+    fork_window = request.args.get("fork_window", "initial")
+    if reference not in {"broadcast", "recent"} or fork_window not in {"initial", "continuation"}:
+        abort(400)
+    return reference, fork_window
+
+
 @opening_profiles.get("/repertoire/games/<int:game_id>/openings/<int:position_id>/profile")
 def show(game_id: int, position_id: int):
     db = database()
@@ -30,9 +38,7 @@ def show(game_id: int, position_id: int):
     except ValueError:
         abort(404)
     root, subject = current_app.config["PROJECT_ROOT"], current_app.config["SUBJECT"]
-    reference = request.args.get("reference", "broadcast")
-    if reference not in {"broadcast", "recent"}:
-        abort(400)
+    reference, fork_window = _reference_options()
     deadline = profile_deadline(reference)
     played = profile(db, root, subject, decision, decision["played_uci"], reference, deadline)
     items = decision["catalog"]["items"]
@@ -46,7 +52,16 @@ def show(game_id: int, position_id: int):
     measured = comparison(db, root, subject, decision, alternative) if alternative else None
     # This request reads a prior preparation; it never runs the capture judge.
     prepared = (
-        prepared_proof(db, root, subject, game_id, position_id, alternative["uci"], deadline)
+        prepared_proof(
+            db,
+            root,
+            subject,
+            game_id,
+            position_id,
+            alternative["uci"],
+            deadline,
+            fork_window=fork_window,
+        )
         if alternative and reference == "recent"
         else None
     )
@@ -62,4 +77,5 @@ def show(game_id: int, position_id: int):
         measured=measured,
         prepared=prepared,
         reference=reference,
+        fork_window=fork_window,
     )

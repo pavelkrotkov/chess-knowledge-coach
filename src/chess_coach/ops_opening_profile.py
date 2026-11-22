@@ -15,6 +15,7 @@ def main():
     parser.add_argument("--position-id", required=True, type=int)
     parser.add_argument("--alternative", required=True)
     parser.add_argument("--reference", choices=("broadcast", "recent"), default="broadcast")
+    parser.add_argument("--fork-window", choices=("initial", "continuation"), default="initial")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument(
         "--preparation", action="store_true", help="Inventory this checked experiment"
@@ -23,6 +24,11 @@ def main():
         "--prepare-public",
         action="store_true",
         help="Prepare bounded recent public capture evidence",
+    )
+    mode.add_argument(
+        "--prepare-public-forks",
+        action="store_true",
+        help="Prepare bounded recent public capture and fork evidence",
     )
     args = parser.parse_args()
     try:
@@ -33,14 +39,16 @@ def main():
             args.position_id,
             args.alternative,
         )
-        if args.prepare_public:
+        if args.prepare_public or args.prepare_public_forks:
             if args.reference != "recent":
                 raise ValueError("recent reference required")
-            value = prepare_public(*arguments)
+            value = prepare_public(
+                *arguments, forks=args.prepare_public_forks, fork_window=args.fork_window
+            )
         elif args.preparation:
             value = preparation(*arguments)
         else:
-            value = report(*arguments, args.reference)
+            value = report(*arguments, args.reference, fork_window=args.fork_window)
     except Exception:
         raise SystemExit("Opening profile unavailable.") from None
     print(json.dumps(value, indent=2))

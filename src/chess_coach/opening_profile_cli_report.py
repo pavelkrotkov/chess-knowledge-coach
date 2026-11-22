@@ -7,7 +7,7 @@ from .opening_profile_cli_db import private_database
 from .opening_profile_source import profile
 
 
-def report(root, subject, game_id, position_id, alternative, reference):
+def report(root, subject, game_id, position_id, alternative, reference, *, fork_window="initial"):
     with private_database(root, subject) as db:
         connection = db.connection
         deadline = time.monotonic() + 12
@@ -25,7 +25,16 @@ def report(root, subject, game_id, position_id, alternative, reference):
         if reference == "recent":
             from .opening_public_proof_read import lookup
 
-            prepared = lookup(db, root, subject, game_id, position_id, alternative, deadline)
+            prepared = lookup(
+                db,
+                root,
+                subject,
+                game_id,
+                position_id,
+                alternative,
+                deadline,
+                fork_window=fork_window,
+            )
         if connection.execute("PRAGMA data_version").fetchone()[0] != version:
             raise ValueError("opening decision changed")
         result = {
@@ -50,8 +59,19 @@ def preparation(root, subject, game_id, position_id, alternative):
         return result
 
 
-def prepare_public(root, subject, game_id, position_id, alternative):
+def prepare_public(
+    root, subject, game_id, position_id, alternative, *, forks=False, fork_window="initial"
+):
     from .opening_public_proof import prepare
 
     with private_database(root, subject) as db:
-        return prepare(db, root, subject, game_id, position_id, alternative)
+        return prepare(
+            db,
+            root,
+            subject,
+            game_id,
+            position_id,
+            alternative,
+            forks=forks,
+            fork_window=fork_window,
+        )
