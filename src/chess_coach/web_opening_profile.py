@@ -6,6 +6,7 @@ from .opening_decision import inspect
 from .opening_explore_comparison import comparison
 from .opening_profile_source import deadline as profile_deadline
 from .opening_profile_source import profile
+from .opening_public_proof_read import lookup as prepared_proof
 from .web_db import database
 
 opening_profiles = Blueprint("opening_profiles", __name__)
@@ -43,6 +44,12 @@ def show(game_id: int, position_id: int):
         else None
     )
     measured = comparison(db, root, subject, decision, alternative) if alternative else None
+    # This request reads a prior preparation; it never runs the capture judge.
+    prepared = (
+        prepared_proof(db, root, subject, game_id, position_id, alternative["uci"], deadline)
+        if alternative and reference == "recent"
+        else None
+    )
     if db.connection.execute("PRAGMA data_version").fetchone()[0] != version:
         abort(409)
     return render_template(
@@ -53,5 +60,6 @@ def show(game_id: int, position_id: int):
         selected=selected is not None,
         other=other,
         measured=measured,
+        prepared=prepared,
         reference=reference,
     )

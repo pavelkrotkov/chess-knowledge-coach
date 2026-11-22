@@ -2165,8 +2165,18 @@ def _opening_fit_route(monkeypatch, tmp_path):
             rated_games = [rated_game(0, i, "300+0") for i in range(12)]
             rated_games += [rated_game(0, 100, "600+0", berserk=True)]
             rated_games += [rated_game(0, 101, "600+0", missing_rating=True)]
+            supported_capture = (
+                "e4 e5 Bc4 Nc6 Nf3 a6 Nc3 Na5 Nxe5 Nxc4 Nxc4 d5 exd5 Qxd5 Ne3 Qd8 O-O Nf6 Re1 Be7"
+            )
             rated_games += [
-                rated_game(branch, 200 + i, "600+0") for branch in (0, 1) for i in range(5)
+                rated_game(
+                    branch,
+                    200 + i,
+                    "600+0",
+                    moves=supported_capture if branch == 1 and i == 0 else None,
+                )
+                for branch in (0, 1)
+                for i in range(5)
             ]
             queenless = "e4 e5 Nf3 Nc6 Bb5 a6 Bxc6 dxc6 Nxe5 Qd4 Nf3 Qxe4+ Qe2 Qxe2+ Kxe2 Kd7"
             promotion = "e4 e5 Nf3 h5 a4 h4 a5 h3 a6 hxg2 axb7 gxh1=Q bxa8=Q"
@@ -2465,8 +2475,95 @@ def _opening_fit_route(monkeypatch, tmp_path):
                 report = cli_profile(recent_root, "learner", *later_games[0], "f1c4", "recent")
                 assert report["decision_ply"] == 3 and report["played"]["games"] == 8
                 assert report["played"]["queens"]["queenless_observed"] == 1
+                assert report["public_preparation"] is None
                 with pytest.raises(ValueError):
                     cli_profile(recent_root, "other", *later_games[0], "f1c4", "recent")
+
+                # The actual offline CLI prepares both current and candidate branches.
+                import contextlib
+                import io
+                import sys as public_prep_sys
+
+                import chess_coach.opening_public_proof_replay as public_replay
+                import chess_coach.ops_opening_profile as profile_cli
+
+                cli.setenv("CHESS_SUBJECT", "learner")
+                cli.setattr(
+                    public_prep_sys,
+                    "argv",
+                    [
+                        "opening-profile",
+                        "--project-root",
+                        str(recent_root),
+                        "--game-id",
+                        str(later_games[0][0]),
+                        "--position-id",
+                        str(later_games[0][1]),
+                        "--alternative",
+                        "f1c4",
+                        "--reference",
+                        "recent",
+                        "--prepare-public",
+                    ],
+                )
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    profile_cli.main()
+                prepared = json.loads(output.getvalue())
+                assert prepared["branches"]["played"]["selected"] > 0
+                assert prepared["branches"]["alternative"]["selected"] > 0
+                example = prepared["branches"]["alternative"]["example"]
+                assert example["proof"]["status"] == "correct"
+                assert example["proof"]["proven_gain_floor"] == 3
+                assert prepared["branches"]["played"]["unsupported"] > 0
+                artifact_names = set(recent_planning.glob("opening-public-proof-*.json"))
+                assert len(artifact_names) == 1
+
+                # Reopening the profile only reads prepared evidence; it runs no judge.
+                cli.setattr(public_replay, "judge", lambda *_a, **_k: pytest.fail("proof on GET"))
+                shown = cli_profile(recent_root, "learner", *later_games[0], "f1c4", "recent")
+                assert shown["public_preparation"]["branches"]["alternative"]["example"]
+                profile_app = create_app(
+                    db_path=db_path,
+                    project_root=recent_root,
+                    subject="learner",
+                    actor="reviewer",
+                    corpus="test",
+                    login="fixture",
+                    origin="https://coach.invalid",
+                )
+                profile_client = profile_app.test_client()
+                profile_route = (
+                    f"/repertoire/games/{later_games[0][0]}/openings/{later_games[0][1]}"
+                    "/profile?reference=recent&alternative=f1c4"
+                )
+                page = profile_client.get(
+                    profile_route, base_url="https://coach.invalid", headers=headers
+                )
+                assert (
+                    page.status_code == 200 and b"Prepared public capture observations" in page.data
+                )
+                assert b"Public source example" in page.data
+                assert b"do not establish a mistake" in page.data
+                assert set(recent_planning.glob("opening-public-proof-*.json")) == artifact_names
+
+                # A changed source prefix invalidates the prepared result, without replacement.
+                prefix_path = recent_planning / PREFIX_NAME
+                original_prefix = prefix_path.read_bytes()
+                prefix_path.chmod(0o600)
+                try:
+                    with prefix_path.open("r+b") as stream:
+                        stream.write(bytes([original_prefix[0] ^ 1]))
+                    unavailable = cli_profile(
+                        recent_root, "learner", *later_games[0], "f1c4", "recent"
+                    )
+                    assert unavailable["public_preparation"] is None
+                finally:
+                    with prefix_path.open("r+b") as stream:
+                        stream.write(original_prefix[:1])
+                    prefix_path.chmod(0o400)
+                assert prefix_path.read_bytes() == original_prefix
+                assert set(recent_planning.glob("opening-public-proof-*.json")) == artifact_names
             assert hashlib.sha256(db_path.read_bytes()).hexdigest() == before
 
     finally:

@@ -5,7 +5,7 @@ import json
 import os
 from pathlib import Path
 
-from .opening_profile_cli_report import preparation, report
+from .opening_profile_cli_report import preparation, prepare_public, report
 
 
 def main():
@@ -15,8 +15,14 @@ def main():
     parser.add_argument("--position-id", required=True, type=int)
     parser.add_argument("--alternative", required=True)
     parser.add_argument("--reference", choices=("broadcast", "recent"), default="broadcast")
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         "--preparation", action="store_true", help="Inventory this checked experiment"
+    )
+    mode.add_argument(
+        "--prepare-public",
+        action="store_true",
+        help="Prepare bounded recent public capture evidence",
     )
     args = parser.parse_args()
     try:
@@ -27,7 +33,14 @@ def main():
             args.position_id,
             args.alternative,
         )
-        value = preparation(*arguments) if args.preparation else report(*arguments, args.reference)
+        if args.prepare_public:
+            if args.reference != "recent":
+                raise ValueError("recent reference required")
+            value = prepare_public(*arguments)
+        elif args.preparation:
+            value = preparation(*arguments)
+        else:
+            value = report(*arguments, args.reference)
     except Exception:
         raise SystemExit("Opening profile unavailable.") from None
     print(json.dumps(value, indent=2))

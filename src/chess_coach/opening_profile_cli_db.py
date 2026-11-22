@@ -2,9 +2,12 @@
 
 import os
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 
 from .schema_compat import readonly
+from .tactical_study_path import planning
 from .web_paths import inside
 
 
@@ -24,3 +27,13 @@ def open_database(root):
     except BaseException:
         connection.close()
         raise
+
+
+@contextmanager
+def private_database(root, subject):
+    planning(root, subject)
+    connection, path = open_database(root)
+    try:
+        yield SimpleNamespace(connection=connection, path=path)
+    finally:
+        connection.close()

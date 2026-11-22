@@ -28,5 +28,18 @@
 <p>These are supported pawn geometries observed after the exact move in a bounded convenience sample. Generic ideas depend on the pieces and position; these counts do not establish popularity, soundness, personal fit, or a recommended plan.</p>
 {{ sample("Your played move", decision.played, played) }}
 {% if alternative %}{{ sample("Selected catalog alternative" if selected else "One legal catalog alternative", alternative.san, other) }}{% else %}<p>No legal catalog alternative is available at this position.</p>{% endif %}
+{% if reference == "recent" %}
+<h3>Prepared public capture observations</h3>
+{% if prepared %}
+<p>These checks replay recorded moves from the bounded public prefix for your playing side. They do not establish a mistake, preference, overall safety, or learner progress. The prefix checksum does not verify the whole source archive. The source retained {{ prepared.sample.accepted }} independently deduplicated games from {{ prepared.sample.examined }} examined{% if prepared.sample.truncated %}; the source prefix was truncated{% endif %}. Per-game counts can overlap; games outside the selected window remain unknown.</p>
+{% for label, branch in (("Played", prepared.branches.played), ("Alternative", prepared.branches.alternative)) %}
+<section><h4>{{ label }} branch</h4>
+{% if branch.eligible is not none %}<p>Eligible: {{ branch.eligible }}; selected: {{ branch.selected }}; analyzed through the bounded window: {{ branch.analyzed }}; with supported proof: at least {{ branch.supported }}; unsupported: at least {{ branch.unsupported }}; censored by a window/frontier: at least {{ branch.censored }}; preparation incomplete: {{ branch.preparation_incomplete }}{% if branch.interrupted %}; the shared deadline interrupted preparation{% endif %}. {% if branch.more_eligible %}Additional eligible games were outside the ten-game cap.{% endif %}</p>{% else %}<p>Preparation is incomplete or matching context is unavailable; counts are unknown.</p>{% endif %}
+{% if branch.unsupported %}<p>Unsupported cases include checks, special moves, unresolved recaptures or compensation, and unavailable or draw-sensitive history; they are not negative results.</p>{% endif %}
+{% if branch.example %}<p><a href="{{ branch.example.source }}">Public source example</a> (archive record {{ branch.example.record }}): the recorded capture {{ branch.example.proof.san }} met the named-target, at-least-three-material-unit proof under the stated bounded replies.</p>{% else %}<p>No supported worked capture example is available in the completed checks; other positions remain unknown.</p>{% endif %}
+</section>
+{% endfor %}
+{% else %}<p>No current prepared result is available for this exact pair. Preparation is an offline action.</p>{% endif %}
+{% endif %}
 {% if measured %}<p>For this exact owned decision, the qualified same-search estimate is played {{ measured.played }} cp; alternative {{ measured.alternative }} cp at depth {{ measured.depth }}, from your perspective. This estimate is separate from the public sample and is not a recommendation.{% if measured.rehearsal %} <a href="{{ url_for('opening_experiments.show', game_id=decision.game_id, position_id=decision.position_id, move=alternative.uci) }}">Rehearse the checked lines</a>.{% endif %}</p>{% else %}<p>No qualified exact-decision comparison is shown here. You can inspect or request one on the decision page.</p>{% endif %}
 {% endblock %}
