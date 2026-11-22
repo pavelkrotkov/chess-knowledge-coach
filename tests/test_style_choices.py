@@ -2462,6 +2462,51 @@ def _opening_fit_route(monkeypatch, tmp_path):
             from chess_coach.opening_snapshot import SOURCE, VERSION
 
             classify_game(owned, later_games[0][0], version=VERSION, source_url=SOURCE)
+
+            # A long legal owned game must fit each source verification independently.
+            long_game = chess.pgn.Game()
+            long_game.headers.update(
+                White="learner",
+                Black="long fixture",
+                Result="*",
+                TimeControl="600+0",
+                UTCDate="2026.01.02",
+                UTCTime="12:01:00",
+            )
+            board, node = long_game.board(), long_game
+            for san in lines[0].split():
+                move = board.parse_san(san)
+                node = node.add_variation(move)
+                board.push(move)
+            rng = random.Random(0)
+            while len(board.move_stack) < 300:
+                moves = list(board.legal_moves)
+                rng.shuffle(moves)
+                moves.sort(
+                    key=lambda move: (
+                        board.is_capture(move),
+                        (board.piece_type_at(move.from_square) == chess.PAWN)
+                        if board.halfmove_clock < 115
+                        else (board.piece_type_at(move.from_square) != chess.PAWN),
+                    )
+                )
+                for move in moves:
+                    if move.promotion:
+                        continue
+                    following = board.copy()
+                    following.push(move)
+                    if not following.is_game_over(claim_draw=False):
+                        node = node.add_variation(move)
+                        board.push(move)
+                        break
+                else:
+                    pytest.fail("long legal continuation unavailable")
+            ingest_pgn(owned, str(long_game))
+            long_id = owned.connection.execute("SELECT MAX(id) FROM games").fetchone()[0]
+            long_position = owned.connection.execute(
+                "SELECT id FROM positions WHERE game_id=? AND ply=3", (long_id,)
+            ).fetchone()[0]
+            classify_game(owned, long_id, version=VERSION, source_url=SOURCE)
             data = recent_root / ".runtime" / "data"
             data.mkdir()
             db_path = data / "synthetic.sqlite"
@@ -2518,6 +2563,15 @@ def _opening_fit_route(monkeypatch, tmp_path):
                 assert prepared["branches"]["played"]["unsupported"] > 0
                 artifact_names = set(recent_planning.glob("opening-public-proof-*.json"))
                 assert len(artifact_names) == 1
+
+                from chess_coach.opening_profile_cli_report import prepare_public
+
+                long_prepared = prepare_public(
+                    recent_root, "learner", long_id, long_position, "f1c4"
+                )
+                assert long_prepared["branches"]["alternative"]["example"]
+                artifact_names = set(recent_planning.glob("opening-public-proof-*.json"))
+                assert len(artifact_names) == 2
 
                 # Reopening the profile only reads prepared evidence; it runs no judge.
                 cli.setattr(public_replay, "judge", lambda *_a, **_k: pytest.fail("proof on GET"))

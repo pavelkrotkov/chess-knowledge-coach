@@ -24,26 +24,27 @@ def prepare(db, root, subject, game_id, position_id, alternative):
             identity, index = binding(
                 db, root, subject, game_id, position_id, alternative, deadline
             )
-            result, sample = branches(index, identity, start, start + PROOF_SECONDS)
-            payload = {
-                "version": VERSION,
-                "binding": identity,
-                "sample": sample,
-                "branches": result,
-            }
-            capacity(root, directory)
+        result, sample = branches(index, identity, start, start + PROOF_SECONDS)
+        payload = {
+            "version": VERSION,
+            "binding": identity,
+            "sample": sample,
+            "branches": result,
+        }
+        capacity(root, directory)
 
-            def confirm():
-                check(deadline)
+        def confirm():
+            check(deadline)
+            with history_budget(deadline=deadline):
                 current, actual = binding(
                     db, root, subject, game_id, position_id, alternative, deadline
                 )
-                if current != identity or actual != index:
-                    raise ValueError("public preparation source changed")
-                if db.connection.execute("PRAGMA data_version").fetchone()[0] != version:
-                    raise ValueError("owned decision changed")
+            if current != identity or actual != index:
+                raise ValueError("public preparation source changed")
+            if db.connection.execute("PRAGMA data_version").fetchone()[0] != version:
+                raise ValueError("owned decision changed")
 
-            publish(directory, digest(canonical(identity)), payload, confirm)
-            return view(payload)
+        publish(directory, digest(canonical(identity)), payload, confirm)
+        return view(payload)
     finally:
         db.connection.set_progress_handler(None, 0)
