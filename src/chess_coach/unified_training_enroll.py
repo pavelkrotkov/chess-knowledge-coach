@@ -12,6 +12,12 @@ def enroll(db, row, *, training, item_id, created, goal):
     if existing(db, row, training, item_id):
         return
     source, skill = policy(row, goal, training, created)
+    from .unified_training_canonical_promotion import SOURCE as CANONICAL_SOURCE
+
+    if source == CANONICAL_SOURCE:
+        from .plan_promotion_catalog import collection
+
+        collection(db)
     subject = normalize_identity(row["subject"])
     if subject is None:
         raise ValueError("training requires a learner identity")

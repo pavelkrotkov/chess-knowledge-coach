@@ -10,6 +10,9 @@ def finish_objective(db, request, result):
     from .unified_capture_worker import finish_objective as finish_capture
 
     finish_capture(db, request, result)
+    from .unified_canonical_promotion_worker import finish_objective as finish_promotion
+
+    finish_promotion(db, request, result)
     if db.compat32:
         return
     if (result["status"], request["objective_version"], request["history_mode"]) not in {
