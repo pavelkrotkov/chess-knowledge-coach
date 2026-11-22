@@ -2198,6 +2198,9 @@ def _opening_fit_route(monkeypatch, tmp_path):
             supported_capture = (
                 "e4 e5 Bc4 Nc6 Nf3 a6 Nc3 Na5 Nxe5 Nxc4 Nxc4 d5 exd5 Qxd5 Ne3 Qd8 O-O Nf6 Re1 Be7"
             )
+            supported_fork = (
+                "e4 e5 Nf3 g5 Nxe5 d5 Bb5+ Qd7 exd5 Qxb5 Nxf7 Kxf7 h3 Qxd5 b3 Qxb3 axb3 Bxh3 d3 Nc6"
+            )
             checked_lines = (
                 lines[0] + " Bh6 Bxh2+ Kxh2 Qe5+ Kg1 Qb5 Qc1 g5 Nd1 Nd5 b3 Qb6 Qf4 a6",
                 lines[1] + " h4 g6 Nd4 Nxd4 b3 Nf3+ Qxf3 Kh8 Bb2 Qb8 Rab1 Bc5 Rec1 Kg8",
@@ -2210,6 +2213,8 @@ def _opening_fit_route(monkeypatch, tmp_path):
                     moves=(
                         supported_capture
                         if branch == 1 and i == 0
+                        else supported_fork
+                        if branch == 0 and i == 0
                         else " ".join(alternative_long_moves)
                         if branch == 1 and i == 2
                         else checked_lines[branch]
@@ -2394,7 +2399,7 @@ def _opening_fit_route(monkeypatch, tmp_path):
             assert all(not item["site"] for item in profile["examples"])
             assert profile["queens"]["one_each"] == 8
             assert profile["queens"]["queenless_observed"] == 1
-            assert profile["queens"]["one_or_imbalanced"] == 1
+            assert profile["queens"]["one_or_imbalanced"] == 2
             late = profile["later_history"]
             assert late["status"] == "complete" and late["matched_candidates"] == 8
             assert late["example"]["example"]["ply"] > 88
@@ -2540,7 +2545,7 @@ def _opening_fit_route(monkeypatch, tmp_path):
                 "recent",
                 time.monotonic() + 30,
             )
-            assert exact_later["decision_ply"] == 7 and exact_later["games"] == 6
+            assert exact_later["decision_ply"] == 7 and exact_later["games"] == 5
             wrong_ply = matched_profile(
                 owned,
                 recent_root,
@@ -2745,10 +2750,91 @@ def _opening_fit_route(monkeypatch, tmp_path):
                 artifact_names = set(recent_planning.glob("opening-public-proof-*.json"))
                 assert len(artifact_names) == 2
 
+                # Existing v1 remains readable before and after the combined v2 preparation.
+                legacy_hashes = {
+                    path: hashlib.sha256(path.read_bytes()).hexdigest() for path in artifact_names
+                }
+                fallback = cli_profile(recent_root, "learner", *later_games[0], "f1c4", "recent")
+                assert (
+                    fallback["public_preparation"]["version"]
+                    == "public-opening-capture-preparation-v1"
+                )
+                cli.setattr(
+                    public_prep_sys, "argv", [*public_prep_sys.argv[:-1], "--prepare-public-forks"]
+                )
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    profile_cli.main()
+                combined = json.loads(output.getvalue())
+                assert combined["version"] == "public-opening-capture-fork-preparation-v2"
+                assert combined["fork_policy"]["roots_per_game"] == 64
+                assert combined["fork_policy"]["proofs_per_branch"] == 8
+                for label in ("played", "alternative"):
+                    assert combined["branches"][label]["forks"]["selected"] > 0
+                fork = combined["branches"]["played"]["forks"]
+                assert fork["material"] >= 1 and not fork["example"]["recorded"]
+                assert fork["example"]["recorded_san"] == "d3"
+                assert fork["example"]["candidate_san"] == "Qh5+"
+                assert fork["example"]["kind"] == "material"
+                assert fork["example"]["proof"]["minimum_gain"] == 3
+                assert fork["example"]["proof"]["branches"]
+                assert fork["incomplete"] and (fork["root_limit"] or fork["proof_limit"])
+                assert fork["roots"] <= 64 * fork["selected"] and fork["proofs"] <= 8
+                assert combined["branches"]["alternative"]["example"]
+                assert all(
+                    hashlib.sha256(path.read_bytes()).hexdigest() == value
+                    for path, value in legacy_hashes.items()
+                )
+                artifact_names = set(recent_planning.glob("opening-public-proof-*.json"))
+                assert len(artifact_names) == 3
+
+                # Direct mate and material-fork certificates are distinct outcomes.
+                from chess_coach.opening_public_fork_candidate import inspect as inspect_fork
+
+                recorded_board = chess.Board()
+                for san in supported_fork.split()[:18]:
+                    recorded_board.push_san(san)
+                recorded_move = recorded_board.parse_san("Qh5+")
+                recorded_state, recorded_proof = inspect_fork(
+                    recorded_board,
+                    recorded_move,
+                    recorded_move,
+                    [],
+                    1,
+                    {"proofs": 0},
+                    time.monotonic() + 30,
+                )
+                assert recorded_state == "material" and recorded_proof["recorded"]
+                mate_board = chess.Board("7k/n7/5KQ1/8/8/8/8/8 w - - 0 1")
+                mate_move = mate_board.parse_san("Qg7#")
+                mate_state, mate_proof = inspect_fork(
+                    mate_board, mate_move, mate_move, [], 1, {"proofs": 0}, time.monotonic() + 30
+                )
+                assert mate_state == "mate" and mate_proof["kind"] == "immediate_mate"
+                assert mate_proof["proof"]["distance_plies"] == 1
+                scoped_board = chess.Board()
+                scoped_board.push_san("e4")
+                scoped_move = scoped_board.parse_san("e5")
+                scope_state, scope_proof = inspect_fork(
+                    scoped_board,
+                    scoped_move,
+                    scoped_move,
+                    [],
+                    2,
+                    {"proofs": 0},
+                    time.monotonic() + 30,
+                )
+                assert scope_state == "scope" and scope_proof is None
+
                 # Reopening the profile only reads prepared evidence; it runs no judge.
+                import chess_coach.opening_public_fork_candidate as public_fork
+
                 cli.setattr(public_replay, "judge", lambda *_a, **_k: pytest.fail("proof on GET"))
+                cli.setattr(public_fork, "fork_proof", lambda *_a, **_k: pytest.fail("fork on GET"))
                 shown = cli_profile(recent_root, "learner", *later_games[0], "f1c4", "recent")
                 assert shown["public_preparation"]["branches"]["alternative"]["example"]
+                assert shown["public_preparation"]["branches"]["played"]["forks"]["example"]
+                assert shown["public_preparation"]["legacy_capture"]["alternative"]["example"]
                 profile_app = create_app(
                     db_path=db_path,
                     project_root=recent_root,
@@ -2770,7 +2856,20 @@ def _opening_fit_route(monkeypatch, tmp_path):
                     page.status_code == 200 and b"Prepared public capture observations" in page.data
                 )
                 assert b"Public source example" in page.data
+                assert b"Prepared fork opportunities" in page.data
+                assert b"Public fork example" in page.data
                 assert b"do not establish a mistake" in page.data
+                import copy
+
+                partial = copy.deepcopy(shown["public_preparation"])
+                partial["branches"]["played"]["analyzed"] = 0
+                with cli.context() as fallback_view:
+                    fallback_view.setattr(profile_web, "prepared_proof", lambda *_args: partial)
+                    page = profile_client.get(
+                        profile_route, base_url="https://coach.invalid", headers=headers
+                    )
+                    assert b"Earlier capture-only preparation" in page.data
+                    assert b"Public capture example" in page.data
                 assert set(recent_planning.glob("opening-public-proof-*.json")) == artifact_names
 
                 # A changed source prefix invalidates the prepared result, without replacement.

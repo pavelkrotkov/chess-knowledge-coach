@@ -2,21 +2,25 @@
 
 import sqlite3
 
-from .fact_fingerprint import canonical, digest
-from .opening_public_proof_files import latest
-from .opening_public_proof_source import VERSION, binding, check
+from .opening_public_proof_source import binding, check
+from .opening_public_proof_versions import current as current_preparation
 from .style_schedule_budget import BudgetExceeded, history_budget
 from .tactical_study_path import planning
 
 
-def view(payload):
-    return {
+def view(payload, legacy=None):
+    result = {
         "version": payload["version"],
         "status": "prepared",
         "reference": payload["binding"]["reference"],
         "sample": payload["sample"],
         "branches": payload["branches"],
     }
+    if "fork" in payload["binding"]["policy"]:
+        result["fork_policy"] = payload["binding"]["policy"]["fork"]
+    if legacy is not None:
+        result["legacy_capture"] = legacy["branches"]
+    return result
 
 
 def lookup(db, root, subject, game_id, position_id, alternative, deadline):
@@ -27,14 +31,9 @@ def lookup(db, root, subject, game_id, position_id, alternative, deadline):
             identity, index = binding(
                 db, root, subject, game_id, position_id, alternative, deadline
             )
-        value = latest(directory, digest(canonical(identity)))
+        value, legacy = current_preparation(directory, identity)
         check(deadline)
-        if (
-            value is None
-            or value.get("version") != VERSION
-            or value.get("binding") != identity
-            or db.connection.execute("PRAGMA data_version").fetchone()[0] != version
-        ):
+        if value is None or db.connection.execute("PRAGMA data_version").fetchone()[0] != version:
             return None
         with history_budget(deadline=deadline):
             current = binding(db, root, subject, game_id, position_id, alternative, deadline)
@@ -43,6 +42,6 @@ def lookup(db, root, subject, game_id, position_id, alternative, deadline):
             or db.connection.execute("PRAGMA data_version").fetchone()[0] != version
         ):
             return None
-        return view(value)
+        return view(value, legacy)
     except (OSError, ValueError, TypeError, KeyError, sqlite3.Error, TimeoutError, BudgetExceeded):
         return None

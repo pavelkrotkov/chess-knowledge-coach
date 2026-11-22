@@ -50,8 +50,8 @@ def preparation(root, subject, game_id, position_id, alternative):
         return result
 
 
-def prepare_public(root, subject, game_id, position_id, alternative):
+def prepare_public(root, subject, game_id, position_id, alternative, *, forks=False):
     from .opening_public_proof import prepare
 
     with private_database(root, subject) as db:
-        return prepare(db, root, subject, game_id, position_id, alternative)
+        return prepare(db, root, subject, game_id, position_id, alternative, forks=forks)

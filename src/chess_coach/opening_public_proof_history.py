@@ -23,15 +23,15 @@ def _step(board, entry, ply, binding, branch, deadline):
     return previous
 
 
-def _candidate(board, entry, ply, binding):
+def _candidate(board, entry, ply, binding, all_moves):
     if ply < binding["ply"] or ("white" if board.turn else "black") != binding["color"]:
         return None
     move = board.parse_uci(entry[2])
-    return move if board.is_capture(move) else None
+    return move if all_moves or board.is_capture(move) else None
 
 
 # Structural transposition keys omit history; keep the original move stack for proof.
-def positions(db, game_id, total, binding, branch, deadline):
+def positions(db, game_id, total, binding, branch, deadline, *, all_moves=False):
     first = binding["ply"]
     last, frontier = _end(first, total)
     rows = db.execute(
@@ -43,7 +43,7 @@ def positions(db, game_id, total, binding, branch, deadline):
     board, captures = chess.Board(), []
     for ply, entry in enumerate(rows, 1):
         previous = _step(board, entry, ply, binding, branch, deadline)
-        move = _candidate(previous, entry, ply, binding)
+        move = _candidate(previous, entry, ply, binding, all_moves)
         if move is not None:
             captures.append((ply, previous, move))
     return rows, captures, frontier != "ended", history_safe(board)

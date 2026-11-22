@@ -4,6 +4,8 @@ import sqlite3
 import time
 
 from .opening_profile_queen_replay import _end
+from .opening_public_fork_coverage import failed, finish, record
+from .opening_public_fork_coverage import start as start_fork
 from .opening_public_proof_replay import replay
 from .opening_public_proof_source import MAX_GAMES
 from .opening_recent_select import rows as select_rows
@@ -26,10 +28,10 @@ def unavailable():
 
 # An analyzed game can also contain unsupported captures; these counts overlap.
 # A frontier or cutoff says nothing about demands beyond the recorded window.
-def _inspect(connection, row, binding, move, start, deadline, result):
+def _inspect(connection, row, binding, move, start, deadline, result, fork_budget):
     try:
         result["censored"] += int(_end(binding["ply"], row[1])[1] != "ended")
-        observed = replay(connection, row, binding, move, start, deadline)
+        observed = replay(connection, row, binding, move, start, deadline, fork_budget=fork_budget)
     except TimeoutError:
         return False
     except sqlite3.OperationalError:
@@ -40,6 +42,7 @@ def _inspect(connection, row, binding, move, start, deadline, result):
         result["unsupported"] += 1
         reasons = result["unsupported_reasons"]
         reasons["history_unavailable"] = reasons.get("history_unavailable", 0) + 1
+        failed(result, fork_budget)
         return True
     result["analyzed"] += 1
     result["unsupported"] += int(bool(observed["unsupported"]))
@@ -47,6 +50,7 @@ def _inspect(connection, row, binding, move, start, deadline, result):
     for reason in observed["unsupported"]:
         reasons = result["unsupported_reasons"]
         reasons[reason] = reasons.get(reason, 0) + 1
+    record(result, fork_budget, observed["fork"])
     if result["example"] is None:
         result["example"] = observed["example"]
     return True
@@ -89,10 +93,12 @@ def branch(connection, binding, move, start, deadline):
         "more_eligible": len(rows) > MAX_GAMES,
         "unsupported_reasons": {},
     }
+    fork_budget = start_fork(binding, result, len(selected))
     for row in selected:
-        if not _inspect(connection, row, binding, move, start, deadline, result):
+        if not _inspect(connection, row, binding, move, start, deadline, result, fork_budget):
             result["interrupted"] = True
             break
+    finish(result, fork_budget, len(selected))
     result["preparation_incomplete"] = len(selected) - result["analyzed"]
     if result["preparation_incomplete"] or result["interrupted"]:
         result["status"] = "incomplete"

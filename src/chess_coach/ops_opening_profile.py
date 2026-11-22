@@ -24,6 +24,11 @@ def main():
         action="store_true",
         help="Prepare bounded recent public capture evidence",
     )
+    mode.add_argument(
+        "--prepare-public-forks",
+        action="store_true",
+        help="Prepare bounded recent public capture and fork evidence",
+    )
     args = parser.parse_args()
     try:
         arguments = (
@@ -33,10 +38,10 @@ def main():
             args.position_id,
             args.alternative,
         )
-        if args.prepare_public:
+        if args.prepare_public or args.prepare_public_forks:
             if args.reference != "recent":
                 raise ValueError("recent reference required")
-            value = prepare_public(*arguments)
+            value = prepare_public(*arguments, forks=args.prepare_public_forks)
         elif args.preparation:
             value = preparation(*arguments)
         else:
