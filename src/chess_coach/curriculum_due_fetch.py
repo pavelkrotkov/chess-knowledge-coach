@@ -4,6 +4,7 @@ from datetime import datetime
 
 from .curriculum_capture_due import capture_rows
 from .curriculum_fork_due import fork_rows
+from .curriculum_public_mate_due import public_rows
 
 
 def fetch(
@@ -29,5 +30,6 @@ def fetch(
         return rows
     rows.extend(capture_rows(db, now, extra, values, limit, order))
     rows.extend(fork_rows(db, now, extra, values, limit, order))
+    rows.extend(public_rows(db, now, extra, values, limit, order))
     key = (lambda row: row["id"]) if order == "id" else (lambda row: (row["due_order"], row["id"]))
     return sorted(rows, key=key)[:limit]

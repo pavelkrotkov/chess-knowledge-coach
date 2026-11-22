@@ -145,6 +145,8 @@ def test_private_access_and_csrf(setup, tmp_path, monkeypatch):
     destination.execute("DROP INDEX IF EXISTS idx_curriculum_capture_scheduled")
     destination.execute("DROP INDEX IF EXISTS idx_curriculum_fork_due")
     destination.execute("DROP INDEX IF EXISTS idx_curriculum_fork_scheduled")
+    destination.execute("DROP INDEX IF EXISTS idx_curriculum_source_due")
+    destination.execute("DROP INDEX IF EXISTS idx_curriculum_source_scheduled")
     destination.execute("DROP INDEX IF EXISTS idx_curriculum_unified_due")
     destination.execute("DROP INDEX IF EXISTS idx_curriculum_unified_scheduled")
     destination.execute("DROP TRIGGER IF EXISTS unified_completed_training_attempt_no_update")

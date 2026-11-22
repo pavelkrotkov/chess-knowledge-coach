@@ -171,6 +171,7 @@ def test_populated_legacy_upgrade_is_repeatable_and_preserves_history(
     fresh.initialize()
     assert schema_columns(db) == schema_columns(fresh)
     _fork_index_upgrade(monkeypatch)
+    _public_mate_index_upgrade(monkeypatch)
     _native_upgrade_inventory(tmp_path, monkeypatch)
     _position_index_upgrade()
     _current_schema_contention(tmp_path)
@@ -208,6 +209,7 @@ def _native_upgrade_inventory(tmp_path, monkeypatch):
             ("puzzle", "mate", "mate_in_one", "execute", "2026-01-01", "v1"),
             ("unified_owned_capture", "capture", "hanging_piece", "execute", "2026-01-01", "v1"),
             ("unified_owned_fork", "fork", "fork", "execute", "2026-01-01", "v1"),
+            ("unified_public_m1", "public", "mate_in_one", "execute", "2026-01-01", "v1"),
         ],
     )
     db.connection.execute("ANALYZE")
@@ -267,7 +269,14 @@ finally:
         result["mate_rows"],
         result["capture_rows"],
         result["fork_rows"],
-    ) == (1, 1, 1, 1)
+        result["public_mate_rows"],
+    ) == (1, 1, 1, 1, 1)
+    assert result["target_schema"] == 41
+    assert result["source_index_rows"] == result["source_due_rows"] == 4
+    assert result["source_type_max_bytes"] == len("unified_owned_capture")
+    assert result["skill_max_bytes"] == len("hanging_piece")
+    assert result["operation_max_bytes"] == len("execute")
+    assert result["due_max_bytes"] == len("2026-01-01")
     assert result["page_size"] == 4096 and result["metadata_pages"] > 0
     assert result["metadata_pages"] <= result["metadata_sector_pages"] <= result["page_count"]
     assert path.read_bytes() == original
@@ -452,7 +461,7 @@ def _fork_index_upgrade(monkeypatch):
     ] == before_schema
     db.initialize()
     db.initialize()
-    assert connection.execute("PRAGMA user_version").fetchone()[0] == 40
+    assert connection.execute("PRAGMA user_version").fetchone()[0] == 41
     assert [
         tuple(row)
         for row in connection.execute(
@@ -486,6 +495,80 @@ def _fork_index_upgrade(monkeypatch):
         plan = [row[3] for row in connection.execute("EXPLAIN QUERY PLAN " + query, args)]
         assert any(index in detail for detail in plan)
         assert not any("TEMP B-TREE" in detail for detail in plan)
+    db.close()
+
+
+def _public_mate_index_upgrade(monkeypatch):
+    from chess_coach import db_recent
+
+    db = Database(":memory:")
+    db.initialize()
+    connection = db.connection
+    connection.executemany(
+        "INSERT INTO training_items(source_type,source_ref,skill,operation,due,scheduler_version) "
+        "VALUES (?,?,?,?,?,?)",
+        [
+            ("unified_public_m1", "public-a", "mate_in_one", "execute", "2026-01-01", "v1"),
+            ("unified_public_m1", "public-b", "mate_in_one", "execute", "2027-01-01", "v1"),
+            ("fixture_canonical", "canonical", "promotion", "execute", "2026-01-01", "v1"),
+        ],
+    )
+    connection.execute("DROP INDEX idx_curriculum_source_due")
+    connection.execute("DROP INDEX idx_curriculum_source_scheduled")
+    connection.execute("PRAGMA user_version=40")
+    connection.commit()
+    before = [tuple(row) for row in connection.execute("SELECT * FROM training_items ORDER BY id")]
+    original = db_recent.add_public_mate_indexes
+
+    def fail_after_indexes(conn):
+        original(conn)
+        raise RuntimeError("injected public index failure")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(db_recent, "add_public_mate_indexes", fail_after_indexes)
+        with pytest.raises(RuntimeError, match="injected public index failure"):
+            db.initialize()
+    assert connection.execute("PRAGMA user_version").fetchone()[0] == 40
+    assert not connection.execute(
+        "SELECT name FROM sqlite_master WHERE name IN ('idx_curriculum_source_due','idx_curriculum_source_scheduled')"
+    ).fetchall()
+    db.initialize()
+    assert connection.execute("PRAGMA user_version").fetchone()[0] == 41
+    assert [
+        tuple(row) for row in connection.execute("SELECT * FROM training_items ORDER BY id")
+    ] == before
+    due = (
+        "SELECT id FROM training_items INDEXED BY idx_curriculum_source_due "
+        "WHERE source_type='unified_public_m1' AND skill='mate_in_one' AND operation='execute' "
+        "AND lower(due) != 'now' AND julianday(due) <= julianday(?) "
+        "ORDER BY julianday(due),id LIMIT ?"
+    )
+    scheduled = (
+        "SELECT id FROM training_items INDEXED BY idx_curriculum_source_scheduled "
+        "WHERE id>? AND source_type='unified_public_m1' AND skill='mate_in_one' "
+        "AND operation='execute' ORDER BY id LIMIT ?"
+    )
+    assert [row[0] for row in connection.execute(due, ("2026-02-01", 10))] == [1]
+    assert [row[0] for row in connection.execute(scheduled, (0, 10))] == [1, 2]
+    canonical_due = due.replace("unified_public_m1", "fixture_canonical").replace(
+        "mate_in_one", "promotion"
+    )
+    canonical_scheduled = scheduled.replace("unified_public_m1", "fixture_canonical").replace(
+        "mate_in_one", "promotion"
+    )
+    assert [row[0] for row in connection.execute(canonical_due, ("2026-02-01", 10))] == [3]
+    assert [row[0] for row in connection.execute(canonical_scheduled, (0, 10))] == [3]
+    for query, args, index in (
+        (due, ("2026-02-01", 10), "idx_curriculum_source_due"),
+        (scheduled, (0, 10), "idx_curriculum_source_scheduled"),
+        (canonical_due, ("2026-02-01", 10), "idx_curriculum_source_due"),
+        (canonical_scheduled, (0, 10), "idx_curriculum_source_scheduled"),
+    ):
+        plan = [row[3] for row in connection.execute("EXPLAIN QUERY PLAN " + query, args)]
+        assert any(index in detail for detail in plan)
+        assert not any("TEMP B-TREE" in detail for detail in plan)
+    assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+    assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
     db.close()
 
 

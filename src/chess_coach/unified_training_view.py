@@ -39,7 +39,9 @@ def _pending_state(row):
 
 
 def finish(db, row, attempt_id, subject, event_id, result):
-    if row["source_type"] != "corpus":
+    from .unified_training_public_mate import is_source as public_source
+
+    if row["source_type"] != "corpus" and not public_source(row):
         return result
     current = status(db, attempt_id)
     if current is None or result["status"] not in ("objective_verified", "line_completed"):

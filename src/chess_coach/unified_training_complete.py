@@ -41,18 +41,13 @@ def complete(db, attempt_id, subject, *, event_id=None):
     if db.compat32:
         raise ValueError("learning is unavailable in compatibility mode")
     row = session_row(db, attempt_id, subject)
-    from .unified_training_owned_capture import is_source as capture_source
+    from .unified_training_dispatch import policy
 
-    if capture_source(row):
-        from .unified_capture_completion import complete as capture_complete
+    selected = policy(row)
+    if selected is not None:
+        from .unified_capture_completion import complete as complete_policy
 
-        return capture_complete(db, attempt_id, subject, event_id=event_id)
-    from .unified_training_owned_fork import is_source as fork_source
-
-    if fork_source(row):
-        from .unified_fork_completion import complete as fork_complete
-
-        return fork_complete(db, attempt_id, subject, event_id=event_id)
+        return complete_policy(db, attempt_id, subject, event_id=event_id, policy=selected)
     with training_transaction(db):
         row = session_row(db, attempt_id, subject)
         if not is_source(row):
