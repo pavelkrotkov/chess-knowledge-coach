@@ -4,6 +4,7 @@ import sqlite3
 import time
 from subprocess import SubprocessError
 
+from .db_versioning import CURRENT_VERSION
 from .native_upgrade_inventory import inventory
 from .native_upgrade_layout import inspect as inspect_layout
 from .native_upgrade_recovery_paths import optional as check_recovery
@@ -29,6 +30,7 @@ def _inspect(connection, source, raw, root, deadline):
         connection.set_progress_handler(deadline.progress, 1000)
     return {
         "status": "unknown",
+        "target_schema": CURRENT_VERSION,
         "inventory_complete": True,
         "recovery_current": False,
         **layout,

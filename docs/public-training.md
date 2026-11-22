@@ -72,11 +72,10 @@ statement about an actual played game's repetition history.
 | Generic checkmate, multi-ply line, other source or missing history declaration | This policy does not apply. |
 | Changed, unavailable or unlicensed source | The session cannot be revalidated as current. |
 
-This version permits ordinary practice only. Adaptive enrollment and scheduling
-remain closed until the dependent implementation is independently qualified.
-That implementation must bind the normalized owner, exact public source and
+With schema 41, this exact policy can opt into owner-bound adaptive learning
+after the complete implementation is independently qualified. It binds the normalized owner, exact public source and
 immutable snapshot, goal and verifier versions, legal terminal answer and its
-accepted time, and all accepted hints/reveals. It must revalidate source and
+accepted time, and all accepted hints/reveals. It revalidates source and
 history in the completion transaction, preserve original event responses,
 reject conflicting attempt/event/source identities, and atomically create at
 most one unreviewed evidence record, FSRS update and completion receipt.

@@ -35,6 +35,7 @@ from .training_completion_schema import add_training_completions
 from .training_schema import add_training_scheduler_config
 from .unified_capture_schema import add_capture_indexes
 from .unified_fork_schema import add_fork_indexes
+from .unified_public_mate_schema import add_public_mate_indexes
 from .unified_session_schema import add_unified_sessions
 from .unified_training_schema import add_unified_training
 
@@ -78,6 +79,7 @@ def upgrade_recent(connection: sqlite3.Connection, version: int, *, through=None
         (38, add_tactical_exposure),
         (39, add_capture_indexes),
         (40, add_fork_indexes),
+        (41, add_public_mate_indexes),
     )
     for target, apply_upgrade in upgrades:
         if version < target and (through is None or target <= through):

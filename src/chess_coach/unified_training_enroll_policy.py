@@ -5,6 +5,8 @@ from .unified_training_owned_capture import SOURCE as CAPTURE_SOURCE
 from .unified_training_owned_capture import is_source as capture_source
 from .unified_training_owned_fork import SOURCE as FORK_SOURCE
 from .unified_training_owned_fork import is_source as fork_source
+from .unified_training_public_mate import SOURCE as PUBLIC_SOURCE
+from .unified_training_public_mate import is_source as public_source
 
 
 def policy(row, goal, training, created):
@@ -18,6 +20,8 @@ def policy(row, goal, training, created):
 
 
 def _owned_policy(row):
+    if public_source(row):
+        return PUBLIC_SOURCE, "mate_in_one"
     if capture_source(row):
         return CAPTURE_SOURCE, "hanging_piece"
     if fork_source(row):
