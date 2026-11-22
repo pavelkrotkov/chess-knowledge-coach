@@ -1298,6 +1298,105 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     selected_course = unfamiliar_course_preview(experiment_db, tmp_path, "learner", selected)
     selected_version = selected_course["version"]
     assert selected_course["selection"] == selected and len(selected_course["chapters"]) == 1
+
+    # A real queued v2 artifact must reach the selected course through the
+    # bounded hint scan, current owned decision, and repeated source proof.
+    import chess_coach.opening_queue_request as real_queue_request
+    import chess_coach.opening_queue_view as real_queue_view
+    import chess_coach.opening_unfamiliar_course_hints as real_course_hints
+    import chess_coach.opening_unfamiliar_course_proof as real_course_proof
+    from chess_coach.opening_measure_prepare import V1 as MEASURE_V1
+    from chess_coach.opening_measure_reference import ReferenceIterations as CourseIterations
+    from chess_coach.opening_unfamiliar_measure_decision import candidate as course_candidate
+
+    selected_item = selected_course["report"]["white"]
+    course_directory = tmp_path / ".runtime" / "course-reference-hints"
+    course_directory.mkdir(mode=0o700)
+    course_engine = tmp_path / "course-reference-engine"
+    course_engine.write_text("#!/bin/sh\nexit 0\n")
+    course_engine.chmod(0o700)
+    original_location = real_queue_request.location
+
+    def course_location(database, root, learner):
+        _, identity = original_location(database, root, learner)
+        return course_directory, identity
+
+    def course_config(database, game_id, _engine, board=None, policy=MEASURE_V1):
+        return real_measure_config(database, game_id, str(course_engine), board, policy)
+
+    def course_roots(
+        _engine, board, position, _limit, roots, _deadline, *, bounds, reference=False
+    ):
+        assert reference and set(roots) == set(board.legal_moves)
+        state = CourseIterations(board, position, roots, bounds)
+        for rank, root in enumerate(roots, 1):
+            replay, pv = board.copy(), [root]
+            replay.push(root)
+            for _ in range(2):
+                move = next(iter(replay.legal_moves))
+                pv.append(move)
+                replay.push(move)
+            state.add(
+                {
+                    "multipv": rank,
+                    "pv": pv,
+                    "score": chess.engine.PovScore(chess.engine.Cp(0), board.turn),
+                    "depth": 10,
+                    "nodes": 100000,
+                    "time": 1.0,
+                }
+            )
+        return state, None
+
+    with monkeypatch.context() as course_test:
+        course_test.setattr(decision_budget, "VERSION", VERSION)
+        course_test.setattr(decision_budget, "SOURCE", SOURCE)
+        course_test.setattr(decision_budget, "GRAPH_SHA256", GRAPH_SHA256)
+        course_found = course_candidate(
+            experiment_db, "learner", 1, "white", chess.Board().fen(), selected_item
+        )
+        assert course_found is not None
+        selected_decision, selected_choice = course_found
+        for module in (
+            real_queue_request,
+            queue_worker,
+            real_queue_view,
+            real_course_hints,
+            real_course_proof,
+        ):
+            course_test.setattr(module, "location", course_location)
+        course_test.setattr(queue_binding, "_config", course_config)
+        course_test.setattr(opening_measure, "_config", course_config)
+        course_test.setattr(opening_search, "retained_search", course_roots)
+        course_test.setattr(
+            opening_engine,
+            "start_engine",
+            lambda *args, **kwargs: (
+                Engine(),
+                SimpleNamespace(
+                    id={}, options={"MultiPV": SimpleNamespace(type="spin", min=1, max=256)}
+                ),
+            ),
+        )
+        before_course = experiment_db.connection.total_changes
+        requested = real_queue_request.admit(
+            experiment_db,
+            tmp_path,
+            "learner",
+            selected_decision["game_id"],
+            selected_decision["position_id"],
+            selected_choice["uci"],
+        )
+        queue_worker.run(experiment_db, pinned, tmp_path)
+        course_artifact = queue_artifact.load(course_directory, requested)
+        assert course_artifact["version"] == "opening-catalog-measurement-v2"
+        checked_course = unfamiliar_course_preview(experiment_db, tmp_path, "learner", selected)
+        assert checked_course["measurement"]["source_identity"] == requested["id"]
+        assert checked_course["measurement"]["played"]["depth"] == 10
+        assert checked_course["measurement"]["reason"] is None
+        assert checked_course["version"] != selected_course["version"]
+        assert experiment_db.connection.total_changes == before_course
+
     black_selection = options["black"][0]["selection"]
     black_course = unfamiliar_course_preview(experiment_db, tmp_path, "learner", black_selection)
     assert [chapter["orientation"] for chapter in black_course["chapters"]] == ["black"]
