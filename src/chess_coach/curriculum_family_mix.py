@@ -4,6 +4,7 @@ import time
 from contextlib import nullcontext
 
 from .curriculum_cursor_families import current_family
+from .curriculum_family_checkpoint import defer, timeout
 from .curriculum_new_capture import scan as capture
 from .curriculum_new_fork import scan as fork
 from .curriculum_new_page import checked_page
@@ -24,16 +25,11 @@ def _step(db, state, learner, summary, counts, corpus, budget, check):
         return items, status, reason, focus
     if phase == "fork":
         return fork(db, state, learner, counts, check)
+    if phase == "public":
+        from .curriculum_public_scan import scan
+
+        return scan(db, state, learner, counts, check)
     return checked_page(db, state, summary, counts, corpus, check)
-
-
-def _defer(state):
-    phase = state["phase"]
-    pending = {"capture": "capture_pending", "fork": "fork_pending", "new": "pending"}
-    if state["family_index"] < 3 and state[pending[phase]] is None:
-        _advance(state)
-        return "family_scan_incomplete"
-    return f"{phase}_scan_incomplete"
 
 
 def scan(db, state, learner, summary, counts, corpus, budget):
@@ -49,7 +45,7 @@ def scan(db, state, learner, summary, counts, corpus, budget):
     try:
         with scope:
             # Topic preparation precedes selection, but never changes grading.
-            if state["v"] == 4:
+            if state["v"] in {4, 5}:
                 from .curriculum_prerequisite import prepare
 
                 progress["statuses"]["prerequisite"] = prepare(
@@ -57,13 +53,16 @@ def scan(db, state, learner, summary, counts, corpus, budget):
                 )
             _loop(db, state, learner, summary, counts, corpus, budget, check, progress)
     except PreviewUnavailable:
-        _timeout(db, state, counts, budget, progress)
+        timeout(db, state, counts, budget, progress)
+    counts.pop("_public_before", None)
     return progress["items"], progress["statuses"], progress["focuses"], progress["reason"]
 
 
 def _loop(db, state, learner, summary, counts, corpus, budget, check, progress):
     while len(state["seen"]) < state["limit"]:
         phase = state["phase"]
+        if _skip(state, phase):
+            break
         # Only a completed family can be published after a timeout.
         progress["checkpoint"] = (dict(state), dict(counts), len(progress["items"]))
         found, status, reason, focus = _step(
@@ -86,21 +85,31 @@ def _loop(db, state, learner, summary, counts, corpus, budget, check, progress):
         progress["items"].extend(found)
         progress["statuses"][phase] = status
         progress["focuses"][phase] = focus
-        if _fill_quota(state, reason):
+        if _fill_quota(state, reason, found):
             progress["reason"] = None
             continue
         if reason == "family_quota_complete":
             reason = None
         reason = _reason(state, reason)
         progress["reason"] = reason
-        if reason is not None or state["family_index"] == 3:
+        if reason is not None or _finished(state, phase):
             break
         _advance(state)
 
 
 # Each successful item in final fill is its own durable cursor checkpoint.
-def _fill_quota(state, reason):
-    return reason == "family_quota_complete" and state["family_index"] == 3
+def _fill_quota(state, reason, found):
+    if reason != "family_quota_complete":
+        return False
+    return not found if state["v"] == 5 else state["family_index"] == 3
+
+
+def _skip(state, phase):
+    return state["v"] == 5 and phase == "new" and state["public_binding"] is not None
+
+
+def _finished(state, phase):
+    return (state["v"] == 5 and phase == "new") or (state["v"] != 5 and state["family_index"] == 3)
 
 
 # Do not publish a just-completed item after its shared deadline.
@@ -110,41 +119,9 @@ def _check_completed(reason, budget, check):
 
 
 def _reason(state, reason):
-    if reason in {"capture_scan_incomplete", "fork_scan_incomplete"}:
-        return _defer(state)
+    if reason in {"capture_scan_incomplete", "fork_scan_incomplete", "public_scan_incomplete"}:
+        return defer(state)
     # Yield to other families only during the one-item corpus pass.
     if reason == "corpus_scan_incomplete" and state["family_index"] < 3:
-        return _defer(state)
+        return defer(state)
     return reason
-
-
-def _timeout(db, state, counts, budget, progress):
-    # A changed database invalidates completed families as well as the pending one.
-    if (
-        budget is not None
-        and db.connection.execute("PRAGMA data_version").fetchone()[0] != budget.version
-    ):
-        raise ValueError("curriculum sources changed; restart the plan") from None
-    if progress["reason"] is not None:
-        return
-    phase = state["phase"]
-    pending_key = {"capture": "capture_pending", "fork": "fork_pending", "new": "pending"}[phase]
-    pending = state[pending_key]
-    after = state["scheduled_after"]
-    # The prior corpus coordinate and its pending candidate are one continuation.
-    new_after = state["new_after"]
-    # Rewind only the unfinished family; earlier checked items can still be shown.
-    checkpoint = progress["checkpoint"]
-    if checkpoint is not None:
-        saved_state, saved_counts, size = checkpoint
-        state.update(saved_state)
-        counts.update(saved_counts)
-        del progress["items"][size:]
-    # A bound candidate must resume its conflict check before another family.
-    if pending is not None and state["phase"] == phase:
-        state[pending_key], state["scheduled_after"] = pending, after
-        if phase == "new":
-            state["new_after"] = new_after
-    phase = state["phase"]
-    progress["statuses"][phase] = "deferred"
-    progress["reason"] = _defer(state)

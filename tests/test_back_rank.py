@@ -434,7 +434,7 @@ def _prerequisite_workflow(tmp_path, monkeypatch):
     assert first["prerequisite"]["review"] == "unreviewed"
     assert first["prerequisite"]["mate_evidence"] == "unknown"
     state = decode_cursor(db, first["next_cursor"])
-    assert state["v"] == 4 and len(state["prerequisite_scope"]) == 64
+    assert state["v"] == 5 and len(state["prerequisite_scope"]) == 64
     assert "fixture_a" not in first["next_cursor"]
     from chess_coach import curriculum_prerequisite_source as prerequisite_source
 

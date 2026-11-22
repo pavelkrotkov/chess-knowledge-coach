@@ -28,6 +28,10 @@ def issue(db, state, subject, item):
         state["revision"],
         state["scan_limit"],
     ]
+    return encode(db, data)
+
+
+def encode(db, data):
     raw = canonical(data).encode()
     if len(raw) + 32 > MAX_BYTES:
         raise ValueError("diagnostic token too large")

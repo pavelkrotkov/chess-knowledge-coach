@@ -1,5 +1,6 @@
 """Offer an optional mate diagnostic for a witnessed back-rank topic."""
 
+from .curriculum_prerequisite_mate import retry_unavailable
 from .curriculum_prerequisite_source import context
 from .curriculum_prerequisite_token import issue
 from .tactical_course_budget import PreviewUnavailable
@@ -48,6 +49,7 @@ def offer(db, state, subject, item, info, check):
         info["diagnostic"] = "unavailable"
         return item
     check()
+    info.pop("diagnostic", None)
     state["prerequisite_offered"] = True
     return {
         **item,
@@ -62,6 +64,7 @@ def offer(db, state, subject, item, info, check):
 
 
 def offer_items(db, state, subject, found, phase, info, check):
-    if phase != "new" or state["v"] != 4 or not found:
+    if phase != "new" or state["v"] not in {4, 5} or not found:
         return found
-    return [offer(db, state, subject, item, info, check) for item in found]
+    result = [offer(db, state, subject, item, info, check) for item in found]
+    return [] if retry_unavailable(state, result, info) else result

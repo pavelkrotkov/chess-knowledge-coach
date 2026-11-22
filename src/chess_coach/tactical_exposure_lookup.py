@@ -44,3 +44,14 @@ def ledger_check(db, identity, key, cutoff, start, intent, *, ignore_artifact=No
     if cutoff < start:
         return "legacy_coverage_unknown"
     return "not_recorded"
+
+
+def practice_status(times, intent, cutoff):
+    provided = _provided(times, cutoff)
+    if provided is not None:
+        return provided
+    if intent == "provided":
+        return "provided"
+    if intent != "not_recorded" or ("study_pending" in times and times["study_pending"] <= cutoff):
+        return "pending"
+    return "history_unknown" if "historical_unknown" in times else "clear"

@@ -2,6 +2,8 @@
 
 import json
 
+from .curriculum_prerequisite_launch import budget as _diagnostic_budget
+from .curriculum_prerequisite_launch import dispatch as _diagnostic_check
 from .objective_promotion_admission import admit as admit_promotion
 from .related_session_filter import apply_filter
 from .unified_corpus_mate import apply as apply_goal
@@ -35,7 +37,7 @@ def start(
     budget = _diagnostic_budget(db, diagnostic, source_type, goal, training, item_id)
     try:
         db.connection.execute("BEGIN IMMEDIATE")
-        _diagnostic_check(db, subject, version, key, diagnostic, budget)
+        _diagnostic_check(db, subject, source_type, version, key, diagnostic, budget)
         old = db.connection.execute(
             "SELECT * FROM unified_sessions WHERE attempt_id=?", (attempt_id,)
         ).fetchone()
@@ -107,20 +109,3 @@ def _create(
             now(),
         ),
     )
-
-
-def _diagnostic_budget(db, diagnostic, source_type, goal, training, item_id):
-    if diagnostic is None:
-        return None
-    if (source_type, goal, training, item_id) != ("corpus", "mate_in_one", True, None):
-        raise ValueError("diagnostic launch unavailable")
-    from .opening_queue_budget import BrowserBudget
-
-    return BrowserBudget(db)
-
-
-def _diagnostic_check(db, subject, version, key, diagnostic, budget):
-    if budget is not None:
-        from .curriculum_prerequisite_launch import validate_start
-
-        validate_start(db, subject, version, key, diagnostic, budget)

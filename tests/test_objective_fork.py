@@ -1068,7 +1068,12 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
     from chess_coach.pipeline_inputs import engine_identity, game_input
     from chess_coach.pipeline_work import run_analysis
 
-    path = tmp_path / "fork-plan.sqlite"
+    root = tmp_path / "plan-project"
+    data = root / ".runtime" / "data"
+    data.mkdir(parents=True)
+    planning = root / ".runtime" / "planning"
+    planning.mkdir(mode=0o700)
+    path = data / "fork-plan.sqlite"
     db, _ = owned_fork(path, monkeypatch, "f6g5")
     source = db.connection.execute("SELECT pgn FROM games WHERE id=1").fetchone()[0]
     config = PipelineConfig(
@@ -1137,6 +1142,12 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
     db.connection.execute("UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus,))
     db.connection.commit()
     now = datetime.now(UTC)
+    # An absent optional public catalog is unavailable, not an empty learner need.
+    no_catalog_time = now
+    while no_catalog_time.date().toordinal() % 3 != 2:
+        no_catalog_time -= timedelta(days=1)
+    no_catalog = daily_plan(db, subject=SUBJECT, corpus_version="fixture", as_of=no_catalog_time)
+    assert no_catalog["public_status"] == "unavailable"
     for name in ("one", "two"):
         item = create_training_item(
             db,
@@ -1160,11 +1171,24 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
     # A partially checked fork conflict keeps its exact binding and position.
     from types import SimpleNamespace
 
+    # Retain explicit coverage of signed v4 continuation behavior.
+    import chess_coach.curriculum as curriculum
     import chess_coach.curriculum_capture_conflict as conflict
     import chess_coach.curriculum_family_mix as family_mix
     import chess_coach.fork_evidence_verify as fork_verify
     from chess_coach.curriculum_cursor_codec import decode_cursor
+    from chess_coach.curriculum_public_cursor import fields as public_fields
 
+    current_new_state = curriculum.new_state
+
+    def legacy_new_state(*args):
+        state = current_new_state(*args)
+        for key in public_fields():
+            state.pop(key)
+        state["v"] = 4
+        return state
+
+    monkeypatch.setattr(curriculum, "new_state", legacy_new_state)
     fork_time = now
     while fork_time.date().toordinal() % 3 != 1:
         fork_time -= timedelta(days=1)
@@ -1353,9 +1377,9 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
 
     # Final corpus fill can publish an earlier candidate even if a later
     # bound candidate hits the shared deadline on the same page.
-    from chess_coach.curriculum_cursor import new_state
     from chess_coach.curriculum_cursor_codec import encode_cursor
 
+    new_state = legacy_new_state
     fill_state = new_state(db, SUBJECT, "broad", 5, 200, corpus_time)
     fill_state.update(phase="new", family_index=3, new_after=[1100, "b-nonmate"])
     fill_cursor = encode_cursor(db, fill_state)
@@ -1398,6 +1422,270 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
         assert page_cursor
     assert found[:2] == ["candidate", "candidate2"]
 
+    monkeypatch.setattr(curriculum, "new_state", current_new_state)
+
+    # The current default offers an imported, licensed public mate alongside
+    # both owned skills, and rechecks file-backed delivery at actual start.
+    import os
+
+    import chess_coach.curriculum_public_candidate as public_candidate
+    from chess_coach.curriculum_cursor import new_state as current_state
+    from chess_coach.deep_selection_source import learner_key
+    from chess_coach.fact_fingerprint import digest
+    from chess_coach.public_mate_contract import OBJECTIVE as PUBLIC_MATE
+    from chess_coach.public_training import import_collection
+    from chess_coach.tactical_course_budget import PreviewUnavailable
+    from chess_coach.tactical_study_exposure import VERSION as EXPOSURE_VERSION
+    from tests.test_public_training import MATE, file_set
+
+    public_dir = tmp_path / "public-fixture"
+    public_dir.mkdir()
+    white = chess.Board(MATE.replace(" 1 2", " 0 2"))
+    black = white.mirror()
+    content, manifest, _ = file_set(
+        public_dir,
+        rows=[
+            ("a-other", MATE, "checkmate", ["c5f8"]),
+            ("b-white", white.fen(), PUBLIC_MATE, ["c5f8"]),
+            ("c-black", black.fen(), PUBLIC_MATE, ["c4f1"]),
+        ],
+    )
+    assert (
+        import_collection(db, content, content, manifest, project_root=public_dir)["accepted"] == 3
+    )
+    collection = db.connection.execute(
+        "SELECT id FROM public_collections WHERE version='fixture'"
+    ).fetchone()[0]
+    mix_time = now
+    while mix_time.date().toordinal() % 3 != 2:
+        mix_time -= timedelta(days=1)
+
+    def mixed(cursor=None):
+        return daily_plan(
+            db,
+            subject=SUBJECT,
+            corpus_version="fixture",
+            as_of=mix_time,
+            limit=5,
+            scan_limit=20,
+            cursor=cursor,
+        )
+
+    prior_changes = db.connection.total_changes
+    mixed_page = mixed()
+    assert db.connection.total_changes == prior_changes
+    public_item = next(item for item in mixed_page["items"] if item.get("source_type") == "public")
+    assert public_item["source_key"] == "b-white" and public_item["prerequisite_token"]
+    assert {item["skill"] for item in mixed_page["items"]} >= {
+        "hanging_piece",
+        "fork",
+        "mate_in_one",
+    }
+
+    # An unbound public scan yields to the two owned families, then returns
+    # to the saved public coordinate instead of abandoning that source.
+    first = daily_plan(
+        db,
+        subject=SUBJECT,
+        corpus_version="fixture",
+        as_of=mix_time,
+        limit=5,
+        scan_limit=1,
+    )
+    first_state = decode_cursor(db, first["next_cursor"])
+    assert first_state["public_after"] == [collection, "a-other"]
+    assert first_state["phase"] != "public" and first_state["public_status"] == "deferred"
+    observed = list(first["items"])
+    for _ in range(12):
+        first = daily_plan(
+            db,
+            subject=SUBJECT,
+            corpus_version="fixture",
+            as_of=mix_time,
+            limit=5,
+            scan_limit=1,
+            cursor=first["next_cursor"],
+        )
+        observed.extend(first["items"])
+        if any(item.get("source_type") == "public" for item in observed):
+            break
+        assert first["next_cursor"]
+    assert {item["skill"] for item in observed} >= {"hanging_piece", "fork", "mate_in_one"}
+
+    # An interruption at a later public conflict keeps earlier owned items
+    # and their seen keys on the same continuation.
+    owned_time = now
+    while owned_time.date().toordinal() % 3:
+        owned_time -= timedelta(days=1)
+    original_scheduled = conflict.scheduled_page
+
+    def expire_public(db, prompt, *args, **kwargs):
+        if prompt == public_item["prompt_key"]:
+            raise PreviewUnavailable()
+        return original_scheduled(db, prompt, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(conflict, "scheduled_page", expire_public)
+        later = daily_plan(
+            db,
+            subject=SUBJECT,
+            corpus_version="fixture",
+            as_of=owned_time,
+            limit=5,
+            scan_limit=20,
+        )
+    later_state = decode_cursor(db, later["next_cursor"])
+    assert {item["skill"] for item in later["items"]} >= {"hanging_piece", "fork"}
+    assert later_state["public_pending"] and all(
+        item["prompt_key"] in later_state["seen"] for item in later["items"]
+    )
+    resumed = daily_plan(
+        db,
+        subject=SUBJECT,
+        corpus_version="fixture",
+        as_of=owned_time,
+        limit=5,
+        scan_limit=20,
+        cursor=later["next_cursor"],
+    )
+    assert any(item.get("source_type") == "public" for item in resumed["items"])
+
+    # Interrupt before a public candidate is bound: the earlier keyset must
+    # remain intact so the same candidate can be checked on continuation.
+    probe = current_state(db, SUBJECT, "fixture", 5, 20, mix_time)
+    probe.update(
+        phase="public",
+        family_index=3,
+        public_status="deferred",
+        public_after=[collection, "a-other"],
+    )
+    probe_cursor = encode_cursor(db, probe)
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            public_candidate, "candidate", lambda *_: (_ for _ in ()).throw(PreviewUnavailable())
+        )
+        interrupted = mixed(probe_cursor)
+    interrupted_state = decode_cursor(db, interrupted["next_cursor"])
+    assert interrupted_state["public_after"] == [collection, "a-other"]
+    assert interrupted_state["public_pending"] is None
+    assert any(
+        item.get("source_key") == "b-white" for item in mixed(interrupted["next_cursor"])["items"]
+    )
+
+    # A bound candidate remains ahead of later scheduled conflicts.
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            conflict,
+            "scheduled_page",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(PreviewUnavailable()),
+        )
+        interrupted = mixed(probe_cursor)
+    bound_state = decode_cursor(db, interrupted["next_cursor"])
+    assert bound_state["public_after"] == [collection, "b-white"]
+    assert bound_state["public_pending"] and bound_state["scheduled_after"] == 0
+    assert any(
+        item.get("source_key") == "b-white" for item in mixed(interrupted["next_cursor"])["items"]
+    )
+
+    # A completed public proof is still unpublished until the shared check
+    # passes. Keep earlier rejected-row progress and retry this exact source.
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            family_mix,
+            "_check_completed",
+            lambda *_: (_ for _ in ()).throw(PreviewUnavailable()),
+        )
+        unpublished = mixed()
+    unpublished_state = decode_cursor(db, unpublished["next_cursor"])
+    assert unpublished_state["public_after"] == [collection, "a-other"]
+    assert unpublished_state["public_examined"] == 1
+    assert unpublished_state["public_binding"] is None
+    assert "_public_before" not in unpublished["scan"]
+    next_page = unpublished
+    for _ in range(5):
+        next_page = mixed(next_page["next_cursor"])
+        if any(item.get("source_key") == "b-white" for item in next_page["items"]):
+            break
+        assert next_page["next_cursor"]
+    assert any(item.get("source_key") == "b-white" for item in next_page["items"])
+
+    # The same boundary can occur while resuming an already-bound conflict.
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            family_mix,
+            "_check_completed",
+            lambda *_: (_ for _ in ()).throw(PreviewUnavailable()),
+        )
+        unpublished_bound = mixed(interrupted["next_cursor"])
+    rewound = decode_cursor(db, unpublished_bound["next_cursor"])
+    assert (rewound["public_pending"], rewound["public_after"], rewound["scheduled_after"]) == (
+        bound_state["public_pending"],
+        bound_state["public_after"],
+        bound_state["scheduled_after"],
+    )
+    assert any(
+        item.get("source_key") == "b-white"
+        for item in mixed(unpublished_bound["next_cursor"])["items"]
+    )
+
+    # Scope exit may happen after the family phase advances; completed owned
+    # results survive while the unpublished public item remains retryable.
+    from contextlib import contextmanager
+
+    from chess_coach.opening_queue_budget import BrowserBudget
+
+    original_scope = BrowserBudget.scope
+
+    @contextmanager
+    def expire_on_exit(self, *, snapshot):
+        with original_scope(self, snapshot=snapshot):
+            yield
+        raise PreviewUnavailable()
+
+    with monkeypatch.context() as patch:
+        patch.setattr(BrowserBudget, "scope", expire_on_exit)
+        scope_expired = daily_plan(
+            db, subject=SUBJECT, corpus_version="fixture", as_of=owned_time, limit=5, scan_limit=20
+        )
+    scope_state = decode_cursor(db, scope_expired["next_cursor"])
+    assert {item["skill"] for item in scope_expired["items"]} >= {"hanging_piece", "fork"}
+    assert scope_state["public_after"] == [collection, "a-other"]
+    assert scope_state["public_binding"] is None
+    next_page = scope_expired
+    for _ in range(5):
+        next_page = daily_plan(
+            db,
+            subject=SUBJECT,
+            corpus_version="fixture",
+            as_of=owned_time,
+            limit=5,
+            scan_limit=20,
+            cursor=next_page["next_cursor"],
+        )
+        if any(item.get("source_key") == "b-white" for item in next_page["items"]):
+            break
+        assert next_page["next_cursor"]
+    assert any(item.get("source_key") == "b-white" for item in next_page["items"])
+
+    # Public-first rotation can finish a fork just before scope exit and then
+    # skip mate fill. That unpublished fork must be retried, not advanced past.
+    with monkeypatch.context() as patch:
+        patch.setattr(BrowserBudget, "scope", expire_on_exit)
+        owned_expired = mixed()
+    owned_state = decode_cursor(db, owned_expired["next_cursor"])
+    assert {item["skill"] for item in owned_expired["items"]} >= {"mate_in_one", "hanging_piece"}
+    assert all(item["skill"] != "fork" for item in owned_expired["items"])
+    assert (
+        owned_state["phase"] == "fork"
+        and owned_expired["continuation_reason"] == "fork_scan_incomplete"
+    )
+    assert owned_state["public_binding"] and all(
+        item["prompt_key"] in owned_state["seen"] for item in owned_expired["items"]
+    )
+    retried = mixed(owned_expired["next_cursor"])
+    assert any(item["skill"] == "fork" for item in retried["items"])
+    assert all(item["skill"] not in {"mate_in_one", "hanging_piece"} for item in retried["items"])
+
     app = create_app(
         db_path=path,
         subject=SUBJECT,
@@ -1410,6 +1698,121 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
     headers = {"Tailscale-User-Login": "fixture-login"}
     page = client.get("/plan", base_url="https://coach.invalid", headers=headers)
     assert page.status_code == 200 and b"Move the piece on b5" in page.data
+    form = {
+        "csrf": token(page, "csrf"),
+        "source_type": "public",
+        "version": "fixture",
+        "key": public_item["source_key"],
+        "training": "1",
+        "prerequisite_token": public_item["prerequisite_token"],
+    }
+    artifact = "a" * 64
+    intent = {
+        "course_sha256": artifact,
+        "chapters": ["pending"],
+        "tactical_delivery": {
+            "version": EXPOSURE_VERSION,
+            "owner": learner_key(SUBJECT),
+            "chapters": {
+                "0": {
+                    "positions": [digest(public_item["prompt_key"])],
+                    "pending_at": datetime.now(UTC).isoformat(),
+                    "verified_at": None,
+                }
+            },
+        },
+    }
+    intent_path = planning / f"tactical-study-{artifact}-intent.json"
+    fd = os.open(intent_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w") as stream:
+        json.dump(intent, stream)
+    before = db.connection.execute("SELECT count(*) FROM unified_training_enrollments").fetchone()[
+        0
+    ]
+    rejected = client.post(
+        "/unified/start",
+        base_url="https://coach.invalid",
+        headers=headers | {"Origin": "https://coach.invalid"},
+        data=form,
+    )
+    assert rejected.status_code == 400
+    assert (
+        db.connection.execute("SELECT count(*) FROM unified_training_enrollments").fetchone()[0]
+        == before
+    )
+
+    black_key = " ".join(black.fen(en_passant="fen").split()[:4])
+    db.connection.execute(
+        """INSERT INTO tactical_exposures(subject,prompt_key,artifact_hash,chapter_index,
+        chapter_hash,kind,occurred_at) VALUES(?,?,?,?,?,?,?)""",
+        (
+            SUBJECT,
+            black_key,
+            "b" * 64,
+            0,
+            "c" * 64,
+            "historical_unknown",
+            datetime.now(UTC).isoformat(),
+        ),
+    )
+    db.connection.commit()
+    replacement = next(item for item in mixed()["items"] if item.get("source_type") == "public")
+    assert replacement["source_key"] == "c-black" and "unknown" in replacement["reason"]
+    form.update(key=replacement["source_key"], prerequisite_token=replacement["prerequisite_token"])
+    # Source-revision changes invalidate the offer even when its signed token is authentic.
+    db.connection.execute("UPDATE curriculum_source_revision SET revision=revision+1 WHERE id=1")
+    db.connection.commit()
+    assert (
+        client.post(
+            "/unified/start",
+            base_url="https://coach.invalid",
+            headers=headers | {"Origin": "https://coach.invalid"},
+            data=form,
+        ).status_code
+        == 400
+    )
+    replacement = next(item for item in mixed()["items"] if item.get("source_type") == "public")
+    form["prerequisite_token"] = replacement["prerequisite_token"]
+    started = client.post(
+        "/unified/start",
+        base_url="https://coach.invalid",
+        headers=headers | {"Origin": "https://coach.invalid"},
+        data=form,
+    )
+    assert started.status_code == 303
+    public_attempt = started.location.rstrip("/").rsplit("/", 1)[-1]
+    result = submit(db, public_attempt, SUBJECT, event_id="answer", move="c4c1")
+    assert result["learning"]["outcome"] == "success"
+    public_due = daily_plan(
+        db, subject=SUBJECT, corpus_version="fixture", as_of=now + timedelta(days=2)
+    )
+    assert any(item.get("item_id") == result["learning"]["item_id"] for item in public_due["items"])
+
+    # The other owned skill still has a real qualified enrollment, rather
+    # than being displaced by the single public-mate opportunity.
+    from chess_coach.unified_sessions import start
+    from chess_coach.unified_sources import resolve_source
+
+    capture_item = next(item for item in mixed_page["items"] if item["skill"] == "hanging_piece")
+    capture_source = resolve_source(
+        db, "own-game", capture_item["source_version"], capture_item["source_key"], subject=SUBJECT
+    )
+    start(
+        db,
+        attempt_id="mixed-capture",
+        subject=SUBJECT,
+        source_type="own-game",
+        version=capture_item["source_version"],
+        key=capture_item["source_key"],
+        training=True,
+    )
+    submit(
+        db, "mixed-capture", SUBJECT, event_id="answer", move=capture_source["lines"][0].split()[0]
+    )
+    assert process(db, SUBJECT)["outcomes"] == {"correct": 1}
+    capture_learning = show(db, "mixed-capture", SUBJECT)["learning"]
+    assert capture_learning["outcome"] == "success"
+
     posted = client.post(
         "/unified/start",
         base_url="https://coach.invalid",
