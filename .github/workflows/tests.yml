@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: true
 
 jobs:
@@ -43,6 +43,8 @@ jobs:
           echo "Collected cases: $count"
           test -n "$count" && test "$count" -le 200
       - name: Run pytest and report coverage
+        timeout-minutes: 15
         run: |
-          uv run pytest --cov --cov-report=term-missing --cov-precision=2
+          uv run python -c 'import sqlite3, sys; print("Python:", sys.version); print("SQLite:", sqlite3.sqlite_version); print("SQLite source:", sqlite3.connect(":memory:").execute("SELECT sqlite_source_id()").fetchone()[0])'
+          uv run pytest -vv -o faulthandler_timeout=120 --cov --cov-report=term-missing --cov-precision=2
           uv run coverage json -o - | uv run python -c 'import json, sys; total = json.load(sys.stdin)["totals"]["percent_covered"]; print(f"Unrounded coverage: {total:.6f}%")'
