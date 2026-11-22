@@ -15,7 +15,10 @@ def measure(binary, config, board, position, alternative, deadline):
     except RuntimeError:
         return {"status": "insufficient", "reason": "engine_start_failed"}
     try:
-        result = search(engine, board, position, alternative, deadline)
+        if config.get("purpose_policy") == "opening-catalog-reference-v2":
+            result = _reference(engine, metadata, config, board, position, alternative, deadline)
+        else:
+            result = search(engine, board, position, alternative, deadline)
         result["engine"] = dict(metadata.id)
         result["runtime_engine"] = {
             key: runtime.get(key) for key in ("engine_id", "nnue_options", "native_wdl_requested")
@@ -25,4 +28,23 @@ def measure(binary, config, board, position, alternative, deadline):
         stopped = stop_engine(engine)
     if not stopped:
         return {"status": "insufficient", "reason": "engine_shutdown_failed"}
+    return result
+
+
+def _reference(engine, metadata, config, board, position, alternative, deadline):
+    # The native option must support the exact number of legal roots requested.
+    count = board.legal_moves.count()
+    option = metadata.options.get("MultiPV")
+    if (
+        option is None
+        or option.type != "spin"
+        or option.min is None
+        or option.max is None
+        or not option.min <= count <= option.max
+        or count != config["multipv"]
+    ):
+        return {"status": "insufficient", "reason": "multipv_unavailable"}
+    result = search(engine, board, position, alternative, deadline, reference=True)
+    result["effective_multipv"] = count
+    result["multipv_max"] = option.max
     return result

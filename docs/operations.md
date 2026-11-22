@@ -665,12 +665,20 @@ private opening view; the alternative must be one of that view's catalog moves.
   --alternative "$catalog_uci" --output "$PWD/.runtime/planning/opening-comparison.json"
 ```
 
-The saved measurement binds the source history, pinned graph, engine configuration
-and requested roots as they were checked at publication. A complete result is a
-same-search comparison of those roots, not a global best move, proof of soundness,
-or evidence of opening fit. Insufficient results do not contain comparable
-scores. This operator artifact is not automatically refreshed or surfaced in
-the browser; that requires the separate queued workflow.
+The saved measurement binds the exact source history, pinned graph, engine binary
+and configuration as checked at publication. Version 2 uses one unrestricted
+MultiPV search covering every legal root at the same complete depth, with exact
+side-to-move centipawn scores and legal, history-checked PV prefixes. It requests
+180,000 nodes and 1.35 seconds, then admits results only when all reported work
+stays within 200,000 nodes and 1.5 seconds; the worker's total deadline is 25
+seconds. Missing capability, work, complete ranks, depth or safe lines leaves
+the result unavailable. The alternative must be within 50 cp of both the played
+move and the best measured root for the worked experiment. These are bounded
+engine estimates, not proof of opening soundness, personal fit, or a learner
+weakness. Earlier version 1 two-root results remain historical comparisons and
+do not establish a best-root baseline. This private operator artifact is not
+automatically refreshed or surfaced in the browser; that requires the separate
+queued workflow.
 
 The private opening view can also queue one selected catalog comparison for the
 ordinary worker after higher-priority processing. The queue holds one request at

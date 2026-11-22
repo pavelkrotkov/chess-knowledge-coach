@@ -417,6 +417,7 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     import chess_coach.opening_queue_binding as queue_binding
     import chess_coach.opening_queue_worker as queue_worker
 
+    real_measure_config = queue_binding._config
     monkeypatch.setattr(
         queue_binding, "_config", lambda *args: ("engine", {"engine_path": "engine"})
     )
@@ -3360,6 +3361,260 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         stale_latest = client.get(branch_url, base_url="https://coach.invalid", headers=headers)
     assert b"Another verified repeated branch with a ready experiment" not in stale_latest.data
     assert b"White to move: verified repeated position" in stale_latest.data
+
+    # A versioned comparison covers every legal root in one bounded search.
+    # The equal-to-50 reference gap is admitted; a one-point wider gap is not.
+    from chess_coach.opening_measure_prepare import V1, V2
+    from chess_coach.opening_measure_reference import ReferenceIterations
+
+    scores = {"reference": 150}
+
+    fake_engine = tmp_path / "reference-engine"
+    fake_engine.write_text("#!/bin/sh\nexit 0\n")
+    fake_engine.chmod(0o700)
+
+    def measured_config(_db, _game, _engine, board=None, policy=V1):
+        return real_measure_config(_db, _game, str(fake_engine), board, policy)
+
+    def all_roots(_engine, board, position, _limit, roots, _deadline, *, bounds, reference=False):
+        if not reference:
+            return fake_retained(_engine, board, position, _limit, roots, _deadline, bounds=bounds)
+        assert set(roots) == set(board.legal_moves)
+        assert _limit.nodes == 180000 and _limit.time == 1.35
+        state = ReferenceIterations(board, position, roots, bounds)
+        ordered = sorted(roots, key=lambda move: move.uci() != "e2e4")
+        for rank, root in enumerate(ordered, 1):
+            replay, pv = board.copy(), [root]
+            replay.push(root)
+            for _ in range(2):
+                move = next(iter(replay.legal_moves))
+                pv.append(move)
+                replay.push(move)
+            value = (
+                scores["reference"]
+                if root.uci() == "e2e4"
+                else (100 if root.uci() == "g1f3" else 90 if root.uci() == "d2d4" else 0)
+            )
+            state.add(
+                {
+                    "multipv": rank,
+                    "pv": pv,
+                    "score": chess.engine.PovScore(chess.engine.Cp(value), board.turn),
+                    "depth": 10,
+                    "nodes": 100000,
+                    "time": 1.0,
+                }
+            )
+        if scores.get("extra_work"):
+            state.add(
+                {
+                    "multipv": 1,
+                    "pv": pv,
+                    "score": chess.engine.PovScore(chess.engine.Cp(0), board.turn),
+                    "depth": 11,
+                    "nodes": scores.get("nodes", 100000),
+                    "time": scores.get("time", 1.0),
+                }
+            )
+        return state, None
+
+    with monkeypatch.context() as patch:
+        patch.setattr(queue_binding, "_config", measured_config)
+        patch.setattr(opening_measure, "_config", measured_config)
+        patch.setattr(opening_search, "retained_search", all_roots)
+        patch.setattr(
+            opening_engine,
+            "start_engine",
+            lambda *args, **kwargs: (
+                Engine(),
+                SimpleNamespace(
+                    id={}, options={"MultiPV": SimpleNamespace(type="spin", min=1, max=256)}
+                ),
+            ),
+        )
+        with client.session_transaction(base_url="https://coach.invalid") as browser_session:
+            current_csrf = browser_session["csrf"]
+        current_form = {"csrf": current_csrf, "alternative": "g1f3"}
+
+        # A genuinely queued v1 slot stays runnable and cannot be overwritten
+        # by the new request; its finished result remains available by identity.
+        from chess_coach.opening_measure_source import selection as measurement_source
+        from chess_coach.opening_queue_location import location as comparison_location
+        from chess_coach.opening_queue_write import write as write_slot
+
+        _, database_id = comparison_location(db, tmp_path, "learner")
+        old_source, old_owned = measurement_source(db, 1, first_move, "learner", "g1f3")
+        _, old_config = measured_config(db, 1, "engine", old_owned["board"], V1)
+        old_slot = queue_binding.request(database_id, old_source, old_config)
+        write_slot(planning_dir / "opening-comparison-slot.json", old_slot)
+        assert (
+            client.post(
+                compare_route,
+                data=current_form,
+                base_url="https://coach.invalid",
+                headers=post_headers,
+            ).status_code
+            == 409
+        )
+        queue_worker.run(db, config, tmp_path)
+        assert (
+            queue_artifact.load(planning_dir, old_slot)["version"]
+            == "opening-catalog-measurement-v1"
+        )
+        historical = client.get(route, base_url="https://coach.invalid", headers=headers)
+        assert b"earlier two-root comparison" in historical.data
+
+        assert (
+            client.post(
+                compare_route,
+                data=current_form,
+                base_url="https://coach.invalid",
+                headers=post_headers,
+            ).status_code
+            == 302
+        )
+        queue_worker.run(db, config, tmp_path)
+        current_slot = json.loads((planning_dir / "opening-comparison-slot.json").read_text())
+        reference_artifact = queue_artifact.load(planning_dir, current_slot)
+        assert current_slot["configuration"]["multipv"] == 20
+        assert (
+            current_slot["configuration"]["engine_sha256"]
+            == hashlib.sha256(fake_engine.read_bytes()).hexdigest()
+        )
+        from chess_coach.deep_execution_config import DeepOptions
+        from chess_coach.deep_execution_limits import validate_options
+
+        with pytest.raises(ValueError, match="integer limit"):
+            validate_options(DeepOptions(multipv=20))
+        reference_result = reference_artifact["result"]
+        assert reference_artifact["version"] == "opening-catalog-measurement-v2"
+        assert qualified(reference_result, current_slot["source"], chess.Board(), reference=True)
+        bad_rank = copy.deepcopy(reference_result)
+        bad_rank["lines"][0]["rank"] = 2
+        assert not qualified(bad_rank, current_slot["source"], chess.Board(), reference=True)
+        current_decision = inspect_opening(db, 1, first_move, "learner")
+        local_choice = next(
+            item for item in current_decision["catalog"]["items"] if item["uci"] == "g1f3"
+        )
+        assert experiment_qualified(current_decision, local_choice, reference_result)
+        page = client.get(route, base_url="https://coach.invalid", headers=headers)
+        assert b"best measured legal root" in page.data and b"50 cp below it" in page.data
+        assert b"Rehearse this opening experiment" in page.data
+
+        # Exercise the operator CLI's actual private artifact path too.
+        scores["reference"] = 151
+        reference_output = tmp_path / "opening-reference-v2.json"
+        patch.setattr(opening_cli, "paths", lambda *_args: (path, reference_output))
+        opening_cli.prepare(tmp_path, 1, first_move, "g1f3", reference_output, "engine")
+        withheld = json.loads(reference_output.read_text())["measurement"]["result"]
+        assert experiment_qualified(current_decision, local_choice, withheld) is None
+        # Exercise the real CLI entry point and its readable withheld reason.
+        import sys
+
+        cli_output = tmp_path / "opening-reference-cli.json"
+        messages = []
+        with monkeypatch.context() as cli_patch:
+            cli_patch.setattr(opening_cli, "paths", lambda *_args: (path, cli_output))
+            cli_patch.setattr(
+                sys,
+                "argv",
+                [
+                    "ops_opening_measure",
+                    "--project-root",
+                    str(tmp_path),
+                    "--game-id",
+                    "1",
+                    "--position-id",
+                    str(first_move),
+                    "--alternative",
+                    "g1f3",
+                    "--output",
+                    str(cli_output),
+                    "--engine",
+                    "engine",
+                ],
+            )
+            cli_patch.setattr(
+                "builtins.print", lambda *values: messages.append(" ".join(map(str, values)))
+            )
+            opening_cli.main()
+        assert any("51 cp" in message for message in messages)
+        assert any("withheld: more than 50 cp below" in message for message in messages)
+        patch.setattr(
+            "chess_coach.web_repertoire.statuses", lambda *_args, **_kwargs: {"g1f3": withheld}
+        )
+        page = client.get(route, base_url="https://coach.invalid", headers=headers)
+        assert b"more than 50 cp below the best measured root" in page.data
+
+        # A discarded deeper partial update still contributes to actual work.
+        scores.update(reference=150, extra_work=True, nodes=200001)
+        over_nodes = tmp_path / "opening-reference-over-nodes.json"
+        patch.setattr(opening_cli, "paths", lambda *_args: (path, over_nodes))
+        opening_cli.prepare(tmp_path, 1, first_move, "g1f3", over_nodes, "engine")
+        assert (
+            json.loads(over_nodes.read_text())["measurement"]["result"]["reason"]
+            == "node_limit_unverified"
+        )
+        scores.update(nodes=100000, time=1.501)
+        over_time = tmp_path / "opening-reference-over-time.json"
+        patch.setattr(opening_cli, "paths", lambda *_args: (path, over_time))
+        opening_cli.prepare(tmp_path, 1, first_move, "g1f3", over_time, "engine")
+        assert (
+            json.loads(over_time.read_text())["measurement"]["result"]["reason"]
+            == "work_limit_unverified"
+        )
+
+        # The same exact-root policy keeps the mover's perspective for Black.
+        scores.update(extra_work=False, reference=0)
+        black_output = tmp_path / "opening-reference-black.json"
+        patch.setattr(opening_cli, "paths", lambda *_args: (path, black_output))
+        opening_cli.prepare(tmp_path, 3, black_move, "g8f6", black_output, "engine")
+        black_artifact = json.loads(black_output.read_text())["measurement"]
+        black_result = black_artifact["result"]
+        black_board = chess.Board(black_artifact["source"]["decision_fen"])
+        assert qualified(black_result, black_artifact["source"], black_board, reference=True)
+        assert all(line["score_pov"] == "black" for line in black_result["lines"])
+        black_decision = inspect_opening(db, 3, black_move, "learner")
+        black_choice = next(
+            item for item in black_decision["catalog"]["items"] if item["uci"] == "g8f6"
+        )
+        assert experiment_qualified(black_decision, black_choice, black_result)
+
+        # Unsupported native MultiPV capability is a disclosed refusal.
+        with monkeypatch.context() as limited:
+            limited.setattr(
+                opening_engine,
+                "start_engine",
+                lambda *args, **kwargs: (
+                    Engine(),
+                    SimpleNamespace(
+                        id={}, options={"MultiPV": SimpleNamespace(type="spin", min=1, max=2)}
+                    ),
+                ),
+            )
+            unavailable = opening_engine.measure(
+                "engine",
+                {"purpose_policy": V2, "multipv": 20},
+                chess.Board(),
+                {"id": first_move, "uci": "d2d4"},
+                "g1f3",
+                time.monotonic() + 10,
+            )
+        assert unavailable["reason"] == "multipv_unavailable"
+
+        # Oversized v2 results become a bounded, explicit unavailable artifact.
+        over_size = tmp_path / "opening-reference-oversized.json"
+        patch.setattr(opening_cli, "paths", lambda *_args: (path, over_size))
+        with monkeypatch.context() as oversized:
+            oversized.setattr(
+                opening_measure,
+                "measure",
+                lambda *_args: {"status": "complete", "payload": "x" * 131072},
+            )
+            opening_cli.prepare(tmp_path, 1, first_move, "g1f3", over_size, "engine")
+        stored = json.loads(over_size.read_text())["measurement"]["result"]
+        assert stored == {"status": "insufficient", "reason": "result_exceeds_limit"}
+        assert over_size.stat().st_size <= 128 * 1024
 
     source.write_text("eco\tname\tmoves\nD00\tTest\td4 d5 Nf3 Nf6\nC20\tNew\te4 e5\n")
     import_openings(db, source, version="test", source_url="cc0://test")
