@@ -124,14 +124,28 @@ The separately qualified scheduled policy is restricted to the exact pinned
 eight-task canonical collection below and its immediate promotion objective.
 Before enrollment, completion and due reopening it rechecks the catalog,
 license, source and current task snapshot. Any legal immediate promotion,
-including captures and underpromotions, meets this objective; a legal non-promoting move misses it. Stalemate is not a win. The accepted event and whole
+including captures and underpromotions, meets this objective; a legal
+non-promoting move misses it. Stalemate is not a win. The accepted event and whole
 hint/reveal history are retained. Unassisted success/Good and miss/Again
 produce unreviewed evidence and one FSRS update; assistance produces no
 evidence or schedule update. Pending, cancelled, stale and unresolved results
 are not grades. Reopening a due item remains owner-bound. Schema-32
 compatibility keeps learning unavailable while ordinary practice remains.
-The forced-promotion continuation is a separate policy and is not enrolled by
-this feature. No assessment here establishes mastery.
+The forced-promotion continuation is a separately versioned learning policy.
+It requires the verified root and deterministic legal reply, then the actual
+final legal move; a proved root alone is not completion. Later hints and reveals
+make the whole attempt assisted. An incorrect root is graded only when its
+stored legal counterexample is current, nonterminal and non-claimable, and has
+no legal immediate promotion; draw, timeout and unsupported proofs remain
+ungraded. Final successes and misses use the accepted final event time, while
+a supported failed root uses the root event time. In the current pinned
+catalog neither forced task offers an immediate root promotion; future catalog
+changes require separate qualification. Bounded enumeration of each current
+forced task found nine legal roots: one proved continuation and eight
+nonterminal, non-claimable counterexamples covered by this policy. The 27 legal
+replies per color contain no terminal or claimable-draw position. Terminal or
+draw counterexamples and immediate-root promotion are not exercised by this
+catalog. No assessment here establishes mastery.
 
 ## Explicit promotion objectives
 

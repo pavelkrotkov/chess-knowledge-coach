@@ -39,7 +39,7 @@ def recommendation(db, subject):
                 "key": key,
                 "color": color,
                 "objective": objective,
-                "learning_available": not db.compat32 and objective == NOW,
+                "learning_available": not db.compat32,
             }
     except Exception:
         return {"status": "unavailable"}

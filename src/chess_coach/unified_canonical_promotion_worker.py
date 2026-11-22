@@ -4,7 +4,7 @@ import sqlite3
 from contextlib import suppress
 
 from .learner_identity import normalize_identity
-from .unified_training_canonical_promotion import is_source
+from .unified_training_canonical_promotion import is_forced_source, is_source
 
 
 def finish_objective(db, request, result):
@@ -16,7 +16,7 @@ def finish_objective(db, request, result):
     if (
         row is None
         or normalize_identity(row["subject"]) != request["subject"]
-        or not is_source(row)
+        or not (is_source(row) or is_forced_source(row))
     ):
         return
     if not db.connection.execute(
