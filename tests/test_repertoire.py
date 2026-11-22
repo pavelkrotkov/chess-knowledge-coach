@@ -1094,7 +1094,9 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     calls = []
     kind = {"status": "queued"}
 
-    def synthetic_states(_db, _root, _learner, decision, *, deadline=None, with_identity=False):
+    def synthetic_states(
+        _db, _root, _learner, decision, *, deadline=None, with_identity=False, budget=None
+    ):
         choice = decision["catalog"]["items"][0]
         calls.append((decision["color"], decision["ply"]))
         if kind["status"] != "complete":
