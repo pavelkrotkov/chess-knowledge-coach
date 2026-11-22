@@ -4,16 +4,29 @@ import json
 
 from .learner_identity import normalize_identity
 from .objective_contract import STANDALONE
-from .objective_promotion_contract import NOW
+from .objective_promotion_contract import FORCE, NOW
 from .objective_promotion_contract import VERSION as OBJECTIVE_VERSION
 from .plan_promotion_catalog import VERSION, collection
 from .unified_training_item import source_ref
 
 SOURCE = "unified_canonical_promotion"
+FORCED_SOURCE = "unified_canonical_forced_promotion"
 
 
 def is_source(row):
-    if (row["source_type"], row["source_version"], row["objective"]) != ("public", VERSION, NOW):
+    return _source(row, NOW)
+
+
+def is_forced_source(row):
+    return _source(row, FORCE)
+
+
+def _source(row, objective):
+    if (row["source_type"], row["source_version"], row["objective"]) != (
+        "public",
+        VERSION,
+        objective,
+    ):
         return False
     data = json.loads(row["provenance_json"])
     return (
@@ -23,8 +36,9 @@ def is_source(row):
     )
 
 
-def binding(db, row):
-    if db.compat32 or not is_source(row):
+def binding(db, row, *, forced=False):
+    selected = is_forced_source(row) if forced else is_source(row)
+    if db.compat32 or not selected:
         return None
     collection(db)
     item = db.connection.execute(
@@ -38,7 +52,7 @@ def binding(db, row):
     )
     if item is None or tuple(item)[:5] != (
         normalize_identity(row["subject"]),
-        SOURCE,
+        FORCED_SOURCE if forced else SOURCE,
         expected,
         "promotion",
         "execute",

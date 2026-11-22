@@ -276,6 +276,7 @@ def test_imported_source_queues_exemplar_and_resumes_every_defense(tmp_path, mon
         db.connection.execute("SELECT COUNT(*) FROM mastery_states").fetchone()[0] == mastery_before
     )
     _canonical_learning_workflow(db, client, headers, monkeypatch)
+    _canonical_forced_workflow(db, client, headers, monkeypatch)
 
 
 def _canonical_learning_workflow(db, client, headers, monkeypatch):
@@ -296,8 +297,6 @@ def _canonical_learning_workflow(db, client, headers, monkeypatch):
             **kwargs,
         )
 
-    with pytest.raises(ValueError, match="qualified training"):
-        enrolled("forced-white", "forced-unavailable")
     with pytest.raises(ValueError, match="qualified training"):
         start(
             db,
@@ -484,3 +483,233 @@ def _canonical_learning_workflow(db, client, headers, monkeypatch):
             complete(db, "stale-catalog", SUBJECT, event_id="answer")
         assert training_context(db, evidence) == (None, "invalid_training_lineage")
     assert complete(db, "stale-catalog", SUBJECT, event_id="answer")["outcome"] == "success"
+
+
+def _canonical_forced_workflow(db, client, headers, monkeypatch):
+    from chess_coach.unified_session_events import hint, reveal
+    from chess_coach.unified_training_complete import complete
+
+    start(
+        db,
+        attempt_id="forced-learning",
+        subject=SUBJECT,
+        source_type="public",
+        version=VERSION,
+        key="forced-white",
+        training=True,
+    )
+    root = submit(db, "forced-learning", SUBJECT, event_id="root", move="a6a7")
+    assert root["status"] == "needs_verification"
+    assert process(db, SUBJECT)["outcomes"] == {"correct": 1}
+    resumed = show(db, "forced-learning", SUBJECT)
+    assert resumed["status"] == "active" and resumed["promotion_continuation"]
+    assert resumed["learning"]["state"] == "pending"
+    assert (
+        db.connection.execute(
+            "SELECT count(*) FROM unified_training_completions WHERE attempt_id='forced-learning'"
+        ).fetchone()[0]
+        == 0
+    )
+    second = Database(db.path)
+    assert show(second, "forced-learning", SUBJECT)["fen"] == resumed["fen"]
+    second.close()
+    hint(db, "forced-learning", SUBJECT, event_id="late-hint")
+    reveal(db, "forced-learning", SUBJECT, event_id="late-reveal")
+    board = chess.Board(resumed["fen"])
+    move = next(move for move in board.legal_moves if move.promotion == chess.KNIGHT)
+    final = submit(db, "forced-learning", SUBJECT, event_id="final", move=move.uci())
+    assert final["status"] == "objective_verified"
+    assert final["learning"]["state"] == "completed"
+    assert final["learning"]["assistance"] == "assisted"
+    assert final["learning"]["evidence_id"] is None and final["learning"]["rating"] is None
+    assert submit(db, "forced-learning", SUBJECT, event_id="root", move="a6a7") == root
+    assert complete(db, "forced-learning", SUBJECT, event_id="final")["assistance"] == "assisted"
+
+    from chess_coach import objective_promotion_event, unified_session_apply, unified_sessions
+
+    with monkeypatch.context() as patch:
+        patch.setattr(unified_sessions, "now", lambda: "2026-01-01T00:00:00+00:00")
+        patch.setattr(unified_session_apply, "now", lambda: "2026-01-01T00:00:00+00:00")
+        start(
+            db,
+            attempt_id="forced-black-learning",
+            subject=SUBJECT,
+            source_type="public",
+            version=VERSION,
+            key="forced-black",
+            training=True,
+        )
+        submit(db, "forced-black-learning", SUBJECT, event_id="root", move="a3a2")
+    assert process(db, SUBJECT)["outcomes"] == {"correct": 1}
+    resumed = show(db, "forced-black-learning", SUBJECT)
+    assert resumed["learning"]["state"] == "pending"
+    board = chess.Board(resumed["fen"])
+    move = next(move for move in board.legal_moves if move.promotion == chess.ROOK)
+    with monkeypatch.context() as patch:
+        patch.setattr(objective_promotion_event, "now", lambda: "2026-01-02T00:00:00+00:00")
+        final = submit(db, "forced-black-learning", SUBJECT, event_id="final", move=move.uci())
+    learning = final["learning"]
+    assert learning["state"] == "completed" and learning["outcome"] == "success"
+    assert learning["rating"] == "good" and learning["evidence_id"]
+    from chess_coach.objective_events import prefix, prefix_hash
+
+    evidence = db.connection.execute(
+        "SELECT context_json FROM evidence_mappings WHERE id=?", (learning["evidence_id"],)
+    ).fetchone()[0]
+    assert json.loads(evidence)["event_history_hash"] == prefix_hash(
+        prefix(db, "forced-black-learning", "final")
+    )
+    reviewed = db.connection.execute(
+        "SELECT reviewed_at FROM training_attempts WHERE item_id=?", (learning["item_id"],)
+    ).fetchone()[0]
+    assert reviewed == "2026-01-02T00:00:00+00:00"
+
+    import re
+
+    with monkeypatch.context() as patch:
+        from chess_coach import objective_promotion_root
+
+        patch.setattr(objective_promotion_root, "scan", lambda *_: pytest.fail("solver on GET"))
+        page = client.get("/plan", base_url="https://coach.invalid", headers=headers)
+    assert page.status_code == 200 and b"Force a promotion within two moves." in page.data
+    assert f'name="item_id" value="{learning["item_id"]}"'.encode() in page.data
+    csrf_match = re.search(r'name="csrf" value="([^"]+)"', page.get_data(as_text=True))
+    assert csrf_match is not None
+    opened = client.post(
+        "/unified/start",
+        base_url="https://coach.invalid",
+        headers=headers | {"Origin": "https://coach.invalid"},
+        data={
+            "csrf": csrf_match.group(1),
+            "source_type": "public",
+            "version": VERSION,
+            "key": "forced-black",
+            "training": "1",
+            "item_id": str(learning["item_id"]),
+        },
+    )
+    assert opened.status_code == 303
+    reopened = opened.headers["Location"].rsplit("/", 1)[-1]
+    assert (
+        db.connection.execute(
+            "SELECT item_id FROM unified_training_enrollments WHERE attempt_id=?", (reopened,)
+        ).fetchone()[0]
+        == learning["item_id"]
+    )
+
+    practice = client.get(
+        opened.headers["Location"], base_url="https://coach.invalid", headers=headers
+    )
+    event_match = re.search(r'name="event" value="([^"]+)"', practice.get_data(as_text=True))
+    assert event_match is not None
+    first = client.post(
+        "/unified/move",
+        base_url="https://coach.invalid",
+        headers=headers | {"Origin": "https://coach.invalid"},
+        data={
+            "csrf": csrf_match.group(1),
+            "attempt": reopened,
+            "event": event_match.group(1),
+            "move": "a3a2",
+        },
+    )
+    assert first.status_code == 303
+    assert process(db, SUBJECT)["outcomes"] == {"correct": 1}
+    practice = client.get(
+        opened.headers["Location"], base_url="https://coach.invalid", headers=headers
+    )
+    event_match = re.search(r'name="event" value="([^"]+)"', practice.get_data(as_text=True))
+    assert event_match is not None
+    board = chess.Board(show(db, reopened, SUBJECT)["fen"])
+    promoting = next(move for move in board.legal_moves if move.promotion == chess.QUEEN)
+    answer = client.post(
+        "/unified/move",
+        base_url="https://coach.invalid",
+        headers=headers | {"Origin": "https://coach.invalid"},
+        data={
+            "csrf": csrf_match.group(1),
+            "attempt": reopened,
+            "event": event_match.group(1),
+            "move": promoting.uci(),
+        },
+    )
+    assert answer.status_code == 303
+    assert show(db, reopened, SUBJECT)["learning"]["item_id"] == learning["item_id"]
+
+    start(
+        db,
+        attempt_id="forced-root-miss",
+        subject=SUBJECT,
+        source_type="public",
+        version=VERSION,
+        key="forced-white",
+        training=True,
+    )
+    submit(db, "forced-root-miss", SUBJECT, event_id="root", move="c6d7")
+    assert process(db, SUBJECT)["outcomes"] == {"incorrect": 1}
+    missed = show(db, "forced-root-miss", SUBJECT)["learning"]
+    assert missed["outcome"] == "failure" and missed["rating"] == "again"
+    root_time = db.connection.execute(
+        "SELECT created_at FROM unified_session_events WHERE attempt_id='forced-root-miss' AND event_id='root'"
+    ).fetchone()[0]
+    root_review_time = db.connection.execute(
+        """SELECT t.reviewed_at FROM training_attempts t JOIN unified_training_completions c
+        ON c.training_attempt_id=t.id WHERE c.attempt_id='forced-root-miss'"""
+    ).fetchone()[0]
+    assert root_time == root_review_time
+
+    start(
+        db,
+        attempt_id="forced-final-miss",
+        subject=SUBJECT,
+        source_type="public",
+        version=VERSION,
+        key="forced-white",
+        training=True,
+    )
+    submit(db, "forced-final-miss", SUBJECT, event_id="root", move="a6a7")
+    assert process(db, SUBJECT)["outcomes"] == {"correct": 1}
+    resumed = show(db, "forced-final-miss", SUBJECT)
+    board = chess.Board(resumed["fen"])
+    miss = next(move for move in board.legal_moves if not move.promotion)
+    result = submit(db, "forced-final-miss", SUBJECT, event_id="final", move=miss.uci())
+    assert result["learning"]["outcome"] == "failure" and result["learning"]["rating"] == "again"
+    event_time = db.connection.execute(
+        "SELECT created_at FROM unified_session_events WHERE attempt_id='forced-final-miss' AND event_id='final'"
+    ).fetchone()[0]
+    review_time = db.connection.execute(
+        """SELECT t.reviewed_at FROM training_attempts t JOIN unified_training_completions c
+        ON c.training_attempt_id=t.id WHERE c.attempt_id='forced-final-miss'"""
+    ).fetchone()[0]
+    assert event_time == review_time
+
+    from chess_coach.mastery_unified_training import training_context
+    from chess_coach.objective_publication import cancel
+
+    start(
+        db,
+        attempt_id="forced-cancelled",
+        subject=SUBJECT,
+        source_type="public",
+        version=VERSION,
+        key="forced-black",
+        training=True,
+    )
+    submit(db, "forced-cancelled", SUBJECT, event_id="root", move="a3a2")
+    cancel(db, SUBJECT, "forced-cancelled", "root")
+    with pytest.raises(ValueError):
+        complete(db, "forced-cancelled", SUBJECT, event_id="root")
+    assert (
+        db.connection.execute(
+            "SELECT count(*) FROM unified_training_completions WHERE attempt_id='forced-cancelled'"
+        ).fetchone()[0]
+        == 0
+    )
+    evidence = db.connection.execute(
+        "SELECT * FROM evidence_mappings WHERE id=?", (learning["evidence_id"],)
+    ).fetchone()
+    context, error = training_context(db, evidence)
+    assert context is not None and error is None
+    with monkeypatch.context() as patch:
+        patch.setattr("chess_coach.plan_promotion_catalog.TASKS", "0" * 64)
+        assert training_context(db, evidence) == (None, "invalid_training_lineage")

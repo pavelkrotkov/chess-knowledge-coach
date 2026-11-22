@@ -1,6 +1,7 @@
 """Select only the explicitly qualified learning policies."""
 
 from .unified_corpus_mate import GOAL, is_source
+from .unified_training_canonical_promotion import FORCED_SOURCE, is_forced_source
 from .unified_training_canonical_promotion import SOURCE as CANONICAL_SOURCE
 from .unified_training_canonical_promotion import is_source as canonical_source
 from .unified_training_owned_capture import SOURCE as CAPTURE_SOURCE
@@ -22,6 +23,8 @@ def policy(row, goal, training, created):
 
 
 def _owned_policy(row):
+    if is_forced_source(row):
+        return FORCED_SOURCE, "promotion"
     if canonical_source(row):
         return CANONICAL_SOURCE, "promotion"
     if public_source(row):
