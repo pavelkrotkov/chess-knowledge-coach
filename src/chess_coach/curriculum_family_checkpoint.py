@@ -34,8 +34,13 @@ def timeout(db, state, counts, budget, progress):
     if progress["reason"] is not None:
         return
     checkpoint = progress["checkpoint"]
-    saved = checkpoint[0] if checkpoint is not None else state
-    phase = saved["phase"] if saved["v"] == 5 and saved["phase"] == "public" else state["phase"]
+    saved, _, size = checkpoint or (state, counts, 0)
+    phase = (
+        saved["phase"]
+        if saved["v"] == 5 and saved["phase"] in {"capture", "fork", "public"}
+        else state["phase"]
+    )
+    completed = len(progress["items"]) > size
     pending_key = {
         "capture": "capture_pending",
         "fork": "fork_pending",
@@ -60,7 +65,13 @@ def timeout(db, state, counts, budget, progress):
     _restore(state, phase, pending_key, pending, after, new_after, public_after, public_examined)
     phase = state["phase"]
     progress["statuses"][phase] = "deferred"
-    progress["reason"] = defer(state)
+    progress["reason"] = _retry_or_defer(state, phase, completed)
+
+
+def _retry_or_defer(state, phase, completed):
+    if completed and state["v"] == 5 and phase in {"capture", "fork"}:
+        return f"{phase}_scan_incomplete"
+    return defer(state)
 
 
 def _restore(state, phase, key, pending, after, new_after, public_after, public_examined):

@@ -1667,6 +1667,25 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
         assert next_page["next_cursor"]
     assert any(item.get("source_key") == "b-white" for item in next_page["items"])
 
+    # Public-first rotation can finish a fork just before scope exit and then
+    # skip mate fill. That unpublished fork must be retried, not advanced past.
+    with monkeypatch.context() as patch:
+        patch.setattr(BrowserBudget, "scope", expire_on_exit)
+        owned_expired = mixed()
+    owned_state = decode_cursor(db, owned_expired["next_cursor"])
+    assert {item["skill"] for item in owned_expired["items"]} >= {"mate_in_one", "hanging_piece"}
+    assert all(item["skill"] != "fork" for item in owned_expired["items"])
+    assert (
+        owned_state["phase"] == "fork"
+        and owned_expired["continuation_reason"] == "fork_scan_incomplete"
+    )
+    assert owned_state["public_binding"] and all(
+        item["prompt_key"] in owned_state["seen"] for item in owned_expired["items"]
+    )
+    retried = mixed(owned_expired["next_cursor"])
+    assert any(item["skill"] == "fork" for item in retried["items"])
+    assert all(item["skill"] not in {"mate_in_one", "hanging_piece"} for item in retried["items"])
+
     app = create_app(
         db_path=path,
         subject=SUBJECT,
