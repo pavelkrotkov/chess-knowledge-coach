@@ -45,8 +45,10 @@ def identity(database, source, config):
     return digest(canonical([VERSION, database, source, config]))
 
 
-def snapshot(db, database, learner, game, position, alternative, *, deadline=None):
-    budget = BrowserBudget(db)
+def snapshot(db, database, learner, game, position, alternative, *, deadline=None, budget=None):
+    # A caller with a pinned snapshot supplies its existing non-nested budget.
+    if budget is None:
+        budget = BrowserBudget(db)
     if deadline is not None:
         budget.expires = min(budget.expires, deadline)
     with budget.scope(snapshot=False):

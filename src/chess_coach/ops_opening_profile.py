@@ -5,7 +5,7 @@ import json
 import os
 from pathlib import Path
 
-from .opening_profile_cli_report import report
+from .opening_profile_cli_report import preparation, report
 
 
 def main():
@@ -15,16 +15,19 @@ def main():
     parser.add_argument("--position-id", required=True, type=int)
     parser.add_argument("--alternative", required=True)
     parser.add_argument("--reference", choices=("broadcast", "recent"), default="broadcast")
+    parser.add_argument(
+        "--preparation", action="store_true", help="Inventory this checked experiment"
+    )
     args = parser.parse_args()
     try:
-        value = report(
+        arguments = (
             args.project_root,
             os.environ["CHESS_SUBJECT"],
             args.game_id,
             args.position_id,
             args.alternative,
-            args.reference,
         )
+        value = preparation(*arguments) if args.preparation else report(*arguments, args.reference)
     except Exception:
         raise SystemExit("Opening profile unavailable.") from None
     print(json.dumps(value, indent=2))

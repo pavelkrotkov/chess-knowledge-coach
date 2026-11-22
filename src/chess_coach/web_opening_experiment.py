@@ -14,6 +14,7 @@ from flask import (
 from .fact_fingerprint import digest
 from .opening_experiment_current import current
 from .opening_experiment_export import pgn
+from .opening_preparation import report as preparation_report
 from .tactical_course_deadline import PreviewDeadline
 from .web_board import board_rows
 from .web_db import database
@@ -29,7 +30,7 @@ def show(game_id, position_id, move):
     db = database()
     version = db.connection.execute("PRAGMA data_version").fetchone()[0]
     try:
-        decision, choice, experiment = current(
+        arguments = (
             db,
             current_app.config["PROJECT_ROOT"],
             current_app.config["SUBJECT"],
@@ -37,6 +38,11 @@ def show(game_id, position_id, move):
             position_id,
             move,
         )
+        if request.args.get("download") == "1":
+            decision, choice, experiment = current(*arguments)
+            preparation = None
+        else:
+            decision, choice, experiment, preparation = preparation_report(*arguments)
         document = pgn(decision, choice, experiment)
         if db.connection.execute("PRAGMA data_version").fetchone()[0] != version:
             raise ValueError("opening experiment changed")
@@ -61,6 +67,7 @@ def show(game_id, position_id, move):
         exposure_unavailable=database().compat32,
         choice=choice,
         experiment=experiment,
+        preparation=preparation,
         board=board_rows(decision["fen"], decision["color"]),
         download_url=url_for(
             "opening_experiments.show",

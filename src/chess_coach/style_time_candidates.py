@@ -17,7 +17,7 @@ def verified(row, subject):
     return learner_color(row, subject)
 
 
-def recent_games(db, learner, *, limit):
+def recent_games(db, learner, *, limit, max_game_bytes=None):
     validate_limit(limit)
     subject = normalize_identity(learner)
     if subject is None:
@@ -27,7 +27,9 @@ def recent_games(db, learner, *, limit):
     candidates += side_candidates(connection, subject, "black", limit)
     candidates.sort(key=lambda row: (row["started_at"], row["game_id"]), reverse=True)
     chosen = candidates[:limit]
-    loaded = (load_game(connection, item["game_id"]) for item in chosen)
+    # The optional limit applies before loading or parsing each candidate PGN.
+    options = {"max_game_bytes": max_game_bytes} if max_game_bytes is not None else {}
+    loaded = (load_game(connection, item["game_id"], **options) for item in chosen)
     games = [(row, color) for row in loaded if (color := verified(row, subject))]
     unknown_time, unknown_owner = uncertain_count(connection, subject, limit)
     return games, {
