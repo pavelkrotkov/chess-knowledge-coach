@@ -1061,7 +1061,9 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
 
     import chess.pgn
 
+    import chess_coach.curriculum as curriculum
     from chess_coach.curriculum import daily_plan
+    from chess_coach.curriculum_canonical_cursor import fields as canonical_fields
     from chess_coach.fork_detector import process_decision
     from chess_coach.ingest import ingest_pgn
     from chess_coach.pipeline_config import PipelineConfig
@@ -1074,6 +1076,17 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
     planning = root / ".runtime" / "planning"
     planning.mkdir(mode=0o700)
     path = data / "fork-plan.sqlite"
+    v6_new_state = curriculum.new_state
+
+    def public_v5_state(*args):
+        state = v6_new_state(*args)
+        for field in canonical_fields():
+            del state[field]
+        state["v"] = 5
+        state["family_turn"] = args[-1].date().toordinal() % 3
+        return state
+
+    monkeypatch.setattr(curriculum, "new_state", public_v5_state)
     db, _ = owned_fork(path, monkeypatch, "f6g5")
     source = db.connection.execute("SELECT pgn FROM games WHERE id=1").fetchone()[0]
     config = PipelineConfig(
@@ -1172,7 +1185,6 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
     from types import SimpleNamespace
 
     # Retain explicit coverage of signed v4 continuation behavior.
-    import chess_coach.curriculum as curriculum
     import chess_coach.curriculum_capture_conflict as conflict
     import chess_coach.curriculum_family_mix as family_mix
     import chess_coach.fork_evidence_verify as fork_verify
@@ -1429,7 +1441,6 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
     import os
 
     import chess_coach.curriculum_public_candidate as public_candidate
-    from chess_coach.curriculum_cursor import new_state as current_state
     from chess_coach.deep_selection_source import learner_key
     from chess_coach.fact_fingerprint import digest
     from chess_coach.public_mate_contract import OBJECTIVE as PUBLIC_MATE
@@ -1456,6 +1467,19 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
     collection = db.connection.execute(
         "SELECT id FROM public_collections WHERE version='fixture'"
     ).fetchone()[0]
+
+    # A separate small synthetic DB preserves this pre-enrollment state for
+    # the v6 three-provenance workflow below.
+    v6_root = tmp_path / "v6-plan-project"
+    v6_data = v6_root / ".runtime" / "data"
+    v6_data.mkdir(parents=True)
+    v6_planning = v6_root / ".runtime" / "planning"
+    v6_planning.mkdir(mode=0o700)
+    v6_path = v6_data / "plan.sqlite"
+    destination = sqlite3.connect(v6_path)
+    db.connection.backup(destination)
+    destination.close()
+
     mix_time = now
     while mix_time.date().toordinal() % 3 != 2:
         mix_time -= timedelta(days=1)
@@ -1552,7 +1576,7 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
 
     # Interrupt before a public candidate is bound: the earlier keyset must
     # remain intact so the same candidate can be checked on continuation.
-    probe = current_state(db, SUBJECT, "fixture", 5, 20, mix_time)
+    probe = public_v5_state(db, SUBJECT, "fixture", 5, 20, mix_time)
     probe.update(
         phase="public",
         family_index=3,
@@ -1848,3 +1872,491 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
     )
     assert stale.status_code == 400
     db.close()
+    monkeypatch.setattr(curriculum, "new_state", v6_new_state)
+    _v6_source_mix(v6_path, v6_planning, now, monkeypatch)
+
+
+def _v6_source_mix(path, planning, now, monkeypatch):
+    import os
+    from datetime import UTC, datetime, timedelta
+
+    import chess
+
+    import chess_coach.curriculum_canonical_launch as canonical_launch
+    import chess_coach.curriculum_canonical_scan as canonical_scan
+    import chess_coach.curriculum_capture_conflict as conflict
+    import chess_coach.curriculum_family_mix as family_mix
+    from chess_coach.curriculum import daily_plan
+    from chess_coach.curriculum_cursor_codec import decode_cursor
+    from chess_coach.db import Database
+    from chess_coach.deep_selection_source import learner_key
+    from chess_coach.fact_fingerprint import digest
+    from chess_coach.public_training import import_collection
+    from chess_coach.tactical_course_budget import PreviewUnavailable
+    from chess_coach.tactical_study_exposure import VERSION as EXPOSURE_VERSION
+    from chess_coach.unified_sessions import start
+    from chess_coach.unified_sources import resolve_source
+    from tests.test_objective_promotion import CONTENT, MANIFEST, ROOT, VERSION
+
+    db = Database(path)
+    assert import_collection(db, CONTENT, CONTENT, MANIFEST, project_root=ROOT)["accepted"] == 8
+    start(
+        db,
+        attempt_id="prior-promotion",
+        subject=SUBJECT,
+        source_type="public",
+        version=VERSION,
+        key="direct-white",
+        training=True,
+    )
+    submit(db, "prior-promotion", SUBJECT, event_id="answer", move="a7a8n")
+    assert process(db, SUBJECT)["outcomes"] == {"correct": 1}
+    assert show(db, "prior-promotion", SUBJECT)["learning"]["outcome"] == "success"
+
+    as_of = now
+    while as_of.date().toordinal() % 4:
+        as_of -= timedelta(days=1)
+
+    def plan(limit=10):
+        page = daily_plan(
+            db, subject=SUBJECT, corpus_version="fixture", as_of=as_of, limit=limit, scan_limit=200
+        )
+        items = list(page["items"])
+        for _ in range(12):
+            if not page["next_cursor"]:
+                break
+            page = daily_plan(
+                db,
+                subject=SUBJECT,
+                corpus_version="fixture",
+                as_of=as_of,
+                limit=limit,
+                scan_limit=200,
+                cursor=page["next_cursor"],
+            )
+            items.extend(page["items"])
+        return page, items
+
+    small, small_items = plan(3)
+    assert small["limit_reached"] and len(small_items) == 3
+    assert sum(item["source_type"] == "own-game" for item in small_items) == 1
+    assert {item["source_version"] for item in small_items if item["source_type"] == "public"} == {
+        "fixture",
+        VERSION,
+    }
+    full, items = plan(4)
+    assert full["limit_reached"] and len(items) == 4
+    assert {item["skill"] for item in items} >= {
+        "hanging_piece",
+        "fork",
+        "mate_in_one",
+        "promotion",
+    }
+    assert full["canonical_context"] == "continuation"
+    rotated = daily_plan(
+        db,
+        subject=SUBJECT,
+        corpus_version="fixture",
+        as_of=as_of - timedelta(days=3),
+        limit=3,
+        scan_limit=200,
+    )
+    assert sum(item["source_type"] == "own-game" for item in rotated["items"]) == 1
+    assert any(item["skill"] == "fork" for item in rotated["items"])
+    assert {
+        item["source_version"] for item in rotated["items"] if item["source_type"] == "public"
+    } == {"fixture", VERSION}
+
+    # Expiry immediately after a canonical proof must not discard the item
+    # while retaining the advanced task coordinate.
+    original_issue = canonical_launch.issue
+    original_completed = family_mix._check_completed
+    issued = [False]
+
+    def mark_issued(*args):
+        token = original_issue(*args)
+        issued[0] = True
+        return token
+
+    def expire_after_canonical(reason, budget, check):
+        if issued[0]:
+            raise PreviewUnavailable()
+        return original_completed(reason, budget, check)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(canonical_launch, "issue", mark_issued)
+        patch.setattr(family_mix, "_check_completed", expire_after_canonical)
+        unpublished = daily_plan(
+            db, subject=SUBJECT, corpus_version="fixture", as_of=as_of, limit=5, scan_limit=200
+        )
+    unpublished_state = decode_cursor(db, unpublished["next_cursor"])
+    assert unpublished_state["canonical_after"] == 0
+    assert unpublished_state["canonical_binding"] is None
+    assert {item["skill"] for item in unpublished["items"]} >= {"hanging_piece", "mate_in_one"}
+    for _ in range(8):
+        unpublished = daily_plan(
+            db,
+            subject=SUBJECT,
+            corpus_version="fixture",
+            as_of=as_of,
+            limit=5,
+            scan_limit=200,
+            cursor=unpublished["next_cursor"],
+        )
+        if any(item.get("source_version") == VERSION for item in unpublished["items"]):
+            break
+        assert unpublished["next_cursor"]
+    assert any(item.get("source_version") == VERSION for item in unpublished["items"])
+
+    # The enclosing scope can expire after that completed phase has advanced.
+    from contextlib import contextmanager
+
+    from chess_coach.opening_queue_budget import BrowserBudget
+
+    original_scope = BrowserBudget.scope
+
+    @contextmanager
+    def expire_on_exit(self, *, snapshot):
+        with original_scope(self, snapshot=snapshot):
+            yield
+        raise PreviewUnavailable()
+
+    with monkeypatch.context() as patch:
+        patch.setattr(BrowserBudget, "scope", expire_on_exit)
+        scope_expired = daily_plan(
+            db, subject=SUBJECT, corpus_version="fixture", as_of=as_of, limit=3, scan_limit=200
+        )
+    scope_state = decode_cursor(db, scope_expired["next_cursor"])
+    assert scope_state["canonical_after"] == 0 and scope_state["canonical_binding"] is None
+    assert {item["skill"] for item in scope_expired["items"]} >= {"hanging_piece", "mate_in_one"}
+    for _ in range(8):
+        scope_expired = daily_plan(
+            db,
+            subject=SUBJECT,
+            corpus_version="fixture",
+            as_of=as_of,
+            limit=3,
+            scan_limit=200,
+            cursor=scope_expired["next_cursor"],
+        )
+        if any(item.get("source_version") == VERSION for item in scope_expired["items"]):
+            break
+        assert scope_expired["next_cursor"]
+    assert any(item.get("source_version") == VERSION for item in scope_expired["items"])
+
+    # An unbound canonical deadline yields to other categories and is then
+    # retried from the signed canonical state, rather than labeled absent.
+    canonical_first = now
+    while canonical_first.date().toordinal() % 4 != 3:
+        canonical_first -= timedelta(days=1)
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            canonical_scan, "context", lambda *_: (_ for _ in ()).throw(PreviewUnavailable())
+        )
+        deferred = daily_plan(
+            db,
+            subject=SUBJECT,
+            corpus_version="fixture",
+            as_of=canonical_first,
+            limit=5,
+            scan_limit=200,
+        )
+    deferred_state = decode_cursor(db, deferred["next_cursor"])
+    assert deferred_state["canonical_status"] == "deferred"
+    observed = list(deferred["items"])
+    for _ in range(8):
+        deferred = daily_plan(
+            db,
+            subject=SUBJECT,
+            corpus_version="fixture",
+            as_of=canonical_first,
+            limit=5,
+            scan_limit=200,
+            cursor=deferred["next_cursor"],
+        )
+        observed.extend(deferred["items"])
+        if any(item.get("source_version") == VERSION for item in observed):
+            break
+        assert deferred["next_cursor"]
+    assert any(item.get("source_version") == VERSION for item in observed)
+    assert any(item["source_type"] == "own-game" for item in observed)
+
+    # Earlier public/owned items survive a later interrupted bound canonical
+    # conflict; the same canonical source must resume before later work.
+    canonical_item = next(item for item in items if item.get("source_version") == VERSION)
+    original_scheduled = conflict.scheduled_page
+
+    def interrupt_canonical(db, prompt, *args, **kwargs):
+        if prompt == canonical_item["prompt_key"]:
+            raise PreviewUnavailable()
+        return original_scheduled(db, prompt, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(conflict, "scheduled_page", interrupt_canonical)
+        interrupted = daily_plan(
+            db, subject=SUBJECT, corpus_version="fixture", as_of=as_of, limit=5, scan_limit=200
+        )
+    interrupted_state = decode_cursor(db, interrupted["next_cursor"])
+    assert interrupted_state["canonical_pending"]
+    assert {item["skill"] for item in interrupted["items"]} >= {"hanging_piece", "mate_in_one"}
+    assert all(item["prompt_key"] in interrupted_state["seen"] for item in interrupted["items"])
+    resumed = daily_plan(
+        db,
+        subject=SUBJECT,
+        corpus_version="fixture",
+        as_of=as_of,
+        limit=5,
+        scan_limit=200,
+        cursor=interrupted["next_cursor"],
+    )
+    assert any(item.get("source_version") == VERSION for item in resumed["items"])
+
+    # Due reviews remain ahead of every new provenance category.
+    row = db.connection.execute(
+        "SELECT id,due FROM training_items WHERE source_type='puzzle' ORDER BY id LIMIT 1"
+    ).fetchone()
+    db.connection.execute(
+        "UPDATE training_items SET due='2000-01-01T00:00:00+00:00' WHERE id=?", (row["id"],)
+    )
+    db.connection.commit()
+    _, due = plan(2)
+    assert due[0]["item_id"] == row["id"] and due[0]["kind"] == "due"
+    due_full = daily_plan(
+        db, subject=SUBJECT, corpus_version="fixture", as_of=as_of, limit=1, scan_limit=200
+    )
+    assert len(due_full["items"]) == 1 and due_full["items"][0]["kind"] == "due"
+    assert due_full["limit_reached"]
+    db.connection.execute("UPDATE training_items SET due=? WHERE id=?", (row["due"], row["id"]))
+    db.connection.commit()
+
+    # An offer cannot outlive a change in its signed source policy.
+    import chess_coach.unified_canonical_forced_learning as forced_policy
+
+    _, items = plan()
+    canonical_item = next(item for item in items if item.get("source_version") == VERSION)
+    with monkeypatch.context() as patch:
+        patch.setattr(forced_policy, "POLICY", forced_policy.POLICY + "-changed")
+        with pytest.raises(ValueError, match="canonical plan changed"):
+            start(
+                db,
+                attempt_id="changed-policy",
+                subject=SUBJECT,
+                source_type="public",
+                version=VERSION,
+                key=canonical_item["source_key"],
+                training=True,
+                diagnostic=canonical_item["prerequisite_token"],
+            )
+
+    # A pending Study send created after the offer is checked in the start
+    # transaction even when it has not changed the database revision.
+    _, items = plan()
+    canonical_item = next(item for item in items if item.get("source_version") == VERSION)
+    assert canonical_item["source_key"] == "direct-black"
+    artifact = "d" * 64
+    intent = {
+        "course_sha256": artifact,
+        "chapters": ["pending"],
+        "tactical_delivery": {
+            "version": EXPOSURE_VERSION,
+            "owner": learner_key(SUBJECT),
+            "chapters": {
+                "0": {
+                    "positions": [digest(canonical_item["prompt_key"])],
+                    "pending_at": datetime.now(UTC).isoformat(),
+                    "verified_at": None,
+                }
+            },
+        },
+    }
+    fd = os.open(
+        planning / f"tactical-study-{artifact}-intent.json",
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+        0o600,
+    )
+    with os.fdopen(fd, "w") as stream:
+        json.dump(intent, stream)
+    with pytest.raises(ValueError, match="exposure"):
+        start(
+            db,
+            attempt_id="late-canonical",
+            subject=SUBJECT,
+            source_type="public",
+            version=VERSION,
+            key=canonical_item["source_key"],
+            training=True,
+            diagnostic=canonical_item["prerequisite_token"],
+        )
+
+    # Replan before each actual enrollment because an enrollment legitimately
+    # advances the plan revision. The fresh offers bind the same real owner.
+    item_ids = []
+    for skill in ("hanging_piece", "fork", "mate_in_one", "promotion"):
+        _, items = plan()
+        item = next(item for item in items if item["kind"] == "new" and item["skill"] == skill)
+        source = resolve_source(
+            db, item["source_type"], item["source_version"], item["source_key"], subject=SUBJECT
+        )
+        attempt = "v6-" + skill
+        start(
+            db,
+            attempt_id=attempt,
+            subject=SUBJECT,
+            source_type=item["source_type"],
+            version=item["source_version"],
+            key=item["source_key"],
+            training=True,
+            diagnostic=item.get("prerequisite_token"),
+        )
+        first = source["lines"][0].split()[0]
+        result = submit(db, attempt, SUBJECT, event_id="root", move=first)
+        if result["status"] == "needs_verification":
+            assert process(db, SUBJECT)["outcomes"] == {"correct": 1}
+            state = show(db, attempt, SUBJECT)
+            if state.get("promotion_continuation"):
+                board = chess.Board(state["fen"])
+                final = next(move.uci() for move in board.legal_moves if move.promotion)
+                submit(db, attempt, SUBJECT, event_id="final", move=final)
+        learning = show(db, attempt, SUBJECT)["learning"]
+        assert learning["state"] == "completed" and learning["outcome"] == "success"
+        item_ids.append(learning["item_id"])
+
+    due_page = daily_plan(
+        db,
+        subject=SUBJECT,
+        corpus_version="fixture",
+        as_of=datetime.now(UTC) + timedelta(days=3),
+        limit=20,
+    )
+    assert set(item_ids) <= {item.get("item_id") for item in due_page["items"]}
+    for source in ("unified_canonical_promotion", "unified_canonical_forced_promotion"):
+        due_query = """EXPLAIN QUERY PLAN SELECT id FROM training_items
+            INDEXED BY idx_curriculum_source_due
+            WHERE source_type=? AND skill='promotion' AND operation='execute'
+            AND lower(due) != 'now' AND julianday(due) <= julianday(?)
+            ORDER BY julianday(due),id LIMIT ?"""
+        scheduled_query = """EXPLAIN QUERY PLAN SELECT id FROM training_items
+            INDEXED BY idx_curriculum_source_scheduled WHERE id>? AND source_type=?
+            AND skill='promotion' AND operation='execute' ORDER BY id LIMIT ?"""
+        assert any(
+            "idx_curriculum_source_due" in row[3]
+            for row in db.connection.execute(due_query, (source, datetime.now(UTC).isoformat(), 4))
+        )
+        assert any(
+            "idx_curriculum_source_scheduled" in row[3]
+            for row in db.connection.execute(scheduled_query, (0, source, 4))
+        )
+    db.close()
+
+    # First-recorded is established only after a bounded all-status activity
+    # check; an assisted attempt is not an unassisted result or a miss.
+    from chess_coach.unified_session_events import hint
+
+    cold = Database(path.parent / "cold.sqlite")
+    cold.initialize()
+    assert import_collection(cold, CONTENT, CONTENT, MANIFEST, project_root=ROOT)["accepted"] == 8
+    # A promotion diagnostic is not, by itself, a reason to offer generic mate practice.
+    corpus = cold.connection.execute(
+        "INSERT INTO puzzle_corpora(version,source,checksum,state) "
+        "VALUES('fixture','fixture','checksum','staging')"
+    ).lastrowid
+    cold.connection.execute(
+        """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,
+        rating_deviation,themes_json,objective)
+        VALUES('generic',?,?,'','g8h8 c5f8',500,80,'[]','execute')""",
+        (corpus, "6k1/8/6K1/2Q5/8/8/8/8 b - - 0 1"),
+    )
+    cold.connection.execute("UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus,))
+    cold.connection.commit()
+    from chess_coach.curriculum_query import corpus_status
+
+    assert corpus_status(cold, "fixture")[0] == "available"
+    first = daily_plan(cold, subject="cold_synthetic", corpus_version="fixture")
+    assert first["canonical_context"] == "first_recorded"
+    assert first["public_status"] != "offered"
+    assert any(item["skill"] == "promotion" for item in first["items"])
+    assert all(item["skill"] != "mate_in_one" for item in first["items"])
+    # Unrelated recorded public work does not erase a first opportunity in
+    # this exact canonical catalog or imply a general beginner state.
+    from chess_coach.public_mate_contract import OBJECTIVE as PUBLIC_MATE
+    from tests.test_public_training import MATE, file_set
+
+    unrelated_dir = path.parent.parent.parent / "unrelated-public"
+    unrelated_dir.mkdir()
+    public_board = chess.Board(MATE.replace(" 1 2", " 0 2"))
+    content, manifest, _ = file_set(
+        unrelated_dir, rows=[("unrelated", public_board.fen(), PUBLIC_MATE, ["c5f8"])]
+    )
+    assert (
+        import_collection(cold, content, content, manifest, project_root=unrelated_dir)["accepted"]
+        == 1
+    )
+    start(
+        cold,
+        attempt_id="unrelated",
+        subject="cold_synthetic",
+        source_type="public",
+        version="fixture",
+        key="unrelated",
+        training=True,
+    )
+    unrelated = submit(cold, "unrelated", "cold_synthetic", event_id="answer", move="c5f8")
+    assert unrelated["learning"]["outcome"] == "success"
+    # Many unrelated attempts must not exhaust the exact-catalog activity bound.
+    for number in range(26):
+        start(
+            cold,
+            attempt_id=f"unrelated-{number}",
+            subject="cold_synthetic",
+            source_type="public",
+            version="fixture",
+            key="unrelated",
+        )
+    cold_page = daily_plan(cold, subject="cold_synthetic", corpus_version="fixture")
+    cold_item = next(item for item in cold_page["items"] if item["skill"] == "promotion")
+    assert cold_page["canonical_context"] == "first_recorded"
+    assert (
+        "first recorded practice" in cold_item["reason"]
+        and "Earlier practice isn't known" in cold_item["reason"]
+    )
+    start(
+        cold,
+        attempt_id="assisted",
+        subject="Cold_Synthetic",
+        source_type="public",
+        version=VERSION,
+        key=cold_item["source_key"],
+        training=True,
+        diagnostic=cold_item["prerequisite_token"],
+    )
+    hint(cold, "assisted", "Cold_Synthetic", event_id="hint")
+    pending_page = daily_plan(cold, subject="cold_synthetic", corpus_version="fixture")
+    assert pending_page["canonical_context"] != "first_recorded"
+    submit(cold, "assisted", "Cold_Synthetic", event_id="answer", move="a7a8n")
+    assert process(cold, "Cold_Synthetic")["outcomes"] == {"correct": 1}
+    assisted = show(cold, "assisted", "Cold_Synthetic")["learning"]
+    assert assisted["assistance"] == "assisted" and assisted["evidence_id"] is None
+    assert assisted["rating"] is None
+    assert (
+        daily_plan(cold, subject="cold_synthetic", corpus_version="fixture")["canonical_context"]
+        != "first_recorded"
+    )
+    # This is the existing explicit same-item retry route, not an inferred miss.
+    start(
+        cold,
+        attempt_id="retry",
+        subject="Cold_Synthetic",
+        source_type="public",
+        version=VERSION,
+        key=cold_item["source_key"],
+        training=True,
+        item_id=assisted["item_id"],
+    )
+    submit(cold, "retry", "Cold_Synthetic", event_id="answer", move="a7a8n")
+    assert process(cold, "Cold_Synthetic")["outcomes"] == {"correct": 1}
+    assert show(cold, "retry", "Cold_Synthetic")["learning"]["outcome"] == "success"
+    assert (
+        daily_plan(cold, subject="cold_synthetic", corpus_version="fixture")["canonical_context"]
+        == "continuation"
+    )
+    cold.close()

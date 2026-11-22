@@ -55,6 +55,14 @@ def _validate(db, subject, version, key, token, check):
 
 
 def validate_start(db, subject, version, key, token, budget):
+    from .curriculum_canonical_cursor import POLICY as CANONICAL_POLICY
+
+    # The signed policy selects the exact objective, rather than guessing from the source type.
+    policy = _decode(db, token)[0]
+    if isinstance(policy, str) and policy.startswith(CANONICAL_POLICY + ":"):
+        from .curriculum_canonical_launch import validate_start as canonical_start
+
+        return canonical_start(db, subject, version, key, token, budget)
     try:
         with budget.scope(snapshot=False):
             _validate(db, subject, version, key, token, budget.check)

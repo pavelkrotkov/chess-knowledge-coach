@@ -25,17 +25,33 @@ def _rows(db, subject, key):
     ).fetchall()
 
 
-def _verified(db, rows):
+def _verified(db, rows, check=None):
     for row in rows[:LIMIT]:
+        if check is not None:
+            check()
         try:
-            if complete(db, row):
-                return True
+            valid = complete(db, row)
         except (ValueError, TypeError, KeyError, IndexError):
-            continue
+            valid = False
+        if check is not None:
+            check()
+        if valid:
+            return True
     if len(rows) > LIMIT:
         raise ValueError("promotion history exceeds the checked bound")
     return False
 
 
-def completed(db, subject, keys):
-    return {key for key in keys if _verified(db, _rows(db, subject, key))}
+def completed(db, subject, keys, *, check=None, rows=None):
+    result = set()
+    for key in keys:
+        if check is not None:
+            check()
+        selected = (
+            _rows(db, subject, key)
+            if rows is None
+            else [row for row in rows if row["source_key"] == key]
+        )
+        if _verified(db, selected, check):
+            result.add(key)
+    return result

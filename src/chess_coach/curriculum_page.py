@@ -31,9 +31,19 @@ def build_page(db: Database, state: dict, learner: str, now: datetime, budget=No
         if reason is None and scan["due_incomplete"] and len(state["seen"]) < state["limit"]:
             reason = "due_scan_incomplete"
     # Old signed continuations keep their original two-phase selection.
-    if state["v"] in {3, 4, 5} and state["phase"] != "due" and reason is None:
-        return _mixed_page(db, state, learner, now, budget, summary, status, items, scan)
-    return _legacy_page(db, state, learner, now, budget, summary, status, items, scan, reason)
+    if state["v"] in {3, 4, 5, 6} and state["phase"] != "due" and reason is None:
+        return _finish(
+            _mixed_page(db, state, learner, now, budget, summary, status, items, scan), state
+        )
+    return _finish(
+        _legacy_page(db, state, learner, now, budget, summary, status, items, scan, reason), state
+    )
+
+
+def _finish(page, state):
+    if state["v"] == 6:
+        page["limit_reached"] = len(state["seen"]) >= state["limit"]
+    return page
 
 
 def _legacy_page(db, state, learner, now, budget, summary, status, items, scan, reason):
@@ -74,7 +84,10 @@ def _mixed_page(db, state, learner, now, budget, summary, corpus, items, scan):
         "corpus_status": statuses.get("new", "not_scanned" if corpus == "available" else corpus),
         "capture_status": statuses.get("capture"),
         "fork_status": statuses.get("fork"),
-        "public_status": state["public_status"] if state["v"] == 5 else None,
+        "public_status": state["public_status"] if state["v"] in {5, 6} else None,
+        "canonical_status": state["canonical_status"] if state["v"] == 6 else None,
+        "canonical_context": state["canonical_context"] if state["v"] == 6 else None,
+        "limit_reached": state["v"] == 6 and len(state["seen"]) >= state["limit"],
         "capture_focus": focuses.get("capture"),
         "capture_generation": capture_generation(budget, statuses.get("capture")),
         "fork_focus": focuses.get("fork"),

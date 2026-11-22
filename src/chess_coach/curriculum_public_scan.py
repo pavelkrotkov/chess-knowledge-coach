@@ -19,7 +19,10 @@ def scan(db, state, subject, counts, check):
     if state["public_pending"] is not None:
         return resume(db, state, subject, counts, check)
     # Count every examined row, including objectives this policy cannot use.
-    remaining = max(0, state["scan_limit"] - counts.get("public_examined", 0))
+    used = counts.get("public_examined", 0)
+    if state["v"] == 6:
+        used += counts.get("canonical_examined", 0)
+    remaining = max(0, state["scan_limit"] - used)
     batch = rows(db, state["public_after"] or [0, ""], remaining)
     for row in batch[:remaining]:
         check()

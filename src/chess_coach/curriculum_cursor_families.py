@@ -9,6 +9,10 @@ FAMILIES = ("capture", "fork", "new")
 
 def current_family(state):
     index = state["family_index"]
+    if state["v"] == 6:
+        from .curriculum_mix_order import family
+
+        return family(state)
     if state["v"] == 5:
         if index < 3:
             return ("capture", "fork", "public")[(state["family_turn"] + index) % 3]
@@ -17,8 +21,9 @@ def current_family(state):
 
 
 def validate_families(state):
-    end = 4 if state["v"] == 5 else 3
-    if not integer(state["family_turn"], 0, 2) or not integer(state["family_index"], 0, end):
+    end = {5: 4, 6: 8}.get(state["v"], 3)
+    turn = 3 if state["v"] == 6 else 2
+    if not integer(state["family_turn"], 0, turn) or not integer(state["family_index"], 0, end):
         raise ValueError("invalid family continuation")
     _validate_positions(state)
     _validate_fork(state)
@@ -27,7 +32,10 @@ def validate_families(state):
 def _validate_positions(state):
     if state["phase"] == "due" and (state["new_after"] is not None or state["pending"] is not None):
         raise ValueError("due scan cannot contain corpus position")
-    if state["phase"] in {"capture", "fork", "public"} and state["pending"] is not None:
+    if (
+        state["phase"] in {"capture", "fork", "public", "canonical"}
+        and state["pending"] is not None
+    ):
         raise ValueError("owned scan cannot contain pending corpus candidate")
 
 

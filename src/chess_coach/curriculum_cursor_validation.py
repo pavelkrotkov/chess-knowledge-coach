@@ -39,17 +39,25 @@ VERSION_FIELDS = (
 def validate_state(state) -> None:
     if not isinstance(state, dict) or type(state.get("v")) is not int:
         raise ValueError("invalid cursor fields")
-    if state["v"] not in {1, 2, 3, 4, 5}:
+    if state["v"] not in {1, 2, 3, 4, 5, 6}:
         raise ValueError("invalid cursor version")
-    fields = set(BASE)
-    for minimum, extra in VERSION_FIELDS:
-        if state["v"] >= minimum:
-            fields.update(extra)
-    if state["v"] == 5:
-        from .curriculum_public_cursor import fields as public_fields
-
-        fields.update(public_fields())
-    if set(state) != fields:
+    if set(state) != _fields(state["v"]):
         raise ValueError("invalid cursor fields")
     validate_scope(state)
     validate_positions(state)
+
+
+def _fields(version):
+    fields = set(BASE)
+    for minimum, extra in VERSION_FIELDS:
+        if version >= minimum:
+            fields.update(extra)
+    if version in {5, 6}:
+        from .curriculum_public_cursor import fields as public_fields
+
+        fields.update(public_fields())
+    if version == 6:
+        from .curriculum_canonical_cursor import fields as canonical_fields
+
+        fields.update(canonical_fields())
+    return fields

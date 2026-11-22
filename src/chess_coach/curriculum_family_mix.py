@@ -3,17 +3,13 @@
 import time
 from contextlib import nullcontext
 
-from .curriculum_cursor_families import current_family
 from .curriculum_family_checkpoint import defer, timeout
+from .curriculum_mix_order import action, mark, record
+from .curriculum_mix_order import advance as _advance
 from .curriculum_new_capture import scan as capture
 from .curriculum_new_fork import scan as fork
 from .curriculum_new_page import checked_page
 from .tactical_course_budget import SLICE_SECONDS, PreviewUnavailable
-
-
-def _advance(state):
-    state["family_index"] += 1
-    state["phase"] = current_family(state)
 
 
 def _step(db, state, learner, summary, counts, corpus, budget, check):
@@ -27,6 +23,10 @@ def _step(db, state, learner, summary, counts, corpus, budget, check):
         return fork(db, state, learner, counts, check)
     if phase == "public":
         from .curriculum_public_scan import scan
+
+        return scan(db, state, learner, counts, check)
+    if phase == "canonical":
+        from .curriculum_canonical_scan import scan
 
         return scan(db, state, learner, counts, check)
     return checked_page(db, state, summary, counts, corpus, check)
@@ -45,7 +45,7 @@ def scan(db, state, learner, summary, counts, corpus, budget):
     try:
         with scope:
             # Topic preparation precedes selection, but never changes grading.
-            if state["v"] in {4, 5}:
+            if state["v"] in {4, 5, 6}:
                 from .curriculum_prerequisite import prepare
 
                 progress["statuses"]["prerequisite"] = prepare(
@@ -55,14 +55,20 @@ def scan(db, state, learner, summary, counts, corpus, budget):
     except PreviewUnavailable:
         timeout(db, state, counts, budget, progress)
     counts.pop("_public_before", None)
+    counts.pop("_canonical_before", None)
     return progress["items"], progress["statuses"], progress["focuses"], progress["reason"]
 
 
 def _loop(db, state, learner, summary, counts, corpus, budget, check, progress):
     while len(state["seen"]) < state["limit"]:
         phase = state["phase"]
-        if _skip(state, phase):
+        # The finite quota pass advances skipped families but stops before irrelevant mate fill.
+        decision = action(state, phase, summary, progress["statuses"].get("prerequisite"))
+        if decision == "stop":
             break
+        if decision == "next":
+            _advance(state)
+            continue
         # Only a completed family can be published after a timeout.
         progress["checkpoint"] = (dict(state), dict(counts), len(progress["items"]))
         found, status, reason, focus = _step(
@@ -75,6 +81,8 @@ def _loop(db, state, learner, summary, counts, corpus, budget, check, progress):
             budget,
             check if budget is not None else None,
         )
+        # Keep a found item unpublished until the shared deadline check passes.
+        mark(progress, state, phase, found)
         _check_completed(reason, budget, check)
         from .curriculum_prerequisite import offer_items
 
@@ -82,14 +90,13 @@ def _loop(db, state, learner, summary, counts, corpus, budget, check, progress):
         found = offer_items(
             db, state, learner, found, phase, progress["statuses"].get("prerequisite"), check
         )
+        record(state, phase, found, status, reason)
         progress["items"].extend(found)
         progress["statuses"][phase] = status
         progress["focuses"][phase] = focus
         if _fill_quota(state, reason, found):
             progress["reason"] = None
             continue
-        if reason == "family_quota_complete":
-            reason = None
         reason = _reason(state, reason)
         progress["reason"] = reason
         if reason is not None or _finished(state, phase):
@@ -98,18 +105,17 @@ def _loop(db, state, learner, summary, counts, corpus, budget, check, progress):
 
 
 # Each successful item in final fill is its own durable cursor checkpoint.
+# Earlier cursor versions keep their original repeated-fill behavior.
 def _fill_quota(state, reason, found):
     if reason != "family_quota_complete":
         return False
-    return not found if state["v"] == 5 else state["family_index"] == 3
-
-
-def _skip(state, phase):
-    return state["v"] == 5 and phase == "new" and state["public_binding"] is not None
+    return not found if state["v"] in {5, 6} else state["family_index"] == 3
 
 
 def _finished(state, phase):
-    return (state["v"] == 5 and phase == "new") or (state["v"] != 5 and state["family_index"] == 3)
+    return (state["v"] in {5, 6} and phase == "new") or (
+        state["v"] not in {5, 6} and state["family_index"] == 3
+    )
 
 
 # Do not publish a just-completed item after its shared deadline.
@@ -119,7 +125,14 @@ def _check_completed(reason, budget, check):
 
 
 def _reason(state, reason):
-    if reason in {"capture_scan_incomplete", "fork_scan_incomplete", "public_scan_incomplete"}:
+    if reason == "family_quota_complete":
+        return None
+    if reason in {
+        "capture_scan_incomplete",
+        "fork_scan_incomplete",
+        "public_scan_incomplete",
+        "canonical_scan_incomplete",
+    }:
         return defer(state)
     # Yield to other families only during the one-item corpus pass.
     if reason == "corpus_scan_incomplete" and state["family_index"] < 3:
