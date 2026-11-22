@@ -2,15 +2,19 @@
 
 import shutil
 import subprocess
+import time
 
 from .recovery_capacity import PROJECT_LIMIT, RESERVE
 
 WORKING = 128 * 1024 * 1024
 
 
-def check(root, directory):
+def check(root, directory, *, deadline=None):
+    remaining = 8 if deadline is None else min(8, deadline - time.monotonic())
+    if remaining <= 0:
+        raise TimeoutError("reference build deadline")
     measured = subprocess.run(
-        ["du", "-skx", str(root)], capture_output=True, text=True, check=True, timeout=8
+        ["du", "-skx", str(root)], capture_output=True, text=True, check=True, timeout=remaining
     )
     usage = int(measured.stdout.split()[0]) * 1024
     if usage + WORKING + RESERVE > PROJECT_LIMIT:

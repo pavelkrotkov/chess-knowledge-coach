@@ -5,6 +5,7 @@ import sqlite3
 
 from .named_structures import VERSION as STRUCTURE_VERSION
 from .opening_profile_play import PARENT_PLIES, STORED_PLIES, WINDOW_PLIES
+from .opening_profile_store_rows import write
 from .opening_reference_source import (
     LICENSE,
     LICENSE_URL,
@@ -18,9 +19,22 @@ from .opening_snapshot import GRAPH_SHA256, VERSION
 TRANSFORM = "v2:32MB-decoded;5000-records;1000-games;40-parent-plies;12-window-plies;512-game-plies"
 
 
-def store(path, records, coverage, *, transform=TRANSFORM, source_metadata=None):
+def store(
+    path,
+    records,
+    coverage,
+    *,
+    transform=TRANSFORM,
+    source_metadata=None,
+    history=False,
+    deadline=None,
+):
     db = sqlite3.connect(path)
     try:
+        if history:
+            from .opening_full_history_store import configure
+
+            configure(db, deadline)
         db.executescript("""
             PRAGMA journal_mode=MEMORY;
             CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -50,17 +64,7 @@ def store(path, records, coverage, *, transform=TRANSFORM, source_metadata=None)
         db.executemany(
             "INSERT INTO metadata VALUES (?,?)", [(k, json.dumps(v)) for k, v in metadata.items()]
         )
-        for _, number, context, site, positions, _, total in records:
-            db.execute(
-                "INSERT INTO games VALUES (?,?,?,?)", (number, json.dumps(context), site, total)
-            )
-            db.executemany(
-                "INSERT INTO moves VALUES (?,?,?,?,?,?)",
-                [
-                    (number, ply, parent, san, uci, json.dumps(shapes))
-                    for ply, parent, san, uci, shapes in positions
-                ],
-            )
+        write(db, records, history=history, deadline=deadline)
         db.commit()
     finally:
         db.close()

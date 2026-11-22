@@ -21,8 +21,8 @@ def _berserk(headers):
     return "unknown"
 
 
-def record(game, raw, number):
-    value = profile_record(game, raw, number)
+def record(game, raw, number, *, check=None):
+    value = profile_record(game, raw, number, check=check)
     if value is None:
         return None
     headers = game.headers

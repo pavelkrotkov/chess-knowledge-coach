@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 
 
-def publish(directory, index_name, records, coverage, store):
+def publish(directory, index_name, records, coverage, store, *, confirm=None):
     output = directory / index_name
     if output.exists() or output.is_symlink():
         raise ValueError("reference index already exists")
@@ -21,6 +21,8 @@ def publish(directory, index_name, records, coverage, store):
         temporary.chmod(0o400)
         with temporary.open("rb") as file:
             os.fsync(file.fileno())
+        if confirm is not None:
+            confirm()
         os.link(temporary, output)
     finally:
         temporary.unlink()

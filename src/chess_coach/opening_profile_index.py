@@ -11,8 +11,8 @@ from .opening_reference_index import _build
 INDEX_NAME = "opening-reference-broadcast-2026-09-v2.sqlite"
 
 
-def _record(game, raw, number):
-    result = record(game, raw, number, play=moves_for)
+def _record(game, raw, number, *, check=None):
+    result = record(game, raw, number, play=moves_for, check=check)
     if result is None:
         return None
     # Conservatively collapse repeat imports with the same players and full moves.
