@@ -1587,6 +1587,86 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
         item.get("source_key") == "b-white" for item in mixed(interrupted["next_cursor"])["items"]
     )
 
+    # A completed public proof is still unpublished until the shared check
+    # passes. Keep earlier rejected-row progress and retry this exact source.
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            family_mix,
+            "_check_completed",
+            lambda *_: (_ for _ in ()).throw(PreviewUnavailable()),
+        )
+        unpublished = mixed()
+    unpublished_state = decode_cursor(db, unpublished["next_cursor"])
+    assert unpublished_state["public_after"] == [collection, "a-other"]
+    assert unpublished_state["public_examined"] == 1
+    assert unpublished_state["public_binding"] is None
+    assert "_public_before" not in unpublished["scan"]
+    next_page = unpublished
+    for _ in range(5):
+        next_page = mixed(next_page["next_cursor"])
+        if any(item.get("source_key") == "b-white" for item in next_page["items"]):
+            break
+        assert next_page["next_cursor"]
+    assert any(item.get("source_key") == "b-white" for item in next_page["items"])
+
+    # The same boundary can occur while resuming an already-bound conflict.
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            family_mix,
+            "_check_completed",
+            lambda *_: (_ for _ in ()).throw(PreviewUnavailable()),
+        )
+        unpublished_bound = mixed(interrupted["next_cursor"])
+    rewound = decode_cursor(db, unpublished_bound["next_cursor"])
+    assert (rewound["public_pending"], rewound["public_after"], rewound["scheduled_after"]) == (
+        bound_state["public_pending"],
+        bound_state["public_after"],
+        bound_state["scheduled_after"],
+    )
+    assert any(
+        item.get("source_key") == "b-white"
+        for item in mixed(unpublished_bound["next_cursor"])["items"]
+    )
+
+    # Scope exit may happen after the family phase advances; completed owned
+    # results survive while the unpublished public item remains retryable.
+    from contextlib import contextmanager
+
+    from chess_coach.opening_queue_budget import BrowserBudget
+
+    original_scope = BrowserBudget.scope
+
+    @contextmanager
+    def expire_on_exit(self, *, snapshot):
+        with original_scope(self, snapshot=snapshot):
+            yield
+        raise PreviewUnavailable()
+
+    with monkeypatch.context() as patch:
+        patch.setattr(BrowserBudget, "scope", expire_on_exit)
+        scope_expired = daily_plan(
+            db, subject=SUBJECT, corpus_version="fixture", as_of=owned_time, limit=5, scan_limit=20
+        )
+    scope_state = decode_cursor(db, scope_expired["next_cursor"])
+    assert {item["skill"] for item in scope_expired["items"]} >= {"hanging_piece", "fork"}
+    assert scope_state["public_after"] == [collection, "a-other"]
+    assert scope_state["public_binding"] is None
+    next_page = scope_expired
+    for _ in range(5):
+        next_page = daily_plan(
+            db,
+            subject=SUBJECT,
+            corpus_version="fixture",
+            as_of=owned_time,
+            limit=5,
+            scan_limit=20,
+            cursor=next_page["next_cursor"],
+        )
+        if any(item.get("source_key") == "b-white" for item in next_page["items"]):
+            break
+        assert next_page["next_cursor"]
+    assert any(item.get("source_key") == "b-white" for item in next_page["items"])
+
     app = create_app(
         db_path=path,
         subject=SUBJECT,

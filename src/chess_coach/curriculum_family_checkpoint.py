@@ -33,7 +33,9 @@ def timeout(db, state, counts, budget, progress):
         raise ValueError("curriculum sources changed; restart the plan") from None
     if progress["reason"] is not None:
         return
-    phase = state["phase"]
+    checkpoint = progress["checkpoint"]
+    saved = checkpoint[0] if checkpoint is not None else state
+    phase = saved["phase"] if saved["v"] == 5 and saved["phase"] == "public" else state["phase"]
     pending_key = {
         "capture": "capture_pending",
         "fork": "fork_pending",
@@ -46,8 +48,10 @@ def timeout(db, state, counts, budget, progress):
     new_after = state["new_after"]
     public_after = state.get("public_after")
     public_examined = state.get("public_examined")
+    pending, after, public_after, public_examined = _public_rewind(
+        state, saved, counts, phase, pending, after, public_after, public_examined
+    )
     # Rewind only the unfinished family; earlier checked items can still be shown.
-    checkpoint = progress["checkpoint"]
     if checkpoint is not None:
         saved_state, saved_counts, size = checkpoint
         state.update(saved_state)
@@ -68,3 +72,19 @@ def _restore(state, phase, key, pending, after, new_after, public_after, public_
         state[key], state["scheduled_after"] = pending, after
         if phase == "new":
             state["new_after"] = new_after
+
+
+def _public_rewind(state, saved, counts, phase, pending, after, public_after, public_examined):
+    if phase != "public" or not state.get("public_binding") or saved.get("public_binding"):
+        return pending, after, public_after, public_examined
+    if saved["public_pending"] is not None:
+        return (
+            saved["public_pending"],
+            saved["scheduled_after"],
+            saved["public_after"],
+            saved["public_examined"],
+        )
+    before, examined = counts.get(
+        "_public_before", (saved["public_after"], saved["public_examined"])
+    )
+    return None, 0, before, examined

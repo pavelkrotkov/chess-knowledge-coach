@@ -45,6 +45,8 @@ def _row(db, state, subject, counts, check, row):
     counts["public_examined"] = counts.get("public_examined", 0) + 1
     if row["objective"] != OBJECTIVE:
         return None
+    # A completed offer may still be rewound if the enclosing deadline expires.
+    counts["_public_before"] = (prior, state["public_examined"] - 1)
     try:
         result = attempt(db, state, subject, counts, check, row["version"], row["task_id"])
         return result if result is not None and (result[0] or result[2]) else None

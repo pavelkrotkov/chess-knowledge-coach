@@ -54,6 +54,7 @@ def scan(db, state, learner, summary, counts, corpus, budget):
             _loop(db, state, learner, summary, counts, corpus, budget, check, progress)
     except PreviewUnavailable:
         timeout(db, state, counts, budget, progress)
+    counts.pop("_public_before", None)
     return progress["items"], progress["statuses"], progress["focuses"], progress["reason"]
 
 
