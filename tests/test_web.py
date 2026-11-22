@@ -398,6 +398,15 @@ def test_private_access_and_csrf(setup, tmp_path, monkeypatch):
         ).fetchone()[0]
         == 0
     )
+    # The real attested schema-32 path keeps ordinary planning available,
+    # while the new public learning opportunity remains explicitly unavailable.
+    from chess_coach.curriculum import daily_plan
+
+    legacy_plan = daily_plan(compat_db, subject="learner", corpus_version="fixture-v1")
+    assert legacy_plan["public_status"] == "learning_unavailable"
+    assert all(item.get("source_type") != "public" for item in legacy_plan["items"])
+    assert compat_db.connection.execute("PRAGMA user_version").fetchone()[0] == 32
+    assert compat_db.connection.execute("PRAGMA schema_version").fetchone()[0] == before
     from chess_coach.opening_profile_cli_db import open_database
 
     read_only, selected_database = open_database(root)

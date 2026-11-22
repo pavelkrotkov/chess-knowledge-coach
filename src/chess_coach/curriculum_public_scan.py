@@ -1,47 +1,11 @@
 """Advance a bounded public-mate keyset and its scheduled conflict check."""
 
-from .curriculum_capture_conflict import check_conflicts
-from .curriculum_public_source import candidate, rows, version
+import sqlite3
+
+from .curriculum_public_candidate import attempt, resume
+from .curriculum_public_source import rows
 from .public_mate_contract import OBJECTIVE
-
-
-def _attempt(db, state, subject, counts, check, source_version, key):
-    pending = state["public_pending"]
-    try:
-        item, status = candidate(db, subject, source_version, key)
-    except (ValueError, TypeError, KeyError, IndexError):
-        check()
-        if pending is not None:
-            raise ValueError("public source changed; restart the plan") from None
-        state["public_status"] = "unavailable"
-        return None
-    if pending is not None and (item is None or item["binding"] != pending):
-        raise ValueError("public source changed; restart the plan")
-    if item is None:
-        state["public_status"] = status
-        return None
-    if item["prompt_key"] in state["seen"]:
-        return None
-    result = check_conflicts(db, state, counts, check, item, None, pending_key="public_pending")
-    state["phase"] = "public"
-    if result[0]:
-        from .curriculum_public_launch import issue
-
-        state["public_binding"] = item["binding"]
-        state["public_status"] = "offered"
-        result[0][0]["prerequisite_token"] = issue(db, state, item)
-    return result
-
-
-def _pending(db, state, subject, counts, check):
-    collection, key = state["public_after"]
-    source_version = version(db, collection)
-    if source_version is None:
-        raise ValueError("public source changed; restart the plan")
-    result = _attempt(db, state, subject, counts, check, source_version, key)
-    if result is None:
-        raise ValueError("public source changed; restart the plan")
-    return result
+from .tactical_course_budget import PreviewUnavailable
 
 
 def scan(db, state, subject, counts, check):
@@ -51,23 +15,43 @@ def scan(db, state, subject, counts, check):
     if check is None:
         state["public_status"] = "unavailable"
         return [], "unavailable", None, None
+    # A bound conflict must finish before later public rows are considered.
     if state["public_pending"] is not None:
-        return _pending(db, state, subject, counts, check)
+        return resume(db, state, subject, counts, check)
+    # Count every examined row, including objectives this policy cannot use.
     remaining = max(0, state["scan_limit"] - counts.get("public_examined", 0))
     batch = rows(db, state["public_after"] or [0, ""], remaining)
     for row in batch[:remaining]:
         check()
-        state["public_after"] = [row["id"], row["task_id"]]
-        state["public_examined"] += 1
-        counts["public_examined"] = counts.get("public_examined", 0) + 1
-        if row["objective"] != OBJECTIVE:
-            continue
-        result = _attempt(db, state, subject, counts, check, row["version"], row["task_id"])
-        if result is not None and (result[0] or result[2]):
+        result = _row(db, state, subject, counts, check, row)
+        if result is not None:
             return result
-    if len(batch) > remaining:
+    return _finish(state, len(batch) > remaining)
+
+
+def _finish(state, more):
+    if more:
         state["public_status"] = "deferred"
         return [], "deferred", "public_scan_incomplete", None
     if state["public_status"] not in {"provided", "exposure_unknown", "unavailable"}:
-        state["public_status"] = "exhausted"
+        state["public_status"] = "exhausted" if state["public_examined"] else "unavailable"
     return [], state["public_status"], None, None
+
+
+def _row(db, state, subject, counts, check, row):
+    prior = state["public_after"]
+    state["public_after"] = [row["id"], row["task_id"]]
+    state["public_examined"] += 1
+    counts["public_examined"] = counts.get("public_examined", 0) + 1
+    if row["objective"] != OBJECTIVE:
+        return None
+    try:
+        result = attempt(db, state, subject, counts, check, row["version"], row["task_id"])
+        return result if result is not None and (result[0] or result[2]) else None
+    except (PreviewUnavailable, sqlite3.OperationalError):
+        # Never skip a row interrupted before a conflict binding was recorded.
+        if state["public_pending"] is None:
+            state["public_after"] = prior
+            state["public_examined"] -= 1
+            counts["public_examined"] -= 1
+        raise

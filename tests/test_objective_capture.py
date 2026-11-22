@@ -2094,11 +2094,15 @@ def _daily_capture_workflow(tmp_path, monkeypatch):
     )
     assert initial["capture_status"] == "deferred" and initial["next_cursor"]
     state = decode_cursor(db, initial["next_cursor"])
-    assert state["v"] == 4 and state["phase"] == "capture"
+    assert state["v"] == 5 and state["phase"] == "capture"
     assert len(state["capture_pending"]) == 64
     assert "fixture_learner" not in initial["next_cursor"]
     assert db.connection.total_changes == before
+    from chess_coach.curriculum_public_cursor import fields as public_fields
+
     v2 = dict(state)
+    for field in public_fields():
+        del v2[field]
     v2["v"] = 2
     for field in (
         "fork_pending",
@@ -2152,6 +2156,8 @@ def _daily_capture_workflow(tmp_path, monkeypatch):
     assert db.connection.total_changes == before
 
     v1 = new_state(db, LEARNER, "plan-fixture", 5, 1, now)
+    for field in public_fields():
+        del v1[field]
     v1["v"] = 1
     for field in (
         "capture_pending",
@@ -2178,6 +2184,8 @@ def _daily_capture_workflow(tmp_path, monkeypatch):
     )
     assert all(item["skill"] != "hanging_piece" for item in legacy["items"])
     v3 = dict(state)
+    for field in public_fields():
+        del v3[field]
     v3["v"] = 3
     for field in (
         "prerequisite_policy",

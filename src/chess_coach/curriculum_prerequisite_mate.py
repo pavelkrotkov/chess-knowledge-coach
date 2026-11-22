@@ -21,3 +21,14 @@ def prompt(db, subject, version, key):
     if exposure(db, subject, key_fen) != "not_recorded":
         raise ValueError("diagnostic exposure unavailable")
     return key_fen
+
+
+def retry_unavailable(state, found, info):
+    if state["v"] != 5 or not found or not info:
+        return False
+    if info.get("diagnostic") != "unavailable" or state["prerequisite_offered"]:
+        return False
+    # This candidate was not offered; retain its scanned coordinate, not its selection.
+    prompt_key = found[0]["prompt_key"]
+    state["seen"] = [key for key in state["seen"] if key != prompt_key]
+    return True
