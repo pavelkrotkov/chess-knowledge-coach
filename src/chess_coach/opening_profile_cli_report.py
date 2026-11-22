@@ -7,7 +7,17 @@ from .opening_profile_cli_db import private_database
 from .opening_profile_source import profile
 
 
-def report(root, subject, game_id, position_id, alternative, reference, *, fork_window="initial"):
+def report(
+    root,
+    subject,
+    game_id,
+    position_id,
+    alternative,
+    reference,
+    *,
+    fork_window="initial",
+    proof_kind="fork",
+):
     with private_database(root, subject) as db:
         connection = db.connection
         deadline = time.monotonic() + 12
@@ -34,6 +44,7 @@ def report(root, subject, game_id, position_id, alternative, reference, *, fork_
                 alternative,
                 deadline,
                 fork_window=fork_window,
+                proof_kind=proof_kind,
             )
         if connection.execute("PRAGMA data_version").fetchone()[0] != version:
             raise ValueError("opening decision changed")
@@ -60,7 +71,15 @@ def preparation(root, subject, game_id, position_id, alternative):
 
 
 def prepare_public(
-    root, subject, game_id, position_id, alternative, *, forks=False, fork_window="initial"
+    root,
+    subject,
+    game_id,
+    position_id,
+    alternative,
+    *,
+    forks=False,
+    fork_window="initial",
+    prevent=False,
 ):
     from .opening_public_proof import prepare
 
@@ -74,4 +93,5 @@ def prepare_public(
             alternative,
             forks=forks,
             fork_window=fork_window,
+            prevent=prevent,
         )

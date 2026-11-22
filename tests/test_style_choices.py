@@ -2206,6 +2206,30 @@ def _opening_fit_route(monkeypatch, tmp_path):
                 "axb3 Bxh3 Rg1 h6 Rf1 c6 c3 Ne7 Rg1 c5 Ra2 Rh7 Rb2 b6 Rc2 Rh8 "
                 "Rf1 Nf5 Rh1 Nd6 Na3 Ne8 d3 Nc6"
             )
+            # Synthetic legal histories, with recorded action at the witnessed decision.
+            pre_history_text = (
+                "e2e4 e7e5 g1f3 f8e7 f3e5 e7a3 b1a3 f7f6 e5d7 g8e7 d7f6 g7f6 d2d3 "
+                "d8d3 d1d3 c8h3 g2h3 c7c5 d3d2 e8f8 d2g5 f6g5 c1g5 f8f7 f2f4 e7c6 "
+                "g5d8 h8d8 a3c4 a7a6 e1e2 c6e5 a1c1 d8g8 c4e3 b7b5 e3d1 c5c4 c1b1 "
+                "e5g6 h3h4 g6f4 e2f3 f7f6 f1c4 b5c4 h2h3 f4h3 a2a4 g8d8 f3g4 f6e6 "
+                "d1e3 d8c8"
+            )
+            pre_history = pre_history_text.split()
+            created_history_text = (
+                "e2e4 e7e5 f1c4 b7b6 c4f7 e8f7 g1h3 g8h6 h1g1 f7e8 g1f1 d8g5 h3g5 "
+                "f8b4 g5h7 c8a6 f1h1 b4d2 c1d2 h6g8 d2e3 h8h7 e3b6 c7b6 d1d7 e8d7 "
+                "a2a3 h7h2 h1h2 d7d6 a1a2 a6e2 e1e2 d6c5 f2f4 e5f4 h2h1 c5c4 b2b4 "
+                "g7g6 h1e1 g8e7 a3a4 c4b4 e2f1 b6b5 a4b5 b4b5 a2a7 a8a7 f1g1 f4f3 "
+                "g2f3 a7a6 e4e5 a6a8 b1d2 e7d5 d2b1 d5c3 e1e3 c3b1 f3f4 a8a7 e3e2 "
+                "a7c7 e2g2 c7c2 g2c2 b1c3"
+            )
+            created_history = created_history_text.split()
+            prevention_fixtures = {
+                "pre_existing": {"history": pre_history, "recorded": "e3f1"},
+                "created": {"history": created_history, "recorded": "c2c1"},
+                "pre_existing_good": {"history": pre_history, "recorded": "g4h5"},
+            }
+
             checked_lines = (
                 lines[0] + " Bh6 Bxh2+ Kxh2 Qe5+ Kg1 Qb5 Qc1 g5 Nd1 Nd5 b3 Qb6 Qf4 a6",
                 lines[1] + " h4 g6 Nd4 Nxd4 b3 Nf3+ Qxf3 Kh8 Bb2 Qb8 Rab1 Bc5 Rec1 Kg8",
@@ -2825,6 +2849,176 @@ def _opening_fit_route(monkeypatch, tmp_path):
                 artifact_names = set(recent_planning.glob("opening-public-proof-*.json"))
                 assert len(artifact_names) == 4
 
+                # A separate bounded source uses the same real catalog pair for both origins.
+                prevention_root = tmp_path / "prevention"
+                prevention_planning = prevention_root / ".runtime" / "planning"
+                prevention_planning.mkdir(parents=True, mode=0o700)
+                prevention_data = prevention_root / ".runtime" / "data"
+                prevention_data.mkdir(parents=True, mode=0o700)
+                prevention_db_path = prevention_data / "synthetic.sqlite"
+                source_connection = real_connect(db_path)
+                destination_connection = real_connect(prevention_db_path)
+                source_connection.backup(destination_connection)
+                destination_connection.close()
+                source_connection.close()
+                prevention_db_hash = hashlib.sha256(prevention_db_path.read_bytes()).hexdigest()
+                cli.setenv("CHESS_DB", str(prevention_db_path))
+                prevention_games = []
+                for label, fixture in prevention_fixtures.items():
+                    game = chess.pgn.Game()
+                    game.headers.update(
+                        Event="Rated Blitz game",
+                        White=f"Synthetic {label}",
+                        Black=f"Synthetic peer {label}",
+                        Result="1-0",
+                        Date="2026.10.01",
+                        TimeControl="600+0",
+                        WhiteElo="1700",
+                        BlackElo="1650",
+                    )
+                    source_board, node = chess.Board(), game
+                    history, recorded = fixture["history"], fixture["recorded"]
+                    assert isinstance(history, list) and isinstance(recorded, str)
+                    for uci in [*history, recorded]:
+                        assert isinstance(uci, str)
+                        move = source_board.parse_uci(uci)
+                        node = node.add_variation(move)
+                        source_board.push(move)
+                    prevention_games.append(str(game))
+                prevention_content = ("\n\n".join(prevention_games) + "\n\n{" + noise).encode()
+                prevention_zstd = subprocess.run(
+                    ["/usr/bin/zstd", "-q", "-c"],
+                    input=prevention_content,
+                    stdout=subprocess.PIPE,
+                    check=True,
+                ).stdout
+                assert len(prevention_zstd) > PREFIX_BYTES
+                prevention_prefix = prevention_zstd[:PREFIX_BYTES]
+
+                def prevention_response(request):
+                    return httpx.Response(
+                        206,
+                        headers={
+                            "Content-Range": f"bytes 0-{PREFIX_BYTES - 1}/{PREFIX_BYTES * 2}",
+                            "Content-Length": str(PREFIX_BYTES),
+                            "ETag": '"synthetic-prevention"',
+                        },
+                        content=prevention_prefix,
+                        request=request,
+                    )
+
+                with httpx.Client(transport=httpx.MockTransport(prevention_response)) as fake:
+                    acquire(prevention_root, "learner", client=fake)
+                assert build_recent(prevention_root, "learner")["accepted"] == 3
+                from chess_coach.opening_full_history_build import build as build_full_history
+
+                assert build_full_history(prevention_root, "learner")["accepted"] == 3
+                cli.setattr(
+                    public_prep_sys,
+                    "argv",
+                    [
+                        "opening-profile",
+                        "--project-root",
+                        str(prevention_root),
+                        "--game-id",
+                        str(later_games[0][0]),
+                        "--position-id",
+                        str(later_games[0][1]),
+                        "--alternative",
+                        "f1c4",
+                        "--reference",
+                        "recent",
+                        "--prepare-public-prevention",
+                        "--fork-window",
+                        "continuation",
+                    ],
+                )
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    profile_cli.main()
+                prevention = json.loads(output.getvalue())
+                assert prevention["version"] == "public-opening-fork-prevention-v1"
+                assert prevention["prevention_policy"]["proofs_per_preparation"] == 32
+                assert prevention["prevention_policy"]["window"] == "continuation"
+                assert prevention["prevention_policy"]["proof_seconds"] == 20
+                assert prevention["prevention_policy"]["shared_seconds"] == 30
+                assert (
+                    prevention["prevention_policy"]["index_sha256"]
+                    == hashlib.sha256((prevention_planning / FULL_INDEX).read_bytes()).hexdigest()
+                )
+                assert (
+                    prevention["reference"]["source_sha256"]
+                    == hashlib.sha256(prevention_prefix).hexdigest()
+                )
+                from chess_coach.fact_fingerprint import canonical, digest
+
+                for label, origin in (("played", "pre_existing"), ("alternative", "created")):
+                    branch = prevention["branches"][label]
+                    expected_games = 2 if label == "played" else 1
+                    assert branch["selected"] == branch["eligible"] == expected_games
+                    assert branch["origins"][origin]["supported"] == expected_games
+                    for coverage in branch["origins"].values():
+                        assert (
+                            sum(
+                                coverage[key]
+                                for key in (
+                                    "supported",
+                                    "unsupported",
+                                    "incomplete",
+                                    "completed_without_example",
+                                    "ended_before_window",
+                                )
+                            )
+                            == branch["selected"]
+                        )
+                    example = branch["origins"][origin]["example"]
+                    assert example["origin"] == (
+                        "pre_existing" if origin == "pre_existing" else "created_by_recorded_move"
+                    )
+                    assert example["window_start"] == 39
+                    assert example["window_end"] == example["ply"]
+                    assert example["record_ended_in_window"]
+                    assert example["board_terminal_at_record_end"] is None
+                    assert example["response"]["status"] == "correct"
+                    if origin == "pre_existing":
+                        assert example["recorded_response_status"] == "unresolved"
+                        assert example["alternative_uci"] != example["recorded_uci"]
+                    else:
+                        assert example["recorded_response_status"] == "not_assessed"
+                    fixture = prevention_fixtures[origin]
+                    history, recorded = fixture["history"], fixture["recorded"]
+                    assert isinstance(history, list) and isinstance(recorded, str)
+                    assert example["history_sha256"] == digest(canonical(history))
+                    assert example["full_history_sha256"] == digest(canonical([*history, recorded]))
+                assert 0 < prevention["branches"]["played"]["preparation_proofs"] <= 32
+
+                # Exhausting the single preparation budget keeps both branches incomplete.
+                from copy import deepcopy
+
+                from chess_coach.opening_full_history_locate import locate as locate_full
+                from chess_coach.opening_public_prevention import evaluate as evaluate_prevention
+
+                prevention_artifact = next(prevention_planning.glob("opening-public-proof-*.json"))
+                identity = deepcopy(
+                    json.loads(prevention_artifact.read_text())["payload"]["binding"]
+                )
+                identity["policy"]["prevention"]["proofs_per_preparation"] = 0
+                budget_start = time.monotonic()
+                limited, _, _ = evaluate_prevention(
+                    locate_full(prevention_root, "learner"),
+                    identity,
+                    budget_start,
+                    budget_start + 20,
+                )
+                for branch in limited.values():
+                    assert branch["selected"] > 0 and branch["proof_limit"]
+                    assert branch["preparation_proofs"] == 0
+                    assert all(
+                        coverage["incomplete"] == branch["selected"]
+                        for coverage in branch["origins"].values()
+                    )
+                cli.setenv("CHESS_DB", str(db_path))
+
                 # Direct mate and material-fork certificates are distinct outcomes.
                 from chess_coach.opening_public_fork_candidate import inspect as inspect_fork
 
@@ -2899,6 +3093,102 @@ def _opening_fit_route(monkeypatch, tmp_path):
                     assert fallback_preparation["branches"]["alternative"]["example"]
                 finally:
                     full_index.chmod(0o400)
+                # Prevention profile reads the stored result without any proof work.
+                import chess_coach.opening_public_prevention_created as prevention_created
+                import chess_coach.opening_public_prevention_existing as prevention_existing
+
+                cli.setattr(
+                    prevention_existing,
+                    "anchor",
+                    lambda *_a, **_k: pytest.fail("prevention anchor on GET"),
+                )
+                cli.setattr(
+                    prevention_created,
+                    "scan",
+                    lambda *_a, **_k: pytest.fail("prevention scan on GET"),
+                )
+                fallback_prevention = cli_profile(
+                    recent_root,
+                    "learner",
+                    *later_games[0],
+                    "f1c4",
+                    "recent",
+                    fork_window="continuation",
+                    proof_kind="prevention",
+                )
+                assert (
+                    fallback_prevention["public_preparation"]["prevention_status"] == "unavailable"
+                )
+                assert fallback_prevention["public_preparation"]["version"] == (
+                    "public-opening-capture-preparation-v1"
+                )
+                cli.setenv("CHESS_DB", str(prevention_db_path))
+                prevention_shown = cli_profile(
+                    prevention_root,
+                    "learner",
+                    *later_games[0],
+                    "f1c4",
+                    "recent",
+                    fork_window="continuation",
+                    proof_kind="prevention",
+                )
+                assert prevention_shown["public_preparation"]["branches"]["played"]["origins"][
+                    "pre_existing"
+                ]["example"]
+                prevention_app = create_app(
+                    db_path=prevention_db_path,
+                    project_root=prevention_root,
+                    subject="learner",
+                    actor="reviewer",
+                    corpus="test",
+                    login="fixture",
+                    origin="https://coach.invalid",
+                )
+                prevention_route = (
+                    f"/repertoire/games/{later_games[0][0]}/openings/{later_games[0][1]}"
+                    "/profile?reference=recent&alternative=f1c4"
+                    "&fork_window=continuation&proof_kind=prevention"
+                )
+                prevention_page = prevention_app.test_client().get(
+                    prevention_route,
+                    base_url="https://coach.invalid",
+                    headers=headers,
+                )
+                assert prevention_page.status_code == 200
+                assert b"Public prevention example" in prevention_page.data
+                section = prevention_page.data.split(
+                    b"<h3>Prepared public knight-fork prevention</h3>", 1
+                )[1]
+                summary = b"<summary>Source and analysis details</summary>"
+                assert summary in section
+                assert (
+                    prevention["prevention_policy"]["index_sha256"].encode()
+                    not in section.split(summary, 1)[0]
+                )
+                assert (
+                    prevention["prevention_policy"]["index_sha256"].encode()
+                    in section.split(summary, 1)[1]
+                )
+                missing_full = prevention_planning / FULL_INDEX
+                missing_full.chmod(0o600)
+                try:
+                    unavailable_prevention = cli_profile(
+                        prevention_root,
+                        "learner",
+                        *later_games[0],
+                        "f1c4",
+                        "recent",
+                        fork_window="continuation",
+                        proof_kind="prevention",
+                    )
+                    assert unavailable_prevention["public_preparation"] is None
+                finally:
+                    missing_full.chmod(0o400)
+                assert (
+                    hashlib.sha256(prevention_db_path.read_bytes()).hexdigest()
+                    == prevention_db_hash
+                )
+                cli.setenv("CHESS_DB", str(db_path))
                 profile_app = create_app(
                     db_path=db_path,
                     project_root=recent_root,

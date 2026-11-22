@@ -1,8 +1,9 @@
 """Replay a later fork window with the original public move stack."""
 
 from .fact_fingerprint import canonical, digest
-from .opening_public_fork_later_history import WINDOW, positions
+from .opening_public_fork_later_history import positions
 from .opening_public_fork_scan import scan
+from .opening_public_fork_windows import WINDOW
 from .opening_public_proof_replay import _attribution
 
 
