@@ -12,19 +12,35 @@
 <ul>{% for item in decision.catalog["items"] %}<li><strong>{{ item.san }}</strong> — resulting position <code>{{ item.child }}</code>.
 {% set comparison = comparisons.get(item.uci, {}) %}
 {% if comparison.status == "complete" %}
-<p>Selected comparison (centipawns from your perspective, depth {{ comparison.lines[0].depth }}):
-{% for line in comparison.lines %}{% if line.root_move == item.uci %}alternative {{ line.score_value }} cp{% else %}played {{ line.score_value }} cp{% endif %}{% if not loop.last %}; {% endif %}{% endfor %}.
-These are estimates for the selected moves, not a recommendation or proof of opening fit.</p>
+{% set played = comparison.lines|selectattr("root_move", "equalto", decision.played_uci)|first %}
+{% set alternative = comparison.lines|selectattr("root_move", "equalto", item.uci)|first %}
+<p>Selected comparison (centipawns from your perspective, depth {{ played.depth }}):
+played {{ played.score_value }} cp; alternative {{ alternative.score_value }} cp.
+{% if comparison.policy == "all-legal-roots-v2" %}
+The best measured legal root is {{ comparison.lines[0].score_value }} cp; the alternative is
+{{ comparison.lines[0].score_value - alternative.score_value }} cp below it.
+The alternative minus the played move is {{ alternative.score_value - played.score_value }} cp.
+{% if comparison.lines[0].score_value == alternative.score_value %}The alternative ties the best measured score.{% endif %}
+{% else %}This earlier two-root comparison has no measured reference baseline.{% endif %}
+These bounded estimates do not establish opening soundness or personal fit.</p>
 <p>The shared search reported {{ comparison.work.nodes }} nodes{% if comparison.work.requested_nodes is defined %} with a requested cap of {{ comparison.work.requested_nodes }}{% endif %}.</p>
-{% if qualifies_experiment(decision, item, comparison) %}<p><a href="{{ url_for('opening_experiments.show', game_id=decision.game_id, position_id=decision.position_id, move=item.uci) }}">Rehearse this opening experiment</a> · <a href="{{ url_for('opening_experiments.course', game_id=decision.game_id, position_id=decision.position_id, move=item.uci) }}">Open the revision course</a> · <a href="{{ url_for('repertoire_views.opening_decision', game_id=decision.game_id, position_id=decision.position_id, opportunities=item.uci) }}">Compare later center opportunities</a> · <a href="{{ url_for('repertoire_views.opening_decision', game_id=decision.game_id, position_id=decision.position_id, opportunities=item.uci, reference='recent') }}">Compare with the recent rated sample</a></p>{% else %}<p>Worked rehearsal is unavailable because the measured lines or score difference do not meet its checks.</p>{% endif %}
+{% if qualifies_experiment(decision, item, comparison) %}<p><a href="{{ url_for('opening_experiments.show', game_id=decision.game_id, position_id=decision.position_id, move=item.uci) }}">Rehearse this opening experiment</a> · <a href="{{ url_for('opening_experiments.course', game_id=decision.game_id, position_id=decision.position_id, move=item.uci) }}">Open the revision course</a> · <a href="{{ url_for('repertoire_views.opening_decision', game_id=decision.game_id, position_id=decision.position_id, opportunities=item.uci) }}">Compare later center opportunities</a> · <a href="{{ url_for('repertoire_views.opening_decision', game_id=decision.game_id, position_id=decision.position_id, opportunities=item.uci, reference='recent') }}">Compare with the recent rated sample</a></p>{% else %}{% set reason = assess_experiment(decision, item, comparison)[1] %}<p>Worked rehearsal is unavailable:
+{% if reason == "reference_gap" %}the alternative is more than 50 cp below the best measured root.
+{% elif reason == "score_gap" %}the alternative is more than 50 cp below the played move.
+{% else %}the measured lines do not meet the rehearsal checks.{% endif %}</p>{% endif %}
 {% elif comparison.status == "queued" %}<p>Comparison queued for a later worker run.</p>
-{% elif comparison.status == "unavailable" %}<p>Comparison unavailable.{% if comparison.retry_available %} You may retry.{% else %} The retry limit was reached.{% endif %}</p>
+{% elif comparison.status == "unavailable" %}<p>Comparison unavailable.
+{% if comparison.reason == "multipv_unavailable" %}The engine cannot measure every legal root together.
+{% elif comparison.reason in ("node_limit_unverified", "work_limit_unverified") %}The search work limit could not be verified.
+{% elif comparison.reason == "complete_iteration_unavailable" %}No complete comparable iteration was available.
+{% elif comparison.reason == "result_exceeds_limit" %}The result exceeded the private artifact limit.{% endif %}
+{% if comparison.retry_available %} You may retry.{% else %} The retry limit was reached.{% endif %}</p>
 {% elif comparison.status == "stale" %}<p>The earlier comparison is stale; request a current one.</p>{% endif %}
-{% if comparison.status != "complete" and comparison.status != "queued" and (comparison.status != "unavailable" or comparison.retry_available) %}
+{% if comparison.status != "queued" and (comparison.historical or (comparison.status != "complete" and (comparison.status != "unavailable" or comparison.retry_available))) %}
 <form method="post" action="{{ url_for('repertoire_views.opening_compare', game_id=decision.game_id, position_id=decision.position_id) }}">
 <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="alternative" value="{{ item.uci }}">
 {% if comparison.status == "unavailable" %}<input type="hidden" name="retry" value="1">{% endif %}
-<button type="submit">{% if comparison.status == "unavailable" %}Retry{% else %}Compare this move{% endif %}</button>
+<button type="submit">{% if comparison.status == "unavailable" %}Retry{% elif comparison.historical %}Measure against a reference{% else %}Compare this move{% endif %}</button>
 </form>{% endif %}
 {% if item.analysis %} Played {{ item.analysis.played }} cp; alternative {{ item.analysis.alternative }} cp at depth {{ item.analysis.depth }}. Recorded continuation: {{ item.analysis.line|join(" ") }}.{% else %} No qualified same-search comparison for this move.{% endif %}</li>{% else %}<li>No verified alternative catalog move in this bounded scan.</li>{% endfor %}</ul>
 {% if opportunity %}{% include "opening_later_opportunities.html" %}{% endif %}

@@ -18,11 +18,13 @@ def _payload(value):
 
 def matching(value, match, database, learner, parent, item):
     payload = _payload(value)
-    if payload is None:
+    if payload is None or payload.get("version") not in (
+        "opening-catalog-measurement-v1",
+        "opening-catalog-measurement-v2",
+    ):
         return None
     source, config = payload["source"], payload["configuration"]
     actual = (
-        payload.get("version"),
         payload["result"].get("status"),
         identity(database, source, config),
         source.get("learner_key"),
@@ -32,7 +34,6 @@ def matching(value, match, database, learner, parent, item):
         type(source.get("game_id")),
     )
     expected = (
-        "opening-catalog-measurement-v1",
         "complete",
         match.group(1),
         learner_key(learner),

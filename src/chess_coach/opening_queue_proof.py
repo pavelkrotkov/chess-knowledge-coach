@@ -6,10 +6,14 @@ from .purpose_config import FINAL_NODES
 from .style_score import score_ok
 
 
-def complete(outcome, source, board):
+def complete(outcome, source, board, *, reference=False):
     lines = outcome.get("lines")
     if outcome.get("status") != "complete" or not _work(outcome.get("work")):
         return False
+    if reference:
+        from .opening_queue_reference import complete as reference_complete
+
+        return reference_complete(outcome, lines, source, board)
     if not _pair(lines, source):
         return False
     return all(line(item, board) for item in lines) and lines_safe(board, lines)
@@ -22,6 +26,7 @@ def _work(work):
 
 
 def _pair(lines, source):
+    # Historical v1 artifacts describe only these two selected roots.
     if not isinstance(lines, list) or len(lines) != 2:
         return False
     if not all(isinstance(line, dict) and score_ok(line) for line in lines):

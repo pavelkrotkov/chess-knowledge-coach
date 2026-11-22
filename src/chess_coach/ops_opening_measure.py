@@ -20,7 +20,7 @@ def prepare(root, game_id, position_id, alternative, output, engine):
     connection.execute("PRAGMA query_only=ON")
     db = SimpleNamespace(connection=connection, path=database)
     try:
-        _prepare(db, game_id, position_id, alternative, output, engine)
+        return _prepare(db, game_id, position_id, alternative, output, engine)
     finally:
         connection.close()
 
@@ -35,7 +35,7 @@ def main():
     parser.add_argument("--engine", default="/usr/games/stockfish")
     args = parser.parse_args()
     try:
-        prepare(
+        payload = prepare(
             args.project_root,
             args.game_id,
             args.position_id,
@@ -46,6 +46,11 @@ def main():
     except (Exception, PreviewDeadline):
         raise SystemExit("Opening comparison unavailable; no result was published.") from None
     print("Private opening comparison prepared.")
+    if payload["version"] == "opening-catalog-measurement-v2":
+        from .opening_experiment import report
+
+        for line in report(payload["source"], payload["result"]):
+            print(line)
 
 
 if __name__ == "__main__":

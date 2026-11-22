@@ -1,6 +1,7 @@
 """Validate one bounded immutable opening measurement envelope."""
 
 from .fact_fingerprint import canonical, digest
+from .opening_measure_prepare import V2
 from .opening_queue_files import read
 
 
@@ -21,7 +22,12 @@ def _checked(envelope, item):
     payload = envelope["measurement"]
     if envelope.get("sha256") != digest(canonical(payload)):
         raise ValueError("comparison result unavailable")
-    if payload.get("version") != "opening-catalog-measurement-v1":
+    version = (
+        "opening-catalog-measurement-v2"
+        if item["configuration"].get("purpose_policy") == V2
+        else "opening-catalog-measurement-v1"
+    )
+    if payload.get("version") != version:
         raise ValueError("comparison version differs")
     if (
         payload.get("source") != item["source"]

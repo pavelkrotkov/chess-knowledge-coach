@@ -18,4 +18,9 @@ def pgn(decision, choice, experiment):
         "These estimates cover the two shown roots at the recorded depth. "
         "Overall soundness and personal fit remain unknown."
     )
+    if "reference" in experiment:
+        note += (
+            f" The best measured legal root scored {experiment['reference']['score']} cp; "
+            "this is one bounded engine estimate, not proof of opening soundness."
+        )
     return chapter("Opening experiment", note, snapshot, {}, guidance=note)["pgn"]
