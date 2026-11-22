@@ -29,3 +29,17 @@ def add(result, item):
         result[key] += item[key]
     if result["example"] is None:
         result["example"] = item["example"]
+
+
+def later(selected, context, more):
+    return {
+        **empty(selected),
+        "status": "prepared",
+        "eligible": context["matched_candidates"],
+        "excluded_context": context["excluded_context"],
+        "unknown_context": context["unknown_context"],
+        "more_eligible": more,
+        "ended_before_window": 0,
+        "censored": 0,
+        "interrupted": False,
+    }

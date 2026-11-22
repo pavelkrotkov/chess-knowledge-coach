@@ -45,6 +45,7 @@
 {% if alternative %}{{ sample("Selected catalog alternative" if selected else "One legal catalog alternative", alternative.san, other) }}{% else %}<p>No legal catalog alternative is available at this position.</p>{% endif %}
 {% if reference == "recent" %}
 <h3>Prepared public capture observations</h3>
+{% if alternative %}<p>Fork window: <a href="{{ url_for('opening_profiles.show', game_id=decision.game_id, position_id=decision.position_id, reference='recent', alternative=alternative.uci, fork_window='initial') }}">initial</a> · <a href="{{ url_for('opening_profiles.show', game_id=decision.game_id, position_id=decision.position_id, reference='recent', alternative=alternative.uci, fork_window='continuation') }}">continuation</a> (selected: {{ fork_window }}). Each preparation checks one window.</p>{% endif %}
 {% if prepared %}
 <p>These checks replay recorded moves from the bounded public prefix for your playing side. They do not establish a mistake, preference, overall safety, or learner progress. The prefix checksum does not verify the whole source archive. The source retained {{ prepared.sample.accepted }} independently deduplicated games from {{ prepared.sample.examined }} examined{% if prepared.sample.truncated %}; the source prefix was truncated{% endif %}. Per-game counts can overlap; games outside the selected window remain unknown.</p>
 {% for label, branch in (("Played", prepared.branches.played), ("Alternative", prepared.branches.alternative)) %}
@@ -55,10 +56,12 @@
 {% if branch.forks is defined %}
 {% set forks = branch.forks %}
 <h5>Prepared fork opportunities</h5>
+{% if forks.eligible is defined %}{% if forks.eligible is none %}<p>Continuation selection is unavailable or incomplete; counts remain unknown.</p>{% else %}<p>Full-history index: {{ forks.eligible }} eligible, {{ forks.excluded_context }} excluded by nominal context and {{ forks.unknown_context }} unknown before the ten-game cap; {{ forks.ended_before_window }} ended before this window. The continuation starts 36 plies after the matched decision and covers at most 36 positions. Full-index SHA-256: <code>{{ prepared.fork_policy.index_sha256 }}</code>.</p>{% endif %}{% endif %}
+{% if forks.selected is not none %}
 <p>Of {{ forks.selected }} selected independent games, {{ forks.analyzed }} had all bounded candidate roots checked, {{ forks.unsupported }} included unresolved geometry or positions outside the proof scope, and {{ forks.incomplete }} were incomplete. {{ forks.censored }} reached a source window or frontier; {{ forks.root_limit }} hit the {{ prepared.fork_policy.roots_per_game }}-root per-game limit and {{ forks.proof_limit }} reached the {{ prepared.fork_policy.proofs_per_branch }}-material-proof branch limit{% if forks.interrupted %}; the shared deadline interrupted preparation{% endif %}. Counts can overlap; unsearched roots and later positions remain unknown.</p>
 <p>Among {{ forks.roots }} examined roots, {{ forks.geometries }} had fork geometry; {{ forks.material }} material forks were proved and {{ forks.mate }} direct mates were proved. These are candidate-root counts, not game prevalence, personal misses or preferences.</p>
 {% if forks.example %}<p><a href="{{ forks.example.source }}">Public fork example</a>, record {{ forks.example.record }}, ply {{ forks.example.ply }}: the recorded move was {{ forks.example.recorded_san }}; {% if forks.example.recorded %}that move{% else %}the legal alternative {{ forks.example.candidate_san }}{% endif %} {% if forks.example.kind == "material" %}proved the named fork against target {{ forks.example.anchor }} with a gain floor of three across the bounded replies{% else %}was direct checkmate with fork geometry{% endif %}. These are separate proof outcomes; unresolved counterplay stays unknown.</p>{% else %}<p>No supported fork example was found in completed checks; other positions and roots remain unknown.</p>{% endif %}
-{% else %}<p>No combined fork preparation is available for this branch; existing capture preparation remains usable.</p>{% endif %}
+{% endif %}{% else %}<p>No combined fork preparation is available for this branch; existing capture preparation remains usable.</p>{% endif %}
 </section>
 {% endfor %}
 {% if prepared.legacy_capture %}
