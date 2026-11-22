@@ -21,12 +21,14 @@ TOKEN = re.compile(
 )
 
 
-def valid_movetext(text):
+def valid_movetext(text, *, check=None):
     """Reject ignored characters, malformed tags, and unbalanced variations."""
     text = text.removeprefix("\ufeff")
     state = {"moves": [0], "result": False, "started": False}
     position = 0
     while position < len(text):
+        if check is not None:
+            check()
         match = TOKEN.match(text, position)
         if match is None or not accept_token(match, text, state):
             return False

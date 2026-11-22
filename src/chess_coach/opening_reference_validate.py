@@ -9,11 +9,11 @@ from .public_training_pgn_lex import valid_movetext
 RESULT = re.compile(r"(?:1-0|0-1|1/2-1/2)\s*$")
 
 
-def valid(game, raw):
+def valid(game, raw, *, check=None):
     result = game.headers.get("Result")
     return (
         not game.errors
-        and valid_movetext(raw)
+        and valid_movetext(raw, check=check)
         and RESULT.search(raw)
         and game.headers.get("Variant", "Standard") in ("Standard", "Chess")
         and game.board().fen() == chess.Board().fen()

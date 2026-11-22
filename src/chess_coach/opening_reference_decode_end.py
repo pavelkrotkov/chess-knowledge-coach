@@ -16,3 +16,11 @@ def finish(process, deadline, allow_partial):
     ):
         return True
     raise ValueError("reference archive could not be decoded")
+
+
+def bounded_deadline(seconds, deadline):
+    until = time.monotonic() + seconds
+    result = min(until, deadline) if deadline is not None else until
+    if time.monotonic() >= result:
+        raise TimeoutError("reference decoding deadline exceeded")
+    return result

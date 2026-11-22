@@ -2162,6 +2162,36 @@ def _opening_fit_route(monkeypatch, tmp_path):
                     board.push(move)
                 return str(game)
 
+            def long_line(start, *, repeated=False):
+                board, moves = chess.Board(), []
+                for san in start.split():
+                    move = board.parse_san(san)
+                    moves.append(board.san(move))
+                    board.push(move)
+                while len(moves) < (100 if repeated else 130):
+                    if repeated and len(moves) == 60:
+                        for uci in ("f3g5", "g8h8", "g5f3", "h8g8"):
+                            move = board.parse_uci(uci)
+                            moves.append(board.san(move))
+                            board.push(move)
+                        continue
+                    for move in sorted(board.legal_moves, key=lambda value: value.uci()):
+                        if move.promotion:
+                            continue
+                        following = board.copy()
+                        following.push(move)
+                        if not following.is_repetition(2) and not following.is_game_over(
+                            claim_draw=True
+                        ):
+                            moves.append(board.san(move))
+                            board.push(move)
+                            break
+                    else:
+                        pytest.fail("synthetic legal continuation unavailable")
+                return moves
+
+            long_moves = long_line(lines[0])
+            alternative_long_moves = long_line(lines[1], repeated=True)
             rated_games = [rated_game(0, i, "300+0") for i in range(12)]
             rated_games += [rated_game(0, 100, "600+0", berserk=True)]
             rated_games += [rated_game(0, 101, "600+0", missing_rating=True)]
@@ -2180,6 +2210,8 @@ def _opening_fit_route(monkeypatch, tmp_path):
                     moves=(
                         supported_capture
                         if branch == 1 and i == 0
+                        else " ".join(alternative_long_moves)
+                        if branch == 1 and i == 2
                         else checked_lines[branch]
                         if (branch == 0 and i == 4) or (branch == 1 and i == 3)
                         else lines[1]
@@ -2193,26 +2225,6 @@ def _opening_fit_route(monkeypatch, tmp_path):
             ]
             queenless = "e4 e5 Nf3 Nc6 Bb5 a6 Bxc6 dxc6 Nxe5 Qd4 Nf3 Qxe4+ Qe2 Qxe2+ Kxe2 Kd7"
             promotion = "e4 e5 Nf3 h5 a4 h4 a5 h3 a6 hxg2 axb7 gxh1=Q bxa8=Q"
-            long_board = chess.Board()
-            long_moves = []
-            for san in lines[0].split():
-                move = long_board.parse_san(san)
-                long_moves.append(long_board.san(move))
-                long_board.push(move)
-            while len(long_moves) < 55:
-                for move in sorted(long_board.legal_moves, key=lambda value: value.uci()):
-                    if move.promotion:
-                        continue
-                    following = long_board.copy()
-                    following.push(move)
-                    if not following.is_repetition(2) and not following.is_game_over(
-                        claim_draw=True
-                    ):
-                        long_moves.append(long_board.san(move))
-                        long_board.push(move)
-                        break
-                else:
-                    pytest.fail("synthetic legal continuation unavailable")
             rated_games += [
                 rated_game(0, 300, "600+0", moves=queenless),
                 rated_game(0, 301, "600+0", moves=promotion),
@@ -2279,6 +2291,78 @@ def _opening_fit_route(monkeypatch, tmp_path):
             assert (recent_planning / PREFIX_NAME).stat().st_size == PREFIX_BYTES
             coverage = build_recent(recent_root, "learner")
             assert coverage["accepted"] == 27 and coverage["truncated"]
+            from chess_coach.opening_profile_source import profile as recent_before_history
+
+            unavailable = recent_before_history(
+                owned, recent_root, "learner", decision, "g1f3", "recent", time.monotonic() + 30
+            )
+            assert unavailable["later_history"]["status"] == "unavailable"
+            from chess_coach.opening_recent_source import INDEX_NAME as OLD_INDEX
+
+            old_index = recent_planning / OLD_INDEX
+            old_index_hash = hashlib.sha256(old_index.read_bytes()).hexdigest()
+            import chess_coach.ops_opening_recent_import as recent_cli
+
+            with patch.context() as history_cli:
+                history_cli.setenv("CHESS_SUBJECT", "learner")
+                history_cli.setattr(
+                    sys,
+                    "argv",
+                    ["opening-recent", "build-full-history", "--project-root", str(recent_root)],
+                )
+                recent_cli.main()
+            assert hashlib.sha256(old_index.read_bytes()).hexdigest() == old_index_hash
+            from chess_coach.opening_full_history_build import INDEX_NAME as FULL_INDEX
+
+            full_index = recent_planning / FULL_INDEX
+            assert full_index.stat().st_mode & 0o777 == 0o400
+            assert full_index.stat().st_size <= 20_000_000
+
+            # Over-limit records are excluded before claiming legal validation.
+            from chess_coach.opening_full_history_parse import parser as full_parser
+            from chess_coach.opening_full_history_store import MAX_BYTES, configure
+            from chess_coach.opening_full_history_summary import summarize as full_summary
+
+            excessive = chess.pgn.Game()
+            node = excessive
+            for ply in range(513):
+                node = node.add_variation(chess.Move.from_uci("g1f3" if ply % 2 == 0 else "g8f6"))
+            rejected = [0]
+            assert full_parser(lambda: None, rejected)(excessive, "", 1) is None
+            assert rejected == [1]
+            import io
+
+            from chess_coach.opening_reference_visitor import read_game as read_timed_game
+
+            visits = [0]
+
+            def expire_mid_game():
+                visits[0] += 1
+                if visits[0] == 5:
+                    raise TimeoutError("synthetic deadline")
+
+            with pytest.raises(TimeoutError):
+                read_timed_game(io.StringIO("1. e4 e5 2. Nf3 Nc6 3. Bc4 Nf6 1-0"), expire_mid_game)
+            from chess_coach.public_training_pgn_lex import valid_movetext
+
+            visits[0] = 0
+            with pytest.raises(TimeoutError):
+                valid_movetext("1. e4 e5 2. Nf3 Nc6 1-0", check=expire_mid_game)
+            limited = real_connect(":memory:")
+            configure(limited, time.monotonic() + 30)
+            page_size = limited.execute("PRAGMA page_size").fetchone()[0]
+            max_pages = limited.execute("PRAGMA max_page_count").fetchone()[0]
+            assert page_size * max_pages <= MAX_BYTES
+            limited.execute("INSERT INTO histories VALUES(?,?,?)", (1, "0" * 64, "[]"))
+            unavailable_history = full_summary(
+                limited, [(1, 2, "{}")], decision, "g1f3", time.monotonic() + 30
+            )
+            assert unavailable_history["unsupported"] == 1
+            interrupted_history = full_summary(
+                limited, [(1, 2, "{}")], decision, "g1f3", time.monotonic() - 1
+            )
+            assert interrupted_history["incomplete"] == 1 and interrupted_history["interrupted"]
+            limited.close()
             import tempfile
 
             from chess_coach.opening_reference_decode import decode
@@ -2311,6 +2395,16 @@ def _opening_fit_route(monkeypatch, tmp_path):
             assert profile["queens"]["one_each"] == 8
             assert profile["queens"]["queenless_observed"] == 1
             assert profile["queens"]["one_or_imbalanced"] == 1
+            late = profile["later_history"]
+            assert late["status"] == "complete" and late["matched_candidates"] == 8
+            assert late["example"]["example"]["ply"] > 88
+            assert late["example"]["example"]["window_start"] == late["example"]["total_plies"] - 35
+            assert late["example"]["example"]["window_end"] == late["example"]["total_plies"]
+            assert late["censored"] >= 1 and late["ended_before_later"] >= 1
+            assert late["example"]["record_ended"] and not late["example"]["board_terminal"]
+            assert late["coverage"]["over_512_unvalidated"] == 0
+            assert late["policy"]["tail_positions"] == 36
+            assert late["policy"]["maximum_game_plies"] == 512
             assert profile["check_responses"]["played_king"] >= 1
             assert profile["check_responses"]["example"]["played"]["kind"] == "king"
             assert profile["check_responses"]["unsupported"] >= 1
@@ -2502,6 +2596,8 @@ def _opening_fit_route(monkeypatch, tmp_path):
                 assert b"Individual game links were not retained" in profile_page.data
                 assert b"Observed queenless positions" in profile_page.data
                 assert b"Observed check responses" in profile_page.data
+                assert b"Later recorded positions" in profile_page.data
+                assert b"Public archive example" in profile_page.data
                 assert b"Public archive example" in profile_page.data
                 assert b"do not establish accuracy" in profile_page.data
                 assert b"A later queenless position was observed in 1 games" in profile_page.data
@@ -2579,6 +2675,16 @@ def _opening_fit_route(monkeypatch, tmp_path):
                 assert report["decision_ply"] == 3 and report["played"]["games"] == 8
                 assert report["played"]["queens"]["queenless_observed"] == 1
                 assert report["public_preparation"] is None
+                for branch in ("played", "alternative"):
+                    tail = report[branch]["later_history"]
+                    assert tail["example"]["example"]["ply"] > 52
+                    assert (
+                        tail["example"]["example"]["window_end"] == tail["example"]["total_plies"]
+                    )
+                assert report["played"]["later_history"]["example"]["example"]["ply"] > 88
+                assert report["alternative"]["later_history"]["example"]["example"][
+                    "repetition_observed"
+                ]
                 assert report["played"]["check_responses"]["played_king"] >= 1
                 assert report["alternative"]["check_responses"]["played_capture"] >= 1
                 assert report["alternative"]["check_responses"]["played_interposition"] >= 1

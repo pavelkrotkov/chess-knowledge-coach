@@ -34,10 +34,10 @@ def source(directory):
     return path, value
 
 
-def text(directory):
+def text(directory, *, deadline=None):
     path, value = source(directory)
     with path.open("rb") as stream:
-        content, _ = decode(stream, allow_partial=True)
+        content, _ = decode(stream, allow_partial=True, deadline=deadline)
     if _hash(path) != value["prefix_sha256"]:
         raise ValueError("recent source prefix changed")
     decoder = codecs.getincrementaldecoder("utf-8")(errors="strict")

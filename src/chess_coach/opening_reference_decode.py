@@ -5,14 +5,14 @@ import select
 import subprocess
 import time
 
-from .opening_reference_decode_end import finish
+from .opening_reference_decode_end import bounded_deadline, finish
 
 DECODE_LIMIT = 32_000_000
 SECONDS = 30
 
 
-def decode(file, *, allow_partial=False):
-    deadline = time.monotonic() + SECONDS
+def decode(file, *, allow_partial=False, deadline=None):
+    deadline = bounded_deadline(SECONDS, deadline)
     process = subprocess.Popen(
         ["/usr/bin/zstd", "-d", "-c", "--quiet"],
         stdin=file,

@@ -6,6 +6,7 @@ import time
 
 from .opening_check_response_summary import summarize as check_summary
 from .opening_fit_later_index import locate
+from .opening_full_history_profile import profile as history_profile
 from .opening_profile_lookup import _validate, guard
 from .opening_profile_metadata import summarize_profile
 from .opening_profile_queens import summarize as queen_summary
@@ -32,6 +33,7 @@ def profile(root, subject, decision, move, control, deadline):
         summary["check_responses"] = check_summary(
             connection, rows[:10], decision, move, control, deadline - 0.25
         )
+        summary["later_history"] = history_profile(root, subject, decision, move, control, deadline)
         result = {
             **summary,
             **context,

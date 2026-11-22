@@ -12,8 +12,8 @@ INDEX_NAME = "opening-reference-broadcast-2026-09-v3.sqlite"
 TRANSFORM = PREVIOUS_TRANSFORM.replace("v2:", "v3:", 1) + ";time-control-context"
 
 
-def _record(game, raw, number):
-    record = profile_record(game, raw, number)
+def _record(game, raw, number, *, check=None):
+    record = profile_record(game, raw, number, check=check)
     if record is None:
         return None
     value = game.headers.get("TimeControl")
