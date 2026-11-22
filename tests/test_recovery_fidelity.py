@@ -7,6 +7,7 @@ from chess_coach.recovery import backup_database, restore_database
 
 
 def test_typed_rows_hidden_rowids_and_without_rowid_preserved(tmp_path, monkeypatch):
+    _row_size_preflight_checks()
     source = tmp_path / "source.sqlite"
     target = tmp_path / "copy.sqlite"
     restored = tmp_path / "restore.sqlite"
@@ -30,8 +31,22 @@ def test_typed_rows_hidden_rowids_and_without_rowid_preserved(tmp_path, monkeypa
         db.executemany("INSERT INTO wr VALUES(?,?,?)", [("Beta", 1, b"a"), ("alpha", 3, b"b")])
         db.execute("CREATE TABLE aliases (id INTEGER PRIMARY KEY, value)")
         db.execute("INSERT INTO aliases VALUES(-5, ?)", ("x",))
-    backup_database(source, target, project_root=tmp_path)
-    restore_database(target, restored, project_root=tmp_path)
+    from chess_coach import recovery_fidelity
+
+    observed = []
+    original_preflight = recovery_fidelity.preflight
+
+    def observe_preflight(connection, table, deadline, limit):
+        observed.append((connection, table, limit))
+        return original_preflight(connection, table, deadline, limit)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(recovery_fidelity, "preflight", observe_preflight)
+        backup_database(source, target, project_root=tmp_path)
+        restore_database(target, restored, project_root=tmp_path)
+    assert observed and len(observed) % 2 == 0
+    for left, right in zip(observed[::2], observed[1::2], strict=True):
+        assert left[0] is not right[0] and left[1:] == right[1:]
     with sqlite3.connect(source) as left, sqlite3.connect(restored) as right:
         left.text_factory = right.text_factory = bytes
         for query in (
@@ -45,6 +60,71 @@ def test_typed_rows_hidden_rowids_and_without_rowid_preserved(tmp_path, monkeypa
     right.close()
     _compressed_recovery_checks(tmp_path, source, monkeypatch)
     _zstd_recovery_checks(tmp_path, source, monkeypatch)
+
+
+def _row_size_preflight_checks():
+    import pytest
+
+    from chess_coach.recovery_fidelity_budget import preflight
+
+    class Deadline:
+        def check(self):
+            pass
+
+    for encoding, factor, codec in (("UTF-8", 1, "utf-8"), ("UTF-16le", 2, "utf-16le")):
+        connection = sqlite3.connect(":memory:")
+        connection.execute(f"PRAGMA encoding={encoding!r}")
+        connection.text_factory = bytes
+        connection.execute("CREATE TABLE sample(a,b,c,d,e)")
+        connection.execute("INSERT INTO sample VALUES(NULL,NULL,NULL,NULL,NULL)")
+        text, blob = "Aé🙂", b"a\x00bc"
+        connection.execute("INSERT INTO sample VALUES(?,?,?,?,?)", (text, blob, 42, 1.25, None))
+        exact = 256 + 128 * 5 + len(text.encode(codec)) * factor + len(blob) + 8 + 8
+        preflight(connection, b"sample", Deadline(), exact)
+        with pytest.raises(ValueError, match="row exceeds supported limit"):
+            preflight(connection, b"sample", Deadline(), exact - 1)
+        connection.execute("CREATE TABLE empty(a)")
+        preflight(connection, b"empty", Deadline(), 1)
+        connection.close()
+
+    connection = sqlite3.connect(":memory:")
+    connection.text_factory = bytes
+    fields = ",".join(f"c{i}" for i in range(512))
+    connection.execute("CREATE TABLE wide(" + fields + ")")
+    connection.execute("INSERT INTO wide DEFAULT VALUES")
+    preflight(connection, b"wide", Deadline(), 256 + 128 * 512)
+    connection.execute("CREATE TABLE many(value)")
+    connection.executemany("INSERT INTO many VALUES(?)", ((i,) for i in range(1000)))
+    started = []
+
+    def interrupt_aggregate(sql):
+        if sql.startswith('SELECT 1 FROM "many"'):
+            started.append(True)
+
+    connection.set_trace_callback(interrupt_aggregate)
+    connection.set_progress_handler(lambda: int(bool(started)), 1)
+    try:
+        with pytest.raises(sqlite3.OperationalError, match="interrupted"):
+            preflight(connection, b"many", Deadline(), 4096)
+    finally:
+        connection.set_progress_handler(None, 0)
+        connection.set_trace_callback(None)
+    assert started
+
+    class ExpiresAfterQuery:
+        def __init__(self):
+            self.calls = 0
+
+        def check(self):
+            self.calls += 1
+            if self.calls == 3:
+                raise TimeoutError("synthetic deadline")
+
+    deadline = ExpiresAfterQuery()
+    with pytest.raises(TimeoutError, match="synthetic deadline"):
+        preflight(connection, b"many", deadline, 4096)
+    assert deadline.calls == 3
+    connection.close()
 
 
 def _compressed_recovery_checks(tmp_path, source, monkeypatch):
