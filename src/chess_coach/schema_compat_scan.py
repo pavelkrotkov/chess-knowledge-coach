@@ -42,7 +42,7 @@ def _inline(connection, table, condition):
         last = row[0]
 
 
-def inspect(connection, *, seconds=60.0):
+def inspect(connection, *, seconds=120.0):
     """Check schema and inline rows within a bounded, stable read."""
     deadline = time.monotonic() + seconds
     before = connection.execute("PRAGMA data_version").fetchone()[0]
