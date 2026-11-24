@@ -24,9 +24,14 @@ def _alternative(items, selected):
 def _reference_options():
     reference = request.args.get("reference", "broadcast")
     fork_window = request.args.get("fork_window", "initial")
-    if reference not in {"broadcast", "recent"} or fork_window not in {"initial", "continuation"}:
+    proof_kind = request.args.get("proof_kind", "fork")
+    if (
+        reference not in {"broadcast", "recent"}
+        or fork_window not in {"initial", "continuation"}
+        or proof_kind not in {"fork", "prevention"}
+    ):
         abort(400)
-    return reference, fork_window
+    return reference, fork_window, proof_kind
 
 
 @opening_profiles.get("/repertoire/games/<int:game_id>/openings/<int:position_id>/profile")
@@ -38,7 +43,7 @@ def show(game_id: int, position_id: int):
     except ValueError:
         abort(404)
     root, subject = current_app.config["PROJECT_ROOT"], current_app.config["SUBJECT"]
-    reference, fork_window = _reference_options()
+    reference, fork_window, proof_kind = _reference_options()
     deadline = profile_deadline(reference)
     played = profile(db, root, subject, decision, decision["played_uci"], reference, deadline)
     items = decision["catalog"]["items"]
@@ -61,6 +66,7 @@ def show(game_id: int, position_id: int):
             alternative["uci"],
             deadline,
             fork_window=fork_window,
+            proof_kind=proof_kind,
         )
         if alternative and reference == "recent"
         else None
@@ -78,4 +84,5 @@ def show(game_id: int, position_id: int):
         prepared=prepared,
         reference=reference,
         fork_window=fork_window,
+        proof_kind=proof_kind,
     )

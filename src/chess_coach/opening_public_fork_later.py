@@ -20,7 +20,7 @@ def bound(root, subject, deadline):
     return index, sha
 
 
-def branches(index, binding, deadline):
+def branches(index, binding, deadline, *, brancher=branch):
     connection = sqlite3.connect(index[0].as_uri() + "?mode=ro&immutable=1", uri=True, timeout=1)
     try:
         guard(connection, deadline)
@@ -34,7 +34,7 @@ def branches(index, binding, deadline):
             results[label] = (
                 unavailable("deadline")
                 if time.monotonic() >= deadline
-                else branch(connection, binding, binding["source"][label], deadline)
+                else brancher(connection, binding, binding["source"][label], deadline)
             )
         return results, values["coverage"]
     finally:

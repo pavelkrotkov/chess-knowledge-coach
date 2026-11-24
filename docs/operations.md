@@ -748,6 +748,35 @@ requires the existing compatibility attestation. Omit `--reference recent`
 for the unchanged broadcast profile. Recent indexed examples retain source
 context and an archive link, but not individual game URLs.
 
+For bounded public knight-fork prevention, first build the separate immutable
+full-history index from the already verified recent prefix:
+
+```sh
+"$release" -I -B -m chess_coach.ops_opening_recent_import build-full-history --project-root "$PWD"
+```
+
+Prepare one window offline, then select the same family and window when reading:
+
+```sh
+"$release" -I -B -m chess_coach.ops_opening_profile --project-root "$PWD" \
+  --game-id "$game_id" --position-id "$position_id" --alternative "$uci" --reference recent \
+  --prepare-public-prevention --fork-window continuation
+"$release" -I -B -m chess_coach.ops_opening_profile --project-root "$PWD" \
+  --game-id "$game_id" --position-id "$position_id" --alternative "$uci" --reference recent \
+  --proof-kind prevention --fork-window continuation
+```
+
+Use `initial` for the first window or `continuation` for the next one; the
+private profile offers the same selectors and only reads prepared results.
+Each preparation shares its deadline and 32 fork-proof attempts across both
+branches and origins, checks at most eight alternative defenses per position,
+and stops each game after its first example. The source checksum and exact
+nominal-context filter bind the sample. Counts distinguish supported,
+unsupported, incomplete, completed-without-example and records ending before
+the window; other positions and unavailable sources remain unknown. A record
+ending does not establish a terminal board. Public recorded moves and the
+separately labeled counterfactual witnesses do not establish a learner mistake.
+
 To publish a reviewed unfamiliar-opening course, set `preview_version` to the
 version shown on its private course preview and use the existing Study credentials:
 

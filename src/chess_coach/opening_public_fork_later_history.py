@@ -5,17 +5,15 @@ import time
 import chess
 
 from .opening_full_history_input import load, verified_move
+from .opening_public_fork_windows import bounds
 from .opening_storage import position_key
 from .style_history_lines import history_safe
 
-WINDOW = 36
 
-
-def positions(db, row, binding, branch, deadline):
+def positions(db, row, binding, branch, deadline, *, window="continuation"):
     game_id, total, _ = row
     identity, moves = load(db, game_id, total)
-    first = binding["ply"] + WINDOW
-    last = min(first + WINDOW - 1, total)
+    first, last = bounds(binding["ply"], total, window)
     decision = {"ply": binding["ply"], "catalog": {"parent": binding["source"]["parent"]}}
     board, rows, candidates = chess.Board(), [], []
     for ply, uci in enumerate(moves[:last], 1):

@@ -14,7 +14,16 @@ from .tactical_study_path import planning
 
 
 def prepare(
-    db, root, subject, game_id, position_id, alternative, *, forks=False, fork_window="initial"
+    db,
+    root,
+    subject,
+    game_id,
+    position_id,
+    alternative,
+    *,
+    forks=False,
+    fork_window="initial",
+    prevent=False,
 ):
     start = time.monotonic()
     deadline = start + SECONDS
@@ -28,7 +37,7 @@ def prepare(
                 db, root, subject, game_id, position_id, alternative, deadline
             )
         base = identity
-        identity, full = select(base, root, subject, deadline, forks, fork_window)
+        identity, full = select(base, root, subject, deadline, forks, fork_window, prevent=prevent)
         result, sample, later_sample = evaluate(
             index, base, identity, full, start, start + PROOF_SECONDS
         )

@@ -44,6 +44,8 @@
 {{ sample("Your played move", decision.played, played) }}
 {% if alternative %}{{ sample("Selected catalog alternative" if selected else "One legal catalog alternative", alternative.san, other) }}{% else %}<p>No legal catalog alternative is available at this position.</p>{% endif %}
 {% if reference == "recent" %}
+{% if alternative %}<p>Prepared evidence: <a href="{{ url_for('opening_profiles.show', game_id=decision.game_id, position_id=decision.position_id, reference='recent', alternative=alternative.uci, proof_kind='fork', fork_window=fork_window) }}">capture and forks</a> · <a href="{{ url_for('opening_profiles.show', game_id=decision.game_id, position_id=decision.position_id, reference='recent', alternative=alternative.uci, proof_kind='prevention', fork_window=fork_window) }}">fork prevention</a>. Window: <a href="{{ url_for('opening_profiles.show', game_id=decision.game_id, position_id=decision.position_id, reference='recent', alternative=alternative.uci, proof_kind=proof_kind, fork_window='initial') }}">initial</a> · <a href="{{ url_for('opening_profiles.show', game_id=decision.game_id, position_id=decision.position_id, reference='recent', alternative=alternative.uci, proof_kind=proof_kind, fork_window='continuation') }}">continuation</a>.</p>{% endif %}
+{% if proof_kind == "prevention" %}{% include "opening_public_prevention.html" %}{% else %}
 <h3>Prepared public capture observations</h3>
 {% if alternative %}<p>Fork window: <a href="{{ url_for('opening_profiles.show', game_id=decision.game_id, position_id=decision.position_id, reference='recent', alternative=alternative.uci, fork_window='initial') }}">initial</a> · <a href="{{ url_for('opening_profiles.show', game_id=decision.game_id, position_id=decision.position_id, reference='recent', alternative=alternative.uci, fork_window='continuation') }}">continuation</a> (selected: {{ fork_window }}). Each preparation checks one window.</p>{% endif %}
 {% if prepared %}
@@ -74,6 +76,7 @@
 {% endfor %}
 {% endif %}{% endif %}
 {% else %}<p>No current prepared result is available for this exact pair. Preparation is an offline action.</p>{% endif %}
+{% endif %}
 {% endif %}
 {% if measured %}<p>For this exact owned decision, the qualified same-search estimate is played {{ measured.played }} cp; alternative {{ measured.alternative }} cp at depth {{ measured.depth }}, from your perspective. This estimate is separate from the public sample and is not a recommendation.{% if measured.rehearsal %} <a href="{{ url_for('opening_experiments.show', game_id=decision.game_id, position_id=decision.position_id, move=alternative.uci) }}">Rehearse the checked lines</a>.{% endif %}</p>{% else %}<p>No qualified exact-decision comparison is shown here. You can inspect or request one on the decision page.</p>{% endif %}
 {% endblock %}
