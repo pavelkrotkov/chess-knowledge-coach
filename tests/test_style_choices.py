@@ -2999,9 +2999,8 @@ def _opening_fit_route(monkeypatch, tmp_path):
                 from chess_coach.opening_public_prevention import evaluate as evaluate_prevention
 
                 prevention_artifact = next(prevention_planning.glob("opening-public-proof-*.json"))
-                identity = deepcopy(
-                    json.loads(prevention_artifact.read_text())["payload"]["binding"]
-                )
+                saved_binding = json.loads(prevention_artifact.read_text())["payload"]["binding"]
+                identity = deepcopy(saved_binding)
                 identity["policy"]["prevention"]["proofs_per_preparation"] = 0
                 budget_start = time.monotonic()
                 limited, _, _ = evaluate_prevention(
@@ -3017,6 +3016,89 @@ def _opening_fit_route(monkeypatch, tmp_path):
                         coverage["incomplete"] == branch["selected"]
                         for coverage in branch["origins"].values()
                     )
+                # The initial operation is a distinct immutable result for the same pair.
+                continuation_hash = hashlib.sha256(prevention_artifact.read_bytes()).hexdigest()
+                cli.setattr(
+                    public_prep_sys,
+                    "argv",
+                    [*public_prep_sys.argv[:-1], "initial"],
+                )
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    profile_cli.main()
+                initial_prevention = json.loads(output.getvalue())
+                assert initial_prevention["prevention_policy"]["window"] == "initial"
+                assert initial_prevention["branches"]["played"]["selected"] == 2
+                assert initial_prevention["branches"]["alternative"]["selected"] == 1
+                initial_paths = set(prevention_planning.glob("opening-public-proof-*.json")) - {
+                    prevention_artifact
+                }
+                assert len(initial_paths) == 1
+                initial_artifact = initial_paths.pop()
+                assert initial_artifact.stat().st_mode & 0o777 == 0o400
+                initial_hash = hashlib.sha256(initial_artifact.read_bytes()).hexdigest()
+                assert (
+                    hashlib.sha256(prevention_artifact.read_bytes()).hexdigest()
+                    == continuation_hash
+                )
+
+                # Replay the same selected source at its actual decision, then at a
+                # later legal position to exercise the otherwise unreachable 52 frontier.
+                from chess_coach.opening_public_fork_later_history import (
+                    positions as fork_positions,
+                )
+                from chess_coach.opening_recent_select import rows as recent_rows
+
+                full_source = locate_full(prevention_root, "learner")
+                history_db = real_connect(
+                    full_source[0].as_uri() + "?mode=ro&immutable=1", uri=True
+                )
+                try:
+                    matches, _ = recent_rows(
+                        history_db,
+                        saved_binding["source"]["parent"],
+                        saved_binding["source"]["played"],
+                        saved_binding["ply"],
+                        saved_binding["control"],
+                    )
+                    selected_history = next(row for row in matches if row[1] > 52)
+                    _, moves, replay_rows, candidates, censored, safe = fork_positions(
+                        history_db,
+                        selected_history,
+                        saved_binding,
+                        saved_binding["source"]["played"],
+                        time.monotonic() + 20,
+                        window="initial",
+                    )
+                    assert safe and censored and replay_rows[-1][0] == 38
+                    assert candidates[0][0] == 3 and candidates[-1][0] == 37
+                    assert len(candidates[0][1].move_stack) == 2
+
+                    late_board = chess.Board()
+                    for uci in moves[:18]:
+                        late_board.push_uci(uci)
+                    late_binding = {
+                        **saved_binding,
+                        "ply": 19,
+                        "color": "white",
+                        "source": {
+                            **saved_binding["source"],
+                            "parent": position_key(late_board),
+                        },
+                    }
+                    _, _, replay_rows, candidates, censored, safe = fork_positions(
+                        history_db,
+                        selected_history,
+                        late_binding,
+                        moves[18],
+                        time.monotonic() + 20,
+                        window="initial",
+                    )
+                    assert safe and censored and replay_rows[-1][0] == 52
+                    assert candidates[0][0] == 19 and candidates[-1][0] == 51
+                    assert len(candidates[0][1].move_stack) == 18
+                finally:
+                    history_db.close()
                 cli.setenv("CHESS_DB", str(db_path))
 
                 # Direct mate and material-fork certificates are distinct outcomes.
@@ -3135,6 +3217,27 @@ def _opening_fit_route(monkeypatch, tmp_path):
                 assert prevention_shown["public_preparation"]["branches"]["played"]["origins"][
                     "pre_existing"
                 ]["example"]
+                initial_shown = cli_profile(
+                    prevention_root,
+                    "learner",
+                    *later_games[0],
+                    "f1c4",
+                    "recent",
+                    fork_window="initial",
+                    proof_kind="prevention",
+                )
+                assert (
+                    initial_shown["public_preparation"]["prevention_policy"]["window"] == "initial"
+                )
+                assert (
+                    initial_shown["public_preparation"]["branches"]
+                    == initial_prevention["branches"]
+                )
+                assert hashlib.sha256(initial_artifact.read_bytes()).hexdigest() == initial_hash
+                assert (
+                    hashlib.sha256(prevention_artifact.read_bytes()).hexdigest()
+                    == continuation_hash
+                )
                 prevention_app = create_app(
                     db_path=prevention_db_path,
                     project_root=prevention_root,
@@ -3156,6 +3259,13 @@ def _opening_fit_route(monkeypatch, tmp_path):
                 )
                 assert prevention_page.status_code == 200
                 assert b"Public prevention example" in prevention_page.data
+                initial_page = prevention_app.test_client().get(
+                    prevention_route.replace("continuation", "initial"),
+                    base_url="https://coach.invalid",
+                    headers=headers,
+                )
+                assert initial_page.status_code == 200
+                assert b"The initial window" in initial_page.data
                 section = prevention_page.data.split(
                     b"<h3>Prepared public knight-fork prevention</h3>", 1
                 )[1]
