@@ -198,6 +198,38 @@ def test_private_access_and_csrf(setup, tmp_path, monkeypatch):
             == 1
         )
     inspect(destination)  # Embedded NUL is nonempty text.
+
+    # The shared scan deadline permits work before 120 seconds and fails closed at expiry.
+    from types import SimpleNamespace
+
+    from chess_coach import schema_compat_scan
+
+    for elapsed in (119.0, 120.0):
+        times = iter((0.0,))
+
+        def monotonic(times=times, elapsed=elapsed):
+            return next(times, elapsed)
+
+        with monkeypatch.context() as clock:
+            clock.setattr(schema_compat_scan, "time", SimpleNamespace(monotonic=monotonic))
+            if elapsed < 120:
+                assert (
+                    inspect(destination)
+                    == destination.execute("PRAGMA schema_version").fetchone()[0]
+                )
+            else:
+                with pytest.raises(
+                    (ValueError, sqlite3.OperationalError), match=r"timed out|interrupted"
+                ):
+                    inspect(destination)
+                # A later long query must not inherit the expired progress handler.
+                assert (
+                    destination.execute(
+                        "WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<2000) "
+                        "SELECT MAX(x) FROM n"
+                    ).fetchone()[0]
+                    == 2000
+                )
     for table in ("detector_runs", "mapping_runs"):
         for value in ("", b"non-text"):
             destination.execute(f"UPDATE {table} SET input_json=? WHERE id=1", (value,))
