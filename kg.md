@@ -677,7 +677,7 @@ source .venv/bin/activate
 
 python -m pip install --upgrade pip
 python -m pip install \
-  berserk chess httpx pyyaml pydantic sqlalchemy fsrs
+  berserk chess httpx fsrs
 ```
 
 Install upstream Stockfish 18 separately.
