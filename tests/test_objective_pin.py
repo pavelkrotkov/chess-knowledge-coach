@@ -79,6 +79,60 @@ def begin(db, evidence, attempt="pin"):
 def test_alternative_pin_is_proved_without_rewriting_response_or_learning(
     tmp_path, monkeypatch, black
 ):
+    if not black:
+        import chess_coach.fork_capture as fork_capture
+        from chess_coach.pin_proof import proven
+        from chess_coach.pin_scan import scan
+
+        board = chess.Board(RELATIVE)
+        move = board.parse_uci("a6b5")
+        expected = proven(board, move)
+        assert expected and expected[0]["type"] == "relative_pin"
+        counts = {"proofs": 0, "checks": 0}
+
+        def check():
+            counts["checks"] += 1
+
+        def charge():
+            counts["proofs"] += 1
+
+        assert proven(board, move, check=check, on_proof=charge) == expected
+        assert counts["proofs"] == len(expected) == 1
+        assert counts["checks"] > counts["proofs"]
+        expected_scan = scan(board)
+        assert expected_scan is not None
+        counts["proofs"] = 0
+        assert scan(board, check=check, on_proof=charge) == expected_scan
+        assert counts["proofs"] == len(expected_scan["proven"]) + len(expected_scan["uncertain"])
+
+        remaining = [1]
+
+        def limited():
+            if not remaining[0]:
+                raise TimeoutError("shared proof limit")
+            remaining[0] -= 1
+
+        assert proven(board, move, check=check, on_proof=limited) == expected
+        with pytest.raises(TimeoutError, match="shared proof limit"):
+            proven(board, move, check=check, on_proof=limited)
+
+        original_gain = fork_capture.capture_gain
+        nested = [False]
+
+        def capture_gain(*args, **kwargs):
+            nested[0] = True
+            return original_gain(*args, **kwargs)
+
+        def stop_nested():
+            if nested[0]:
+                raise TimeoutError("nested material deadline")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(fork_capture, "capture_gain", capture_gain)
+            with pytest.raises(TimeoutError, match="nested material deadline"):
+                proven(board, move, check=stop_nested, on_proof=charge)
+        assert nested[0]
+
     db, evidence = owned_pin(tmp_path / "owned.sqlite", monkeypatch, black=black)
     before = {
         name: db.connection.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0]
