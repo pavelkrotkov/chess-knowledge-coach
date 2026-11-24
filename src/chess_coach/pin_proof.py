@@ -3,23 +3,26 @@
 import chess
 
 from .material_exchange_rules import unclear
-from .material_lines import material
 from .pin_geometry import pins
-from .pin_proof_branch import branch
+from .pin_proof_branch import witnesses
 from .pin_proof_eligibility import eligible, previous_capture
 
 MAX_REPLIES = 64
 
 
-def proof(board, move, pin):
+def proof(board, move, pin, *, check=None, on_proof=None):
+    if check is not None:
+        check()
+    if on_proof is not None:
+        on_proof()
     if not eligible(board, move) or previous_capture(board, pin):
         return None
     after = board.copy()
     after.push(move)
     replies = list(after.legal_moves)
-    if unclear(after) or not replies or len(replies) > MAX_REPLIES:
+    if unclear(after) or not 0 < len(replies) <= MAX_REPLIES:
         return None
-    branches = _witnesses(board, after, move, pin, replies)
+    branches = witnesses(board, after, move, pin, replies, check=check)
     if branches is None:
         return None
     return {
@@ -36,19 +39,14 @@ def proof(board, move, pin):
     }
 
 
-def proven(board, move):
-    return [result for pin in pins(board, move) if (result := proof(board, move, pin))]
-
-
-def _witnesses(board, after, move, pin, replies):
-    initial = material(board, board.turn)
-    branches = []
-    for reply in replies:
-        witness = branch(after, reply, move.to_square, pin, board.turn, initial)
-        if witness is None:
-            return None
-        branches.append(witness)
-    return branches
+def proven(board, move, *, check=None, on_proof=None):
+    if check is not None:
+        check()
+    return [
+        result
+        for pin in pins(board, move)
+        if (result := proof(board, move, pin, check=check, on_proof=on_proof))
+    ]
 
 
 def _material_floor(branches):

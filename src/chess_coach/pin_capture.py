@@ -6,7 +6,9 @@ from .fork_capture import capture as material_capture
 from .material_exchange_rules import unclear
 
 
-def capture(board, attacker, target, color, initial):
+def capture(board, attacker, target, color, initial, *, check=None):
+    if check is not None:
+        check()
     if unclear(board):
         return None
     move = chess.Move(attacker, target)
@@ -15,4 +17,4 @@ def capture(board, attacker, target, color, initial):
         after.push(move)
         if after.is_checkmate():
             return move.uci()
-    return material_capture(board, attacker, target, color, initial)
+    return material_capture(board, attacker, target, color, initial, check=check)
