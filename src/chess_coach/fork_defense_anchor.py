@@ -7,16 +7,19 @@ MAX_ANCHOR_MOVES = 64
 MAX_PROOFS = 32
 
 
-def anchor(board, candidates):
+def anchor(board, candidates, *, check=None, on_proof=None):
+    tick = check or (lambda: None)
+    tick()
     moves = list(board.legal_moves)
     if len(moves) > MAX_ANCHOR_MOVES:
         return {"reason": "anchor_move_budget_exhausted"}
     budget = MAX_PROOFS
     for move in moves:
+        tick()
         after = quiet_after(board, move)
-        if after is None or not safe_material(after):
+        if after is None or not safe_material(after, check=check):
             continue
-        proof, budget = find_fork(after, candidates, budget)
+        proof, budget = find_fork(after, candidates, budget, check=check, on_proof=on_proof)
         if proof:
             return {"move": move.uci(), "san": board.san(move), "fork": proof}
         if budget < 0:

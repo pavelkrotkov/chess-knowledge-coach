@@ -93,6 +93,97 @@ def make_game(path, monkeypatch, *, black=False, failure=False):
 @pytest.mark.parametrize("black", [False, True])
 @pytest.mark.parametrize("failure", [False, True])
 def test_worker_source_review_replay_and_private_explanation(tmp_path, monkeypatch, black, failure):
+    if not black and not failure:
+        import chess_coach.fork_defense_anchor_match as anchor_match
+        import chess_coach.fork_defense_scan as defense_scan
+        from chess_coach.fork_defense_anchor import anchor
+        from chess_coach.fork_defense_probe import hypothetical
+        from chess_coach.fork_defense_safety import safe_material
+        from chess_coach.objective_fork_defense_assess import assess
+        from chess_coach.objective_fork_defense_budget import ANSWER_UNITS, CURRENT, scope
+
+        board = chess.Board("7k/6p1/8/8/1n6/8/7P/R3K3 w - - 0 1")
+        candidates = hypothetical(board)
+        after = board.copy()
+        after.push_uci("h2h3")
+        expected_anchor, expected_scan = anchor(board, candidates), defense_scan.scan(after)
+        base = {"verifier": "fixture", "objective_version": "fixture"}
+        with scope():
+            expected_assess = assess(board, board.parse_uci("a1b1"), lambda: 0, 0, 10, base)
+            budget = CURRENT.get()
+            assert budget is not None and budget["reserved"] == ANSWER_UNITS
+
+        seen = {"proofs": 0, "calls": 0, "ticks": 0}
+        real_proof = defense_scan.fork_proof
+
+        def actual_proof(*args, **kwargs):
+            seen["calls"] += 1
+            return real_proof(*args, **kwargs)
+
+        def charge():
+            seen["proofs"] += 1
+
+        def tick():
+            seen["ticks"] += 1
+
+        with monkeypatch.context() as callbacks:
+            callbacks.setattr(defense_scan, "fork_proof", actual_proof)
+            callbacks.setattr(anchor_match, "fork_proof", actual_proof)
+            assert anchor(board, candidates, check=tick, on_proof=charge) == expected_anchor
+            assert defense_scan.scan(after, check=tick, on_proof=charge) == expected_scan
+            with scope():
+                outer_budget = CURRENT.get()
+                with scope():
+                    assert (
+                        assess(
+                            board,
+                            board.parse_uci("a1b1"),
+                            lambda: 0,
+                            0,
+                            10,
+                            base,
+                            check=tick,
+                            on_proof=charge,
+                        )
+                        == expected_assess
+                    )
+                    assert CURRENT.get() is outer_budget
+                budget = CURRENT.get()
+                assert budget is not None and budget["reserved"] == ANSWER_UNITS
+            assert seen["calls"] == seen["proofs"] == 2
+            assert seen["ticks"] > seen["calls"]
+
+            def stop_nested():
+                if seen["calls"] > 2:
+                    raise TimeoutError("nested deadline")
+
+            with pytest.raises(TimeoutError, match="nested deadline"):
+                anchor(board, candidates, check=stop_nested, on_proof=charge)
+            assert seen["calls"] == seen["proofs"] == 3
+
+            remaining = [1]
+
+            def bounded():
+                if not remaining[0]:
+                    raise TimeoutError("shared proof limit")
+                remaining[0] -= 1
+
+            assert anchor(board, candidates, check=tick, on_proof=bounded) == expected_anchor
+            with pytest.raises(TimeoutError, match="shared proof limit"):
+                defense_scan.scan(after, check=tick, on_proof=bounded)
+            assert seen["calls"] == 4 and remaining[0] == 0
+
+        material_board = chess.Board("7k/6p1/8/8/1n6/8/R6P/4K3 b - - 0 1")
+        material_ticks = [0]
+
+        def stop_material():
+            material_ticks[0] += 1
+            if material_ticks[0] == 3:
+                raise TimeoutError("material deadline")
+
+        with pytest.raises(TimeoutError, match="material deadline"):
+            safe_material(material_board, check=stop_material)
+
     path = tmp_path / "fork-defense.sqlite"
     db, config = make_game(path, monkeypatch, black=black, failure=failure)
     report = process_pipeline(

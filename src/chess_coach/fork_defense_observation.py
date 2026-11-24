@@ -8,8 +8,8 @@ from .fork_defense_success import success
 from .material_ambiguity import ambiguous
 
 
-def observe(board, played, best_line, played_line):
-    candidates = hypothetical(board)
+def observe(board, played, best_line, played_line, *, check=None, on_proof=None):
+    candidates = hypothetical(board, check=check)
     if candidates is None:
         return ambiguous("fork_defense", "hypothetical_probe_unavailable")
     try:
@@ -20,17 +20,23 @@ def observe(board, played, best_line, played_line):
         return ambiguous("fork_defense", "invalid_played_move")
     if board.is_capture(actual) or board.gives_check(actual) or actual.promotion:
         return ambiguous("fork_defense", "forcing_defense_unresolved") if candidates else None
-    return _assess(board, actual, best_line, played_line, candidates)
+    return _assess(board, actual, best_line, played_line, candidates, check, on_proof)
 
 
-def _assess(board, actual, best_line, played_line, candidates):
+def _assess(board, actual, best_line, played_line, candidates, check, on_proof):
     after = board.copy()
     after.push(actual)
-    following = scan(after)
+    following = scan(after, check=check, on_proof=on_proof)
     if following is None or following["uncertain"]:
         return ambiguous("fork_defense", "post_move_fork_unresolved")
-    if not safe_material(after):
+    if not safe_material(after, check=check):
         return ambiguous("fork_defense", "post_move_material_threat")
     if not following["proven"]:
-        return success(board, actual, played_line, candidates) if candidates else None
-    return failure(board, actual, best_line, played_line, candidates, following)
+        return (
+            success(board, actual, played_line, candidates, check=check, on_proof=on_proof)
+            if candidates
+            else None
+        )
+    return failure(
+        board, actual, best_line, played_line, candidates, following, check=check, on_proof=on_proof
+    )

@@ -7,12 +7,16 @@ from .objective_fork_defense_budget import ANSWER_UNITS, reserve
 from .objective_fork_defense_result import correct
 
 
-def assess(board, move, clock, start, seconds, base):
+def assess(board, move, clock, start, seconds, base, *, check=None, on_proof=None):
     after = quiet_after(board, move)
-    if after is None or after.is_game_over(claim_draw=True) or not safe_material(after):
+    if (
+        after is None
+        or after.is_game_over(claim_draw=True)
+        or not safe_material(after, check=check)
+    ):
         return unknown(base, "defense_or_counterplay_unresolved")
     reserve(ANSWER_UNITS)
-    result = scan(after)
+    result = scan(after, check=check, on_proof=on_proof)
     if clock() - start > seconds:
         return unknown(base, "timeout")
     if result is None or result["proven"] or result["uncertain"]:
