@@ -1,4 +1,4 @@
-"""Read-only fresh-process check for the same-database native-pair fixture."""
+"""Fresh-process check for the same-database native-pair fixture."""
 
 import hashlib
 import json
@@ -120,7 +120,9 @@ def _opening(payload, path, root):
 
 def _form(response):
     assert response.status_code == 200
-    assert b"opening experiment itself is not graded" in response.data
+    assert b"opening experiment itself is not graded" in response.data, response.get_data(
+        as_text=True
+    )
     forms = Forms()
     forms.feed(response.get_data(as_text=True))
     return _inputs([form for form in forms.forms if form.get("opening_token")])
