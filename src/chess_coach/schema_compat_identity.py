@@ -11,13 +11,18 @@ SLOT = "schema-32-compat.json"
 VERSION = "schema-32-compat-v1"
 
 
-def configured(path):
+def configured(path, *, selected=None):
     mode = os.environ.get("CHESS_SCHEMA_COMPAT")
     if mode is None:
         return False
     if mode != "32":
         raise ValueError("unsupported schema compatibility mode")
-    return Path(path).resolve(strict=True) == Path(os.environ["CHESS_DB"]).resolve(strict=True)
+    database = os.environ.get("CHESS_DB")
+    if database is None:
+        if selected is None:
+            raise KeyError("CHESS_DB")
+        database = selected
+    return Path(path).resolve(strict=True) == Path(database).resolve(strict=True)
 
 
 def _context(path):
@@ -47,8 +52,8 @@ def same_database(connection, path):
         raise ValueError("compatibility connection differs from the selected database")
 
 
-def verify(connection, path):
-    if not configured(path):
+def verify(connection, path, *, selected=None):
+    if not configured(path, selected=selected):
         raise ValueError("schema compatibility is not selected")
     same_database(connection, path)
     directory, identity = _context(path)
