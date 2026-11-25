@@ -36,7 +36,7 @@ VERSION_FIELDS = (
 )
 
 
-def validate_state(state) -> None:
+def validate_state(state, *, allow_full=False) -> None:
     if not isinstance(state, dict) or type(state.get("v")) is not int:
         raise ValueError("invalid cursor fields")
     if state["v"] not in {1, 2, 3, 4, 5, 6}:
@@ -44,7 +44,7 @@ def validate_state(state) -> None:
     if set(state) != _fields(state["v"]):
         raise ValueError("invalid cursor fields")
     validate_scope(state)
-    validate_positions(state)
+    validate_positions(state, allow_full=allow_full)
 
 
 def _fields(version):

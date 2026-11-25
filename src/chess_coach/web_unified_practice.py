@@ -40,6 +40,7 @@ def begin():
             goal=request.form.get("goal") or None,
             training=request.form.get("training") == "1",
             item_id=training_item_id(),
+            window_offer=request.form.get("window_offer") or None,
             **options,
         )
     except ValueError:

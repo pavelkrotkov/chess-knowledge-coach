@@ -1181,6 +1181,119 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
     assert fork["source_version"] == MISS_VERSION and fork["independent_games"] == 2
     assert fork["source_review"] == "unreviewed" and "Provisional" in fork["reason"]
 
+    # Goal choice reorders only already qualified new sources; the signed
+    # window uses server time independently of the plan's fixed as_of.
+    import sqlite3
+
+    import chess_coach.curriculum_window_scope as window_scope
+    from chess_coach.curriculum_window_cursor import decode as decode_window
+    from chess_coach.db import Database
+    from chess_coach.unified_sessions import start
+
+    with monkeypatch.context() as window_test:
+        wall = [datetime.now(UTC)]
+        window_test.setattr(window_scope, "clock", lambda: wall[0])
+        capture_goal = daily_plan(
+            db,
+            subject=SUBJECT,
+            corpus_version="fixture",
+            as_of=now,
+            limit=1,
+            goal="capture",
+            duration_minutes=1,
+        )
+        fork_goal = daily_plan(
+            db,
+            subject=SUBJECT,
+            corpus_version="fixture",
+            as_of=now,
+            limit=1,
+            goal="fork",
+            duration_minutes=1,
+        )
+        capture_item = capture_goal["items"][0]
+        fork_item = fork_goal["items"][0]
+        assert capture_item["skill"] == "hanging_piece" and fork_item["skill"] == "fork"
+        assert (
+            capture_goal["window"]["goal_status"]
+            == fork_goal["window"]["goal_status"]
+            == "available"
+        )
+        assert capture_item["window_offer"] and fork_item["window_offer"]
+        cursor = fork_goal["window_cursor"]
+        original = decode_window(db, cursor)
+        assert original["v"] == 7 and original["goal"] == "fork"
+        assert original["state"]["as_of"] == now.isoformat()
+        with pytest.raises(ValueError):
+            daily_plan(
+                db, subject="other", corpus_version="fixture", as_of=now, limit=1, cursor=cursor
+            )
+        with pytest.raises(ValueError):
+            daily_plan(
+                db,
+                subject=SUBJECT,
+                corpus_version="fixture",
+                as_of=now,
+                limit=1,
+                cursor=cursor,
+                goal="capture",
+            )
+        with pytest.raises(ValueError, match="unsupported"):
+            daily_plan(db, subject=SUBJECT, corpus_version="fixture", goal="unknown")
+        copy_path = tmp_path / "window-plan.sqlite"
+        target = sqlite3.connect(copy_path)
+        db.connection.backup(target)
+        target.close()
+        copy_db = Database(copy_path)
+        wall[0] += timedelta(seconds=61)
+        expired = daily_plan(
+            db, subject=SUBJECT, corpus_version="fixture", as_of=now, limit=1, cursor=cursor
+        )
+        assert expired["window"]["expired"] and all(
+            item["kind"] == "due" for item in expired["items"]
+        )
+        with pytest.raises(ValueError, match="expired"):
+            start(
+                copy_db,
+                attempt_id="expired-window",
+                subject=SUBJECT,
+                source_type="own-game",
+                version=fork_item["source_version"],
+                key=fork_item["source_key"],
+                training=True,
+                window_offer=fork_item["window_offer"],
+            )
+        assert (
+            copy_db.connection.execute("SELECT count(*) FROM unified_sessions").fetchone()[0] == 0
+        )
+        renewed = daily_plan(
+            db,
+            subject=SUBJECT,
+            corpus_version="fixture",
+            as_of=now,
+            limit=1,
+            cursor=expired["window_cursor"],
+            renew=True,
+        )
+        renewed_state = decode_window(db, renewed["window_cursor"])
+        assert not renewed["window"]["expired"]
+        assert set(original["state"]["seen"]).issubset(renewed_state["state"]["seen"])
+        assert all(item["prompt_key"] not in original["state"]["seen"] for item in renewed["items"])
+        wall[0] -= timedelta(seconds=61)
+        started = start(
+            copy_db,
+            attempt_id="active-window",
+            subject=SUBJECT,
+            source_type="own-game",
+            version=fork_item["source_version"],
+            key=fork_item["source_key"],
+            training=True,
+            window_offer=fork_item["window_offer"],
+        )
+        wall[0] += timedelta(seconds=61)
+        assert show(copy_db, "active-window", SUBJECT)["status"] == started["status"]
+        copy_db.close()
+
     # A partially checked fork conflict keeps its exact binding and position.
     from types import SimpleNamespace
 

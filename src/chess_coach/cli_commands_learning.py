@@ -66,6 +66,14 @@ def handle_evidence_report(db, args):
 
 
 def handle_start_puzzle(db, args):
+    if getattr(args, "window_offer", None):
+        from .curriculum_window_legacy import start as start_window
+
+        item_id, result = start_window(
+            db, args.subject, args.version, args.puzzle_id, args.attempt_id, args.window_offer
+        )
+        print(json.dumps({**result, "training_item_id": item_id}, indent=2))
+        return
     print(
         json.dumps(
             start_attempt(

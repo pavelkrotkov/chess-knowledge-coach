@@ -5,7 +5,7 @@ from .curriculum_cursor_phase import validate_phase, validate_scheduled
 from .curriculum_cursor_values import integer, text
 
 
-def validate_positions(state: dict) -> None:
+def validate_positions(state: dict, *, allow_full=False) -> None:
     _seen(state)
     if not integer(state["scheduled_after"], 0, 2**63 - 1):
         raise ValueError("invalid scheduled position")
@@ -16,7 +16,7 @@ def validate_positions(state: dict) -> None:
         raise ValueError("invalid pending candidate")
     if state["phase"] == "new" and state["pending"] is None and state["scheduled_after"] != 0:
         raise ValueError("orphaned scheduled scan")
-    validate_phase(state)
+    validate_phase(state, allow_full=allow_full)
 
 
 def _seen(state: dict) -> None:

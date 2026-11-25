@@ -4,8 +4,8 @@ from .curriculum_cursor_capture import validate_capture, validate_order
 from .curriculum_cursor_values import integer
 
 
-def validate_phase(state: dict) -> None:
-    if len(state["seen"]) >= state["limit"]:
+def validate_phase(state: dict, *, allow_full=False) -> None:
+    if not allow_full and len(state["seen"]) >= state["limit"]:
         raise ValueError("completed plans cannot continue")
     if (state["v"] not in {3, 4, 5, 6} and state["phase"] in {"due", "capture"}) and (
         state["new_after"] is not None or state["pending"] is not None
