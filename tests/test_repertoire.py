@@ -1228,6 +1228,63 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         if context_reason(contexts, item) == "available" and item["selection"]["color"] == "black"
     )
     choice = context_token(chosen["selection"])
+    from chess_coach.opening_context_choice import select as select_context
+    from chess_coach.opening_context_preview import preview as context_preview
+
+    base_contexts = inventory(experiment_db, tmp_path, "learner", annotation=False)
+    selected_contexts = inventory(experiment_db, tmp_path, "learner", annotation=choice)
+    for reduced in (base_contexts, selected_contexts):
+        assert reduced["sample_identity"] == contexts["sample_identity"]
+        assert reduced["reference_index_sha256"] == contexts["reference_index_sha256"]
+        for color in ("white", "black"):
+            original = contexts["contexts"][color]["parents"]
+            checked = reduced["contexts"][color]["parents"]
+            assert [(p["parent"], p["path"]) for p in checked] == [
+                (p["parent"], p["path"]) for p in original
+            ]
+            for left, right in zip(original, checked, strict=True):
+                assert [item["selection"] for item in left["items"]] == [
+                    item["selection"] for item in right["items"]
+                ]
+    base_choice = select_context(base_contexts, choice)
+    selected_choice = select_context(selected_contexts, choice)
+    assert base_choice["source"] == chosen["source"]
+    assert not {"distance", "owned_comparison", "comparison"} & base_choice.keys()
+    for field in ("distance", "owned_comparison", "comparison"):
+        assert selected_choice[field] == chosen[field]
+    assert (
+        context_preview(base_contexts, choice)["version"]
+        == context_preview(contexts, choice)["version"]
+    )
+    assert (
+        context_preview(selected_contexts, choice)["version"]
+        == context_preview(contexts, choice)["version"]
+    )
+    annotated = [
+        item
+        for group in selected_contexts["contexts"].values()
+        for parent in group["parents"]
+        for item in parent["items"]
+        if "distance" in item
+    ]
+    assert len(annotated) == 1 and annotated[0]["selection"] == chosen["selection"]
+    with pytest.raises(ValueError, match="selection"):
+        select_context(base_contexts, "0" * 64)
+    import chess_coach.opening_context_collect as context_collect
+
+    starting_parent = next(
+        parent["parent"]
+        for parent in contexts["contexts"]["white"]["parents"]
+        if not parent["path"]
+    )
+    with monkeypatch.context() as invalid_path:
+        invalid_path.setattr(
+            context_collect,
+            "ordered",
+            lambda _contexts: ([((starting_parent, ("a2a3",)), 1)], 0, False),
+        )
+        with pytest.raises(ValueError, match="parent differs"):
+            inventory(experiment_db, tmp_path, "learner", annotation=False)
     before_web_hash = hashlib.sha256(experiment_path.read_bytes()).hexdigest()
 
     # Prepare one public result with the same all-root synthetic engine used below.
@@ -1330,6 +1387,12 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
             headers=headers,
         )
         assert download.status_code == 200 and download.mimetype == "application/x-chess-pgn"
+        wrong_version = client_first.get(
+            f"/repertoire/unfamiliar?contexts=1&choice={choice}&download=1&version={'0' * 64}",
+            base_url="https://coach.invalid",
+            headers=headers,
+        )
+        assert wrong_version.status_code == 409
         downloaded = chess.pgn.read_game(io.StringIO(download.get_data(as_text=True)))
         assert downloaded is not None
         profile = chosen["source"]["profile"]

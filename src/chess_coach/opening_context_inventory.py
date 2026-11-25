@@ -4,13 +4,9 @@ import time
 
 from .fact_fingerprint import canonical, digest
 from .learner_identity import normalize_identity
-from .opening_context_candidates import choices
-from .opening_context_history import ordered, sample
+from .opening_context_collect import collect
+from .opening_context_history import sample
 from .opening_context_owned_measure import MAX_GAMES as ANCHOR_GAMES
-from .opening_context_owned_measure import enrich as owned_comparison
-from .opening_distance_history import history
-from .opening_distance_inventory import enrich
-from .opening_public_comparison_read import enrich as comparison
 from .opening_public_proof_index import index_hash
 from .opening_queue_budget import BrowserBudget
 from .opening_snapshot import GRAPH_SHA256, SOURCE, VERSION
@@ -21,7 +17,7 @@ from .style_schedule_budget import LIMIT as HISTORY_LIMIT
 SECONDS = 25
 
 
-def inventory(db, root, learner, *, deadline=None):
+def inventory(db, root, learner, *, deadline=None, annotation=None):
     budget = BrowserBudget(db)
     budget.expires = min(budget.expires, time.monotonic() + SECONDS)
     if deadline is not None:
@@ -41,39 +37,24 @@ def inventory(db, root, learner, *, deadline=None):
         dataset = catalog_dataset(db)
     games, coverage, contexts, seen, failed, incomplete, checked = sample(db, subject, budget)
     sample_identity = digest(canonical([subject, games, coverage, checked, sorted(seen), failed]))
-    result = {}
-    for color in ("white", "black"):
-        selected, omitted, tied = ordered(contexts[color])
-        checked_history = history(db, subject, color, budget) if selected else None
-        parents = []
-        for (parent, path), count in selected:
-            found = choices(
-                db,
-                root,
-                subject,
-                dataset,
-                color,
-                parent,
-                path,
-                seen,
-                incomplete,
-                budget,
-                binding[1],
-            )
-            for item in found["items"]:
-                item["selection"].update(
-                    sample_identity=sample_identity, reference_index_sha256=checksum
-                )
-            enrich(found["items"], checked_history, budget, binding[1])
-            owned_comparison(db, root, subject, games, color, parent, path, found["items"], budget)
-            comparison(root, subject, found["items"], binding[1], budget)
-            parents.append({"parent": parent, "path": list(path), "occurrences": count, **found})
-        result[color] = {
-            "parents": parents,
-            "omitted": omitted,
-            "truncated": bool(omitted),
-            "boundary_tie": tied,
-        }
+    identity = {"sample_identity": sample_identity, "reference_index_sha256": checksum}
+    sample_inputs = (games, seen, incomplete)
+    result = {
+        color: collect(
+            db,
+            root,
+            subject,
+            dataset,
+            color,
+            contexts[color],
+            sample_inputs,
+            budget,
+            binding[1],
+            identity,
+            annotation,
+        )
+        for color in ("white", "black")
+    }
     check(db, root, subject, binding, budget)
     return {
         "version": "opening-context-inventory-v1",

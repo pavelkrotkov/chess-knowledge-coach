@@ -43,7 +43,7 @@ def prepare(db, root, subject, token, engine):
     capacity(root, directory, deadline=budget.expires, working=PUBLICATION_WORKING)
     with deep_lock(db.path):
         guard = start(db, root, subject)
-        report = inventory(db, root, subject, deadline=budget.expires)
+        report = inventory(db, root, subject, deadline=budget.expires, annotation=False)
         item = select(report, token)
         public_board = board(guard[1], item, budget)
         config, result = analyze(public_board, item["selection"]["move"], engine, budget.expires)

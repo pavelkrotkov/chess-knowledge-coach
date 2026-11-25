@@ -19,10 +19,10 @@ def show():
     deadline = time.monotonic() + SECONDS
     try:
         binding = start(db, root, subject)
-        report = inventory(db, root, subject, deadline=deadline)
+        choice = request.args.get("choice")
+        report = inventory(db, root, subject, deadline=deadline, annotation=choice)
         if report["status"] != "prepared":
             return render_template("opening_contexts.html", report=report), 503
-        choice = request.args.get("choice")
         if choice:
             course = preview(report, choice)
             current(db, root, subject, binding, deadline)
