@@ -2,7 +2,7 @@
 
 import sqlite3
 
-from .opening_context_development_owned import collect
+from .opening_context_development_owned import collect_once
 from .opening_context_development_partition import partition
 from .opening_fit import RESERVE
 from .style_schedule_budget import BudgetExceeded
@@ -10,7 +10,7 @@ from .tactical_course_budget import PreviewUnavailable
 from .tactical_course_deadline import PreviewDeadline
 
 
-def assess(db, learner, color, games, group, budget, incomplete):
+def assess(db, learner, color, games, group, budget, incomplete, owned_cache):
     eligibility = group["fit"]["choices"]
     admitted = sum(value == "admitted" for value in eligibility.values())
     result = partition(group["items"], eligibility, color)
@@ -27,7 +27,7 @@ def assess(db, learner, color, games, group, budget, incomplete):
     original = budget.expires
     budget.expires = original - RESERVE
     try:
-        owned = collect(db, learner, games, color, budget)
+        owned = collect_once(owned_cache, db, learner, games, color, budget)
         if owned["status"] != "supported":
             return {**result, "status": "withheld", "reason": owned["reason"], "owned": owned}
         result["eligible"] = result["proved"]

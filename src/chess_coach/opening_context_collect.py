@@ -29,6 +29,7 @@ def collect(
     )
     history_ready = annotation is None
     parents = []
+    owned_development = {}
     for (parent, path), count in selected:
         found = choices(
             db, root, subject, dataset, color, parent, path, seen, incomplete, budget, index
@@ -59,6 +60,7 @@ def collect(
                 history_verified,
                 incomplete,
                 annotation,
+                owned_development,
             )
         )
     return {

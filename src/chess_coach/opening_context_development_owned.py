@@ -27,3 +27,10 @@ def collect(db, learner, games, color, budget):
         if excluded["game replay limit"]:
             return {"status": "withheld", "reason": "game_replay_limit"}
     return summary(found, excluded)
+
+
+def collect_once(cache, db, learner, games, color, budget):
+    budget.check()
+    if "result" not in cache:
+        cache["result"] = collect(db, learner, games, color, budget)
+    return cache["result"]

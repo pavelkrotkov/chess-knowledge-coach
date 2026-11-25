@@ -1169,7 +1169,15 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         assert set(roots) == set(board.legal_moves)
         assert _limit.nodes == 180000 and _limit.time == 1.35
         state = ReferenceIterations(board, position, roots, bounds)
-        ordered = sorted(roots, key=lambda move: move.uci() != "e2e4")
+        ordered = sorted(
+            roots,
+            key=lambda move: (
+                move.uci() != "e2e4",
+                -scores.get(
+                    move.uci(), 100 if move.uci() == "g1f3" else 90 if move.uci() == "d2d4" else 0
+                ),
+            ),
+        )
         for rank, root in enumerate(ordered, 1):
             replay, pv = board.copy(), [root]
             replay.push(root)
@@ -4275,8 +4283,21 @@ def _conditional_fit_workflow(tmp_path, monkeypatch, fake_engine, all_roots, sco
         "1. Nf3 g5 2. e4 e5 3. Nxe5 d5 4. Bb5+ Qd7 5. exd5 Qxb5 "
         "6. Nxf7 Kxf7 7. h3 Qxd5 8. b3 Qxb3 9. axb3 Bxh3 10. d3 Nc6"
     )
+    later_demand = (
+        "1. e4 d5 2. Nf3 Nc6 3. Bc4 e5 4. Bf1 Nb8 5. Nxe5 g5 "
+        "6. Bb5+ Qd7 7. exd5 Qxb5 8. Nxf7 Kxf7 9. h3 Qxd5 "
+        "10. b3 Qxb3 11. axb3 Bxh3 12. d3 Nc6"
+    )
+    later_other = (
+        "1. e4 d5 2. b3 Nf6 3. Bb2 e6 4. Nf3 Be7 5. Be2 O-O "
+        "6. O-O c5 7. d3 Nc6 8. Nbd2 b6 9. Re1 Bb7 10. Bf1 Rc8"
+    )
     source = (
-        game("Public demand", "Other demand", demand)
+        game("Later demand", "Other later demand", later_demand)
+        + "\n"
+        + game("Later alternative", "Other later alternative", later_other)
+        + "\n"
+        + game("Public demand", "Other demand", demand)
         + "\n"
         + game("Public second demand", "Other second demand", other_demand)
         + "\n"
@@ -4292,8 +4313,8 @@ def _conditional_fit_workflow(tmp_path, monkeypatch, fake_engine, all_roots, sco
             reference_source, "SOURCE_SHA256", hashlib.sha256(archive.read_bytes()).hexdigest()
         )
         patch.setattr(reference_source, "_decode", lambda file: (source.encode(), False))
-        assert build(root, "learner")["accepted"] == 12
-        assert build_context(root, "learner")["accepted"] == 12
+        assert build(root, "learner")["accepted"] == 14
+        assert build_context(root, "learner")["accepted"] == 14
 
     path = data / "fit.sqlite"
     db = Database(path)
@@ -4471,6 +4492,23 @@ def _conditional_fit_workflow(tmp_path, monkeypatch, fake_engine, all_roots, sco
         low_item = next(item for item in parent["items"] if item["uci"] == "e2e3")
         public_fork = prepare_fork(db, root, "learner", token(low_item["selection"]))
         assert public_fork["coverage"]["result"]["example"]["kind"] == "material"
+        later = next(
+            p for p in supported["contexts"]["white"]["parents"] if p["path"] == ["e2e4", "d7d5"]
+        )
+        assert {item["uci"] for item in later["items"]} == {"g1f3", "b2b3"}
+        scores["b2b3"] = 100
+        for item in later["items"]:
+            assert (
+                prepare(db, root, "learner", token(item["selection"]), str(fake_engine))["status"]
+                == "admitted"
+            )
+        later_fork = prepare_fork(
+            db,
+            root,
+            "learner",
+            token(next(item for item in later["items"] if item["uci"] == "g1f3")["selection"]),
+        )
+        assert later_fork["coverage"]["result"]["example"]["kind"] == "material"
         unreviewed = inventory(db, root, "learner")
         unreviewed_parent = next(
             p for p in unreviewed["contexts"]["white"]["parents"] if not p["path"]
@@ -4478,7 +4516,32 @@ def _conditional_fit_workflow(tmp_path, monkeypatch, fake_engine, all_roots, sco
         assert unreviewed_parent["development"]["reason"] == "fewer_than_two_reviewed_miss_games"
         for evidence_id in evidence_ids:
             review_evidence(db, evidence_id, decision="accept", actor="anonymous reviewer")
-        supported = inventory(db, root, "learner")
+        import chess_coach.opening_context_development_owned as development_owned
+
+        original_collect = development_owned.collect
+        calls = []
+
+        def counted(*args):
+            calls.append(args[3])
+            return original_collect(*args)
+
+        with patch.context() as probe:
+            probe.setattr(development_owned, "collect", counted)
+            supported = inventory(db, root, "learner")
+            first, second = supported["contexts"]["white"]["parents"]
+            assert {tuple(first["path"]), tuple(second["path"])} == {(), ("e2e4", "d7d5")}
+            assert (
+                first["development"]["status"] == second["development"]["status"] == "provisional"
+            )
+            assert calls == ["white"]
+            review_evidence(db, evidence_ids[0], decision="revoke", actor="anonymous reviewer")
+            refreshed = inventory(db, root, "learner")
+            assert calls == ["white", "white"]
+            assert all(
+                p["development"]["reason"] == "fewer_than_two_reviewed_miss_games"
+                for p in refreshed["contexts"]["white"]["parents"]
+            )
+            review_evidence(db, evidence_ids[0], decision="accept", actor="anonymous reviewer")
         parent = next(p for p in supported["contexts"]["white"]["parents"] if not p["path"])
         development = parent["development"]
         assert development["status"] == "provisional" and development["choice"] == "e2e3"
@@ -4570,6 +4633,7 @@ def _conditional_fit_workflow(tmp_path, monkeypatch, fake_engine, all_roots, sco
         assert {item["reason"] for item in parent["development"]["unknown"]} == {"stale"}
         fake_engine.write_text("#!/bin/sh\nexit 0\n")
         del scores["e2e3"]
+        del scores["b2b3"]
     db.close()
 
 
