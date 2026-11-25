@@ -25,15 +25,15 @@ def attest(path, connection):
     write(slot, {"version": VERSION, **identity, "schema": cookie})
 
 
-def attach(connection, path):
-    verify(connection, path)
+def attach(connection, path, *, selected=None):
+    verify(connection, path, selected=selected)
     install(connection)
 
 
-def readonly(connection, path):
+def readonly(connection, path, *, selected=None):
     try:
-        if configured(path):
-            attach(connection, path)
+        if configured(path, selected=selected):
+            attach(connection, path, selected=selected)
     except Exception:
         connection.close()
         raise

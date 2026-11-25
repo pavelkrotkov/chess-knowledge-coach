@@ -321,6 +321,54 @@ def test_private_access_and_csrf(setup, tmp_path, monkeypatch):
 
     baseline = legacy_state(legacy)
     assert baseline[0] == 32
+
+    # Explicit read-only opening selection works with the same attestation
+    # even when the optional CHESS_DB environment variable is absent.
+    import hashlib
+
+    from chess_coach import schema_compat
+    from chess_coach.opening_profile_cli_db import open_database
+
+    before_bytes = hashlib.sha256(legacy.read_bytes()).hexdigest()
+    installed = []
+    original_install = schema_compat.install
+
+    def installed_views(connection):
+        installed.append(True)
+        return original_install(connection)
+
+    with monkeypatch.context() as explicit:
+        explicit.delenv("CHESS_DB")
+        explicit.setattr(schema_compat, "install", installed_views)
+        explicit.setattr(
+            Database, "__init__", lambda *_args, **_kwargs: pytest.fail("DB constructed")
+        )
+        context = cli_run(
+            legacy,
+            "repertoire",
+            "--learner",
+            "learner",
+            "--unfamiliar-contexts",
+            "--project-root",
+            str(root),
+        )
+        assert context["status"] == "unavailable" and installed
+        explicit.setattr(
+            schema_compat_identity,
+            "release_info",
+            lambda: {
+                "commit": "b" * 40,
+                "module_path": str(root / ".runtime" / "releases" / ("b" * 40) / "module.py"),
+            },
+        )
+        with pytest.raises(ValueError, match="attestation"):
+            open_database(root, database=str(legacy))
+    with monkeypatch.context() as mismatch:
+        mismatch.setenv("CHESS_DB", str(path))
+        with pytest.raises(ValueError, match="selected compatibility database differs"):
+            open_database(root, database=str(legacy))
+    assert hashlib.sha256(legacy.read_bytes()).hexdigest() == before_bytes
+    assert legacy_state(legacy) == baseline
     report = cli_run(
         legacy,
         "style-choices",
