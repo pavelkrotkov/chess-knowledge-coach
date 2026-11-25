@@ -4241,6 +4241,7 @@ def _conditional_fit_workflow(tmp_path, monkeypatch, fake_engine, all_roots, sco
 
     import chess
     import chess.engine
+    import chess.pgn
 
     import chess_coach.opening_measure_engine as opening_engine
     import chess_coach.opening_measure_search as opening_search
@@ -4265,10 +4266,18 @@ def _conditional_fit_workflow(tmp_path, monkeypatch, fake_engine, all_roots, sco
     archive.write_bytes(b"anonymous source fixture")
     low = "1. e3 e6 2. Nf3 Nf6 3. Be2 Be7 4. O-O O-O 5. d3 d6 6. b3 b6 7. Bb2 Bb7 8. Nbd2 Nbd7 9. Re1 Re8 10. Bf1 Bf8"
     high = "1. Nf3 d5 2. e4 Nf6 3. d3 e6 4. Be2 Be7 5. O-O O-O 6. Nbd2 Nbd7 7. Re1 Re8 8. b3 b6 9. Bb2 Bb7 10. Bf1 Bf8"
-    source = "\n".join(
-        game(f"Fixture {branch}-{i}", f"Other {branch}-{i}", moves)
-        for branch, moves in enumerate((low, high))
-        for i in range(5)
+    demand = (
+        "1. e3 a6 2. e4 e5 3. Nf3 g5 4. Nxe5 d5 5. Bb5+ Qd7 6. exd5 Qxb5 "
+        "7. Nxf7 Kxf7 8. h3 Qxd5 9. b3 Qxb3 10. axb3 Bxh3 11. d3 Nc6"
+    )
+    source = (
+        game("Public demand", "Other demand", demand)
+        + "\n"
+        + "\n".join(
+            game(f"Fixture {branch}-{i}", f"Other {branch}-{i}", moves)
+            for branch, moves in enumerate((low, high))
+            for i in range(5)
+        )
     )
     with monkeypatch.context() as patch:
         patch.setattr(reference_source, "SOURCE_BYTES", len(archive.read_bytes()))
@@ -4276,8 +4285,8 @@ def _conditional_fit_workflow(tmp_path, monkeypatch, fake_engine, all_roots, sco
             reference_source, "SOURCE_SHA256", hashlib.sha256(archive.read_bytes()).hexdigest()
         )
         patch.setattr(reference_source, "_decode", lambda file: (source.encode(), False))
-        assert build(root, "learner")["accepted"] == 10
-        assert build_context(root, "learner")["accepted"] == 10
+        assert build(root, "learner")["accepted"] == 11
+        assert build_context(root, "learner")["accepted"] == 11
 
     path = data / "fit.sqlite"
     db = Database(path)
@@ -4340,6 +4349,89 @@ def _conditional_fit_workflow(tmp_path, monkeypatch, fake_engine, all_roots, sco
                 (cycle, i + 1, position, request),
             )
             db.connection.commit()
+        from chess_coach.evidence_review import review_evidence
+        from chess_coach.fork_detector import process_decision
+        from chess_coach.opening_classification import classify_game
+        from chess_coach.opening_snapshot import SOURCE, VERSION
+        from chess_coach.pipeline_config import PipelineConfig
+        from chess_coach.pipeline_inputs import engine_identity, game_input
+        from chess_coach.pipeline_work import run_analysis
+
+        class NominationEngine:
+            def __init__(self):
+                self.id = {"name": "anonymous fork fixture"}
+                self.options = {}
+
+            def configure(self, _settings):
+                pass
+
+            def quit(self):
+                pass
+
+            def analyse(self, board, limit, multipv, root_moves=None):
+                if len(board.move_stack) == 22:
+                    pv = "d1g4 g8e7" if root_moves else "d1h5 f7g7 h5h3 g8e7"
+                    score = 0 if root_moves else 300
+                    moves = [chess.Move.from_uci(move) for move in pv.split()]
+                else:
+                    move = root_moves[0] if root_moves else next(iter(board.legal_moves))
+                    replay = board.copy()
+                    replay.push(move)
+                    moves = [move]
+                    if not replay.is_game_over():
+                        moves.append(next(iter(replay.legal_moves)))
+                    score = 0
+                return [
+                    {
+                        "pv": moves,
+                        "score": chess.engine.PovScore(chess.engine.Cp(score), board.turn),
+                        "nodes": 100,
+                        "depth": 5,
+                    }
+                ]
+
+        evidence_ids = []
+        own_line = (
+            "e4 Nc6 Nf3 e5 Bc4 Nb8 Bf1 g5 Nxe5 d5 Bb5+ Qd7 exd5 Qxb5 "
+            "Nxf7 Kxf7 h3 Qxd5 b3 Qxb3 axb3 Bxh3 Qg4 Ne7"
+        )
+        with patch.context() as own_engine:
+            own_engine.setattr(
+                chess.engine.SimpleEngine, "popen_uci", lambda *_args: NominationEngine()
+            )
+            for i in range(2):
+                original = chess.pgn.Game()
+                original.headers.update(
+                    White="learner",
+                    Black=f"fork opponent {i}",
+                    Result="*",
+                    TimeControl="600+0",
+                    UTCDate="2026.01.01",
+                    UTCTime=f"00:00:{10 + i:02}",
+                )
+                board, node = original.board(), original
+                for san in own_line.split():
+                    move = board.parse_san(san)
+                    node = node.add_variation(move)
+                    board.push(move)
+                ingest_pgn(db, str(original))
+                game_id = db.connection.execute("SELECT MAX(id) FROM games").fetchone()[0]
+                classify_game(db, game_id, version=VERSION, source_url=SOURCE)
+                config = PipelineConfig(
+                    learner="learner", engine_path=sys.executable, nodes=100, deep_enabled=False
+                )
+                analysis = run_analysis(
+                    db, game_id, game_input(db, game_id), config, engine_identity(sys.executable)
+                )
+                assert analysis["status"] == "complete"
+                position = db.connection.execute(
+                    "SELECT id FROM positions WHERE game_id=? AND ply=23", (game_id,)
+                ).fetchone()[0]
+                db.connection.commit()
+                observed = process_decision(db, position, "learner")
+                assert observed["outcome"] == "failure"
+                evidence_ids.append(observed["evidence_ids"][0])
+
         initial = inventory(db, root, "learner")
         parent = next(p for p in initial["contexts"]["white"]["parents"] if not p["path"])
         assert {item["uci"] for item in parent["items"]} == {"e2e3", "g1f3"}
@@ -4367,6 +4459,26 @@ def _conditional_fit_workflow(tmp_path, monkeypatch, fake_engine, all_roots, sco
         assert parent["fit"]["owned"]["games"] == 3
         assert parent["fit"]["public"]["g1f3"]["matched_control"] == 5
         assert parent["items"][0]["distance"]["status"] == "checked"
+        from chess_coach.opening_context_fork_prepare import prepare as prepare_fork
+
+        low_item = next(item for item in parent["items"] if item["uci"] == "e2e3")
+        public_fork = prepare_fork(db, root, "learner", token(low_item["selection"]))
+        assert public_fork["coverage"]["result"]["example"]["kind"] == "material"
+        unreviewed = inventory(db, root, "learner")
+        unreviewed_parent = next(
+            p for p in unreviewed["contexts"]["white"]["parents"] if not p["path"]
+        )
+        assert unreviewed_parent["development"]["reason"] == "fewer_than_two_reviewed_miss_games"
+        for evidence_id in evidence_ids:
+            review_evidence(db, evidence_id, decision="accept", actor="anonymous reviewer")
+        supported = inventory(db, root, "learner")
+        parent = next(p for p in supported["contexts"]["white"]["parents"] if not p["path"])
+        development = parent["development"]
+        assert development["status"] == "provisional" and development["choice"] == "e2e3"
+        assert parent["fit"]["winner"] == "g1f3"
+        assert development["owned"]["games"] == 2
+        assert all(item["review"] == "accepted" for item in development["owned"]["observations"])
+        assert any(item["move"] == "g1f3" for item in development["unknown"])
         app = create_app(
             db_path=path,
             project_root=root,
@@ -4405,6 +4517,13 @@ def _conditional_fit_workflow(tmp_path, monkeypatch, fake_engine, all_roots, sco
         cli_report = json.loads(out.getvalue())
         cli_parent = next(p for p in cli_report["contexts"]["white"]["parents"] if not p["path"])
         assert cli_parent["fit"] == parent["fit"]
+        assert cli_parent["development"] == parent["development"]
+        assert b"Provisional learning experiment: e2e3" in page.data
+        review_evidence(db, evidence_ids[0], decision="revoke", actor="anonymous reviewer")
+        revoked = inventory(db, root, "learner")
+        revoked_parent = next(p for p in revoked["contexts"]["white"]["parents"] if not p["path"])
+        assert revoked_parent["development"]["reason"] == "fewer_than_two_reviewed_miss_games"
+        review_evidence(db, evidence_ids[0], decision="accept", actor="anonymous reviewer")
         scores["e2e3"] = 99
         low_item = next(item for item in parent["items"] if item["uci"] == "e2e3")
         assert (
@@ -4415,6 +4534,7 @@ def _conditional_fit_workflow(tmp_path, monkeypatch, fake_engine, all_roots, sco
         parent = next(p for p in excluded["contexts"]["white"]["parents"] if not p["path"])
         assert parent["fit"]["reason"] == "fewer_than_two_admitted"
         assert parent["fit"]["choices"]["e2e3"] == "materially_worse"
+        assert "e2e3" in parent["development"]["rejected"]
         fake_engine.write_text("#!/bin/sh\nexit 1\n")
         stale = inventory(db, root, "learner")
         parent = next(p for p in stale["contexts"]["white"]["parents"] if not p["path"])

@@ -1,9 +1,8 @@
 """Collect one color's checked context candidates and requested annotations."""
 
+from .opening_context_annotations import annotate
 from .opening_context_candidates import choices
 from .opening_context_choice import token
-from .opening_context_fit import assess as fit
-from .opening_context_fit_inputs import attach
 from .opening_context_fork_read import enrich as public_fork
 from .opening_context_history import ordered
 from .opening_context_owned_measure import enrich as owned_comparison
@@ -47,8 +46,7 @@ def collect(
             public_fork(root, subject, items)
         group = {"parent": parent, "path": list(path), "occurrences": count, **found}
         parents.append(
-            attach(
-                fit,
+            annotate(
                 group,
                 db,
                 root,
@@ -56,8 +54,10 @@ def collect(
                 color,
                 path,
                 items,
+                games,
                 budget,
                 history_verified,
+                incomplete,
                 annotation,
             )
         )
