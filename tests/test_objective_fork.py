@@ -2644,6 +2644,36 @@ def _same_native_pair_fixture(tmp_path, root, path, monkeypatch):
     assert result.returncode == 0, result.stderr.strip()
     assert result.stdout.strip() == "same-database-opening-verified"
 
+    artifact = tmp_path / "native-pair-issued.json"
+    issuer = Path(__file__).resolve().parents[1] / "scripts" / "native_pair_issue.py"
+    issued = subprocess.run(
+        [sys.executable, "-I", str(issuer)],
+        input=json.dumps(
+            {
+                "prefix": sys.prefix,
+                "source": str(Path(chess_coach.__file__).resolve().parents[1]),
+                "parser": str(Path(native_pair_probe.__file__).resolve()),
+                "database": str(path),
+                "root": str(root),
+                "choice": choice,
+                "inner_version": 8,
+                "output": str(artifact),
+            }
+        ),
+        text=True,
+        capture_output=True,
+        env=env,
+        timeout=60,
+    )
+    assert issued.returncode == 0, issued.stderr.strip()
+    assert issued.stdout.strip() == "synthetic-opening-form-issued"
+    assert artifact.stat().st_mode & 0o777 == 0o600
+    form = json.loads(artifact.read_text())
+    assert form["opening_token"] and form["opening_window_cursor"] and form["window_offer"]
+    assert "csrf" not in form
+    assert native_pair_probe.fingerprints(path) == before
+    return choice
+
 
 def _priority_completion_workflow(db, fork_pgn, capture_pgn, monkeypatch):
     import io
