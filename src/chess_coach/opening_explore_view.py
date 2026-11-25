@@ -5,10 +5,15 @@ from .opening_explore_enrich import enrich
 from .opening_fork_nomination import nomination
 
 
-def report(db, root, learner, *, fork=False):
+def report(db, root, learner, *, fork=False, revision=False):
+    revision = revision or fork == "revision"
     result = explore(db, learner)
-    if fork:
+    if fork or revision:
         result["fork_nomination"] = nomination(db, root, learner, result)
+        if revision:
+            from .opening_revision_judgments import judgments
+
+            result["revision_judgments"] = judgments(db, root, learner, result)
     else:
         enrich(db, root, learner, result)
     return result

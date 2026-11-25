@@ -36,7 +36,7 @@ def opening_explore():
             database(),
             current_app.config["PROJECT_ROOT"],
             current_app.config["SUBJECT"],
-            fork=request.args.get("fork_nomination") == "1",
+            fork=request.args.get("fork_nomination", ""),
         )
     except (Exception, PreviewDeadline):
         return render_template(

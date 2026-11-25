@@ -8,13 +8,13 @@ from .tactical_course_budget import PreviewUnavailable
 from .tactical_course_deadline import PreviewDeadline
 
 
-def report(root, learner, database):
+def report(root, learner, database, *, revision=False):
     if root is None:
         raise ValueError("project root required")
     try:
         with private_database(root, learner, database=database) as db:
-            found = explore_report(db, root, learner, fork=True)
-            return {
+            found = explore_report(db, root, learner, fork=True, revision=revision)
+            result = {
                 "nomination": found["fork_nomination"],
                 "sample": found["sample"],
                 "coverage": found["coverage"],
@@ -22,5 +22,8 @@ def report(root, learner, database):
                 "occurrences_checked": found["occurrences_checked"],
                 "partial": found["partial"],
             }
+            if revision:
+                result["judgments"] = found["revision_judgments"]
+            return result
     except (OSError, ValueError, TimeoutError, sqlite3.Error, PreviewUnavailable, PreviewDeadline):
         return {"nomination": {"status": "withheld", "reason": "source_or_deadline"}}

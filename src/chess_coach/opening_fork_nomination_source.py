@@ -9,10 +9,10 @@ from .opening_fork_nomination_provenance import certificate
 from .opening_public_proof_read import lookup
 
 
-def _witness(proof, color, alternative):
+def _witness(proof, color, alternative, *, branch="played"):
     if proof is None:
         return None
-    played = proof.get("branches", {}).get("played", {})
+    played = proof.get("branches", {}).get(branch, {})
     forks = played.get("forks", {})
     example = forks.get("example")
     if not example or example.get("kind") != "material":
