@@ -4675,6 +4675,46 @@ def _conditional_fit_workflow(tmp_path, monkeypatch, fake_engine, all_roots, sco
             == 0
         )
         current_form, _ = opening_form()
+        from datetime import timedelta
+
+        from chess_coach import curriculum_window_scope
+        from chess_coach.curriculum_window_cursor import decode as decode_window
+        from chess_coach.mastery_time import parse_utc
+
+        deadline = parse_utc(
+            decode_window(launch_db, current_form["opening_window_cursor"])["expires_at"]
+        )
+        assert deadline is not None
+        wall = [deadline - timedelta(seconds=1)]
+        expiry_checks = []
+
+        def cross_deadline(*args):
+            result = original_check(*args)
+            expiry_checks.append(True)
+            if len(expiry_checks) == 2:
+                wall[0] = deadline
+            return result
+
+        with patch.context() as expiry:
+            expiry.setattr(curriculum_window_scope, "clock", lambda: wall[0])
+            expiry.setattr(unified_sessions, "_opening_check", cross_deadline)
+            expired = launch_client.post(
+                "/unified/start",
+                base_url="https://coach.invalid",
+                headers=launch_headers,
+                data=current_form,
+            )
+        assert len(expiry_checks) == 2 and expired.status_code == 400
+        assert (
+            launch_db.connection.execute("SELECT count(*) FROM unified_sessions").fetchone()[0] == 0
+        )
+        assert (
+            launch_db.connection.execute(
+                "SELECT count(*) FROM unified_training_enrollments"
+            ).fetchone()[0]
+            == 0
+        )
+        current_form, _ = opening_form()
         launched = launch_client.post(
             "/unified/start",
             base_url="https://coach.invalid",

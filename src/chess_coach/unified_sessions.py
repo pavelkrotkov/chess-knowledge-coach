@@ -84,8 +84,8 @@ def start(
 
         enroll_if_requested(db, row, training=training, item_id=item_id, created=not old, goal=goal)
         result = view(row)
-        _window_time(window)
         _opening_check(opening, db, project_root, subject)
+        _window_time(window)
         db.connection.commit()
         return result
     except BaseException:
