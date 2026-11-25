@@ -777,6 +777,23 @@ the window; other positions and unavailable sources remain unknown. A record
 ending does not establish a terminal board. Public recorded moves and the
 separately labeled counterfactual witnesses do not establish a learner mistake.
 
+For an exploratory public opening comparison, first obtain the private
+`selection_token` from the read-only repertoire inventory, then prepare that
+exact public source offline:
+
+```sh
+"$release" -I -B -m chess_coach.cli --db "$CHESS_DB" repertoire \
+  --learner "$CHESS_SUBJECT" --unfamiliar-contexts --project-root "$PWD"
+"$release" -I -B -m chess_coach.ops_opening_public_comparison \
+  --project-root "$PWD" --selection "$selection_token"
+```
+
+Keep the token and inventory private. The chooser reads only current prepared
+results; it does not start an engine. A complete comparison covers every legal
+root at one checked search depth and records the engine and source provenance.
+Unavailable, stale or insufficient work remains unknown, and the public result
+is not an owned performance record or a claim of opening soundness.
+
 To publish a reviewed unfamiliar-opening course, set `preview_version` to the
 version shown on its private course preview and use the existing Study credentials:
 

@@ -13,21 +13,47 @@ def complete(outcome, lines, source, board):
     roots = {move.uci() for move in board.legal_moves}
     if not _coverage(outcome, lines, roots, source):
         return False
-    if not _scores(outcome, lines) or not _work(outcome, len(roots)):
-        return False
-    return _safe(lines, board)
+    return _qualified(outcome, lines, roots, board)
 
 
 def _coverage(outcome, lines, roots, source):
     # A comparable reference requires every legal root, not merely a sample.
-    if not all(isinstance(item, dict) and score_ok(item) for item in lines):
+    return (
+        _all_roots(outcome, lines, roots)
+        and {
+            source["played"],
+            source["alternative"],
+        }
+        <= roots
+    )
+
+
+def _all_roots(outcome, lines, roots):
+    return (
+        all(isinstance(item, dict) and score_ok(item) for item in lines)
+        and _count(outcome, lines, roots)
+        and {item.get("root_move") for item in lines} == roots
+    )
+
+
+def public(outcome, selected, board):
+    from .opening_queue_proof import _work as bounded_work
+
+    lines = outcome.get("lines")
+    if outcome.get("status") != "complete" or not bounded_work(outcome.get("work")):
         return False
-    if not _count(outcome, lines, roots):
+    if outcome.get("policy") != "all-legal-roots-v2" or not isinstance(lines, list):
         return False
-    return {item.get("root_move") for item in lines} == roots and {
-        source["played"],
-        source["alternative"],
-    } <= roots
+    roots = {move.uci() for move in board.legal_moves}
+    return (
+        selected in roots
+        and _all_roots(outcome, lines, roots)
+        and _qualified(outcome, lines, roots, board)
+    )
+
+
+def _qualified(outcome, lines, roots, board):
+    return _scores(outcome, lines) and _work(outcome, len(roots)) and _safe(lines, board)
 
 
 def _count(outcome, lines, roots):

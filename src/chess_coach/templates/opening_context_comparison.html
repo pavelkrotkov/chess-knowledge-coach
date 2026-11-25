@@ -1,0 +1,22 @@
+{% if comparison.status == "admitted" %}
+<p>In one bounded public-source search, this move was within 50 centipawns of the best measured legal response. This is not an owned result, preference, or soundness claim.</p>
+{% elif comparison.status == "materially_worse" %}
+<p>In one bounded public-source search, this move was more than 50 centipawns below the best measured legal response. It falls outside the comparison threshold; soundness remains unknown.</p>
+{% elif comparison.status == "insufficient" %}
+<p>The public comparison did not complete enough verified work; the result remains unknown.</p>
+{% elif comparison.status == "stale" %}
+<p>The earlier public comparison needs to be prepared again because its source or configuration changed.</p>
+{% elif comparison.status == "unmeasured" %}
+<p>No public comparison has been prepared for this selection.</p>
+{% else %}
+<p>A public comparison is unavailable for this selection.</p>
+{% endif %}
+{% if comparison.status in ("admitted", "materially_worse") %}
+<details><summary>Public comparison source and analysis</summary>
+<p>{{ comparison.legal_roots }} legal roots at depth {{ comparison.depth }};
+the candidate was {{ comparison.reference_gap_cp }} centipawns below the best measured root.
+The shared search requested {{ comparison.requested_nodes }} nodes and {{ comparison.requested_seconds }} seconds.</p>
+<p>Engine SHA-256: <code>{{ comparison.engine_sha256 }}</code>.
+Reference index SHA-256: <code>{{ comparison.source_index_sha256 }}</code>.</p>
+</details>
+{% endif %}

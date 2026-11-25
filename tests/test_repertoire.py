@@ -1061,6 +1061,11 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     import sys
 
     from chess_coach.opening_context_inventory import inventory
+    from chess_coach.opening_unfamiliar_measure_first import at_path
+
+    anchored = at_path(experiment_db, "learner", 1, "white", ["d2d4", "d7d5"])
+    assert anchored is not None and anchored[0]["ply"] == 3
+    assert at_path(experiment_db, "learner", 1, "white", ["d2d4", "g8f6"]) is None
 
     before_inventory = experiment_db.connection.total_changes
     before_inventory_hash = hashlib.sha256(experiment_path.read_bytes()).hexdigest()
@@ -1147,6 +1152,59 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     )
     client_first = app_first.test_client()
 
+    # A versioned comparison covers every legal root in one bounded search.
+    # The equal-to-50 reference gap is admitted; a one-point wider gap is not.
+    from chess_coach.opening_measure_prepare import V1, V2
+    from chess_coach.opening_measure_reference import ReferenceIterations
+
+    scores = {"reference": 150}
+
+    fake_engine = tmp_path / "reference-engine"
+    fake_engine.write_text("#!/bin/sh\nexit 0\n")
+    fake_engine.chmod(0o700)
+
+    def all_roots(_engine, board, position, _limit, roots, _deadline, *, bounds, reference=False):
+        if not reference:
+            return fake_retained(_engine, board, position, _limit, roots, _deadline, bounds=bounds)
+        assert set(roots) == set(board.legal_moves)
+        assert _limit.nodes == 180000 and _limit.time == 1.35
+        state = ReferenceIterations(board, position, roots, bounds)
+        ordered = sorted(roots, key=lambda move: move.uci() != "e2e4")
+        for rank, root in enumerate(ordered, 1):
+            replay, pv = board.copy(), [root]
+            replay.push(root)
+            for _ in range(2):
+                move = next(iter(replay.legal_moves))
+                pv.append(move)
+                replay.push(move)
+            value = (
+                scores["reference"]
+                if root.uci() == "e2e4"
+                else (100 if root.uci() == "g1f3" else 90 if root.uci() == "d2d4" else 0)
+            )
+            state.add(
+                {
+                    "multipv": rank,
+                    "pv": pv,
+                    "score": chess.engine.PovScore(chess.engine.Cp(value), board.turn),
+                    "depth": 10,
+                    "nodes": 100000,
+                    "time": 1.0,
+                }
+            )
+        if scores.get("extra_work"):
+            state.add(
+                {
+                    "multipv": 1,
+                    "pv": pv,
+                    "score": chess.engine.PovScore(chess.engine.Cp(0), board.turn),
+                    "depth": 11,
+                    "nodes": scores.get("nodes", 100000),
+                    "time": scores.get("time", 1.0),
+                }
+            )
+        return state, None
+
     # New context previews and downloads revalidate without recording exposure.
     import html
     import re
@@ -1171,11 +1229,72 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     )
     choice = context_token(chosen["selection"])
     before_web_hash = hashlib.sha256(experiment_path.read_bytes()).hexdigest()
+
+    # Prepare one public result with the same all-root synthetic engine used below.
+    from chess_coach.opening_public_comparison_prepare import prepare as prepare_public_comparison
+
+    with monkeypatch.context() as public_engine:
+        public_engine.setattr(opening_search, "retained_search", all_roots)
+        public_engine.setattr(
+            opening_engine,
+            "start_engine",
+            lambda *args, **kwargs: (
+                Engine(),
+                SimpleNamespace(
+                    id={}, options={"MultiPV": SimpleNamespace(type="spin", min=1, max=256)}
+                ),
+            ),
+        )
+        from chess_coach import ops_opening_public_comparison as public_comparison_cli
+
+        public_engine.setenv("CHESS_DB", str(experiment_path))
+        public_engine.setenv("CHESS_SUBJECT", "learner")
+        public_engine.delenv("CHESS_SCHEMA_COMPAT", raising=False)
+        public_engine.setattr(
+            sys,
+            "argv",
+            [
+                "opening-public-comparison",
+                "--project-root",
+                str(tmp_path),
+                "--selection",
+                choice,
+                "--engine",
+                str(fake_engine),
+            ],
+        )
+        with contextlib.redirect_stdout(io.StringIO()) as public_output:
+            public_comparison_cli.main()
+        assert "admitted" in public_output.getvalue()
+        previous_public = {
+            path: hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in reference_dir.glob("opening-public-proof-*.json")
+        }
+        scores["reference"] = 151
+        worse_public = prepare_public_comparison(
+            experiment_db, tmp_path, "learner", choice, str(fake_engine)
+        )
+        scores["reference"] = 150
+        assert worse_public["status"] == "materially_worse"
+        assert all(
+            hashlib.sha256(path.read_bytes()).hexdigest() == value
+            for path, value in previous_public.items()
+        )
+        with pytest.raises(ValueError, match="selection"):
+            prepare_public_comparison(
+                experiment_db, tmp_path, "learner", "0" * 64, str(fake_engine)
+            )
+    assert hashlib.sha256(experiment_path.read_bytes()).hexdigest() == before_web_hash
     with monkeypatch.context() as read_only:
         read_only.setattr(
             chess.engine.SimpleEngine,
             "popen_uci",
             lambda *_args, **_kwargs: pytest.fail("engine used"),
+        )
+        read_only.setattr(
+            opening_engine,
+            "start_engine",
+            lambda *_args, **_kwargs: pytest.fail("public engine used on GET"),
         )
         read_only.setattr(
             "chess_coach.web_tactical_exposure.record",
@@ -1192,6 +1311,7 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
             headers=headers,
         )
         assert selected_page.status_code == 200 and b"Public source" in selected_page.data
+        assert b"more than 50 centipawns" in selected_page.data
         assert b"White to move after d4 d5" in selected_page.data
         assert ("Selected move: " + chosen["san"]).encode() in selected_page.data
         black_page = client_first.get(
@@ -1300,6 +1420,16 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         found = measurements(experiment_db, tmp_path, "learner", result)
         assert calls == [("white", 1), ("black", 2)]
         assert found["white"]["status"] == found["black"]["status"] == "queued"
+        anchored_contexts = inventory(experiment_db, tmp_path, "learner")
+        advanced_anchor = next(
+            item["owned_comparison"]
+            for parent in anchored_contexts["contexts"]["white"]["parents"]
+            for item in parent["items"]
+            if len(parent["path"]) == 2 and item["uci"] == "g1f3"
+        )
+        assert advanced_anchor["status"] == "queued"
+        assert advanced_anchor["decision"]["game_id"] == 1
+        assert advanced_anchor["decision"]["ply"] == 3
         current = client_first.get(
             "/repertoire/unfamiliar", base_url="https://coach.invalid", headers=headers
         )
@@ -2739,6 +2869,16 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     experiment_db.connection.commit()
     unknown = inventory(experiment_db, tmp_path, "learner")
     assert unknown["sample_failed"] >= 1 and unknown["sample_incomplete"]
+    stale_public = next(
+        item["comparison"]
+        for group in unknown["contexts"].values()
+        for parent in group["parents"]
+        for item in parent["items"]
+        if item["selection"]["parent"] == chosen["selection"]["parent"]
+        and item["selection"]["move"] == chosen["selection"]["move"]
+    )
+    assert stale_public["status"] == "stale"
+
     unknown_distances = [
         item["distance"]
         for group in unknown["contexts"].values()
@@ -3771,61 +3911,8 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     assert b"Another verified repeated branch with a ready experiment" not in stale_latest.data
     assert b"White to move: verified repeated position" in stale_latest.data
 
-    # A versioned comparison covers every legal root in one bounded search.
-    # The equal-to-50 reference gap is admitted; a one-point wider gap is not.
-    from chess_coach.opening_measure_prepare import V1, V2
-    from chess_coach.opening_measure_reference import ReferenceIterations
-
-    scores = {"reference": 150}
-
-    fake_engine = tmp_path / "reference-engine"
-    fake_engine.write_text("#!/bin/sh\nexit 0\n")
-    fake_engine.chmod(0o700)
-
     def measured_config(_db, _game, _engine, board=None, policy=V1):
         return real_measure_config(_db, _game, str(fake_engine), board, policy)
-
-    def all_roots(_engine, board, position, _limit, roots, _deadline, *, bounds, reference=False):
-        if not reference:
-            return fake_retained(_engine, board, position, _limit, roots, _deadline, bounds=bounds)
-        assert set(roots) == set(board.legal_moves)
-        assert _limit.nodes == 180000 and _limit.time == 1.35
-        state = ReferenceIterations(board, position, roots, bounds)
-        ordered = sorted(roots, key=lambda move: move.uci() != "e2e4")
-        for rank, root in enumerate(ordered, 1):
-            replay, pv = board.copy(), [root]
-            replay.push(root)
-            for _ in range(2):
-                move = next(iter(replay.legal_moves))
-                pv.append(move)
-                replay.push(move)
-            value = (
-                scores["reference"]
-                if root.uci() == "e2e4"
-                else (100 if root.uci() == "g1f3" else 90 if root.uci() == "d2d4" else 0)
-            )
-            state.add(
-                {
-                    "multipv": rank,
-                    "pv": pv,
-                    "score": chess.engine.PovScore(chess.engine.Cp(value), board.turn),
-                    "depth": 10,
-                    "nodes": 100000,
-                    "time": 1.0,
-                }
-            )
-        if scores.get("extra_work"):
-            state.add(
-                {
-                    "multipv": 1,
-                    "pv": pv,
-                    "score": chess.engine.PovScore(chess.engine.Cp(0), board.turn),
-                    "depth": 11,
-                    "nodes": scores.get("nodes", 100000),
-                    "time": scores.get("time", 1.0),
-                }
-            )
-        return state, None
 
     with monkeypatch.context() as patch:
         patch.setattr(queue_binding, "_config", measured_config)

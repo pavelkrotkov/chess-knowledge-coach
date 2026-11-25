@@ -2,7 +2,7 @@
 
 from .opening_decision import inspect
 from .opening_measure_source import selection
-from .opening_unfamiliar_measure_first import first_turn
+from .opening_unfamiliar_measure_first import at_path, first_turn
 
 
 def _choice(decision, suggestion):
@@ -16,8 +16,12 @@ def _choice(decision, suggestion):
     )
 
 
-def candidate(db, learner, game_id, color, parent, suggestion):
-    first = first_turn(db, learner, game_id, color)
+def candidate(db, learner, game_id, color, parent, suggestion, *, path=None):
+    first = (
+        first_turn(db, learner, game_id, color)
+        if path is None
+        else at_path(db, learner, game_id, color, path)
+    )
     if first is None or first[1].fen() != parent:
         return None
     decision = inspect(db, game_id, first[0]["position_id"], learner, alternative=suggestion["uci"])

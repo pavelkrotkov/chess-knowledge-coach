@@ -6,13 +6,17 @@ from .fact_fingerprint import canonical, digest
 from .learner_identity import normalize_identity
 from .opening_context_candidates import choices
 from .opening_context_history import ordered, sample
+from .opening_context_owned_measure import MAX_GAMES as ANCHOR_GAMES
+from .opening_context_owned_measure import enrich as owned_comparison
 from .opening_distance_history import history
 from .opening_distance_inventory import enrich
+from .opening_public_comparison_read import enrich as comparison
 from .opening_public_proof_index import index_hash
 from .opening_queue_budget import BrowserBudget
 from .opening_snapshot import GRAPH_SHA256, SOURCE, VERSION
 from .opening_unfamiliar_guard import check, start
 from .opening_unfamiliar_sources import catalog_dataset
+from .style_schedule_budget import LIMIT as HISTORY_LIMIT
 
 SECONDS = 25
 
@@ -61,6 +65,8 @@ def inventory(db, root, learner, *, deadline=None):
                     sample_identity=sample_identity, reference_index_sha256=checksum
                 )
             enrich(found["items"], checked_history, budget, binding[1])
+            owned_comparison(db, root, subject, games, color, parent, path, found["items"], budget)
+            comparison(root, subject, found["items"], binding[1], budget)
             parents.append({"parent": parent, "path": list(path), "occurrences": count, **found})
         result[color] = {
             "parents": parents,
@@ -82,6 +88,8 @@ def inventory(db, root, learner, *, deadline=None):
         "limits": {
             "seconds": SECONDS,
             "games": 100,
+            "owned_anchor_games": ANCHOR_GAMES,
+            "owned_anchor_history_steps_per_parent": HISTORY_LIMIT,
             "parents_per_color": 2,
             "choices_per_parent": 2,
         },
