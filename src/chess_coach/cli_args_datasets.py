@@ -13,6 +13,8 @@ def configure(sub):
     sub.add_parser("import-lichess-openings", help="Import the pinned CC0 opening snapshot")
     report = sub.add_parser("repertoire", help="Report attributable opening history")
     report.add_argument("--learner", required=True)
+    report.add_argument("--unfamiliar-contexts", action="store_true")
+    report.add_argument("--project-root", type=Path)
     classify = sub.add_parser("classify-opening")
     classify.add_argument("game_id", type=int)
     classify.add_argument("--version", required=True)

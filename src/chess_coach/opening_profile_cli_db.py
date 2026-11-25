@@ -11,12 +11,12 @@ from .tactical_study_path import planning
 from .web_paths import inside
 
 
-def open_database(root):
+def open_database(root, *, database=None):
     root = Path(root).resolve(strict=True)
     data = (root / ".runtime" / "data").resolve(strict=True)
     if not data.is_relative_to(root):
         raise ValueError("project data unavailable")
-    path = inside(data, os.environ["CHESS_DB"], existing=True)
+    path = inside(data, os.environ["CHESS_DB"] if database is None else database, existing=True)
     connection = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=1)
     try:
         connection.row_factory = sqlite3.Row
@@ -30,9 +30,9 @@ def open_database(root):
 
 
 @contextmanager
-def private_database(root, subject):
+def private_database(root, subject, *, database=None):
     planning(root, subject)
-    connection, path = open_database(root)
+    connection, path = open_database(root, database=database)
     try:
         yield SimpleNamespace(connection=connection, path=path)
     finally:
