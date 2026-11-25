@@ -1,10 +1,16 @@
 """Render the daily schedule and one optional recurring practice action."""
 
+import sqlite3
+
 from flask import current_app, render_template, request
 
+from .opening_context_launch_input import before as selected_context
+from .opening_context_launch_page import attach as attach_context
 from .plan_page_focus import focus as next_focus
 from .plan_page_options import minutes, priority
 from .plan_promotion import recommendation as promotion_recommendation
+from .tactical_course_budget import PreviewUnavailable
+from .tactical_course_deadline import PreviewDeadline
 from .web_db import database
 from .web_protection_plan import current_focus
 
@@ -12,6 +18,14 @@ from .web_protection_plan import current_focus
 def render(daily_plan):
     db = database()
     try:
+        current = selected_context(
+            db,
+            current_app.config["PROJECT_ROOT"],
+            current_app.config["SUBJECT"],
+            request.args.get("opening"),
+            request.args.get("opening_token"),
+            request.args.get("cursor"),
+        )
         result = daily_plan(
             db,
             subject=current_app.config["SUBJECT"],
@@ -21,7 +35,16 @@ def render(daily_plan):
             duration_minutes=minutes(request.args.get("minutes")),
             renew=request.args.get("renew") == "1",
         )
-    except ValueError:
+        if current is not None:
+            attach_context(
+                db,
+                current_app.config["PROJECT_ROOT"],
+                current_app.config["SUBJECT"],
+                current_app.config["CORPUS"],
+                current,
+                result,
+            )
+    except (ValueError, OSError, sqlite3.Error, PreviewUnavailable, PreviewDeadline):
         return render_template(
             "plan.html",
             error="The plan changed or the chosen goal or window is unavailable. Restart planning.",

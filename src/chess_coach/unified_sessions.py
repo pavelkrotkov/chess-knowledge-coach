@@ -7,6 +7,8 @@ from .curriculum_prerequisite_launch import dispatch as _diagnostic_check
 from .curriculum_window_unified import check as _window_offer
 from .curriculum_window_unified import finish as _window_time
 from .objective_promotion_admission import admit as admit_promotion
+from .opening_context_launch_prepare import check as _opening_check
+from .opening_context_launch_prepare import prepare as _opening_prepare
 from .related_session_filter import apply_filter
 from .unified_corpus_mate import apply as apply_goal
 from .unified_corpus_mate import check_existing, validate_goal
@@ -28,6 +30,9 @@ def start(
     item_id=None,
     diagnostic=None,
     window_offer=None,
+    opening_token=None,
+    opening_window_cursor=None,
+    project_root=None,
 ):
     validate_goal(source_type, goal)
     if not all(
@@ -37,9 +42,23 @@ def start(
         raise ValueError("practice identity is invalid")
     if db.connection.in_transaction:
         raise RuntimeError("cannot start during an existing transaction")
+    opening = _opening_prepare(
+        db,
+        project_root,
+        subject,
+        opening_token,
+        window_offer,
+        opening_window_cursor,
+        source_type,
+        version,
+        key,
+        training,
+        item_id,
+    )
     budget = _diagnostic_budget(db, diagnostic, source_type, goal, training, item_id)
     try:
         db.connection.execute("BEGIN IMMEDIATE")
+        _opening_check(opening, db, project_root, subject)
         window = _window_offer(
             db, window_offer, subject, source_type, version, key, training, item_id
         )
@@ -66,6 +85,7 @@ def start(
         enroll_if_requested(db, row, training=training, item_id=item_id, created=not old, goal=goal)
         result = view(row)
         _window_time(window)
+        _opening_check(opening, db, project_root, subject)
         db.connection.commit()
         return result
     except BaseException:
