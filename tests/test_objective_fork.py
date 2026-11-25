@@ -2565,6 +2565,49 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
     _v6_source_mix(v6_path, v6_planning, now, monkeypatch)
     _same_native_pair_fixture(tmp_path, v6_root, v6_path, monkeypatch)
 
+    # Launch the actual freshly issued form only in this workflow; the setup
+    # helper above must leave the reusable opening opportunity unscheduled.
+    import os
+    import subprocess
+    from pathlib import Path
+
+    import chess_coach
+
+    consumer = Path(__file__).resolve().parents[1] / "scripts" / "native_pair_consume.py"
+    consumed = subprocess.run(
+        [sys.executable, "-I", str(consumer)],
+        input=json.dumps(
+            {
+                "prefix": sys.prefix,
+                "source": str(Path(chess_coach.__file__).resolve().parents[1]),
+                "database": str(v6_path),
+                "root": str(v6_root),
+                "form": str(tmp_path / "native-pair-issued.json"),
+            }
+        ),
+        text=True,
+        capture_output=True,
+        env={key: value for key, value in os.environ.items() if not key.startswith("CHESS_")},
+        timeout=60,
+    )
+    assert consumed.returncode == 0, consumed.stderr.strip()
+    assert consumed.stdout.strip() == "synthetic-form-started"
+
+    import sqlite3
+
+    form = json.loads((tmp_path / "native-pair-issued.json").read_text())
+    connection = sqlite3.connect(v6_path)
+    try:
+        graded = connection.execute(
+            """SELECT count(*) FROM unified_training_completions c
+            JOIN unified_sessions s ON s.attempt_id=c.attempt_id
+            WHERE s.subject=? AND s.source_type=? AND s.source_version=? AND s.source_key=?""",
+            ("learner", form["source_type"], form["version"], form["key"]),
+        ).fetchone()[0]
+    finally:
+        connection.close()
+    assert graded == 0
+
 
 def _same_native_pair_fixture(tmp_path, root, path, monkeypatch):
     import json
