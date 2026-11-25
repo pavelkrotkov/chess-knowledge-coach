@@ -12,9 +12,11 @@ CHECK_LIMIT = 8
 TOTAL_SECONDS = 25
 
 
-def explore(db, learner):
+def explore(db, learner, *, deadline=None):
     budget = BrowserBudget(db)
     budget.expires = min(budget.expires, time.monotonic() + TOTAL_SECONDS)
+    if deadline is not None:
+        budget.expires = min(budget.expires, deadline)
     with budget.scope(snapshot=False):
         rows, coverage = recent(db, learner)
     groups, scanned, incomplete = candidates(db, rows, budget)
