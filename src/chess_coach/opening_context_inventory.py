@@ -38,7 +38,12 @@ def inventory(db, root, learner, *, deadline=None, annotation=None):
     games, coverage, contexts, seen, failed, incomplete, checked = sample(db, subject, budget)
     sample_identity = digest(canonical([subject, games, coverage, checked, sorted(seen), failed]))
     identity = {"sample_identity": sample_identity, "reference_index_sha256": checksum}
-    sample_inputs = (games, seen, incomplete)
+    sample_inputs = (
+        games,
+        seen,
+        incomplete,
+        not failed and not coverage["candidate_recheck_failed"],
+    )
     result = {
         color: collect(
             db,

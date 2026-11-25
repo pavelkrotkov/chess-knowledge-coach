@@ -1180,7 +1180,9 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
             value = (
                 scores["reference"]
                 if root.uci() == "e2e4"
-                else (100 if root.uci() == "g1f3" else 90 if root.uci() == "d2d4" else 0)
+                else scores.get(
+                    root.uci(), 100 if root.uci() == "g1f3" else 90 if root.uci() == "d2d4" else 0
+                )
             )
             state.add(
                 {
@@ -1204,6 +1206,8 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
                 }
             )
         return state, None
+
+    _conditional_fit_workflow(tmp_path, monkeypatch, fake_engine, all_roots, scores)
 
     # New context previews and downloads revalidate without recording exposure.
     import html
@@ -4223,3 +4227,197 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     reference_id = reference.connection.execute("SELECT id FROM opening_datasets").fetchone()[0]
     assert digest(canonical(opening_graph(reference, reference_id))) == GRAPH_SHA256
     reference.close()
+
+
+def _conditional_fit_workflow(tmp_path, monkeypatch, fake_engine, all_roots, scores):
+    """A source-backed first-turn pair supports fit, then becomes excluded and stale."""
+    import hashlib
+    import io
+    import json
+    import sys
+    from contextlib import nullcontext, redirect_stdout
+    from types import SimpleNamespace
+
+    import chess
+    import chess.engine
+
+    import chess_coach.opening_measure_engine as opening_engine
+    import chess_coach.opening_measure_search as opening_search
+    import chess_coach.opening_reference_source as reference_source
+    from chess_coach import cli, purpose_worker
+    from chess_coach.deep_selection_source import learner_key
+    from chess_coach.opening_context_choice import token
+    from chess_coach.opening_context_inventory import inventory
+    from chess_coach.opening_fit_context_index import build as build_context
+    from chess_coach.opening_profile_index import build
+    from chess_coach.opening_public_comparison_prepare import prepare
+    from chess_coach.opening_snapshot import import_snapshot
+    from chess_coach.purpose_lines import native
+    from chess_coach.purpose_request import create
+
+    root = tmp_path / "fit-project"
+    planning = root / ".runtime" / "planning"
+    data = root / ".runtime" / "data"
+    planning.mkdir(parents=True, mode=0o700)
+    data.mkdir(mode=0o700)
+    archive = planning / reference_source.SOURCE_NAME
+    archive.write_bytes(b"anonymous source fixture")
+    low = "1. e3 e6 2. Nf3 Nf6 3. Be2 Be7 4. O-O O-O 5. d3 d6 6. b3 b6 7. Bb2 Bb7 8. Nbd2 Nbd7 9. Re1 Re8 10. Bf1 Bf8"
+    high = "1. Nf3 d5 2. e4 Nf6 3. d3 e6 4. Be2 Be7 5. O-O O-O 6. Nbd2 Nbd7 7. Re1 Re8 8. b3 b6 9. Bb2 Bb7 10. Bf1 Bf8"
+    source = "\n".join(
+        game(f"Fixture {branch}-{i}", f"Other {branch}-{i}", moves)
+        for branch, moves in enumerate((low, high))
+        for i in range(5)
+    )
+    with monkeypatch.context() as patch:
+        patch.setattr(reference_source, "SOURCE_BYTES", len(archive.read_bytes()))
+        patch.setattr(
+            reference_source, "SOURCE_SHA256", hashlib.sha256(archive.read_bytes()).hexdigest()
+        )
+        patch.setattr(reference_source, "_decode", lambda file: (source.encode(), False))
+        assert build(root, "learner")["accepted"] == 10
+        assert build_context(root, "learner")["accepted"] == 10
+
+    path = data / "fit.sqlite"
+    db = Database(path)
+    db.initialize()
+    import_snapshot(db)
+
+    def execute(_db, snapshot, _config, _deadline):
+        board, position = snapshot["board"], snapshot["position"]
+        pvs = ("e4d5 d8d5 b1c3 d5e5", "g1f3 d5e4 f3g5 e4e3")
+        raw = [
+            {
+                "pv": [chess.Move.from_uci(move) for move in line.split()],
+                "score": chess.engine.PovScore(chess.engine.Cp(0), board.turn),
+                "nodes": 500,
+                "depth": 5,
+                "time": 0.05,
+            }
+            for line in pvs
+        ]
+        lines, invalid = native(position, board, raw)
+        assert not invalid
+        return (
+            "complete",
+            "comparable",
+            {
+                "scout": {"lines": lines},
+                "final": {"lines": lines, "roots": ["e4d5", "g1f3"]},
+                "engine": {},
+                "runtime_engine": {},
+            },
+        )
+
+    with monkeypatch.context() as patch:
+        patch.setattr(purpose_worker, "deep_lock", lambda *_: nullcontext())
+        patch.setattr(purpose_worker, "execute", execute)
+        for i in range(3):
+            ingest_pgn(
+                db,
+                game(
+                    "Learner", f"Opponent {i}", "1. e4 d5 2. exd5 Qxd5 3. Nc3 Qe5+", "*", second=i
+                ),
+            )
+            position = db.connection.execute(
+                "SELECT id FROM positions WHERE game_id=? AND ply=3", (i + 1,)
+            ).fetchone()[0]
+            request = create(db, position, "learner", engine_path=sys.executable)["request_id"]
+            assert purpose_worker.run(db, request, "learner")["status"] == "complete"
+            cycle = db.connection.execute(
+                "INSERT INTO style_schedule_cycles(learner_key,sequence,coverage_json) VALUES(?,?,?)",
+                (
+                    learner_key("learner"),
+                    1 + 4 * i,
+                    json.dumps(
+                        {"early_center_policy": "early-center-v1", "early_center_targeted": True}
+                    ),
+                ),
+            ).lastrowid
+            db.connection.execute(
+                "INSERT INTO style_schedule_slots(cycle_id,kind,game_id,position_id,status,detail,request_id) VALUES(?,'control',?,?,'complete','fixture',?)",
+                (cycle, i + 1, position, request),
+            )
+            db.connection.commit()
+        initial = inventory(db, root, "learner")
+        parent = next(p for p in initial["contexts"]["white"]["parents"] if not p["path"])
+        assert {item["uci"] for item in parent["items"]} == {"e2e3", "g1f3"}
+        assert parent["fit"]["reason"] == "fewer_than_two_admitted"
+        patch.setattr(opening_search, "retained_search", all_roots)
+        patch.setattr(
+            opening_engine,
+            "start_engine",
+            lambda *args, **kwargs: (
+                SimpleNamespace(),
+                SimpleNamespace(
+                    id={}, options={"MultiPV": SimpleNamespace(type="spin", min=1, max=256)}
+                ),
+            ),
+        )
+        scores["e2e3"] = 100
+        for item in parent["items"]:
+            assert (
+                prepare(db, root, "learner", token(item["selection"]), str(fake_engine))["status"]
+                == "admitted"
+            )
+        supported = inventory(db, root, "learner")
+        parent = next(p for p in supported["contexts"]["white"]["parents"] if not p["path"])
+        assert parent["fit"]["status"] == "supported" and parent["fit"]["winner"] == "g1f3"
+        assert parent["fit"]["owned"]["games"] == 3
+        assert parent["fit"]["public"]["g1f3"]["matched_control"] == 5
+        assert parent["items"][0]["distance"]["status"] == "checked"
+        app = create_app(
+            db_path=path,
+            project_root=root,
+            subject="learner",
+            actor="fixture",
+            corpus="test",
+            login="login",
+            origin="https://coach.invalid",
+        )
+        page = app.test_client().get(
+            "/repertoire/unfamiliar?contexts=1",
+            base_url="https://coach.invalid",
+            headers={"Tailscale-User-Login": "login"},
+        )
+        assert (
+            page.status_code == 200
+            and b"Conditional early-center opportunity fit favors g1f3" in page.data
+        )
+        with redirect_stdout(io.StringIO()) as out:
+            patch.setattr(
+                sys,
+                "argv",
+                [
+                    "chess-coach",
+                    "--db",
+                    str(path),
+                    "repertoire",
+                    "--learner",
+                    "learner",
+                    "--unfamiliar-contexts",
+                    "--project-root",
+                    str(root),
+                ],
+            )
+            cli.main()
+        cli_report = json.loads(out.getvalue())
+        cli_parent = next(p for p in cli_report["contexts"]["white"]["parents"] if not p["path"])
+        assert cli_parent["fit"] == parent["fit"]
+        scores["e2e3"] = 99
+        low_item = next(item for item in parent["items"] if item["uci"] == "e2e3")
+        assert (
+            prepare(db, root, "learner", token(low_item["selection"]), str(fake_engine))["status"]
+            == "materially_worse"
+        )
+        excluded = inventory(db, root, "learner")
+        parent = next(p for p in excluded["contexts"]["white"]["parents"] if not p["path"])
+        assert parent["fit"]["reason"] == "fewer_than_two_admitted"
+        assert parent["fit"]["choices"]["e2e3"] == "materially_worse"
+        fake_engine.write_text("#!/bin/sh\nexit 1\n")
+        stale = inventory(db, root, "learner")
+        parent = next(p for p in stale["contexts"]["white"]["parents"] if not p["path"])
+        assert set(parent["fit"]["choices"].values()) == {"stale"}
+        fake_engine.write_text("#!/bin/sh\nexit 0\n")
+        del scores["e2e3"]
+    db.close()

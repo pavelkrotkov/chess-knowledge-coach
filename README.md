@@ -732,6 +732,21 @@ structures describe observations, not mastery or opening quality. Accepted
 active failure evidence appearing in at least two games is linked without an
 opportunity denominator; the fuller recurrence analysis remains future work.
 
+The unfamiliar-context inventory can also compare an early-center opportunity
+dimension among checked, unfamiliar choices. It requires at least two current
+all-legal-root public comparisons within the existing 50-centipawn admission
+threshold, a qualified independent own-choice cohort, and at least five
+independent public opportunities per choice at the same nominal time control.
+Only White's standard first turn or Black's exact first parent is applicable;
+later parents are withheld. The pinned context-preserving public index supplies
+time controls, and its identity is checked alongside the original comparison
+index. Unknown, stale, unmeasured and materially worse candidates remain
+separate. The conservative intervals require a gap of at least one half to
+name a choice; otherwise there is no separated winner. Sample and source
+limits, exclusions and the switching inventory remain visible. This is one
+conditional opportunity observation, not a personality, performance or
+whole-opening judgment; other dimensions remain unmeasured.
+
 ### Descriptive choice profile
 
 `chess-coach --db PATH style-choices --learner NAME` and the private Choice
