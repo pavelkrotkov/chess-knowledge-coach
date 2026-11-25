@@ -2563,6 +2563,86 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
     db.close()
     monkeypatch.setattr(curriculum, "new_state", v6_new_state)
     _v6_source_mix(v6_path, v6_planning, now, monkeypatch)
+    _same_native_pair_fixture(tmp_path, v6_root, v6_path, monkeypatch)
+
+
+def _same_native_pair_fixture(tmp_path, root, path, monkeypatch):
+    import json
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    import chess_coach
+    import chess_coach.opening_measure_engine as opening_engine
+    from chess_coach.db import Database
+    from chess_coach.unified_session_events import show, submit
+    from chess_coach.unified_sessions import start
+    from chess_coach.unified_sources import resolve_source
+    from tests import native_pair_probe
+    from tests.test_repertoire import (
+        _conditional_fit_workflow,
+        _fixture_retained_search,
+        _reference_search,
+    )
+
+    db = Database(path)
+    source = resolve_source(db, "corpus", "fixture", "one", subject=SUBJECT)
+    start(
+        db,
+        attempt_id="native-pair-corpus",
+        subject=SUBJECT,
+        source_type="corpus",
+        version="fixture",
+        key="one",
+        goal="mate_in_one",
+        training=True,
+    )
+    result = submit(
+        db, "native-pair-corpus", SUBJECT, event_id="answer", move=source["lines"][0].split()[0]
+    )
+    if result["status"] == "needs_verification":
+        assert process(db, SUBJECT)["outcomes"] == {"correct": 1}
+    assert show(db, "native-pair-corpus", SUBJECT)["learning"]["outcome"] == "success"
+    db.close()
+
+    before = native_pair_probe.fingerprints(path)
+    fake_engine = tmp_path / "native-pair-reference-engine"
+    assert not fake_engine.exists()
+    fake_engine.write_text("#!/bin/sh\nexit 0\n")
+    fake_engine.chmod(0o700)
+    scores = {"reference": 150}
+    with monkeypatch.context() as setup:
+        setup.setattr(opening_engine, "stop_engine", lambda _engine: True)
+        choice = _conditional_fit_workflow(
+            tmp_path,
+            setup,
+            fake_engine,
+            _reference_search(scores, _fixture_retained_search),
+            scores,
+            project_root=root,
+            database_path=path,
+            setup_only=True,
+        )
+    assert native_pair_probe.fingerprints(path) == before
+    payload = {
+        "database": str(path),
+        "root": str(root),
+        "application": str(Path(chess_coach.__file__).resolve()),
+        "fingerprints": before,
+        "choice": choice,
+    }
+    env = {key: value for key, value in os.environ.items() if not key.startswith("CHESS_")}
+    result = subprocess.run(
+        [sys.executable, "-I", str(Path(native_pair_probe.__file__).resolve())],
+        input=json.dumps(payload),
+        text=True,
+        capture_output=True,
+        env=env,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stderr.strip()
+    assert result.stdout.strip() == "same-database-opening-verified"
 
 
 def _priority_completion_workflow(db, fork_pgn, capture_pgn, monkeypatch):
