@@ -2,6 +2,8 @@
 
 from .opening_context_candidates import choices
 from .opening_context_choice import token
+from .opening_context_fit import assess as fit
+from .opening_context_fit_inputs import attach
 from .opening_context_history import ordered
 from .opening_context_owned_measure import enrich as owned_comparison
 from .opening_distance_history import history
@@ -20,7 +22,7 @@ def _requested(items, annotation):
 def collect(
     db, root, subject, dataset, color, contexts, sample, budget, index, identity, annotation
 ):
-    games, seen, incomplete = sample
+    games, seen, incomplete, history_verified = sample
     selected, omitted, tied = ordered(contexts)
     checked_history = (
         history(db, subject, color, budget) if selected and annotation is None else None
@@ -41,7 +43,22 @@ def collect(
             enrich(items, checked_history, budget, index)
             owned_comparison(db, root, subject, games, color, parent, path, items, budget)
             comparison(root, subject, items, index, budget)
-        parents.append({"parent": parent, "path": list(path), "occurrences": count, **found})
+        group = {"parent": parent, "path": list(path), "occurrences": count, **found}
+        parents.append(
+            attach(
+                fit,
+                group,
+                db,
+                root,
+                subject,
+                color,
+                path,
+                items,
+                budget,
+                history_verified,
+                annotation,
+            )
+        )
     return {
         "parents": parents,
         "omitted": omitted,

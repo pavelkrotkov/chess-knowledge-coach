@@ -1,0 +1,27 @@
+{% if fit.status == "supported" %}
+<p>Conditional early-center opportunity fit favors {{ fit.winner }} among the admitted choices, for the qualified first-turn cohort and matching nominal time control {{ fit.control }}.</p>
+{% elif fit.status == "tie" %}
+<p>The admitted choices have no conservatively separated early-center opportunity fit; the check has no winner.</p>
+{% elif fit.reason == "fewer_than_two_admitted" %}
+<p>Conditional fit is withheld: fewer than two choices passed the public comparison.</p>
+{% elif fit.reason == "first_turn_context_unavailable" %}
+<p>Conditional fit is withheld: this parent or its public history is not the applicable first-turn context.</p>
+{% elif fit.reason == "own_cohort_unqualified" %}
+<p>Conditional fit is withheld: the independent own choice cohort does not qualify.</p>
+{% elif fit.reason == "public_opportunities_insufficient" %}
+<p>Conditional fit is withheld: comparable public opportunities are insufficient or have unknown time control.</p>
+{% else %}
+<p>Conditional fit is unavailable for this check.</p>
+{% endif %}
+<p>Comparison statuses: {% for move, status in fit.choices.items() %}{{ move }}: {{ status|replace("_", " ") }}{% if not loop.last %}; {% endif %}{% endfor %}. Comparison results remain separate from eligibility. The observation describes a bounded opportunity, not personality, performance, or a whole-opening judgment; other dimensions remain unmeasured and you choose.</p>
+{% if fit.public is defined %}
+<details><summary>Conditional fit evidence</summary>
+<p>These public opportunities come from the exact first-turn parent and branch in the indexed broadcast sample; different, missing or unknown nominal controls do not support the comparison.</p>
+{% for item in parent["items"] %}{% if loop.first and item.source %}
+<p><a href="{{ item.source.profile.source }}">Pinned broadcast source</a> · <a href="{{ item.source.profile.license_url }}">{{ item.source.profile.license }}</a>; index filter: exact first-turn parent, candidate move and side.</p>
+{% endif %}{% endfor %}
+<p>Opportunity index SHA-256: <code>{{ fit.opportunity_index.sha256 }}</code>; transform {{ fit.opportunity_index.transform }}. Its pinned broadcast source and license are the same as the candidate records.</p>
+<p>Own qualifying games: {{ fit.owned.games }}. Public games are independent, capped at 10 per move, and replayed through 20 plies.</p>
+{% for move, counts in fit.public.items() %}<p>{{ move }}: {{ counts.available }} available in {{ counts.valid }} valid of {{ counts.sampled }} sampled; {{ counts.matched_control }} matched time control, {{ counts.unknown_control }} unknown, {{ counts.context }} different, {{ counts.short }} short and {{ counts.inconsistent }} inconsistent{% if counts.more %}; further games omitted{% endif %}.</p>{% endfor %}
+</details>
+{% endif %}
