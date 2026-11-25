@@ -1352,6 +1352,7 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
 
     import chess_coach.curriculum_window_scope as window_scope
     from chess_coach.curriculum_window_cursor import decode as decode_window
+    from chess_coach.curriculum_window_cursor import encode as encode_window
     from chess_coach.db import Database
     from chess_coach.unified_sessions import start
 
@@ -1376,6 +1377,16 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
             goal="fork",
             duration_minutes=1,
         )
+        two_offers = daily_plan(
+            db,
+            subject=SUBJECT,
+            corpus_version="fixture",
+            as_of=now,
+            limit=2,
+            goal="fork",
+            duration_minutes=1,
+        )
+        assert {item["skill"] for item in two_offers["items"]} == {"fork", "hanging_piece"}
         capture_item = capture_goal["items"][0]
         fork_item = fork_goal["items"][0]
         assert capture_item["skill"] == "hanging_piece" and fork_item["skill"] == "fork"
@@ -1580,6 +1591,45 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
                 renew=True,
             )
         assert found_due
+
+        # Exercise the signed 50-prompt limit with two actual completed tasks.
+        # The extra opaque keys represent prior selections, not learning events.
+        capture = mixed["items"][1]
+        start(
+            copy_db,
+            attempt_id="cap-capture",
+            subject=SUBJECT,
+            source_type="own-game",
+            version=capture["source_version"],
+            key=capture["source_key"],
+            training=True,
+            window_offer=capture["window_offer"],
+        )
+        submit(copy_db, "cap-capture", SUBJECT, event_id="answer", move="d1d4")
+        assert process(copy_db, SUBJECT)["outcomes"] == {"correct": 1}
+        capture_learned = show(copy_db, "cap-capture", SUBJECT)["learning"]
+        capped = decode_window(copy_db, two_offers["window_cursor"])
+        capped["state"]["limit"] = 50
+        capped["state"]["seen"].extend(f"fixture-seen-{index:02d}" for index in range(47))
+        assert len(capped["state"]["seen"]) == 49
+        old_seen = set(capped["state"]["seen"])
+        cap_page = daily_plan(
+            copy_db,
+            subject=SUBJECT,
+            corpus_version="fixture",
+            as_of=later,
+            limit=2,
+            cursor=encode_window(copy_db, capped),
+            renew=True,
+        )
+        assert {item["item_id"] for item in cap_page["items"]} == {
+            learned["item_id"],
+            capture_learned["item_id"],
+        }
+        assert all(item["kind"] == "due" for item in cap_page["items"])
+        cap_state = decode_window(copy_db, cap_page["window_cursor"])["state"]
+        assert set(cap_state["seen"]) == old_seen
+        assert cap_state["limit"] == len(cap_state["seen"]) == 49
         copy_db.close()
 
     # A partially checked fork conflict keeps its exact binding and position.

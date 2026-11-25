@@ -32,7 +32,8 @@ def incomplete(reason, rows, examined, window, selected):
 
 def charge(state, window, previous, selected, reason):
     if window is not None:
-        state["limit"] -= sum(item["prompt_key"] in previous for item in selected)
+        repeated = sum(item["prompt_key"] in previous for item in selected)
+        state["limit"] = max(len(state["seen"]), state["limit"] - repeated)
         if reason == "due_scan_incomplete" and len(state["seen"]) >= state["limit"]:
             return None
     return reason
