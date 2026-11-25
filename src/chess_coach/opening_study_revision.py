@@ -12,9 +12,12 @@ def current(db, root, learner, game, position, move, version, *, deadline, with_
         return value
     from .opening_recommendation_preview import preview
 
-    return preview(
-        db, root, learner, game, position, move, deadline=deadline, with_identity=with_identity
-    )
+    try:
+        return preview(
+            db, root, learner, game, position, move, deadline=deadline, with_identity=with_identity
+        )
+    except FileNotFoundError as error:
+        raise ValueError("opening preview version differs") from error
 
 
 def watched(first, directory, root, budget, deadline):
