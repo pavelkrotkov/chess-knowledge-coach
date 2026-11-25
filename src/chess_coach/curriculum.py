@@ -58,7 +58,9 @@ def daily_plan(
                 renew,
             )
         if prior is None:
-            state = new_state(db, learner, corpus_version, limit, scan_limit, now)
+            from .curriculum_priority_cursor import upgrade
+
+            state = upgrade(new_state(db, learner, corpus_version, limit, scan_limit, now))
         else:
             state, now = resume_state(db, prior, learner, corpus_version, limit, scan_limit, now)
         return build_page(db, state, learner, now, budget)

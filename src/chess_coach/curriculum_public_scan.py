@@ -20,7 +20,7 @@ def scan(db, state, subject, counts, check):
         return resume(db, state, subject, counts, check)
     # Count every examined row, including objectives this policy cannot use.
     used = counts.get("public_examined", 0)
-    if state["v"] == 6:
+    if state["v"] in {6, 8}:
         used += counts.get("canonical_examined", 0)
     remaining = max(0, state["scan_limit"] - used)
     batch = rows(db, state["public_after"] or [0, ""], remaining)

@@ -1251,7 +1251,7 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
     config = PipelineConfig(
         learner=SUBJECT, engine_path=sys.executable, nodes=100, deep_enabled=False
     )
-    for index in (2, 3):
+    for index in (2, 3, 4):
         game = chess.pgn.read_game(io.StringIO(source))
         assert game is not None
         game.headers["UTCDate"] = f"2026.01.0{index}"
@@ -1283,7 +1283,7 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
     material_pgn = seed.connection.execute("SELECT pgn FROM games WHERE id=1").fetchone()[0]
     seed.close()
     for owner in (SUBJECT, "capture_learner"):
-        for day in ("01", "02"):
+        for day in ("01", "02", "03"):
             game = chess.pgn.read_game(io.StringIO(material_pgn.replace(LEARNER, owner)))
             assert game is not None
             game.headers["UTCDate"] = f"2026.01.{day}"
@@ -1344,8 +1344,43 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
     assert any(item["skill"] == "hanging_piece" for item in other["items"])
     assert all(item["skill"] != "fork" for item in other["items"])
     fork = next(item for item in plan["items"] if item["skill"] == "fork")
-    assert fork["source_version"] == MISS_VERSION and fork["independent_games"] == 2
+    assert fork["source_version"] == MISS_VERSION and fork["independent_games"] >= 2
     assert fork["source_review"] == "unreviewed" and "Provisional" in fork["reason"]
+
+    # Contrasting accepted source evidence changes the actual owned slot.
+    from chess_coach.evidence_review import review_evidence
+
+    ids = {}
+    for skill in ("fork", "hanging_piece"):
+        ids[skill] = [
+            row[0]
+            for row in db.connection.execute(
+                "SELECT id FROM evidence_mappings WHERE subject=? AND skill=? AND outcome='failure' ORDER BY id",
+                (SUBJECT, skill),
+            )
+        ]
+        assert len(ids[skill]) == (4 if skill == "fork" else 3)
+    for evidence in ids["fork"]:
+        review_evidence(db, evidence, decision="accept", actor="fixture")
+    rank_time = now
+    while rank_time.date().toordinal() % 4:
+        rank_time -= timedelta(days=1)
+    fork_priority = daily_plan(
+        db, subject=SUBJECT, corpus_version="fixture", goal="balanced", as_of=rank_time, limit=1
+    )
+    assert fork_priority["items"][0]["skill"] == "fork"
+    assert "current reviewed weakness is supported" in fork_priority["items"][0]["reason"]
+    for evidence in ids["fork"]:
+        review_evidence(db, evidence, decision="revoke", actor="fixture")
+    for evidence in ids["hanging_piece"]:
+        review_evidence(db, evidence, decision="accept", actor="fixture")
+    capture_priority = daily_plan(
+        db, subject=SUBJECT, corpus_version="fixture", goal="balanced", as_of=rank_time, limit=1
+    )
+    assert capture_priority["items"][0]["skill"] == "hanging_piece"
+    assert "current reviewed weakness is supported" in capture_priority["items"][0]["reason"]
+    for evidence in ids["fork"]:
+        review_evidence(db, evidence, decision="accept", actor="fixture")
 
     # Goal choice reorders only already qualified new sources; the signed
     # window uses server time independently of the plan's fixed as_of.

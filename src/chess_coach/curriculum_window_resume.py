@@ -1,13 +1,16 @@
 """Bind a goal/window continuation to its current plan scope."""
 
 from .curriculum_cursor import new_state, resume_state
-from .curriculum_window_renew import checked_renew
+from .curriculum_window_renew_check import checked_renew
 from .curriculum_window_scope import create, options
 
 
 def state(db, value, learner, version, limit, scan_limit, now, goal, minutes, renew, budget):
     if not value:
-        return create(new_state(db, learner, version, limit, scan_limit, now), goal, minutes, limit)
+        from .curriculum_priority_cursor import upgrade
+
+        initial = upgrade(new_state(db, learner, version, limit, scan_limit, now))
+        return create(initial, goal, minutes, limit)
     selected_minutes = _scope(value, goal, minutes, renew, limit)
     state = value["state"]
     if renew:

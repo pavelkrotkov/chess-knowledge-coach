@@ -71,7 +71,7 @@ def resume_state(
         raise ValueError("curriculum cursor time changed; restart the plan")
     if state["revision"] != revision(db):
         raise ValueError("curriculum sources changed; restart the plan")
-    if state["v"] in {4, 5, 6}:
+    if state["v"] in {4, 5, 6, 8}:
         from .curriculum_prerequisite_source import POLICY, graph
 
         if (state["prerequisite_policy"], state["prerequisite_graph"]) != (POLICY, graph()):

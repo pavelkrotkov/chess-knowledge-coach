@@ -7,11 +7,11 @@ from .curriculum_cursor_values import integer
 def validate_phase(state: dict, *, allow_full=False) -> None:
     if not allow_full and len(state["seen"]) >= state["limit"]:
         raise ValueError("completed plans cannot continue")
-    if (state["v"] not in {3, 4, 5, 6} and state["phase"] in {"due", "capture"}) and (
+    if (state["v"] not in {3, 4, 5, 6, 8} and state["phase"] in {"due", "capture"}) and (
         state["new_after"] is not None or state["pending"] is not None
     ):
         raise ValueError("pre-corpus scan cannot contain a corpus position")
-    if state["v"] in {2, 3, 4, 5, 6}:
+    if state["v"] in {2, 3, 4, 5, 6, 8}:
         validate_capture(state)
     # Family and prerequisite bindings apply only to their cursor versions.
     _versioned(state)
@@ -30,7 +30,7 @@ def validate_scheduled(state: dict) -> None:
 
 
 def after_due(state):
-    if state["v"] in {3, 4, 5, 6}:
+    if state["v"] in {3, 4, 5, 6, 8}:
         from .curriculum_cursor_families import current_family
 
         return current_family(state)
@@ -38,21 +38,21 @@ def after_due(state):
 
 
 def _versioned(state):
-    if state["v"] in {3, 4, 5, 6}:
+    if state["v"] in {3, 4, 5, 6, 8}:
         from .curriculum_cursor_families import validate_families
 
         validate_families(state)
-    if state["v"] in {4, 5, 6}:
+    if state["v"] in {4, 5, 6, 8}:
         from .curriculum_prerequisite_cursor import validate_prerequisite
 
         validate_prerequisite(state)
 
-    if state["v"] in {5, 6}:
+    if state["v"] in {5, 6, 8}:
         from .curriculum_public_cursor import validate
 
         validate(state)
 
-    if state["v"] == 6:
+    if state["v"] in {6, 8}:
         from .curriculum_canonical_cursor import validate
 
         validate(state)

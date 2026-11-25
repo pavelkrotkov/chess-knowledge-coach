@@ -1,5 +1,7 @@
 """Finite provenance pass followed by fair bounded source retries."""
 
+from .curriculum_priority_order import owned
+
 SOURCES = ("capture", "fork", "public", "canonical")
 
 
@@ -7,7 +9,7 @@ def family(state):
     index, turn = state["family_index"], state["family_turn"]
     # The first pass rotates all three provenance categories, including both owned skills.
     if index < 4:
-        return SOURCES[(turn + index) % 4]
+        return owned(state, index, SOURCES[(turn + index) % 4])
     if index < 6:
         return ("public", "canonical")[index - 4]
     if index < 8:
@@ -17,7 +19,7 @@ def family(state):
 
 def advance(state):
     state["family_index"] += 1
-    if state["v"] != 6:
+    if state["v"] not in {6, 8}:
         from .curriculum_cursor_families import current_family
 
         state["phase"] = current_family(state)
@@ -60,7 +62,7 @@ def _mate_relevant(state, summary, prerequisite):
 
 
 def record(state, phase, found, status, reason):
-    if state["v"] != 6 or phase not in {"capture", "fork"}:
+    if state["v"] not in {6, 8} or phase not in {"capture", "fork"}:
         return
     if found:
         value = "offered"
@@ -74,7 +76,7 @@ def record(state, phase, found, status, reason):
 
 
 def action(state, phase, summary, prerequisite):
-    if state["v"] == 6 and skip(state, phase, summary, prerequisite):
+    if state["v"] in {6, 8} and skip(state, phase, summary, prerequisite):
         return "stop" if phase == "new" else "next"
     if state["v"] == 5 and phase == "new" and state["public_binding"] is not None:
         return "stop"
@@ -82,14 +84,16 @@ def action(state, phase, summary, prerequisite):
 
 
 def mark(progress, state, phase, found):
-    if state["v"] == 6:
+    if state["v"] in {6, 8}:
         progress["unpublished_phase"] = phase if found else None
 
 
 def recovery(state, saved, progress, size):
     # The checkpoint phase owns an item until the shared deadline has passed.
-    phase = saved["phase"] if saved["v"] in {5, 6} and saved["phase"] in SOURCES else state["phase"]
+    phase = (
+        saved["phase"] if saved["v"] in {5, 6, 8} and saved["phase"] in SOURCES else state["phase"]
+    )
     completed = len(progress["items"]) > size or (
-        saved["v"] == 6 and progress.get("unpublished_phase") == phase
+        saved["v"] in {6, 8} and progress.get("unpublished_phase") == phase
     )
     return phase, completed

@@ -9,7 +9,7 @@ FAMILIES = ("capture", "fork", "new")
 
 def current_family(state):
     index = state["family_index"]
-    if state["v"] == 6:
+    if state["v"] in {6, 8}:
         from .curriculum_mix_order import family
 
         return family(state)
@@ -21,8 +21,8 @@ def current_family(state):
 
 
 def validate_families(state):
-    end = {5: 4, 6: 8}.get(state["v"], 3)
-    turn = 3 if state["v"] == 6 else 2
+    end = {5: 4, 6: 8, 8: 8}.get(state["v"], 3)
+    turn = 3 if state["v"] in {6, 8} else 2
     if not integer(state["family_turn"], 0, turn) or not integer(state["family_index"], 0, end):
         raise ValueError("invalid family continuation")
     _validate_positions(state)
