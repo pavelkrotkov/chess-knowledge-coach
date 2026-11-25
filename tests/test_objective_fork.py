@@ -1365,15 +1365,72 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
     rank_time = now
     while rank_time.date().toordinal() % 4:
         rank_time -= timedelta(days=1)
+    import chess_coach.curriculum_priority_evidence as priority_evidence
+    from chess_coach.curriculum_window_cursor import decode as read_window
+    from chess_coach.tactical_course_budget import PreviewUnavailable as PriorityDeadline
+
+    def interrupt_priority(*_args):
+        raise PriorityDeadline("fixture deadline")
+
+    with monkeypatch.context() as deadline:
+        deadline.setattr(priority_evidence, "eligible_contexts", interrupt_priority)
+        interrupted_priority = daily_plan(
+            db, subject=SUBJECT, corpus_version="fixture", goal="balanced", as_of=rank_time, limit=1
+        )
+    assert not interrupted_priority["items"]
+    assert interrupted_priority["continuation_reason"] == "priority_scan_incomplete"
+    interrupted_state = read_window(db, interrupted_priority["next_cursor"])["state"]
+    assert interrupted_state["family_index"] == 0 and interrupted_state["phase"] == "capture"
+    assert interrupted_state["priority"] is None
+    assert interrupted_state["capture_mix"] == interrupted_state["fork_mix"] == "unchecked"
+    resumed_priority = daily_plan(
+        db,
+        subject=SUBJECT,
+        corpus_version="fixture",
+        cursor=interrupted_priority["next_cursor"],
+        as_of=rank_time,
+        limit=1,
+    )
+    assert resumed_priority["items"][0]["skill"] == "fork"
+
     fork_priority = daily_plan(
         db, subject=SUBJECT, corpus_version="fixture", goal="balanced", as_of=rank_time, limit=1
     )
     assert fork_priority["items"][0]["skill"] == "fork"
     assert "current reviewed weakness is supported" in fork_priority["items"][0]["reason"]
+    pinned = read_window(db, fork_priority["window_cursor"])["state"]["priority"]
+    continued = daily_plan(
+        db,
+        subject=SUBJECT,
+        corpus_version="fixture",
+        cursor=fork_priority["window_cursor"],
+        as_of=rank_time,
+        limit=1,
+    )
+    assert read_window(db, continued["window_cursor"])["state"]["priority"] == pinned
     for evidence in ids["fork"]:
         review_evidence(db, evidence, decision="revoke", actor="fixture")
     for evidence in ids["hanging_piece"]:
         review_evidence(db, evidence, decision="accept", actor="fixture")
+    with pytest.raises(ValueError, match="sources changed"):
+        daily_plan(
+            db,
+            subject=SUBJECT,
+            corpus_version="fixture",
+            cursor=fork_priority["window_cursor"],
+            as_of=rank_time,
+            limit=1,
+        )
+    renewed_priority = daily_plan(
+        db,
+        subject=SUBJECT,
+        corpus_version="fixture",
+        cursor=fork_priority["window_cursor"],
+        as_of=rank_time,
+        limit=1,
+        renew=True,
+    )
+    assert renewed_priority["items"][0]["skill"] == "hanging_piece"
     capture_priority = daily_plan(
         db, subject=SUBJECT, corpus_version="fixture", goal="balanced", as_of=rank_time, limit=1
     )
@@ -1385,9 +1442,20 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
         db, subject=SUBJECT, corpus_version="fixture", goal="balanced", as_of=rank_time, limit=1
     )
     assert tied["items"][0]["skill"] == "hanging_piece"
-    from chess_coach.curriculum_window_cursor import decode as read_window
-
     assert read_window(db, tied["window_cursor"])["state"]["priority"]["winner"] == "rotate"
+
+    # A pre-existing v7 envelope with a v6 plan keeps its original rotation.
+    from chess_coach.curriculum_window_cursor import encode as make_window
+    from chess_coach.curriculum_window_scope import create as create_window
+
+    legacy_state = v6_new_state(db, SUBJECT, "fixture", 2, 200, now)
+    legacy_cursor = make_window(db, create_window(legacy_state, "fork", 1, 2))
+    legacy_page = daily_plan(
+        db, subject=SUBJECT, corpus_version="fixture", as_of=now, limit=2, cursor=legacy_cursor
+    )
+    legacy_result = read_window(db, legacy_page["window_cursor"])
+    assert legacy_result["state"]["v"] == 6 and "priority" not in legacy_result["state"]
+    assert legacy_page["items"][0]["skill"] == "fork"
 
     # Goal choice reorders only already qualified new sources; the signed
     # window uses server time independently of the plan's fixed as_of.
