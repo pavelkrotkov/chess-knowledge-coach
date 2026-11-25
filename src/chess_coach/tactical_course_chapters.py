@@ -5,6 +5,7 @@ from .course_guidance import objective
 from .course_pgn import chapter
 from .recurrence_snapshot import read_snapshot
 from .tactical_course_evidence import independent
+from .tactical_course_fork_chapter import build as fork_chapter
 from .unified_sources import resolve_source
 
 
@@ -27,12 +28,14 @@ def owned(db, subject, group, *, bindings=None):
             return None
         return (
             choice,
-            owned_chapter(db, subject, group, choice, bindings, snapshot=snapshots[0]),
+            owned_chapter(
+                db, subject, group, choice, bindings, snapshot=snapshots[0], illustrated=True
+            ),
             bindings,
         )
 
 
-def owned_chapter(db, subject, group, choice, bindings, *, snapshot=None):
+def owned_chapter(db, subject, group, choice, bindings, *, snapshot=None, illustrated=False):
     count = len({item["game_key"] for item in bindings})
     if snapshot is None:
         snapshot = resolve_source(db, "own-game", choice["version"], choice["key"], subject=subject)
@@ -47,4 +50,7 @@ def owned_chapter(db, subject, group, choice, bindings, *, snapshot=None):
         "This is a recorded line, not a mastery result."
     )
     note, _ = objective(note, snapshot, choice["kind"])
-    return chapter("Your recurring pattern", note, snapshot, {"type": "own-game", **choice})
+    source = {"type": "own-game", **choice}
+    if illustrated and choice["kind"] == "fork":
+        return fork_chapter(note, snapshot, source)
+    return chapter("Your recurring pattern", note, snapshot, source)

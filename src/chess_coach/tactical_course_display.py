@@ -6,6 +6,7 @@ import chess
 import chess.pgn
 
 from .ingest_reader import SilentGameBuilder
+from .tactical_course_presentation import lines as presentation_lines
 from .web_board import board_rows
 from .web_practice_reveal import _positions
 
@@ -29,7 +30,7 @@ def chapter(chapter, index, line):
     color = chapter["orientation"]
     if not board.is_valid() or color != ("white" if board.turn else "black"):
         raise ValueError("prepared position unavailable")
-    lines = snapshot["lines"]
+    lines = presentation_lines(chapter)
     if not isinstance(lines, list) or not 1 <= len(lines) <= 64:
         raise ValueError("prepared lines unavailable")
     moves = _positions(board.fen(), lines[line].split(), color)
