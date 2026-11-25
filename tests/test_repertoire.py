@@ -150,18 +150,8 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     import chess_coach.opening_measure_prepare as opening_measure
     import chess_coach.opening_measure_search as opening_search
     import chess_coach.ops_opening_measure as opening_cli
-    from chess_coach.purpose_iteration import Iterations
 
-    def fake_retained(engine, board, position, limit, roots, _deadline, *, bounds):
-        try:
-            raw = engine.analyse(board, limit, multipv=2, root_moves=roots)
-        except TimeoutError:
-            return None, "engine_timeout"
-        state = Iterations(board, position, roots, bounds)
-        for rank, item in enumerate(raw, 1):
-            state.add({**item, "multipv": rank})
-        return state, None
-
+    fake_retained = _fixture_retained_search
     monkeypatch.setattr(opening_search, "retained_search", fake_retained)
     db.connection.commit()
     monkeypatch.setenv("CHESS_SUBJECT", "learner")
@@ -1155,7 +1145,6 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     # A versioned comparison covers every legal root in one bounded search.
     # The equal-to-50 reference gap is admitted; a one-point wider gap is not.
     from chess_coach.opening_measure_prepare import V1, V2
-    from chess_coach.opening_measure_reference import ReferenceIterations
 
     scores = {"reference": 150}
 
@@ -1163,57 +1152,7 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     fake_engine.write_text("#!/bin/sh\nexit 0\n")
     fake_engine.chmod(0o700)
 
-    def all_roots(_engine, board, position, _limit, roots, _deadline, *, bounds, reference=False):
-        if not reference:
-            return fake_retained(_engine, board, position, _limit, roots, _deadline, bounds=bounds)
-        assert set(roots) == set(board.legal_moves)
-        assert _limit.nodes == 180000 and _limit.time == 1.35
-        state = ReferenceIterations(board, position, roots, bounds)
-        ordered = sorted(
-            roots,
-            key=lambda move: (
-                move.uci() != "e2e4",
-                -scores.get(
-                    move.uci(), 100 if move.uci() == "g1f3" else 90 if move.uci() == "d2d4" else 0
-                ),
-            ),
-        )
-        for rank, root in enumerate(ordered, 1):
-            replay, pv = board.copy(), [root]
-            replay.push(root)
-            for _ in range(2):
-                move = next(iter(replay.legal_moves))
-                pv.append(move)
-                replay.push(move)
-            value = (
-                scores["reference"]
-                if root.uci() == "e2e4"
-                else scores.get(
-                    root.uci(), 100 if root.uci() == "g1f3" else 90 if root.uci() == "d2d4" else 0
-                )
-            )
-            state.add(
-                {
-                    "multipv": rank,
-                    "pv": pv,
-                    "score": chess.engine.PovScore(chess.engine.Cp(value), board.turn),
-                    "depth": 10,
-                    "nodes": 100000,
-                    "time": 1.0,
-                }
-            )
-        if scores.get("extra_work"):
-            state.add(
-                {
-                    "multipv": 1,
-                    "pv": pv,
-                    "score": chess.engine.PovScore(chess.engine.Cp(0), board.turn),
-                    "depth": 11,
-                    "nodes": scores.get("nodes", 100000),
-                    "time": scores.get("time", 1.0),
-                }
-            )
-        return state, None
+    all_roots = _reference_search(scores, fake_retained)
 
     _conditional_fit_workflow(tmp_path, monkeypatch, fake_engine, all_roots, scores)
     _unfamiliar_public_fork_workflow(tmp_path, monkeypatch)
@@ -4238,7 +4177,90 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     reference.close()
 
 
-def _conditional_fit_workflow(tmp_path, monkeypatch, fake_engine, all_roots, scores):
+def _fixture_retained_search(engine, board, position, limit, roots, _deadline, *, bounds):
+    from chess_coach.purpose_iteration import Iterations
+
+    try:
+        raw = engine.analyse(board, limit, multipv=2, root_moves=roots)
+    except TimeoutError:
+        return None, "engine_timeout"
+    state = Iterations(board, position, roots, bounds)
+    for rank, item in enumerate(raw, 1):
+        state.add({**item, "multipv": rank})
+    return state, None
+
+
+def _reference_search(scores, retained):
+    import chess.engine
+
+    from chess_coach.opening_measure_reference import ReferenceIterations
+
+    def all_roots(_engine, board, position, _limit, roots, _deadline, *, bounds, reference=False):
+        if not reference:
+            return retained(_engine, board, position, _limit, roots, _deadline, bounds=bounds)
+        assert set(roots) == set(board.legal_moves)
+        assert _limit.nodes == 180000 and _limit.time == 1.35
+        state = ReferenceIterations(board, position, roots, bounds)
+        ordered = sorted(
+            roots,
+            key=lambda move: (
+                move.uci() != "e2e4",
+                -scores.get(
+                    move.uci(), 100 if move.uci() == "g1f3" else 90 if move.uci() == "d2d4" else 0
+                ),
+            ),
+        )
+        for rank, root in enumerate(ordered, 1):
+            replay, pv = board.copy(), [root]
+            replay.push(root)
+            for _ in range(2):
+                move = next(iter(replay.legal_moves))
+                pv.append(move)
+                replay.push(move)
+            value = (
+                scores["reference"]
+                if root.uci() == "e2e4"
+                else scores.get(
+                    root.uci(), 100 if root.uci() == "g1f3" else 90 if root.uci() == "d2d4" else 0
+                )
+            )
+            state.add(
+                {
+                    "multipv": rank,
+                    "pv": pv,
+                    "score": chess.engine.PovScore(chess.engine.Cp(value), board.turn),
+                    "depth": 10,
+                    "nodes": 100000,
+                    "time": 1.0,
+                }
+            )
+        if scores.get("extra_work"):
+            state.add(
+                {
+                    "multipv": 1,
+                    "pv": pv,
+                    "score": chess.engine.PovScore(chess.engine.Cp(0), board.turn),
+                    "depth": 11,
+                    "nodes": scores.get("nodes", 100000),
+                    "time": scores.get("time", 1.0),
+                }
+            )
+        return state, None
+
+    return all_roots
+
+
+def _conditional_fit_workflow(
+    tmp_path,
+    monkeypatch,
+    fake_engine,
+    all_roots,
+    scores,
+    *,
+    project_root=None,
+    database_path=None,
+    setup_only=False,
+):
     """A source-backed first-turn pair supports fit, then becomes excluded and stale."""
     import hashlib
     import io
@@ -4266,12 +4288,13 @@ def _conditional_fit_workflow(tmp_path, monkeypatch, fake_engine, all_roots, sco
     from chess_coach.purpose_lines import native
     from chess_coach.purpose_request import create
 
-    root = tmp_path / "fit-project"
+    root = project_root if project_root is not None else tmp_path / "fit-project"
     planning = root / ".runtime" / "planning"
     data = root / ".runtime" / "data"
-    planning.mkdir(parents=True, mode=0o700)
-    data.mkdir(mode=0o700)
+    planning.mkdir(parents=True, mode=0o700, exist_ok=project_root is not None)
+    data.mkdir(mode=0o700, exist_ok=project_root is not None)
     archive = planning / reference_source.SOURCE_NAME
+    assert not archive.exists()
     archive.write_bytes(b"anonymous source fixture")
     low = "1. e3 e6 2. Nf3 Nf6 3. Be2 Be7 4. O-O O-O 5. d3 d6 6. b3 b6 7. Bb2 Bb7 8. Nbd2 Nbd7 9. Re1 Re8 10. Bf1 Bf8"
     high = "1. Nf3 d5 2. e4 Nf6 3. d3 e6 4. Be2 Be7 5. O-O O-O 6. Nbd2 Nbd7 7. Re1 Re8 8. b3 b6 9. Bb2 Bb7 10. Bf1 Bf8"
@@ -4316,9 +4339,10 @@ def _conditional_fit_workflow(tmp_path, monkeypatch, fake_engine, all_roots, sco
         assert build(root, "learner")["accepted"] == 14
         assert build_context(root, "learner")["accepted"] == 14
 
-    path = data / "fit.sqlite"
+    path = database_path if database_path is not None else data / "fit.sqlite"
     db = Database(path)
-    db.initialize()
+    if database_path is None:
+        db.initialize()
     import_snapshot(db)
 
     def execute(_db, snapshot, _config, _deadline):
@@ -4357,8 +4381,9 @@ def _conditional_fit_workflow(tmp_path, monkeypatch, fake_engine, all_roots, sco
                     "Learner", f"Opponent {i}", "1. e4 d5 2. exd5 Qxd5 3. Nc3 Qe5+", "*", second=i
                 ),
             )
+            game_id = db.connection.execute("SELECT max(id) FROM games").fetchone()[0]
             position = db.connection.execute(
-                "SELECT id FROM positions WHERE game_id=? AND ply=3", (i + 1,)
+                "SELECT id FROM positions WHERE game_id=? AND ply=3", (game_id,)
             ).fetchone()[0]
             request = create(db, position, "learner", engine_path=sys.executable)["request_id"]
             assert purpose_worker.run(db, request, "learner")["status"] == "complete"
@@ -4374,7 +4399,7 @@ def _conditional_fit_workflow(tmp_path, monkeypatch, fake_engine, all_roots, sco
             ).lastrowid
             db.connection.execute(
                 "INSERT INTO style_schedule_slots(cycle_id,kind,game_id,position_id,status,detail,request_id) VALUES(?,'control',?,?,'complete','fixture',?)",
-                (cycle, i + 1, position, request),
+                (cycle, game_id, position, request),
             )
             db.connection.commit()
         from chess_coach.evidence_review import review_evidence
@@ -4493,6 +4518,16 @@ def _conditional_fit_workflow(tmp_path, monkeypatch, fake_engine, all_roots, sco
         low_item = next(item for item in parent["items"] if item["uci"] == "e2e3")
         public_fork = prepare_fork(db, root, "learner", token(low_item["selection"]))
         assert public_fork["coverage"]["result"]["example"]["kind"] == "material"
+        if setup_only:
+            for evidence_id in evidence_ids:
+                review_evidence(db, evidence_id, decision="accept", actor="anonymous reviewer")
+            prepared = inventory(db, root, "learner")
+            parent = next(p for p in prepared["contexts"]["white"]["parents"] if not p["path"])
+            assert parent["development"]["status"] == "provisional"
+            assert parent["development"]["choice"] == low_item["uci"]
+            choice = token(low_item["selection"])
+            db.close()
+            return choice
         later = next(
             p for p in supported["contexts"]["white"]["parents"] if p["path"] == ["e2e4", "d7d5"]
         )
