@@ -5,7 +5,7 @@ from datetime import datetime
 from .curriculum_cursor_phase import after_due
 from .curriculum_due import due_candidate, due_page
 from .curriculum_due_schedule import check_schedule, eligible
-from .curriculum_due_window import take_again
+from .curriculum_due_window import full, incomplete, take_again
 from .curriculum_selection import select
 from .db import Database
 
@@ -30,10 +30,10 @@ def scan_due(db: Database, state: dict, now: datetime, summary: dict, scan: dict
             state["scheduled_best"] = 0
             state["scheduled_after"] = 0
         state["due_after"] = [row["due_order"], row["id"]]
-        if len(seen) >= state["limit"]:
+        if full(state, seen, window, selected):
             break
     state["seen"] = sorted(seen)
-    incomplete = reason is not None or len(rows) > examined
-    if not incomplete:
+    more = incomplete(reason, rows, examined, window, selected)
+    if not more:
         state["phase"] = after_due(state)
-    return selected, examined, incomplete, reason
+    return selected, examined, more, reason

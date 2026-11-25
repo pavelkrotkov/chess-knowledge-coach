@@ -14,18 +14,18 @@ def offers(db, value, page):
             item["window_offer"] = issue(db, value, item)
 
 
-def _continuation(page, value, plan_state, cursor):
+def _continuation(page, expired_now, plan_state, cursor):
     due_pending = page["scan"]["due_incomplete"] and len(plan_state["seen"]) < plan_state["limit"]
-    if page["next_cursor"] is not None or (expired(value) and due_pending):
+    if page["next_cursor"] is not None or (expired_now and due_pending):
         page["next_cursor"] = cursor
 
 
-def finish(db, value, plan_state, page):
+def finish(db, value, plan_state, page, expired_now):
     for item in page["items"]:
         if item["kind"] == "new" and item["prompt_key"] not in value["new_seen"]:
             value["new_seen"].append(item["prompt_key"])
     cursor = encode(db, value)
-    _continuation(page, value, plan_state, cursor)
+    _continuation(page, expired_now, plan_state, cursor)
     page["window_cursor"] = cursor
     annotate(page, value["goal"])
     page["window"] = {
@@ -34,7 +34,7 @@ def finish(db, value, plan_state, page):
         "minutes": value["minutes"],
         "issued_at": value["issued_at"],
         "expires_at": value["expires_at"],
-        "expired": expired(value),
+        "expired": expired_now,
         "source_refreshed": value["source_refreshed"],
     }
     return page

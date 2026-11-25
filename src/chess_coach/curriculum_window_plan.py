@@ -16,15 +16,11 @@ def build(db, value, learner, version, limit, scan_limit, now, budget, goal, min
     page = build_page(
         db, plan_state, learner, now, budget, due_only=initially_expired, window=value
     )
-    if not initially_expired and expired(value):
-        value.clear()
-        value.update(deepcopy(before))
-        plan_state = value["state"]
-        page = build_page(db, plan_state, learner, now, budget, due_only=True, window=value)
     offers(db, value, page)
-    if not initially_expired and expired(value):
+    expired_now = initially_expired or expired(value)
+    if not initially_expired and expired_now:
         value.clear()
-        value.update(deepcopy(before))
+        value.update(before)
         plan_state = value["state"]
         page = build_page(db, plan_state, learner, now, budget, due_only=True, window=value)
-    return finish(db, value, plan_state, page)
+    return finish(db, value, plan_state, page, expired_now)
