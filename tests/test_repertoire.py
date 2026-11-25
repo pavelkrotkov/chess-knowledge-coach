@@ -4245,6 +4245,7 @@ def _conditional_fit_workflow(tmp_path, monkeypatch, fake_engine, all_roots, sco
 
     import chess_coach.opening_measure_engine as opening_engine
     import chess_coach.opening_measure_search as opening_search
+    import chess_coach.opening_public_fork_candidate as public_fork_candidate
     import chess_coach.opening_reference_source as reference_source
     from chess_coach import cli, purpose_worker
     from chess_coach.deep_selection_source import learner_key
@@ -4270,8 +4271,14 @@ def _conditional_fit_workflow(tmp_path, monkeypatch, fake_engine, all_roots, sco
         "1. e3 a6 2. e4 e5 3. Nf3 g5 4. Nxe5 d5 5. Bb5+ Qd7 6. exd5 Qxb5 "
         "7. Nxf7 Kxf7 8. h3 Qxd5 9. b3 Qxb3 10. axb3 Bxh3 11. d3 Nc6"
     )
+    other_demand = (
+        "1. Nf3 g5 2. e4 e5 3. Nxe5 d5 4. Bb5+ Qd7 5. exd5 Qxb5 "
+        "6. Nxf7 Kxf7 7. h3 Qxd5 8. b3 Qxb3 9. axb3 Bxh3 10. d3 Nc6"
+    )
     source = (
         game("Public demand", "Other demand", demand)
+        + "\n"
+        + game("Public second demand", "Other second demand", other_demand)
         + "\n"
         + "\n".join(
             game(f"Fixture {branch}-{i}", f"Other {branch}-{i}", moves)
@@ -4285,8 +4292,8 @@ def _conditional_fit_workflow(tmp_path, monkeypatch, fake_engine, all_roots, sco
             reference_source, "SOURCE_SHA256", hashlib.sha256(archive.read_bytes()).hexdigest()
         )
         patch.setattr(reference_source, "_decode", lambda file: (source.encode(), False))
-        assert build(root, "learner")["accepted"] == 11
-        assert build_context(root, "learner")["accepted"] == 11
+        assert build(root, "learner")["accepted"] == 12
+        assert build_context(root, "learner")["accepted"] == 12
 
     path = data / "fit.sqlite"
     db = Database(path)
@@ -4457,7 +4464,7 @@ def _conditional_fit_workflow(tmp_path, monkeypatch, fake_engine, all_roots, sco
         parent = next(p for p in supported["contexts"]["white"]["parents"] if not p["path"])
         assert parent["fit"]["status"] == "supported" and parent["fit"]["winner"] == "g1f3"
         assert parent["fit"]["owned"]["games"] == 3
-        assert parent["fit"]["public"]["g1f3"]["matched_control"] == 5
+        assert parent["fit"]["public"]["g1f3"]["matched_control"] == 6
         assert parent["items"][0]["distance"]["status"] == "checked"
         from chess_coach.opening_context_fork_prepare import prepare as prepare_fork
 
@@ -4478,7 +4485,16 @@ def _conditional_fit_workflow(tmp_path, monkeypatch, fake_engine, all_roots, sco
         assert parent["fit"]["winner"] == "g1f3"
         assert development["owned"]["games"] == 2
         assert all(item["review"] == "accepted" for item in development["owned"]["observations"])
-        assert any(item["move"] == "g1f3" for item in development["unknown"])
+        assert {"move": "g1f3", "reason": "certificate_unmeasured"} in development["unknown"]
+        database_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+        proof_impl = public_fork_candidate.fork_proof
+        patch.setattr(
+            public_fork_candidate, "fork_proof", lambda *_a, **_k: pytest.fail("fork proof on GET")
+        )
+        patch.setattr(
+            "chess_coach.web_tactical_exposure.record",
+            lambda *_a, **_k: pytest.fail("learning exposure on GET"),
+        )
         app = create_app(
             db_path=path,
             project_root=root,
@@ -4519,10 +4535,21 @@ def _conditional_fit_workflow(tmp_path, monkeypatch, fake_engine, all_roots, sco
         assert cli_parent["fit"] == parent["fit"]
         assert cli_parent["development"] == parent["development"]
         assert b"Provisional learning experiment: e2e3" in page.data
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == database_hash
+        patch.setattr(public_fork_candidate, "fork_proof", proof_impl)
+        high_item = next(item for item in parent["items"] if item["uci"] == "g1f3")
+        other_fork = prepare_fork(db, root, "learner", token(high_item["selection"]))
+        assert other_fork["coverage"]["result"]["example"]["kind"] == "material"
+        tied = inventory(db, root, "learner")
+        tied_parent = next(p for p in tied["contexts"]["white"]["parents"] if not p["path"])
+        assert tied_parent["development"]["status"] == "tie"
+        assert set(tied_parent["development"]["tied"]) == {"e2e3", "g1f3"}
+        assert tied_parent["fit"]["winner"] == "g1f3"
         review_evidence(db, evidence_ids[0], decision="revoke", actor="anonymous reviewer")
         revoked = inventory(db, root, "learner")
         revoked_parent = next(p for p in revoked["contexts"]["white"]["parents"] if not p["path"])
         assert revoked_parent["development"]["reason"] == "fewer_than_two_reviewed_miss_games"
+        assert revoked_parent["development"]["owned"]["excluded"]["review_revoked"] == 1
         review_evidence(db, evidence_ids[0], decision="accept", actor="anonymous reviewer")
         scores["e2e3"] = 99
         low_item = next(item for item in parent["items"] if item["uci"] == "e2e3")
@@ -4539,6 +4566,8 @@ def _conditional_fit_workflow(tmp_path, monkeypatch, fake_engine, all_roots, sco
         stale = inventory(db, root, "learner")
         parent = next(p for p in stale["contexts"]["white"]["parents"] if not p["path"])
         assert set(parent["fit"]["choices"].values()) == {"stale"}
+        assert not parent["development"]["eligible"]
+        assert {item["reason"] for item in parent["development"]["unknown"]} == {"stale"}
         fake_engine.write_text("#!/bin/sh\nexit 0\n")
         del scores["e2e3"]
     db.close()

@@ -1,12 +1,17 @@
 """Validate one reviewed owned fork-execution observation."""
 
-from .mastery_time import parse_utc
+from .opening_context_development_chronology import valid
 from .opening_fit_owned_summary import _control
 from .recurrence_candidates import candidate
 from .recurrence_game_cache import source
 
 
 def observation(db, learner, row, selected, color, cache, parts, excluded):
+    decision = row["review_decision"]
+    if decision != "accept":
+        label = {"reject": "review_rejected", "revoke": "review_revoked"}
+        excluded[label.get(decision, "review_not_accepted")] += 1
+        return None
     game = source(db, learner, row, selected, cache, excluded)
     if game is None or game["color"] != color:
         excluded["game_unavailable_or_other_side"] += 1
@@ -19,7 +24,7 @@ def observation(db, learner, row, selected, color, cache, parts, excluded):
         excluded["review_not_accepted"] += 1
         return None
     when = item["decision"]["observation_at"]
-    if parse_utc(when) is None:
+    if not valid(when):
         excluded["chronology_unknown"] += 1
         return None
     return {

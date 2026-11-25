@@ -32,7 +32,9 @@ def assess(db, learner, color, games, group, budget, incomplete):
             return {**result, "status": "withheld", "reason": owned["reason"], "owned": owned}
         result["eligible"] = result["proved"]
         if len(result["eligible"]) > 1:
+            result["tied"] = result["eligible"]
             return {**result, "status": "tie", "reason": "multiple_proved_examples", "owned": owned}
+        result["provisional"] = result["eligible"]
         return {
             **result,
             "status": "provisional",

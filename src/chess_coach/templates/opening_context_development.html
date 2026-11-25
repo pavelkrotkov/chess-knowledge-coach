@@ -5,11 +5,11 @@
 {% else %}
 <p>Developmental ordering is withheld: {{ development.reason|replace("_", " ") }}.</p>
 {% endif %}
-<p>Qualified examples: {{ development.eligible|join(", ") or "none" }}. Excluded as materially worse: {{ development.rejected|join(", ") or "none" }}.
+<p>Public proved examples: {{ development.proved|join(", ") or "none" }}. Excluded as materially worse: {{ development.rejected|join(", ") or "none" }}.
 {% if development.unknown %}Unknown or unavailable: {% for item in development.unknown %}{{ item.move }} ({{ item.reason|replace("_", " ") }}){% if not loop.last %}; {% endif %}{% endfor %}.{% endif %}</p>
 {% if development.owned is defined %}
 <details><summary>Reviewed owned evidence</summary>
-{% if development.owned.games is defined %}<p>{{ development.owned.games }} independent same-side games with accepted reviews; nominal control {{ development.owned.nominal_control }}. The original public record's nominal control is unknown, so no time-control match is asserted.</p>{% endif %}
+{% if development.owned.games is defined %}<p>{{ development.owned.games }} independent same-side games with accepted reviews; nominal control {{ development.owned.nominal_control }}. Game-start times do not establish decision order. The original public record's nominal control is unknown, so no time-control match is asserted.</p>{% endif %}
 {% for item in development.owned.observations|default([]) %}<p>Evidence {{ item.evidence_id }}, game {{ item.game_id }}, position {{ item.position_id }}: {{ item.observation_at }}, {{ item.review }}, {{ item.currentness }}.</p>{% endfor %}
 <p>Excluded or unresolved observations: {{ development.owned.excluded|default({}) }}.</p>
 </details>
