@@ -15,9 +15,11 @@ from .opening_unfamiliar_sources import catalog_dataset
 SECONDS = 25
 
 
-def inventory(db, root, learner):
+def inventory(db, root, learner, *, deadline=None):
     budget = BrowserBudget(db)
     budget.expires = min(budget.expires, time.monotonic() + SECONDS)
+    if deadline is not None:
+        budget.expires = min(budget.expires, deadline)
     subject = normalize_identity(learner)
     if subject is None:
         raise ValueError("learner unavailable")

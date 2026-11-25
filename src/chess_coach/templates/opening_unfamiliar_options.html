@@ -2,6 +2,7 @@
 {% block title %}Choose an exploratory opening{% endblock %}
 {% block content %}
 <h2>Choose an exploratory opening</h2>
+<p><a href="{{ url_for('repertoire_views.opening_unfamiliar', contexts='1') }}">Explore more opening responses</a></p>
 <p><a href="{{ url_for('repertoire_views.opening_unfamiliar') }}">Back to unfamiliar experiments</a></p>
 <p>Up to three legal, named choices per side have checked public examples and no matches in indexed imported first-turn history. The bounded sample checked {{ report.white_count }} White and {{ report.black_count }} Black first turns. Engine soundness and broader style compatibility are unknown.</p>
 {% set fit = report.get("fit", {}) %}

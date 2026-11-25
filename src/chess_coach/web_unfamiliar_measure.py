@@ -9,6 +9,10 @@ from .web_db import database
 
 
 def show():
+    if request.args.get("contexts") == "1":
+        from .web_opening_context import show as show_context
+
+        return show_context()
     if request.args.get("choices") == "1":
         from .opening_unfamiliar_options import group
 
