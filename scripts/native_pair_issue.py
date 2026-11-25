@@ -22,7 +22,7 @@ def issue(data):
     app = create_app(
         db_path=data["database"],
         project_root=data["root"],
-        subject="learner",
+        subject=data["subject"],
         actor="fixture",
         corpus="fixture",
         login="fixture-login",
@@ -30,7 +30,11 @@ def issue(data):
     )
     response = app.test_client().get(
         "/plan",
-        query_string={"opening": data["choice"], "goal": "fork", "minutes": "5"},
+        query_string={
+            "opening": data["choice"],
+            "goal": "fork",
+            "minutes": str(data.get("minutes", 5)),
+        },
         base_url="https://coach.invalid",
         headers={"Tailscale-User-Login": "fixture-login"},
     )

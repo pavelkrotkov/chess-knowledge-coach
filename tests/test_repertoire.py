@@ -4260,6 +4260,8 @@ def _conditional_fit_workflow(
     project_root=None,
     database_path=None,
     setup_only=False,
+    subject="learner",
+    reused_public=False,
 ):
     """A source-backed first-turn pair supports fit, then becomes excluded and stale."""
     import hashlib
@@ -4294,8 +4296,11 @@ def _conditional_fit_workflow(
     planning.mkdir(parents=True, mode=0o700, exist_ok=project_root is not None)
     data.mkdir(mode=0o700, exist_ok=project_root is not None)
     archive = planning / reference_source.SOURCE_NAME
-    assert not archive.exists()
-    archive.write_bytes(b"anonymous source fixture")
+    if reused_public:
+        assert archive.is_file()
+    else:
+        assert not archive.exists()
+        archive.write_bytes(b"anonymous source fixture")
     low = "1. e3 e6 2. Nf3 Nf6 3. Be2 Be7 4. O-O O-O 5. d3 d6 6. b3 b6 7. Bb2 Bb7 8. Nbd2 Nbd7 9. Re1 Re8 10. Bf1 Bf8"
     high = "1. Nf3 d5 2. e4 Nf6 3. d3 e6 4. Be2 Be7 5. O-O O-O 6. Nbd2 Nbd7 7. Re1 Re8 8. b3 b6 9. Bb2 Bb7 10. Bf1 Bf8"
     demand = (
@@ -4330,20 +4335,21 @@ def _conditional_fit_workflow(
             for i in range(5)
         )
     )
-    with monkeypatch.context() as patch:
-        patch.setattr(reference_source, "SOURCE_BYTES", len(archive.read_bytes()))
-        patch.setattr(
-            reference_source, "SOURCE_SHA256", hashlib.sha256(archive.read_bytes()).hexdigest()
-        )
-        patch.setattr(reference_source, "_decode", lambda file: (source.encode(), False))
-        assert build(root, "learner")["accepted"] == 14
-        assert build_context(root, "learner")["accepted"] == 14
-
+    if not reused_public:
+        with monkeypatch.context() as patch:
+            patch.setattr(reference_source, "SOURCE_BYTES", len(archive.read_bytes()))
+            patch.setattr(
+                reference_source, "SOURCE_SHA256", hashlib.sha256(archive.read_bytes()).hexdigest()
+            )
+            patch.setattr(reference_source, "_decode", lambda file: (source.encode(), False))
+            assert build(root, "learner")["accepted"] == 14
+            assert build_context(root, "learner")["accepted"] == 14
     path = database_path if database_path is not None else data / "fit.sqlite"
     db = Database(path)
     if database_path is None:
         db.initialize()
-    import_snapshot(db)
+    if not reused_public:
+        import_snapshot(db)
 
     def execute(_db, snapshot, _config, _deadline):
         board, position = snapshot["board"], snapshot["position"]
@@ -4378,19 +4384,23 @@ def _conditional_fit_workflow(
             ingest_pgn(
                 db,
                 game(
-                    "Learner", f"Opponent {i}", "1. e4 d5 2. exd5 Qxd5 3. Nc3 Qe5+", "*", second=i
+                    "Learner" if subject == "learner" else subject,
+                    f"Opponent {i}",
+                    "1. e4 d5 2. exd5 Qxd5 3. Nc3 Qe5+",
+                    "*",
+                    second=i,
                 ),
             )
             game_id = db.connection.execute("SELECT max(id) FROM games").fetchone()[0]
             position = db.connection.execute(
                 "SELECT id FROM positions WHERE game_id=? AND ply=3", (game_id,)
             ).fetchone()[0]
-            request = create(db, position, "learner", engine_path=sys.executable)["request_id"]
-            assert purpose_worker.run(db, request, "learner")["status"] == "complete"
+            request = create(db, position, subject, engine_path=sys.executable)["request_id"]
+            assert purpose_worker.run(db, request, subject)["status"] == "complete"
             cycle = db.connection.execute(
                 "INSERT INTO style_schedule_cycles(learner_key,sequence,coverage_json) VALUES(?,?,?)",
                 (
-                    learner_key("learner"),
+                    learner_key(subject),
                     1 + 4 * i,
                     json.dumps(
                         {"early_center_policy": "early-center-v1", "early_center_targeted": True}
@@ -4456,7 +4466,7 @@ def _conditional_fit_workflow(
             for i in range(2):
                 original = chess.pgn.Game()
                 original.headers.update(
-                    White="learner",
+                    White=subject,
                     Black=f"fork opponent {i}",
                     Result="*",
                     TimeControl="600+0",
@@ -4472,7 +4482,7 @@ def _conditional_fit_workflow(
                 game_id = db.connection.execute("SELECT MAX(id) FROM games").fetchone()[0]
                 classify_game(db, game_id, version=VERSION, source_url=SOURCE)
                 config = PipelineConfig(
-                    learner="learner", engine_path=sys.executable, nodes=100, deep_enabled=False
+                    learner=subject, engine_path=sys.executable, nodes=100, deep_enabled=False
                 )
                 analysis = run_analysis(
                     db, game_id, game_input(db, game_id), config, engine_identity(sys.executable)
@@ -4482,13 +4492,18 @@ def _conditional_fit_workflow(
                     "SELECT id FROM positions WHERE game_id=? AND ply=33", (game_id,)
                 ).fetchone()[0]
                 db.connection.commit()
-                observed = process_decision(db, position, "learner")
+                observed = process_decision(db, position, subject)
                 assert observed["outcome"] == "failure"
                 evidence_ids.append(observed["evidence_ids"][0])
 
-        initial = inventory(db, root, "learner")
-        parent = next(p for p in initial["contexts"]["white"]["parents"] if not p["path"])
-        assert {item["uci"] for item in parent["items"]} == {"e2e3", "g1f3"}
+        initial = inventory(db, root, subject)
+        target_path = ["e2e4", "d7d5"] if reused_public else []
+        target_move = "g1f3" if reused_public else "e2e3"
+        parent = next(
+            p for p in initial["contexts"]["white"]["parents"] if p["path"] == target_path
+        )
+        expected = {"g1f3", "b2b3"} if reused_public else {"e2e3", "g1f3"}
+        assert {item["uci"] for item in parent["items"]} == expected
         assert parent["fit"]["reason"] == "fewer_than_two_admitted"
         patch.setattr(opening_search, "retained_search", all_roots)
         patch.setattr(
@@ -4501,28 +4516,34 @@ def _conditional_fit_workflow(
                 ),
             ),
         )
-        scores["e2e3"] = 100
+        scores["b2b3" if reused_public else "e2e3"] = 100
         for item in parent["items"]:
             assert (
-                prepare(db, root, "learner", token(item["selection"]), str(fake_engine))["status"]
+                prepare(db, root, subject, token(item["selection"]), str(fake_engine))["status"]
                 == "admitted"
             )
-        supported = inventory(db, root, "learner")
-        parent = next(p for p in supported["contexts"]["white"]["parents"] if not p["path"])
-        assert parent["fit"]["status"] == "supported" and parent["fit"]["winner"] == "g1f3"
-        assert parent["fit"]["owned"]["games"] == 3
-        assert parent["fit"]["public"]["g1f3"]["matched_control"] == 6
+        supported = inventory(db, root, subject)
+        parent = next(
+            p for p in supported["contexts"]["white"]["parents"] if p["path"] == target_path
+        )
+        if not reused_public:
+            assert parent["fit"]["status"] == "supported" and parent["fit"]["winner"] == "g1f3"
+            assert parent["fit"]["owned"]["games"] == 3
+            assert parent["fit"]["public"]["g1f3"]["matched_control"] == 6
+        assert set(parent["fit"]["choices"].values()) == {"admitted"}
         assert parent["items"][0]["distance"]["status"] == "checked"
         from chess_coach.opening_context_fork_prepare import prepare as prepare_fork
 
-        low_item = next(item for item in parent["items"] if item["uci"] == "e2e3")
-        public_fork = prepare_fork(db, root, "learner", token(low_item["selection"]))
+        low_item = next(item for item in parent["items"] if item["uci"] == target_move)
+        public_fork = prepare_fork(db, root, subject, token(low_item["selection"]))
         assert public_fork["coverage"]["result"]["example"]["kind"] == "material"
         if setup_only:
             for evidence_id in evidence_ids:
                 review_evidence(db, evidence_id, decision="accept", actor="anonymous reviewer")
-            prepared = inventory(db, root, "learner")
-            parent = next(p for p in prepared["contexts"]["white"]["parents"] if not p["path"])
+            prepared = inventory(db, root, subject)
+            parent = next(
+                p for p in prepared["contexts"]["white"]["parents"] if p["path"] == target_path
+            )
             assert parent["development"]["status"] == "provisional"
             assert parent["development"]["choice"] == low_item["uci"]
             choice = token(low_item["selection"])
