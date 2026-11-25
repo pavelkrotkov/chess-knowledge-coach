@@ -36,4 +36,5 @@ def selected(rows, field):
         "eligible": eligible,
         "winner": eligible[0] if len(eligible) == 1 else None,
         "tie": len(eligible) > 1,
+        "provisional": any(row.get(field, {}).get("status") == "provisional" for row in rows),
     }

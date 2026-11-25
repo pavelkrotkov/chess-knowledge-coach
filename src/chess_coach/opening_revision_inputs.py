@@ -26,4 +26,4 @@ def center(db, root, learner, decision, moves, nominal, budget):
     budget.check()
     if locate(root, learner, "recent") != index:
         raise ValueError("public opening source changed")
-    return owned, public
+    return owned, public, index

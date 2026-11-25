@@ -1,6 +1,7 @@
 """Join current bounded admission, conditional fit and proved practice evidence."""
 
 from .opening_revision_candidates import initial
+from .opening_revision_current import confirm
 from .opening_revision_detail import ERRORS, annotate
 from .opening_revision_inputs import comparisons
 from .opening_revision_rank import selected
@@ -21,9 +22,8 @@ def judgments(db, root, learner, report):
                 "reason": "fewer_than_two_admitted_alternatives",
                 "alternatives": rows,
             }
-        owned, public = annotate(db, root, learner, report, nomination, decision, rows)
-        if db.connection.execute("PRAGMA data_version").fetchone()[0] != report["_version"]:
-            raise ValueError("opening sample changed")
+        owned, public, index = annotate(db, root, learner, report, nomination, decision, rows)
+        confirm(db, root, learner, report, nomination, decision, rows, states, index)
         return {
             "status": "checked",
             "alternatives": rows,

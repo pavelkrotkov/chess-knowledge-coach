@@ -53,22 +53,18 @@ def inventory(db, root, learner, decision, row, budget):
 
 def annotate(db, root, learner, report, nomination, decision, rows):
     budget = report["_budget"]
-    moves = [
-        decision["played_uci"],
-        *(row["choice"]["uci"] for row in rows if row["admission"]["status"] == "eligible"),
-    ]
+    eligible = [row for row in rows if row["admission"]["status"] == "eligible"]
+    moves = [decision["played_uci"], *(row["choice"]["uci"] for row in eligible)]
     try:
-        owned, public = center(
+        owned, public, index = center(
             db, root, learner, decision, moves, nomination["nominal_control"], budget
         )
     except ERRORS:
-        owned, public = {"status": "unavailable"}, {}
-    for row in rows:
-        if row["admission"]["status"] != "eligible":
-            continue
+        owned, public, index = {"status": "unavailable"}, {}, None
+    for row in eligible:
         row["fit"] = fit(decision, row, owned, public, nomination["nominal_control"])
         row["development"] = development(db, root, learner, decision, row, budget)
         if nomination["status"] == "provisional" and row["development"]["status"] == "supported":
             row["development"]["status"] = "provisional"
         row["preparation"] = inventory(db, root, learner, decision, row, budget)
-    return owned, public
+    return owned, public, index
