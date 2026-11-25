@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Explore opening responses{% endblock %}
+{% block content %}
+<h2>Explore opening responses</h2>
+<p><a href="{{ url_for("repertoire_views.opening_unfamiliar", choices=1) }}">Back to opening choices</a></p>
+{% if report.status != "prepared" %}
+<p>These opening contexts could not be checked now. Their availability and your history remain unknown.</p>
+{% elif course is defined %}
+<h3>{{ course.item.name }} ({{ course.item.eco }})</h3>
+<p>{{ course.selection.color|capitalize }} to move after {{ course.context }}. Selected move: {{ course.item.san }}.</p>
+<p>Explore this recorded continuation: {{ course.item.source.line.san|join(" ") }}.</p>
+<p>It was not observed in the checked sample. History outside that sample, engine soundness and personal preference remain unknown.</p>
+<p><a href="{{ course.chapter.source.source_url }}">Public source</a> · <a href="{{ course.chapter.source.license_url }}">{{ course.chapter.source.license }}</a></p>
+<p><a href="{{ url_for("repertoire_views.opening_unfamiliar", contexts=1, choice=request.args.get("choice"), download=1, version=course.version) }}">Download this checked line as PGN</a></p>
+{% else %}
+<p>These are exploratory choices from {{ report.sample }} checked recent games, not recommendations or a claim that an entire opening is unfamiliar. History outside the checked sample, engine soundness and personal preference remain unknown.</p>
+{% if report.sample_incomplete %}<p>Some history is omitted or could not be verified; the unexamined history remains unknown.</p>{% endif %}
+{% for color, group in report.contexts.items() %}
+<h3>{{ color|capitalize }}</h3>
+{% if group.truncated %}<p>{{ group.omitted }} checked parent contexts were omitted by the limit{% if group.boundary_tie %}; the boundary was tied{% endif %}.</p>{% endif %}
+{% if not group.parents %}<p>No verified parent context was available.</p>{% endif %}
+{% for parent in group.parents %}
+<h4>{{ parent.description }}</h4>
+<p>{{ parent.occurrences }} checked occurrences. {% if parent.truncated %}Further catalog choices were omitted{% if parent.screen_incomplete %}; the catalog screen was also bounded{% endif %}.{% endif %}</p>
+<ul>
+{% for item in parent["items"] %}
+<li>{{ item.name }} ({{ item.eco }}) — {{ item.san }}:
+{% if item.admission == "available" %}<a href="{{ url_for("repertoire_views.opening_unfamiliar", contexts=1, choice=item.choice_token) }}">Preview this checked public line</a>.
+{% elif item.admission == "seen" %}Already seen in the checked sample; withheld.
+{% elif item.admission == "history_unavailable" %}Some selected history could not be verified; withheld.
+{% else %}A checked public line is unavailable; withheld.{% endif %}</li>
+{% endfor %}
+</ul>
+{% endfor %}
+{% endfor %}
+<details><summary>Source and coverage details</summary>
+<p>At most {{ report.limits.games }} recent games, {{ report.limits.parents_per_color }} parents per color and {{ report.limits.choices_per_parent }} choices per parent were checked. {{ report.sample_failed }} selected games could not be verified.</p>
+<p>Catalog {{ report.catalog.version }}, reference index SHA-256 <code>{{ report.reference_index_sha256 }}</code>. Public records are a bounded source sample.</p>
+</details>
+{% endif %}
+{% endblock %}

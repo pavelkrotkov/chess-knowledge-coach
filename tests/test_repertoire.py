@@ -901,11 +901,11 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     with pytest.raises(ValueError, match="pinned source"):
         build_reference(tmp_path, "learner")
     sample = (
-        game("Public A", "Public B", "1. d4 d5 2. Nf3 Nf6 3. c4")
+        game("Public A", "Public B", "1. d4 d5 2. Nf3 Nf6 3. c4 e6")
         + "\n"
         + game("Public C", "Public D", "1. Nf3 Nf6 2. d4 d5 3. g3")
     )
-    sample += "\n" + game("Public A", "Public B", "1. d4 d5 2. Nf3 Nf6 3. c4")
+    sample += "\n" + game("Public A", "Public B", "1. d4 d5 2. Nf3 Nf6 3. c4 e6")
     sample = sample.replace(
         '[Event "Fixture"]',
         '[GameURL "https://lichess.org/broadcast/example/series/abcdefgh/ABCDEFGH"]\n[Event "Fixture"]',
@@ -1130,6 +1130,85 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         origin="https://coach.invalid",
     )
     client_first = app_first.test_client()
+
+    # New context previews and downloads revalidate without recording exposure.
+    import html
+    import re
+
+    import chess.engine
+    import chess.pgn
+
+    from chess_coach.opening_context_choice import reason as context_reason
+    from chess_coach.opening_context_choice import token as context_token
+
+    chosen = next(
+        item
+        for item in items
+        if context_reason(contexts, item) == "available"
+        and item["selection"]["color"] == "white"
+        and len(item["selection"]["path"]) == 2
+    )
+    black_choice = next(
+        item
+        for item in items
+        if context_reason(contexts, item) == "available" and item["selection"]["color"] == "black"
+    )
+    choice = context_token(chosen["selection"])
+    before_web_hash = hashlib.sha256(experiment_path.read_bytes()).hexdigest()
+    with monkeypatch.context() as read_only:
+        read_only.setattr(
+            chess.engine.SimpleEngine,
+            "popen_uci",
+            lambda *_args, **_kwargs: pytest.fail("engine used"),
+        )
+        read_only.setattr(
+            "chess_coach.web_tactical_exposure.record",
+            lambda *_args, **_kwargs: pytest.fail("exposure recorded"),
+        )
+        chooser = client_first.get(
+            "/repertoire/unfamiliar?contexts=1", base_url="https://coach.invalid", headers=headers
+        )
+        assert chooser.status_code == 200 and b"Explore opening responses" in chooser.data
+        assert b"history outside" in chooser.data.lower() and choice.encode() in chooser.data
+        selected_page = client_first.get(
+            f"/repertoire/unfamiliar?contexts=1&choice={choice}",
+            base_url="https://coach.invalid",
+            headers=headers,
+        )
+        assert selected_page.status_code == 200 and b"Public source" in selected_page.data
+        assert b"White to move after d4 d5" in selected_page.data
+        assert ("Selected move: " + chosen["san"]).encode() in selected_page.data
+        black_page = client_first.get(
+            "/repertoire/unfamiliar?contexts=1&choice=" + context_token(black_choice["selection"]),
+            base_url="https://coach.invalid",
+            headers=headers,
+        )
+        assert black_page.status_code == 200 and b"Black to move after e4" in black_page.data
+        assert ("Selected move: " + black_choice["san"]).encode() in black_page.data
+        assert b"/course/study" not in selected_page.data
+        match = re.search(rb"href=\"([^\"]+download=1[^\"]+)\"", selected_page.data)
+        assert match is not None
+        download = client_first.get(
+            html.unescape(match.group(1).decode()),
+            base_url="https://coach.invalid",
+            headers=headers,
+        )
+        assert download.status_code == 200 and download.mimetype == "application/x-chess-pgn"
+        downloaded = chess.pgn.read_game(io.StringIO(download.get_data(as_text=True)))
+        assert downloaded is not None
+        profile = chosen["source"]["profile"]
+        source_url = chosen["source"]["line"]["site"] or profile["source"]
+        assert all(
+            value in downloaded.comment
+            for value in (source_url, profile["source"], profile["license"], profile["license_url"])
+        )
+        stale = client_first.get(
+            "/repertoire/unfamiliar?contexts=1&choice=" + "0" * 64,
+            base_url="https://coach.invalid",
+            headers=headers,
+        )
+        assert stale.status_code == 409
+    assert hashlib.sha256(experiment_path.read_bytes()).hexdigest() == before_web_hash
     assert (
         client_first.get("/repertoire/unfamiliar", base_url="https://coach.invalid").status_code
         == 403
@@ -2644,6 +2723,10 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     experiment_db.connection.commit()
     unknown = inventory(experiment_db, tmp_path, "learner")
     assert unknown["sample_failed"] >= 1 and unknown["sample_incomplete"]
+    unknown_page = client_first.get(
+        "/repertoire/unfamiliar?contexts=1", base_url="https://coach.invalid", headers=headers
+    )
+    assert unknown_page.status_code == 200 and b"withheld" in unknown_page.data
     assert all(
         item["history_incomplete"]
         for group in unknown["contexts"].values()
