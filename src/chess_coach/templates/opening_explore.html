@@ -4,8 +4,30 @@
 <h2>Explore a repeated opening branch</h2>
 <p><a href="{{ url_for('repertoire_views.repertoire') }}">Back to repertoire</a></p>
 <p>This is exploration, not a recommendation or proof of soundness, competitive fit, or mastery. It looks for the same learner-to-move position in independently identified games.</p>
+{% if report.fork_nomination is defined %}
+{% set fork = report.fork_nomination %}
+<h3>Fork opportunities after this branch</h3>
+{% if report.branch %}<p><a href="{{ url_for('repertoire_views.opening_decision', game_id=report.branch.exemplar.game_id, position_id=report.branch.exemplar.position_id) }}">Inspect the repeated opening decision</a>. When evidence permits, up to {{ report.branch.exemplar.catalog["items"]|length }} listed alternatives and their prepared initial or continuation windows are checked within the shared deadline; other work remains unknown.</p>{% endif %}
+{% if fork.status in ("supported", "provisional") %}
+<p>{{ fork.miss_games }} independently identified games contain {{ fork.misses }} current fork-execution misses after the same played branch. {% if fork.review.get("unreviewed") %}Some observations are unreviewed, so this is a provisional pattern.{% else %}The included observations have accepted reviews.{% endif %}</p>
+{% if not fork.source.coverage_complete %}<p>Public coverage is limited or unknown, so the association remains provisional even though this example was proved.</p>{% endif %}
+<p>The public source has a verified fork opportunity for the same side after this branch. The public example is not your performance, and these observations do not establish that the opening caused the misses.</p>
+<ul>{% for item in fork.observations %}<li>{{ item.outcome|title }} ({{ item.review }}): <a href="{{ url_for('views.evidence_detail', evidence_id=item.id) }}">inspect the observation</a>.</li>{% endfor %}</ul>
+<p>Source: <a href="{{ fork.source.example.source }}">public game or archive</a>, under <a href="{{ fork.source.reference.license_url }}">{{ fork.source.reference.license }}</a>; {{ fork.source.coverage.selected }} selected games in the {{ fork.source.window }} window. The checked nominal time control was {{ fork.nominal_control }}; actual thinking time is unknown.</p>
+<details><summary>Source coverage</summary>
+<p>Fully analyzed: {{ fork.source.coverage.get("analyzed") if fork.source.coverage.get("analyzed") is not none else "unknown" }}; unsupported work: {{ fork.source.coverage.get("unsupported") if fork.source.coverage.get("unsupported") is not none else "unknown" }}; incomplete: {{ fork.source.coverage.get("incomplete") if fork.source.coverage.get("incomplete") is not none else "unknown" }}; censored: {{ fork.source.coverage.get("censored") if fork.source.coverage.get("censored") is not none else "unknown" }}; interrupted: {{ fork.source.coverage.get("interrupted") if fork.source.coverage.get("interrupted") is not none else "unknown" }}. These categories may overlap. Unchecked positions are unknown.</p>
+<p>More eligible records: {{ fork.source.more_eligible if fork.source.more_eligible is not none else "unknown" }}; records with unknown context: {{ fork.source.unknown_context if fork.source.unknown_context is not none else "unknown" }}; source sample truncated: {{ fork.source.sample_truncated if fork.source.sample_truncated is not none else "unknown" }}.</p>
+<p>The material fork was verified against immediate legal defenses, with a gain of at least three material units under that bounded proof.</p>
+</details>
+{% else %}
+<p>No supported nomination was established in these checks: {{ fork.reason|replace("_", " ") }}. Unchecked evidence is unknown.</p>
+{% endif %}
+{% else %}
+<p><a href="{{ url_for('repertoire_views.opening_explore', fork_nomination=1) }}">Check for a repeated fork opportunity</a></p>
+{% endif %}
 <p>Latest verified-time sample: {{ report.sample }} attributable games; {{ report.scanned }} had bounded metadata inspected. Up to 100 games, first 40 plies, and learner moves from ply 4 are considered. Repeated metadata nominations: {{ report.nominations }}; checked {{ report.occurrences_checked }} occurrences across {{ report.groups_checked }} groups, within limits of eight and three. Duplicate identities: {{ report.duplicates }}; unavailable: {{ report.unavailable }}; deferred: {{ report.deferred }}. {% if report.partial %}Some nominations or checks were not completed.{% endif %}</p>
 <p>Sample limit reached: {{ report.coverage.game_limit_reached }}; boundary tie: {{ report.coverage.boundary_tie }}; verified-time candidates that failed recheck: {{ report.coverage.candidate_recheck_failed }}, including {{ report.coverage.oversized_pgn }} over the game-text limit. At least {{ report.coverage.unknown_time_lower_bound }} known-owner games have no verified time, and at least {{ report.coverage.unknown_ownership_global_lower_bound }} records have uncertain ownership or time; these are lower bounds.</p>
+{% if report.fork_nomination is not defined %}
 {% if report.latest_branch %}
 {% set latest = report.latest_branch %}{% set measured = latest.branch.exemplar %}{% set choice = latest.alternative.choice %}
 <h3>Another verified repeated branch with a ready experiment</h3>
@@ -38,5 +60,6 @@
 <p>No branch-specific structure or plan is established by these checks.</p>
 {% else %}
 <p>No branch was verified in the checks completed here. This bounded result does not show that none exists.</p>
+{% endif %}
 {% endif %}
 {% endblock %}

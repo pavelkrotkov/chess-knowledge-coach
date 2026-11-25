@@ -47,8 +47,27 @@ def load_game(db, learner, game_id, *, _history=None, _position_id=None):
     return {"row": game, "color": color, "decisions": decisions, "key": identity}
 
 
+def _game_scope(game_ids):
+    if game_ids is None:
+        return "", ()
+    if not 1 <= len(game_ids) <= 8 or any(
+        type(value) is not int or value < 1 for value in game_ids
+    ):
+        raise ValueError("invalid selected games")
+    return " AND p.game_id IN (" + ",".join("?" for _ in game_ids) + ")", tuple(game_ids)
+
+
 def evidence(
-    db, learner, skill, operation, before, *, failure_only=False, outcome=None, limit=None
+    db,
+    learner,
+    skill,
+    operation,
+    before,
+    *,
+    failure_only=False,
+    outcome=None,
+    limit=None,
+    game_ids=None,
 ):
     # Callers may narrow the existing bound, but cannot expand the shared scan.
     scan_limit = MAX_EVIDENCE if limit is None else limit
@@ -57,6 +76,7 @@ def evidence(
     subject = normalize_identity(learner)
     # The legacy failure-only request takes precedence over an explicit outcome.
     selected_outcome = "failure" if failure_only else outcome
+    scope, games = _game_scope(game_ids)
     rows = db.connection.execute(
         """SELECT e.*, p.game_id, p.ply, r.status AS mapping_status,
         r.producer AS mapping_producer, r.subject AS mapping_subject,
@@ -69,8 +89,19 @@ def evidence(
         LEFT JOIN evidence_review_events v ON v.id=(SELECT id FROM evidence_review_events
             WHERE evidence_id=e.id ORDER BY id DESC LIMIT 1)
         WHERE e.subject=? AND e.skill=? AND e.operation=? AND e.id < ?
-        AND (? IS NULL OR e.outcome=?) ORDER BY e.id DESC LIMIT ?""",
-        (subject, skill, operation, before, selected_outcome, selected_outcome, scan_limit + 1),
+        AND (? IS NULL OR e.outcome=?)"""
+        + scope
+        + " ORDER BY e.id DESC LIMIT ?",
+        (
+            subject,
+            skill,
+            operation,
+            before,
+            selected_outcome,
+            selected_outcome,
+            *games,
+            scan_limit + 1,
+        ),
     ).fetchall()
     return rows[:scan_limit], len(rows) > scan_limit
 

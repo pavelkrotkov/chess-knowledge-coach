@@ -5,8 +5,7 @@ from flask import Blueprint, abort, current_app, redirect, render_template, requ
 from .opening_decision import inspect
 from .opening_experiment import assess as assess_experiment
 from .opening_experiment import qualified as qualifies_experiment
-from .opening_explore import explore
-from .opening_explore_enrich import enrich
+from .opening_explore_view import report as explore_report
 from .opening_queue_request import admit
 from .opening_queue_view import statuses
 from .opening_reference_read import matches
@@ -33,9 +32,11 @@ def repertoire():
 @repertoire_views.get("/repertoire/explore")
 def opening_explore():
     try:
-        report = explore(database(), current_app.config["SUBJECT"])
-        enrich(
-            database(), current_app.config["PROJECT_ROOT"], current_app.config["SUBJECT"], report
+        report = explore_report(
+            database(),
+            current_app.config["PROJECT_ROOT"],
+            current_app.config["SUBJECT"],
+            fork=request.args.get("fork_nomination") == "1",
         )
     except (Exception, PreviewDeadline):
         return render_template(

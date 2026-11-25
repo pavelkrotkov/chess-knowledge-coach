@@ -2201,6 +2201,14 @@ def _opening_fit_route(monkeypatch, tmp_path):
             supported_fork = (
                 "e4 e5 Nf3 g5 Nxe5 d5 Bb5+ Qd7 exd5 Qxb5 Nxf7 Kxf7 h3 Qxd5 b3 Qxb3 axb3 Bxh3 d3 Nc6"
             )
+            nomination_fork = (
+                "e4 Nc6 Nf3 e5 Bc4 Nb8 Bf1 g5 Nxe5 d5 Bb5+ Qd7 exd5 Qxb5 "
+                "Nxf7 Kxf7 h3 Qxd5 b3 Qxb3 axb3 Bxh3 Qg4 Ne7"
+            )
+            rated_games.append(rated_game(0, 299, "1800+0", moves=nomination_fork))
+            rated_games.append(
+                rated_game(0, 300, "1800+0", moves=" ".join(long_line(nomination_fork)))
+            )
             continuation_fork = (
                 "e4 e5 Nf3 g5 Nxe5 d5 Bb5+ Qd7 exd5 Qxb5 Nxf7 Kxf7 h3 Qxd5 b3 Qxb3 "
                 "axb3 Bxh3 Rg1 h6 Rf1 c6 c3 Ne7 Rg1 c5 Ra2 Rh7 Rb2 b6 Rc2 Rh8 "
@@ -2326,7 +2334,7 @@ def _opening_fit_route(monkeypatch, tmp_path):
             assert len(requests) == 1 and not receipt["whole_archive_checksum_verified"]
             assert (recent_planning / PREFIX_NAME).stat().st_size == PREFIX_BYTES
             coverage = build_recent(recent_root, "learner")
-            assert coverage["accepted"] == 27 and coverage["truncated"]
+            assert coverage["accepted"] == 29 and coverage["truncated"]
             from chess_coach.opening_profile_source import profile as recent_before_history
 
             unavailable = recent_before_history(
@@ -3431,6 +3439,265 @@ def _opening_fit_route(monkeypatch, tmp_path):
                 assert prefix_path.read_bytes() == original_prefix
                 assert set(recent_planning.glob("opening-public-proof-*.json")) == artifact_names
             assert hashlib.sha256(db_path.read_bytes()).hexdigest() == before
+
+            # Two independently identified original games share the actual
+            # catalog branch and contain current detector-backed fork misses.
+            from chess_coach import cli as nomination_cli
+            from chess_coach.evidence_review import review_evidence
+            from chess_coach.fork_detector import process_decision
+            from chess_coach.opening_decision import inspect as inspect_opening
+            from chess_coach.opening_explore import explore as explore_opening
+            from chess_coach.opening_explore_view import report as exploration_report
+            from chess_coach.opening_public_proof import prepare as prepare_fork_proof
+            from chess_coach.pipeline_config import PipelineConfig
+            from chess_coach.pipeline_inputs import engine_identity, game_input
+            from chess_coach.pipeline_work import run_analysis
+
+            class NominationEngine:
+                def __init__(self):
+                    self.id = {"name": "synthetic fork fixture"}
+                    self.options = {}
+
+                def configure(self, _settings):
+                    pass
+
+                def quit(self):
+                    pass
+
+                def analyse(self, board, limit, multipv, root_moves=None):
+                    if len(board.move_stack) == 22:
+                        pv = "d1g4 g8e7" if root_moves else "d1h5 f7g7 h5h3 g8e7"
+                        score = 0 if root_moves else 300
+                        moves = [chess.Move.from_uci(move) for move in pv.split()]
+                    else:
+                        move = root_moves[0] if root_moves else next(iter(board.legal_moves))
+                        replay = board.copy()
+                        replay.push(move)
+                        moves = [move]
+                        if not replay.is_game_over():
+                            moves.append(next(iter(replay.legal_moves)))
+                        score = 0
+                    return [
+                        {
+                            "pv": moves,
+                            "score": chess.engine.PovScore(chess.engine.Cp(score), board.turn),
+                            "nodes": 100,
+                            "depth": 5,
+                        }
+                    ]
+
+            nomination_path = data / "nomination.sqlite"
+            nomination_db = Database(nomination_path)
+            nomination_db.initialize()
+            import_snapshot(nomination_db)
+            evidence_ids, fork_positions = [], []
+            with patch.context() as own_engine:
+                own_engine.setattr(
+                    chess.engine.SimpleEngine, "popen_uci", lambda *_args: NominationEngine()
+                )
+                for index in range(2):
+                    original = chess.pgn.Game()
+                    original.headers.update(
+                        White="learner",
+                        Black=f"fork-opponent-{index}",
+                        Result="*",
+                        TimeControl="1800+0",
+                        UTCDate="2026.01.02",
+                        UTCTime=f"12:02:0{index}",
+                    )
+                    board, node = original.board(), original
+                    for san in nomination_fork.split():
+                        move = board.parse_san(san)
+                        node = node.add_variation(move)
+                        board.push(move)
+                    ingest_pgn(nomination_db, str(original))
+                    game_id = nomination_db.connection.execute(
+                        "SELECT MAX(id) FROM games"
+                    ).fetchone()[0]
+                    classify_game(nomination_db, game_id, version=VERSION, source_url=SOURCE)
+                    config = PipelineConfig(
+                        learner="learner", engine_path=sys.executable, nodes=100, deep_enabled=False
+                    )
+                    analysis = run_analysis(
+                        nomination_db,
+                        game_id,
+                        game_input(nomination_db, game_id),
+                        config,
+                        engine_identity(sys.executable),
+                    )
+                    assert analysis["status"] == "complete"
+                    fork_position = nomination_db.connection.execute(
+                        "SELECT id FROM positions WHERE game_id=? AND ply=23", (game_id,)
+                    ).fetchone()[0]
+                    fork_positions.append(fork_position)
+            nomination_db.connection.commit()
+            sparse = exploration_report(nomination_db, recent_root, "learner", fork=True)
+            assert sparse["fork_nomination"]["reason"] == "fewer_than_two_independent_miss_games"
+            for fork_position in fork_positions:
+                observed = process_decision(nomination_db, fork_position, "learner")
+                assert observed["outcome"] == "failure"
+                evidence_ids.append(observed["evidence_ids"][0])
+            exploration = explore_opening(nomination_db, "learner")
+            assert exploration["branch"]["exemplar"]["ply"] == 5
+            exemplar = exploration["branch"]["exemplar"]
+            selected = inspect_opening(
+                nomination_db, exemplar["game_id"], exemplar["position_id"], "learner"
+            )
+            alternative = selected["catalog"]["items"][0]["uci"]
+
+            missing = exploration_report(nomination_db, recent_root, "learner", fork=True)
+            assert missing["fork_nomination"]["reason"] == "current_public_fork_unavailable"
+            source = prepare_fork_proof(
+                nomination_db,
+                recent_root,
+                "learner",
+                exemplar["game_id"],
+                exemplar["position_id"],
+                alternative,
+                forks=True,
+            )
+            assert source["branches"]["played"]["forks"]["example"]["kind"] == "material"
+            assert source["branches"]["played"]["forks"]["censored"] == 1
+
+            # Unrelated ambiguous history must not exhaust the selected-game scan.
+            from chess_coach.recurrence_sources import evidence as recurrence_evidence
+
+            ambient = chess.pgn.Game()
+            ambient.headers.update(
+                White="learner",
+                Black="ambient-opponent",
+                Result="*",
+                UTCDate="2026.01.02",
+                UTCTime="12:03:00",
+                TimeControl="1800+0",
+            )
+            ambient_node = ambient.add_variation(chess.Move.from_uci("d2d4"))
+            ambient_node.add_variation(chess.Move.from_uci("d7d5"))
+            ingest_pgn(nomination_db, str(ambient))
+            ambient_position = nomination_db.connection.execute(
+                "SELECT id FROM positions WHERE game_id=(SELECT MAX(id) FROM games) AND ply=1"
+            ).fetchone()[0]
+            nomination_db.connection.executemany(
+                "INSERT INTO evidence_mappings(position_id,skill,operation,outcome,confidence,subject) "
+                "VALUES(?,'fork','execute','ambiguous',0,'learner')",
+                [(ambient_position,)] * 301,
+            )
+            nomination_db.connection.commit()
+            global_rows, truncated = recurrence_evidence(
+                nomination_db, "learner", "fork", "execute", (1 << 63) - 1
+            )
+            assert truncated and len(global_rows) == 300
+            nomination_hash = hashlib.sha256(nomination_path.read_bytes()).hexdigest()
+            with patch.context() as checked_read:
+                checked_read.setenv("CHESS_DB", str(nomination_path))
+                checked_read.setenv("CHESS_SUBJECT", "learner")
+                checked_read.delenv("CHESS_SCHEMA_COMPAT", raising=False)
+                checked_read.setattr(
+                    public_fork, "fork_proof", lambda *_a, **_k: pytest.fail("proof on GET")
+                )
+                checked_read.setattr(
+                    public_replay, "judge", lambda *_a, **_k: pytest.fail("judge on GET")
+                )
+                checked_read.setattr(
+                    sys,
+                    "argv",
+                    [
+                        "chess-coach",
+                        "--db",
+                        str(nomination_path),
+                        "repertoire",
+                        "--learner",
+                        "learner",
+                        "--project-root",
+                        str(recent_root),
+                        "--fork-nominations",
+                    ],
+                )
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    nomination_cli.main()
+                joined = json.loads(output.getvalue())["nomination"]
+                assert joined["status"] == "provisional" and joined["miss_games"] == 2
+                nomination_app = create_app(
+                    db_path=nomination_path,
+                    project_root=recent_root,
+                    subject="learner",
+                    actor="reviewer",
+                    corpus="test",
+                    login="fixture",
+                    origin="https://coach.invalid",
+                )
+                page = nomination_app.test_client().get(
+                    "/repertoire/explore?fork_nomination=1",
+                    base_url="https://coach.invalid",
+                    headers=headers,
+                )
+                assert page.status_code == 200 and b"2 independently identified games" in page.data
+                assert b"provisional pattern" in page.data and b"CC0-1.0" in page.data
+                assert b"<summary>Source coverage</summary>" in page.data
+                assert b"nominal time control was 1800+0" in page.data
+                assert b"censored: 1" in page.data
+                assert b"Public coverage is limited or unknown" in page.data
+                assert b"do not establish that the opening caused" in page.data
+            assert hashlib.sha256(nomination_path.read_bytes()).hexdigest() == nomination_hash
+            import chess_coach.opening_fork_nomination_source as nomination_source
+
+            original_lookup = nomination_source.lookup
+
+            def missing_censor(*args, **kwargs):
+                result = original_lookup(*args, **kwargs)
+                if result is not None:
+                    forks = result["branches"]["played"].get("forks", {})
+                    forks.pop("censored", None)
+                return result
+
+            with patch.context() as incomplete:
+                incomplete.setattr(nomination_source, "lookup", missing_censor)
+                uncertain = exploration_report(nomination_db, recent_root, "learner", fork=True)
+                assert uncertain["fork_nomination"]["status"] == "provisional"
+                assert uncertain["fork_nomination"]["source"]["coverage_complete"] is False
+                assert uncertain["fork_nomination"]["source"]["example"]["proof"]["branches"]
+
+            def missing_reply(*args, **kwargs):
+                result = original_lookup(*args, **kwargs)
+                if result is not None:
+                    forks = result["branches"]["played"].get("forks", {})
+                    example = forks.get("example")
+                    if example:
+                        example["proof"]["branches"].pop()
+                return result
+
+            with patch.context() as incomplete:
+                incomplete.setattr(nomination_source, "lookup", missing_reply)
+                unavailable = exploration_report(nomination_db, recent_root, "learner", fork=True)
+                assert unavailable["fork_nomination"]["reason"] == "current_public_fork_unavailable"
+            prefix_path.chmod(0o600)
+            try:
+                with prefix_path.open("r+b") as stream:
+                    stream.write(bytes([original_prefix[0] ^ 1]))
+                stale = exploration_report(nomination_db, recent_root, "learner", fork=True)
+                assert stale["fork_nomination"]["reason"] == "current_public_fork_unavailable"
+            finally:
+                with prefix_path.open("r+b") as stream:
+                    stream.write(original_prefix[:1])
+                prefix_path.chmod(0o400)
+            for evidence_id in evidence_ids:
+                review_evidence(nomination_db, evidence_id, decision="accept", actor="fixture")
+            accepted = exploration_report(nomination_db, recent_root, "learner", fork=True)
+            assert accepted["fork_nomination"]["status"] == "provisional"
+            assert accepted["fork_nomination"]["review"]["accepted"] == 2
+            accepted_page = nomination_app.test_client().get(
+                "/repertoire/explore?fork_nomination=1",
+                base_url="https://coach.invalid",
+                headers=headers,
+            )
+            assert b"The included observations have accepted reviews" in accepted_page.data
+            assert b"Some observations are unreviewed" not in accepted_page.data
+            assert b"Public coverage is limited or unknown" in accepted_page.data
+            review_evidence(nomination_db, evidence_ids[0], decision="revoke", actor="fixture")
+            withheld = exploration_report(nomination_db, recent_root, "learner", fork=True)
+            assert withheld["fork_nomination"]["status"] == "withheld"
+            nomination_db.close()
 
     finally:
         public.close()
