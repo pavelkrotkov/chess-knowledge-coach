@@ -1381,6 +1381,13 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
     assert "current reviewed weakness is supported" in capture_priority["items"][0]["reason"]
     for evidence in ids["fork"]:
         review_evidence(db, evidence, decision="accept", actor="fixture")
+    tied = daily_plan(
+        db, subject=SUBJECT, corpus_version="fixture", goal="balanced", as_of=rank_time, limit=1
+    )
+    assert tied["items"][0]["skill"] == "hanging_piece"
+    from chess_coach.curriculum_window_cursor import decode as read_window
+
+    assert read_window(db, tied["window_cursor"])["state"]["priority"]["winner"] == "rotate"
 
     # Goal choice reorders only already qualified new sources; the signed
     # window uses server time independently of the plan's fixed as_of.
@@ -2484,9 +2491,123 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
         },
     )
     assert stale.status_code == 400
+    _priority_completion_workflow(db, source, material_pgn, monkeypatch)
     db.close()
     monkeypatch.setattr(curriculum, "new_state", v6_new_state)
     _v6_source_mix(v6_path, v6_planning, now, monkeypatch)
+
+
+def _priority_completion_workflow(db, fork_pgn, capture_pgn, monkeypatch):
+    import io
+    import sys
+    from datetime import UTC, datetime
+
+    import chess
+    import chess.engine
+    import chess.pgn
+
+    import chess_coach.curriculum_window_resume as resume
+    from chess_coach.curriculum import daily_plan
+    from chess_coach.evidence_review import review_evidence
+    from chess_coach.fork_detector import process_decision as fork_decision
+    from chess_coach.ingest import ingest_pgn
+    from chess_coach.material_detector import process_decision as capture_decision
+    from chess_coach.objective_capture_contract import TARGET_VERSION
+    from chess_coach.pipeline_config import PipelineConfig
+    from chess_coach.pipeline_inputs import engine_identity, game_input
+    from chess_coach.pipeline_work import run_analysis
+    from chess_coach.unified_session_events import show, submit
+    from chess_coach.unified_sessions import start
+    from tests.objective_fork_support import ForkEngine
+    from tests.test_material_pipeline import Engine as CaptureEngine
+
+    learner = "priority_fixture"
+    config = PipelineConfig(learner=learner, engine_path=sys.executable, nodes=100)
+    capture_ids = []
+    for family, count in (("fork", 3), ("capture", 4)):
+        for index in range(count):
+            game = chess.pgn.read_game(io.StringIO(fork_pgn if family == "fork" else capture_pgn))
+            assert game is not None
+            game.headers["White"] = learner
+            game.headers["UTCDate"] = f"2026.01.{index + 1:02d}"
+            game.headers["UTCTime"] = "12:00:00"
+            if family == "capture" and index < 3:
+                board = game.board()
+                board.set_piece_at(
+                    (chess.A2, chess.B2, chess.C2)[index], chess.Piece(chess.PAWN, chess.WHITE)
+                )
+                game.setup(board)
+            ingest_pgn(db, str(game))
+            game_id = db.connection.execute("SELECT max(id) FROM games").fetchone()[0]
+            with monkeypatch.context() as engine:
+                engine.setattr(
+                    chess.engine.SimpleEngine,
+                    "popen_uci",
+                    lambda _, family=family: ForkEngine() if family == "fork" else CaptureEngine(),
+                )
+                assert (
+                    run_analysis(
+                        db,
+                        game_id,
+                        game_input(db, game_id),
+                        config,
+                        engine_identity(sys.executable),
+                    )["status"]
+                    == "complete"
+                )
+            position = db.connection.execute(
+                "SELECT id FROM positions WHERE game_id=? ORDER BY ply LIMIT 1", (game_id,)
+            ).fetchone()[0]
+            result = (fork_decision if family == "fork" else capture_decision)(
+                db, position, learner
+            )
+            evidence = result["evidence_ids"][0]
+            if family == "fork" or index in (1, 2):
+                review_evidence(db, evidence, decision="accept", actor="fixture")
+            if family == "capture":
+                capture_ids.append(evidence)
+
+    original = resume.new_state
+
+    def capture_first(*args):
+        state = original(*args)
+        state["family_turn"] = 0
+        return state
+
+    def plan(goal="balanced"):
+        return daily_plan(
+            db,
+            subject=learner,
+            corpus_version="fixture",
+            goal=goal,
+            as_of=datetime.now(UTC),
+            limit=1,
+        )
+
+    with monkeypatch.context() as rotation:
+        rotation.setattr(resume, "new_state", capture_first)
+        first = plan()
+        assert first["items"][0]["skill"] == "fork"
+        capture = plan("capture")["items"][0]
+        assert capture["source_evidence_id"] != capture_ids[0]
+        start(
+            db,
+            attempt_id="priority-completion",
+            subject=learner,
+            source_type="own-game",
+            version=TARGET_VERSION,
+            key=str(capture_ids[0]),
+            training=True,
+        )
+        submit(db, "priority-completion", learner, event_id="answer", move="e1f1")
+        assert process(db, learner)["outcomes"] == {"incorrect": 1}
+        learning = show(db, "priority-completion", learner)["learning"]
+        assert learning["outcome"] == "failure" and learning["evidence_id"] is not None
+        assert plan()["items"][0]["skill"] == "fork"
+        review_evidence(db, learning["evidence_id"], decision="accept", actor="fixture")
+        after = plan()
+        assert after["items"][0]["skill"] == "hanging_piece"
+        assert "current reviewed weakness is supported" in after["items"][0]["reason"]
 
 
 def _v6_source_mix(path, planning, now, monkeypatch):
