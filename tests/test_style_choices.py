@@ -2209,6 +2209,22 @@ def _opening_fit_route(monkeypatch, tmp_path):
             rated_games.append(
                 rated_game(0, 300, "1800+0", moves=" ".join(long_line(nomination_fork)))
             )
+            # Same decision, independent synthetic public games: bounded style
+            # contrast and a separate candidate-branch material fork witness.
+            fit_low = "e4 Nc6 Nf3 e5 Nxe5 Nxe5 a3 a5 Ra2 a4 Ra1 Ra5 Ra2 Ra6 Ra1 Ra7 Ra2 Ra5 Ra1 Ra6"
+            fit_quiet = (
+                "e4 Nc6 Nf3 e5 Bc4 Nb8 Nc3 Nf6 d3 Be7 O-O O-O Re1 d6 Be3 c6 Qd2 Nbd7 Rad1 Re8"
+            )
+            fork_alternative = (
+                "e4 Nc6 Nf3 e5 Nc3 a6 Bc4 Nb8 Bf1 g5 Nxe5 d5 Bb5+ Qd7 exd5 Qxb5 "
+                "Nxf7 Kxf7 h3 Qxd5 b3 Qxb3 axb3 Bxh3 Qg4 Ne7"
+            )
+            rated_games += [
+                rated_game(0, 310, "1800+0", moves=" ".join(nomination_fork.split()[:20]))
+            ]
+            rated_games += [rated_game(0, 311 + i, "1800+0", moves=fit_quiet) for i in range(2)]
+            rated_games += [rated_game(0, 320 + i, "1800+0", moves=fit_low) for i in range(5)]
+            rated_games.append(rated_game(0, 330, "1800+0", moves=fork_alternative))
             continuation_fork = (
                 "e4 e5 Nf3 g5 Nxe5 d5 Bb5+ Qd7 exd5 Qxb5 Nxf7 Kxf7 h3 Qxd5 b3 Qxb3 "
                 "axb3 Bxh3 Rg1 h6 Rf1 c6 c3 Ne7 Rg1 c5 Ra2 Rh7 Rb2 b6 Rc2 Rh8 "
@@ -2334,7 +2350,7 @@ def _opening_fit_route(monkeypatch, tmp_path):
             assert len(requests) == 1 and not receipt["whole_archive_checksum_verified"]
             assert (recent_planning / PREFIX_NAME).stat().st_size == PREFIX_BYTES
             coverage = build_recent(recent_root, "learner")
-            assert coverage["accepted"] == 29 and coverage["truncated"]
+            assert coverage["accepted"] == 38 and coverage["truncated"]
             from chess_coach.opening_profile_source import profile as recent_before_history
 
             unavailable = recent_before_history(
@@ -3495,7 +3511,7 @@ def _opening_fit_route(monkeypatch, tmp_path):
                 own_engine.setattr(
                     chess.engine.SimpleEngine, "popen_uci", lambda *_args: NominationEngine()
                 )
-                for index in range(2):
+                for index in range(3):
                     original = chess.pgn.Game()
                     original.headers.update(
                         White="learner",
@@ -3531,9 +3547,94 @@ def _opening_fit_route(monkeypatch, tmp_path):
                     ).fetchone()[0]
                     fork_positions.append(fork_position)
             nomination_db.connection.commit()
-            sparse = exploration_report(nomination_db, recent_root, "learner", fork=True)
+
+            # Three separate owned games have an actual central pawn-capture
+            # decision after the repeated branch; each uses a current same-search
+            # purpose comparison rather than a synthesized style conclusion.
+            from chess_coach.style_history_lines import history_safe
+
+            def nomination_center(_db, snapshot, _config, _deadline):
+                board, position = snapshot["board"], snapshot["position"]
+                roots = [chess.Move.from_uci(position["uci"]), board.parse_san("d3")]
+                raw = []
+                for root in roots:
+                    replay, pv = board.copy(), [root]
+                    replay.push(root)
+                    for _ in range(3):
+                        move = next(
+                            move
+                            for move in replay.legal_moves
+                            if not move.promotion and history_safe(_after(replay, move))
+                        )
+                        pv.append(move)
+                        replay.push(move)
+                    raw.append(
+                        {
+                            "pv": pv,
+                            "score": chess.engine.PovScore(chess.engine.Cp(0), board.turn),
+                            "nodes": 500,
+                            "depth": 5,
+                            "time": 0.05,
+                        }
+                    )
+                lines, invalid = native(position, board, raw)
+                assert not invalid
+                return (
+                    "complete",
+                    "comparable",
+                    {
+                        "scout": {"lines": lines},
+                        "final": {"lines": lines, "roots": [move.uci() for move in roots]},
+                        "engine": {},
+                        "runtime_engine": {},
+                    },
+                )
+
+            def _after(board, move):
+                result = board.copy()
+                result.push(move)
+                return result
+
+            with patch.context() as center_engine:
+                center_engine.setattr(purpose_worker, "execute", nomination_center)
+                for index, position in enumerate(fork_positions):
+                    game_id = nomination_db.connection.execute(
+                        "SELECT game_id FROM positions WHERE id=?", (position,)
+                    ).fetchone()[0]
+                    center_id = nomination_db.connection.execute(
+                        "SELECT id FROM positions WHERE game_id=? AND ply=13", (game_id,)
+                    ).fetchone()[0]
+                    request_id = create(
+                        nomination_db, center_id, "learner", engine_path=sys.executable
+                    )["request_id"]
+                    assert (
+                        purpose_worker.run(nomination_db, request_id, "learner")["status"]
+                        == "complete"
+                    )
+                    cycle = nomination_db.connection.execute(
+                        "INSERT INTO style_schedule_cycles(learner_key,sequence,coverage_json) VALUES(?,?,?)",
+                        (
+                            learner_key("learner"),
+                            501 + 4 * index,
+                            json.dumps(
+                                {
+                                    "early_center_policy": "early-center-v1",
+                                    "early_center_targeted": True,
+                                }
+                            ),
+                        ),
+                    ).lastrowid
+                    nomination_db.connection.execute(
+                        "INSERT INTO style_schedule_slots(cycle_id,kind,game_id,position_id,status,detail,request_id) VALUES(?,?,?,?,?,?,?)",
+                        (cycle, "control", game_id, center_id, "complete", "fixture", request_id),
+                    )
+                    nomination_db.connection.commit()
+            sparse = exploration_report(
+                nomination_db, recent_root, "learner", fork=True, revision=True
+            )
             assert sparse["fork_nomination"]["reason"] == "fewer_than_two_independent_miss_games"
-            for fork_position in fork_positions:
+            assert sparse["revision_judgments"]["reason"] == "current_fork_nomination_unavailable"
+            for fork_position in fork_positions[:2]:
                 observed = process_decision(nomination_db, fork_position, "learner")
                 assert observed["outcome"] == "failure"
                 evidence_ids.append(observed["evidence_ids"][0])
@@ -3558,6 +3659,135 @@ def _opening_fit_route(monkeypatch, tmp_path):
             )
             assert source["branches"]["played"]["forks"]["example"]["kind"] == "material"
             assert source["branches"]["played"]["forks"]["censored"] == 1
+
+            # The independent center observations and public windows support
+            # the played branch in one pair; a different candidate has its
+            # own material fork certificate in the same source-bound decision.
+            revision_decision = {**exemplar, "color": exploration["branch"]["color"]}
+            revision_choices = {item["uci"]: item for item in selected["catalog"]["items"]}
+            fitted = later_assess(
+                nomination_db,
+                recent_root,
+                "learner",
+                revision_decision,
+                revision_choices["f3e5"],
+                source="recent",
+            )
+            assert fitted["owned"]["branches"][exemplar["played_uci"]]["games"] == 3
+            assert fitted["recommended"] == exemplar["played_uci"]
+            alternate_fork = prepare_fork_proof(
+                nomination_db,
+                recent_root,
+                "learner",
+                exemplar["game_id"],
+                exemplar["position_id"],
+                "b1c3",
+                forks=True,
+            )
+            assert (
+                alternate_fork["branches"]["alternative"]["forks"]["example"]["kind"] == "material"
+            )
+
+            # Persist synthetic full-root measurements through the native
+            # collector and source-bound artifact format; the judgments are
+            # computed by the production readers and admission rules.
+            import chess_coach.opening_queue_artifact as revision_artifact
+            import chess_coach.opening_queue_binding as revision_binding
+            from chess_coach.opening_measure_prepare import _envelope as revision_envelope
+            from chess_coach.opening_measure_reference import ReferenceIterations
+            from chess_coach.opening_queue_location import location as revision_location
+            from chess_coach.opening_queue_proof import complete as reference_complete
+
+            patch.setattr(revision_binding, "ENGINE", sys.executable)
+            directory, database_key = revision_location(nomination_db, recent_root, "learner")
+            for choice_move in ("f3e5", "b1c3", "b2b4"):
+                _, binding, config, position = revision_binding.snapshot(
+                    nomination_db,
+                    database_key,
+                    "learner",
+                    exemplar["game_id"],
+                    exemplar["position_id"],
+                    choice_move,
+                )
+                board = position["board"]
+                roots = sorted(
+                    board.legal_moves, key=lambda move: (move.uci() == "b2b4", move.uci())
+                )
+                iteration = ReferenceIterations(board, position["position"], roots, (1, 64, 3))
+                for rank_number, root in enumerate(roots, 1):
+                    replay, pv = board.copy(), [root]
+                    replay.push(root)
+                    for _ in range(2):
+                        following = next(
+                            move
+                            for move in replay.legal_moves
+                            if not move.promotion and history_safe(_after(replay, move))
+                        )
+                        pv.append(following)
+                        replay.push(following)
+                    iteration.add(
+                        {
+                            "multipv": rank_number,
+                            "depth": 5,
+                            "pv": pv,
+                            "score": chess.engine.PovScore(
+                                chess.engine.Cp(-100 if root.uci() == "b2b4" else 0), board.turn
+                            ),
+                            "nodes": 10000,
+                            "time": 0.1,
+                        }
+                    )
+                outcome = {
+                    "status": "complete",
+                    "policy": "all-legal-roots-v2",
+                    "lines": [{"rank": item["rank"], **item["line"]} for item in iteration.best],
+                    "work": {
+                        "nodes": 10000,
+                        "time_seconds": 0.1,
+                        "node_limit_exceeded": False,
+                        "requested_nodes": 180000,
+                    },
+                    "retained_depth": 5,
+                    "effective_multipv": len(roots),
+                    "multipv_max": len(roots),
+                }
+                assert reference_complete(outcome, binding, board, reference=True)
+                request = revision_binding.request(database_key, binding, config)
+                artifact = revision_artifact.path(directory, request)
+                artifact.write_text(json.dumps(revision_envelope(binding, config, outcome)))
+                artifact.chmod(0o600)
+
+            # A valid earlier two-root rehearsal remains readable but cannot
+            # establish an all-root reference for the new judgment.
+            _, binding, config, position = revision_binding.snapshot(
+                nomination_db,
+                database_key,
+                "learner",
+                exemplar["game_id"],
+                exemplar["position_id"],
+                "f1b5",
+            )
+            previous_config = revision_binding.legacy_config(config)
+            previous = {
+                "status": "complete",
+                "work": outcome["work"],
+                "lines": [
+                    line for line in outcome["lines"] if line["root_move"] in {"f1c4", "f1b5"}
+                ],
+            }
+            assert reference_complete(previous, binding, position["board"])
+            request = revision_binding.request(database_key, binding, previous_config)
+            artifact = revision_artifact.path(directory, request)
+            artifact.write_text(json.dumps(revision_envelope(binding, previous_config, previous)))
+            artifact.chmod(0o600)
+            from chess_coach.opening_explore_alternatives import describe as describe_alternatives
+            from chess_coach.opening_queue_view import statuses as comparison_statuses
+
+            comparisons = comparison_statuses(nomination_db, recent_root, "learner", exemplar)
+            existing = {
+                item["choice"]["uci"]: item for item in describe_alternatives(exemplar, comparisons)
+            }
+            assert existing["f1b5"]["status"] == "complete" and existing["f1b5"]["ready"]
 
             # Unrelated ambiguous history must not exhaust the selected-game scan.
             from chess_coach.recurrence_sources import evidence as recurrence_evidence
@@ -3618,6 +3848,41 @@ def _opening_fit_route(monkeypatch, tmp_path):
                     nomination_cli.main()
                 joined = json.loads(output.getvalue())["nomination"]
                 assert joined["status"] == "provisional" and joined["miss_games"] == 2
+                checked_read.setattr(
+                    sys,
+                    "argv",
+                    [
+                        "chess-coach",
+                        "--db",
+                        str(nomination_path),
+                        "repertoire",
+                        "--learner",
+                        "learner",
+                        "--project-root",
+                        str(recent_root),
+                        "--revision-judgments",
+                    ],
+                )
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    nomination_cli.main()
+                revision = json.loads(output.getvalue())["judgments"]
+                assert revision["status"] == "checked"
+                assert revision["fit"]["winner"] == exemplar["played_uci"]
+                assert revision["development"]["winner"] == "b1c3"
+                assert revision["development"]["provisional"] is True
+                revisions = {row["choice"]["uci"]: row for row in revision["alternatives"]}
+                assert revisions["f3e5"]["admission"]["status"] == "eligible"
+                assert (
+                    revisions["f3e5"]["preparation"]["version"]
+                    == "opening-preparation-inventory-v1"
+                )
+                assert revisions["f3e5"]["preparation"]["history"]["checked_games"] >= 1
+                assert revision["owned_style"]["branches"][exemplar["played_uci"]]["games"] == 3
+                assert revision["public_style"]["f3e5"]["available"] == 0
+                assert revisions["b1c3"]["development"]["status"] == "provisional"
+                assert revisions["b2b4"]["admission"]["status"] == "rejected"
+                assert revisions["f1b5"]["admission"]["reason"] == "all_root_reference_unavailable"
                 nomination_app = create_app(
                     db_path=nomination_path,
                     project_root=recent_root,
@@ -3639,6 +3904,17 @@ def _opening_fit_route(monkeypatch, tmp_path):
                 assert b"censored: 1" in page.data
                 assert b"Public coverage is limited or unknown" in page.data
                 assert b"do not establish that the opening caused" in page.data
+                revision_page = nomination_app.test_client().get(
+                    "/repertoire/explore?fork_nomination=revision",
+                    base_url="https://coach.invalid",
+                    headers=headers,
+                )
+                assert revision_page.status_code == 200
+                assert b"Compare revision possibilities" in revision_page.data
+                assert b"Fit-eligible choices" in revision_page.data
+                assert b"Development-eligible choices" in revision_page.data
+                assert b"not a global ranking" in revision_page.data
+                assert b"provisional learning experiment" in revision_page.data
             assert hashlib.sha256(nomination_path.read_bytes()).hexdigest() == nomination_hash
             import chess_coach.opening_fork_nomination_source as nomination_source
 
@@ -3675,8 +3951,13 @@ def _opening_fit_route(monkeypatch, tmp_path):
             try:
                 with prefix_path.open("r+b") as stream:
                     stream.write(bytes([original_prefix[0] ^ 1]))
-                stale = exploration_report(nomination_db, recent_root, "learner", fork=True)
+                stale = exploration_report(
+                    nomination_db, recent_root, "learner", fork=True, revision=True
+                )
                 assert stale["fork_nomination"]["reason"] == "current_public_fork_unavailable"
+                assert (
+                    stale["revision_judgments"]["reason"] == "current_fork_nomination_unavailable"
+                )
             finally:
                 with prefix_path.open("r+b") as stream:
                     stream.write(original_prefix[:1])
