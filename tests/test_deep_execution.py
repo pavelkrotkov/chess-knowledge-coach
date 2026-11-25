@@ -281,6 +281,58 @@ def test_real_stockfish_deep_smoke(tmp_path, monkeypatch):
     deep = inspect_decision(db, item["position_id"], learner=LEARNER)["deep"]
     assert deep["result"] is not None and deep["result"]["best_work"]["nodes"] > 0
 
+    # An ordinary opening can exhaust its bounded all-root search without a
+    # qualifying common-depth iteration; it must still report verified work.
+    import time
+
+    from chess_coach import purpose_iteration_search
+    from chess_coach.opening_public_comparison_engine import analyze
+    from chess_coach.opening_queue_reference import public as public_reference
+    from chess_coach.purpose_config import FINAL_NODES, FINAL_SECONDS
+
+    reference = purpose_iteration_search.ReferenceIterations
+    collectors = []
+
+    def capture_reference(*args, **kwargs):
+        state = reference(*args, **kwargs)
+        collectors.append(state)
+        return state
+
+    monkeypatch.setattr(purpose_iteration_search, "ReferenceIterations", capture_reference)
+    public_board = chess.Board()
+    public_board.push_san("d4")
+    public_board.push_san("d5")
+    configuration, public_result = analyze(
+        public_board, "g1f3", "/usr/games/stockfish", time.monotonic() + 20
+    )
+    assert configuration["source_semantics"] == "public-recorded-root-v1"
+    assert len(collectors) == 1
+    state = collectors.pop()
+    assert not state.invalid_work
+    assert type(state.work["nodes"]) is int and 0 < state.work["nodes"] <= FINAL_NODES
+    assert isinstance(state.work["time"], (int, float))
+    assert 0 < state.work["time"] <= FINAL_SECONDS
+    if public_result["status"] == "complete":
+        assert public_reference(public_result, "g1f3", public_board)
+    else:
+        assert public_result["status"] == "insufficient"
+        assert public_result["reason"] == "complete_iteration_unavailable" and not state.best
+
+    # This legal five-response position exercises a strict native positive at
+    # helper level; it is outside the current early-context selection policy.
+    defense_board = chess.Board()
+    for san in ("e4", "d5", "Bb5+"):
+        defense_board.push_san(san)
+    defense = defense_board.parse_san("c6").uci()
+    assert defense_board.legal_moves.count() == 5
+    _, defense_result = analyze(
+        defense_board, defense, "/usr/games/stockfish", time.monotonic() + 20
+    )
+    assert defense_result["status"] == "complete", {
+        key: defense_result.get(key) for key in ("status", "reason", "work")
+    }
+    assert public_reference(defense_result, defense, defense_board)
+
 
 def _automatic_lane_workflow(tmp_path, monkeypatch):
     import json

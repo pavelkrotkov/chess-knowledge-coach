@@ -1,0 +1,12 @@
+{% if owned.status == "complete" %}
+<p>An exact same-history owned comparison is available{% if owned.reason %}, but it did not meet the existing comparison criteria{% endif %}. It is separate from the public reference above.</p>
+{% elif owned.status == "no_verified_anchor_in_checked_sample" %}
+<p>No verified same-history owned anchor was found in the bounded recent sample; other history remains unknown.</p>
+{% elif owned.status == "queued" %}
+<p>An exact same-history owned comparison is queued.</p>
+{% else %}
+<p>The exact same-history owned comparison is {{ owned.status }}.</p>
+{% endif %}
+{% if owned.decision is defined and owned.choice is defined %}
+<p><a href="{{ url_for("repertoire_views.opening_decision", game_id=owned.decision.game_id, position_id=owned.decision.position_id, alternative=owned.choice.uci) }}">Open the exact owned decision and its comparison queue</a>.</p>
+{% endif %}
