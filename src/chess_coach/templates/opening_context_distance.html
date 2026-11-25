@@ -1,0 +1,12 @@
+{% if distance.counts %}
+<p>Checked public response branches: {{ distance.branches }}; distinct replies: {{ distance.counts.responses }}.
+Previously observed positions: {{ distance.counts.shared_positions if distance.counts.shared_positions is not none else "unknown" }};
+previously observed edges: {{ distance.counts.shared_edges if distance.counts.shared_edges is not none else "unknown" }}.
+{% if distance.history.status == "checked" %}Not observed positions: {{ distance.counts.new_positions }}; revised edges from known positions: {{ distance.counts.revised_edges }}; new edges from unobserved positions: {{ distance.counts.new_edges }}. Revised branches: {{ distance.branch_partition.revised_branches }}; new branches: {{ distance.branch_partition.new_branches }}.
+{% else %}Unseen positions and edges remain unknown.{% endif %}
+{% if distance.more_games or distance.omitted_games %}Some public records are outside the checked tree.{% endif %}</p>
+<details><summary>Switching distance source and limits</summary>
+<p>{{ distance.source_filter }}. Checked {{ distance.checked_games }} of {{ distance.selected_games }} selected public games, up to {{ distance.limits.games }} games and {{ distance.limits.branch_plies }} plies per branch. {{ distance.transpositions }} checked transpositions. Further moves and records remain outside this sample.</p>
+<p>History: {{ distance.history.status }}, up to {{ distance.history.limits.games }} recent games of both colors. Reference index SHA-256: <code>{{ distance.source_index_sha256 }}</code>.</p>
+</details>
+{% else %}<p>Switching distance is unavailable.</p>{% endif %}

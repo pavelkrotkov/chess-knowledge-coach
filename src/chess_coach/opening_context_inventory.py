@@ -6,6 +6,8 @@ from .fact_fingerprint import canonical, digest
 from .learner_identity import normalize_identity
 from .opening_context_candidates import choices
 from .opening_context_history import ordered, sample
+from .opening_distance_history import history
+from .opening_distance_inventory import enrich
 from .opening_public_proof_index import index_hash
 from .opening_queue_budget import BrowserBudget
 from .opening_snapshot import GRAPH_SHA256, SOURCE, VERSION
@@ -38,6 +40,7 @@ def inventory(db, root, learner, *, deadline=None):
     result = {}
     for color in ("white", "black"):
         selected, omitted, tied = ordered(contexts[color])
+        checked_history = history(db, subject, color, budget) if selected else None
         parents = []
         for (parent, path), count in selected:
             found = choices(
@@ -57,6 +60,7 @@ def inventory(db, root, learner, *, deadline=None):
                 item["selection"].update(
                     sample_identity=sample_identity, reference_index_sha256=checksum
                 )
+            enrich(found["items"], checked_history, budget, binding[1])
             parents.append({"parent": parent, "path": list(path), "occurrences": count, **found})
         result[color] = {
             "parents": parents,
