@@ -2583,6 +2583,7 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
                 "database": str(v6_path),
                 "root": str(v6_root),
                 "form": str(tmp_path / "native-pair-issued.json"),
+                "subject": "learner",
             }
         ),
         text=True,

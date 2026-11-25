@@ -16,10 +16,11 @@ def consume(data):
     from chess_coach.db import Database
     from chess_coach.web import create_app
 
+    subject = data["subject"]
     app = create_app(
         db_path=data["database"],
         project_root=data["root"],
-        subject="learner",
+        subject=subject,
         actor="fixture",
         corpus="fixture",
         login="fixture-login",
@@ -48,7 +49,7 @@ def consume(data):
             """SELECT 1 FROM unified_sessions s JOIN unified_training_enrollments e
             ON e.attempt_id=s.attempt_id WHERE s.attempt_id=? AND s.subject=?
             AND s.source_type=? AND s.source_version=? AND s.source_key=? AND e.subject=?""",
-            (attempt, "learner", form["source_type"], form["version"], form["key"], "learner"),
+            (attempt, subject, form["source_type"], form["version"], form["key"], subject),
         ).fetchone()
     finally:
         db.close()
