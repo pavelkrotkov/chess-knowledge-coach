@@ -15,6 +15,8 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      UV_PYTHON: "3.12.13"
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -23,7 +25,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: "3.12.13"
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
         with:
@@ -45,6 +47,6 @@ jobs:
       - name: Run pytest and report coverage
         timeout-minutes: 15
         run: |
-          uv run python -c 'import sqlite3, sys; print("Python:", sys.version); print("SQLite:", sqlite3.sqlite_version); print("SQLite source:", sqlite3.connect(":memory:").execute("SELECT sqlite_source_id()").fetchone()[0])'
+          uv run python -c 'import sqlite3, sys; assert sys.version_info[:3] == (3, 12, 13), sys.version; print("Python:", sys.version); print("SQLite:", sqlite3.sqlite_version); print("SQLite source:", sqlite3.connect(":memory:").execute("SELECT sqlite_source_id()").fetchone()[0])'
           uv run pytest -vv -o faulthandler_timeout=120 --cov --cov-report=term-missing --cov-precision=2
           uv run coverage json -o - | uv run python -c 'import json, sys; total = json.load(sys.stdin)["totals"]["percent_covered"]; print(f"Unrounded coverage: {total:.6f}%")'
