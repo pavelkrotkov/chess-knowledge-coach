@@ -8,6 +8,7 @@
 {% elif course is defined %}
 <h3>{{ course.item.name }} ({{ course.item.eco }})</h3>
 <p>{{ course.selection.color|capitalize }} to move after {{ course.context }}. Selected move: {{ course.item.san }}.</p>
+{% with distance=course.item.distance %}{% include "opening_context_distance.html" %}{% endwith %}
 <p>Explore this recorded continuation: {{ course.item.source.line.san|join(" ") }}.</p>
 <p>It was not observed in the checked sample. History outside that sample, engine soundness and personal preference remain unknown.</p>
 <p><a href="{{ course.chapter.source.source_url }}">Public source</a> · <a href="{{ course.chapter.source.license_url }}">{{ course.chapter.source.license }}</a></p>
@@ -26,6 +27,7 @@
 {% for item in parent["items"] %}
 <li>{{ item.name }} ({{ item.eco }}) — {{ item.san }}:
 {% if item.admission == "available" %}<a href="{{ url_for("repertoire_views.opening_unfamiliar", contexts=1, choice=item.choice_token) }}">Preview this checked public line</a>.
+{% with distance=item.distance %}{% include "opening_context_distance.html" %}{% endwith %}
 {% elif item.admission == "seen" %}Already seen in the checked sample; withheld.
 {% elif item.admission == "history_unavailable" %}Some selected history could not be verified; withheld.
 {% else %}A checked public line is unavailable; withheld.{% endif %}</li>

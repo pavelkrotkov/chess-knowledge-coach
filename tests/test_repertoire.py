@@ -1000,6 +1000,10 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         + "\n"
         + center_game
         + "\n"
+        + game("Branch", "Response", "1. d4 d5 2. Nf3 e6 3. e3 Nf6")
+        + "\n"
+        + game("Branch Two", "Response", "1. d4 d5 2. Nf3 Nf6 3. e3 e6")
+        + "\n"
         + inconsistent_game
     )
     for index in range(11):
@@ -1027,7 +1031,7 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         patch.setattr(reference_source, "_decode", lambda file: (profile_sample.encode(), False))
         patch.setattr(profile_index, "moves_for", one_inconsistent)
         ordered_coverage = build_profile(tmp_path, "learner")
-        assert (ordered_coverage["accepted"], ordered_coverage["duplicates"]) == (21, 3), (
+        assert (ordered_coverage["accepted"], ordered_coverage["duplicates"]) == (23, 3), (
             ordered_coverage["accepted"],
             ordered_coverage["duplicates"],
             ordered_coverage["examined"],
@@ -1073,6 +1077,18 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         for item in parent["items"]
     ]
     supported = next(item for item in items if item["source"] is not None)
+    white_context = next(
+        parent for parent in contexts["contexts"]["white"]["parents"] if len(parent["path"]) == 2
+    )
+    response_tree = next(
+        item["distance"] for item in white_context["items"] if item["uci"] == "g1f3"
+    )
+    assert response_tree["branches"] >= 2 and response_tree["counts"]["responses"] >= 2
+    assert response_tree["history"]["status"] == "checked"
+    assert response_tree["counts"]["revised_edges"] >= 1
+    assert response_tree["limits"]["branch_plies"] == 4
+    assert response_tree["transpositions"] >= 1
+    assert response_tree["branch_partition"]["new_branches"] >= 1
     assert supported["source"]["source_history"]["ply"] >= 1
     assert supported["selection"]["sample_identity"] == contexts["sample_identity"]
     assert supported["selection"]["reference_index_sha256"] == contexts["reference_index_sha256"]
@@ -2723,6 +2739,18 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     experiment_db.connection.commit()
     unknown = inventory(experiment_db, tmp_path, "learner")
     assert unknown["sample_failed"] >= 1 and unknown["sample_incomplete"]
+    unknown_distances = [
+        item["distance"]
+        for group in unknown["contexts"].values()
+        for parent in group["parents"]
+        for item in parent["items"]
+        if item["distance"].get("counts")
+    ]
+    assert any(
+        value["history"]["status"] == "incomplete" and value["counts"]["new_edges"] is None
+        for value in unknown_distances
+    )
+
     unknown_page = client_first.get(
         "/repertoire/unfamiliar?contexts=1", base_url="https://coach.invalid", headers=headers
     )
@@ -2822,8 +2850,8 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     empty_profile = read_profile(tmp_path, "learner", start_key, "e2e5")
     assert empty_profile["games"] == 0 and empty_profile["center"]["valid"] == 0
     d4_profile = read_profile(tmp_path, "learner", start_key, "d2d4")
-    assert d4_profile["games"] == 3
-    assert d4_profile["center"]["valid"] == 2
+    assert d4_profile["games"] == 5
+    assert d4_profile["center"]["valid"] == 4
     assert d4_profile["center"]["capture"] == 1
     assert d4_profile["center"]["inconsistent"] == 1
     assert repeated_profile["center"]["short"] > 0
@@ -2898,7 +2926,10 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         and b"Broadcast source" in profile_page.data
     )
     assert profile_lookup.SOURCE_SHA256.encode() in profile_page.data
-    assert b"Among 2 complete, legally consistent four-ply windows" in profile_page.data
+    assert (
+        f"Among {d4_profile['center']['valid']} complete, legally consistent four-ply windows".encode()
+        in profile_page.data
+    )
     assert b"Extended window: up to 36 positions" in profile_page.data
     assert b"First seen later" in profile_page.data
     assert b"1 contained a central pawn-on-pawn capture" in profile_page.data

@@ -12,9 +12,11 @@ def board_for(parent):
     return board
 
 
-def advance(board, rows, first):
+def advance(board, rows, first, *, check=None):
     moves = []
     for offset, (ply, parent, uci, san) in enumerate(rows):
+        if check is not None:
+            check()
         if ply != first + offset or position_key(board) != parent:
             raise ValueError("ordered parent differs")
         move = board.parse_uci(uci)

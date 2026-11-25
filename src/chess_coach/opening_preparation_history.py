@@ -43,19 +43,24 @@ def _checked_game(connection, game):
 
 # An observed move belongs to the checked game, not necessarily the learner.
 # Missing metadata or any skipped game prevents a negative coverage claim.
-def coverage(db, learner, color, graph):
+def observed(db, learner, color):
     games, flags = recent_games(db, learner, limit=MAX_GAMES, max_game_bytes=MAX_GAME_BYTES)
     positions, edges, checked, skipped = set(), set(), 0, 0
     for game, side in games:
         if side != color:
             continue
-        observed = _checked_game(db.connection, game)
-        if observed is None:
+        values = _checked_game(db.connection, game)
+        if values is None:
             skipped += 1
             continue
-        positions.update(observed[0])
-        edges.update(observed[1])
+        positions.update(values[0])
+        edges.update(values[1])
         checked += 1
+    return positions, edges, checked, skipped, flags
+
+
+def coverage(db, learner, color, graph):
+    positions, edges, checked, skipped, flags = observed(db, learner, color)
     wanted_positions = set(graph["played"]["positions"]) | set(graph["alternative"]["positions"])
     wanted_edges = set(graph["played"]["edges"]) | set(graph["alternative"]["edges"])
     incomplete = skipped > 0 or any(flags.values())
