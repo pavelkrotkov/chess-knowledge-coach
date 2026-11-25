@@ -2563,7 +2563,7 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
     db.close()
     monkeypatch.setattr(curriculum, "new_state", v6_new_state)
     _v6_source_mix(v6_path, v6_planning, now, monkeypatch)
-    _same_native_pair_fixture(tmp_path, v6_root, v6_path, monkeypatch)
+    choices = _same_native_pair_fixture(tmp_path, v6_root, v6_path, monkeypatch, dual_roles=True)
 
     # Launch the actual freshly issued form only in this workflow; the setup
     # helper above must leave the reusable opening opportunity unscheduled.
@@ -2609,8 +2609,67 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
         connection.close()
     assert graded == 0
 
+    # The other owner receives a fresh signed form after the first enrollment.
+    issuer = Path(__file__).resolve().parents[1] / "scripts" / "native_pair_issue.py"
+    artifact = tmp_path / "native-pair-primary-issued.json"
+    common = {
+        "prefix": sys.prefix,
+        "source": str(Path(chess_coach.__file__).resolve().parents[1]),
+        "database": str(v6_path),
+        "root": str(v6_root),
+        "subject": "learner_primary",
+    }
+    issued = subprocess.run(
+        [sys.executable, "-I", str(issuer)],
+        input=json.dumps(
+            {
+                **common,
+                "parser": str(Path(__file__).with_name("native_pair_probe.py").resolve()),
+                "choice": choices["learner_primary"],
+                "inner_version": 8,
+                "minutes": 1,
+                "output": str(artifact),
+            }
+        ),
+        text=True,
+        capture_output=True,
+        env={key: value for key, value in os.environ.items() if not key.startswith("CHESS_")},
+        timeout=60,
+    )
+    assert issued.returncode == 0, issued.stderr.strip()
+    assert issued.stdout.strip() == "synthetic-opening-form-issued"
+    assert artifact.stat().st_mode & 0o777 == 0o600
+    started = subprocess.run(
+        [sys.executable, "-I", str(consumer)],
+        input=json.dumps({**common, "form": str(artifact)}),
+        text=True,
+        capture_output=True,
+        env={key: value for key, value in os.environ.items() if not key.startswith("CHESS_")},
+        timeout=60,
+    )
+    assert started.returncode == 0, started.stderr.strip()
+    assert started.stdout.strip() == "synthetic-form-started"
+    primary_form = json.loads(artifact.read_text())
+    assert primary_form["key"] != form["key"]
+    connection = sqlite3.connect(v6_path)
+    try:
+        graded = connection.execute(
+            """SELECT count(*) FROM unified_training_completions c
+            JOIN unified_sessions s ON s.attempt_id=c.attempt_id
+            WHERE s.subject=? AND s.source_type=? AND s.source_version=? AND s.source_key=?""",
+            (
+                "learner_primary",
+                primary_form["source_type"],
+                primary_form["version"],
+                primary_form["key"],
+            ),
+        ).fetchone()[0]
+    finally:
+        connection.close()
+    assert graded == 0
 
-def _same_native_pair_fixture(tmp_path, root, path, monkeypatch):
+
+def _same_native_pair_fixture(tmp_path, root, path, monkeypatch, *, dual_roles=False):
     import json
     import os
     import subprocess
@@ -2668,6 +2727,20 @@ def _same_native_pair_fixture(tmp_path, root, path, monkeypatch):
             database_path=path,
             setup_only=True,
         )
+        choices = {"learner": choice}
+        if dual_roles:
+            choices["learner_primary"] = _conditional_fit_workflow(
+                tmp_path,
+                setup,
+                fake_engine,
+                _reference_search(scores, _fixture_retained_search),
+                scores,
+                project_root=root,
+                database_path=path,
+                setup_only=True,
+                subject="learner_primary",
+                reused_public=True,
+            )
     assert native_pair_probe.fingerprints(path) == before
     payload = {
         "database": str(path),
@@ -2687,6 +2760,19 @@ def _same_native_pair_fixture(tmp_path, root, path, monkeypatch):
     )
     assert result.returncode == 0, result.stderr.strip()
     assert result.stdout.strip() == "same-database-opening-verified"
+    if dual_roles:
+        payload["subject"] = "learner_primary"
+        payload["choice"] = choices["learner_primary"]
+        second = subprocess.run(
+            [sys.executable, "-I", str(Path(native_pair_probe.__file__).resolve())],
+            input=json.dumps(payload),
+            text=True,
+            capture_output=True,
+            env=env,
+            timeout=60,
+        )
+        assert second.returncode == 0, second.stderr.strip()
+        assert second.stdout.strip() == "same-database-opening-verified"
 
     artifact = tmp_path / "native-pair-issued.json"
     issuer = Path(__file__).resolve().parents[1] / "scripts" / "native_pair_issue.py"
@@ -2700,6 +2786,7 @@ def _same_native_pair_fixture(tmp_path, root, path, monkeypatch):
                 "database": str(path),
                 "root": str(root),
                 "choice": choice,
+                "subject": "learner",
                 "inner_version": 8,
                 "output": str(artifact),
             }
@@ -2716,7 +2803,7 @@ def _same_native_pair_fixture(tmp_path, root, path, monkeypatch):
     assert form["opening_token"] and form["opening_window_cursor"] and form["window_offer"]
     assert "csrf" not in form
     assert native_pair_probe.fingerprints(path) == before
-    return choice
+    return choices if dual_roles else choice
 
 
 def _priority_completion_workflow(db, fork_pgn, capture_pgn, monkeypatch):

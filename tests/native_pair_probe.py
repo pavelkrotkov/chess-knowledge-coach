@@ -93,7 +93,7 @@ def _opening(payload, path, root):
     app = create_app(
         db_path=path,
         project_root=root,
-        subject="learner",
+        subject=payload.get("subject", "learner"),
         actor="fixture",
         corpus="fixture",
         login="fixture-login",
