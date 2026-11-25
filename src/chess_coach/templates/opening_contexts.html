@@ -11,6 +11,7 @@
 {% with distance=course.item.distance %}{% include "opening_context_distance.html" %}{% endwith %}
 {% with comparison=course.item.comparison %}{% include "opening_context_comparison.html" %}{% endwith %}
 {% with owned=course.item.owned_comparison %}{% include "opening_context_owned.html" %}{% endwith %}
+{% with fork=course.item.public_fork %}{% include "opening_context_fork.html" %}{% endwith %}
 <p>Explore this recorded continuation: {{ course.item.source.line.san|join(" ") }}.</p>
 <p>It was not observed in the checked sample. History outside that sample, engine soundness and personal preference remain unknown.</p>
 <p><a href="{{ course.chapter.source.source_url }}">Public source</a> · <a href="{{ course.chapter.source.license_url }}">{{ course.chapter.source.license }}</a></p>
@@ -33,6 +34,7 @@
 {% with distance=item.distance %}{% include "opening_context_distance.html" %}{% endwith %}
 {% with comparison=item.comparison %}{% include "opening_context_comparison.html" %}{% endwith %}
 {% with owned=item.owned_comparison %}{% include "opening_context_owned.html" %}{% endwith %}
+{% with fork=item.public_fork %}{% include "opening_context_fork.html" %}{% endwith %}
 {% elif item.admission == "seen" %}Already seen in the checked sample; withheld.
 {% elif item.admission == "history_unavailable" %}Some selected history could not be verified; withheld.
 {% else %}A checked public line is unavailable; withheld.{% endif %}</li>

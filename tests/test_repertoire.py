@@ -1208,6 +1208,7 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         return state, None
 
     _conditional_fit_workflow(tmp_path, monkeypatch, fake_engine, all_roots, scores)
+    _unfamiliar_public_fork_workflow(tmp_path, monkeypatch)
 
     # New context previews and downloads revalidate without recording exposure.
     import html
@@ -4420,4 +4421,169 @@ def _conditional_fit_workflow(tmp_path, monkeypatch, fake_engine, all_roots, sco
         assert set(parent["fit"]["choices"].values()) == {"stale"}
         fake_engine.write_text("#!/bin/sh\nexit 0\n")
         del scores["e2e3"]
+    db.close()
+
+
+def _unfamiliar_public_fork_workflow(tmp_path, monkeypatch):
+    """One original public game yields a bounded material proof, then becomes stale."""
+    import hashlib
+    import io
+    import json
+    import sqlite3
+    import sys
+    from contextlib import redirect_stdout
+
+    import chess.engine
+
+    import chess_coach.opening_public_fork_candidate as fork_candidate
+    import chess_coach.opening_reference_source as reference_source
+    from chess_coach import cli
+    from chess_coach.fact_fingerprint import canonical, digest
+    from chess_coach.opening_context_choice import token
+    from chess_coach.opening_context_inventory import inventory
+    from chess_coach.opening_profile_index import INDEX_NAME, build
+    from chess_coach.opening_snapshot import import_snapshot
+    from chess_coach.ops_opening_context_fork import main as prepare_cli
+
+    root = tmp_path / "fork-project"
+    planning = root / ".runtime" / "planning"
+    data = root / ".runtime" / "data"
+    planning.mkdir(parents=True, mode=0o700)
+    data.mkdir(mode=0o700)
+    archive = planning / reference_source.SOURCE_NAME
+    archive.write_bytes(b"anonymous fork source")
+    source = game(
+        "Public Fixture",
+        "Opponent Fixture",
+        "1. e4 e5 2. Nf3 g5 3. Nxe5 d5 4. Bb5+ Qd7 5. exd5 Qxb5 "
+        "6. Nxf7 Kxf7 7. h3 Qxd5 8. b3 Qxb3 9. axb3 Bxh3 10. d3 Nc6",
+    )
+    with monkeypatch.context() as patch:
+        patch.setattr(reference_source, "SOURCE_BYTES", len(archive.read_bytes()))
+        patch.setattr(
+            reference_source, "SOURCE_SHA256", hashlib.sha256(archive.read_bytes()).hexdigest()
+        )
+        patch.setattr(reference_source, "_decode", lambda file: (source.encode(), False))
+        assert build(root, "learner")["accepted"] == 1
+
+    path = data / "fork.sqlite"
+    db = Database(path)
+    db.initialize()
+    import_snapshot(db)
+    ingest_pgn(db, game("Learner", "Other", "1. d4 d5 2. c4 e6", "*", second=1))
+    db.connection.commit()
+    report = inventory(db, root, "learner")
+    parent = next(p for p in report["contexts"]["white"]["parents"] if not p["path"])
+    item = next(item for item in parent["items"] if item["uci"] == "e2e4")
+    assert item["public_fork"]["status"] == "unmeasured"
+    choice = token(item["selection"])
+    with monkeypatch.context() as patch:
+        patch.setenv("CHESS_DB", str(path))
+        patch.setenv("CHESS_SUBJECT", "learner")
+        patch.delenv("CHESS_SCHEMA_COMPAT", raising=False)
+        patch.setattr(
+            sys,
+            "argv",
+            ["opening-context-fork", "--project-root", str(root), "--selection", choice],
+        )
+        before = db.connection.total_changes
+        with redirect_stdout(io.StringIO()) as out:
+            prepare_cli()
+        payload = json.loads(out.getvalue())
+        coverage, identity = payload["coverage"], payload["binding"]
+        result = coverage["result"]
+        assert coverage["status"] == "checked" and coverage["selected"] == 1
+        assert result["example"]["kind"] == "material"
+        example = result["example"]
+        assert example["ply"] == 19 and example["candidate_san"] == "Qh5+"
+        assert example["proof"]["legal_replies"] == len(example["proof"]["branches"]) > 0
+        assert all(branch["reply"] and branch["capture"] for branch in example["proof"]["branches"])
+        assert coverage["proofs"] <= identity["policy"]["proofs_per_branch"]
+        assert result["roots"] <= identity["policy"]["roots_per_game"]
+        assert result["incomplete"] and result["limit"] == "roots"
+        assert identity["source"]["history"] == item["source"]["source_history"]
+        index = planning / INDEX_NAME
+        assert identity["source"]["index_sha256"] == hashlib.sha256(index.read_bytes()).hexdigest()
+        with sqlite3.connect(index.as_uri() + "?mode=ro&immutable=1", uri=True) as public:
+            rows = public.execute(
+                "SELECT ply,parent,uci,san FROM moves WHERE game_id=? AND ply<? ORDER BY ply",
+                (identity["source"]["record"], example["ply"]),
+            ).fetchall()
+        assert example["history_sha256"] == digest(canonical(rows))
+        artifact = next(planning.glob("opening-public-proof-*.json"))
+        old_hash = hashlib.sha256(artifact.read_bytes()).hexdigest()
+        assert artifact.stat().st_mode & 0o777 == 0o400
+
+        patch.setattr(
+            fork_candidate, "fork_proof", lambda *_a, **_k: pytest.fail("fork proof on GET")
+        )
+        patch.setattr(
+            chess.engine.SimpleEngine, "popen_uci", lambda *_a, **_k: pytest.fail("engine on GET")
+        )
+        current = inventory(db, root, "learner")
+        shown = next(
+            x
+            for group in current["contexts"].values()
+            for p in group["parents"]
+            for x in p["items"]
+            if x["selection"] == item["selection"]
+        )
+        assert shown["public_fork"]["binding"] == identity
+        assert shown["public_fork"]["coverage"] == coverage
+        with redirect_stdout(io.StringIO()) as out:
+            patch.setattr(
+                sys,
+                "argv",
+                [
+                    "chess-coach",
+                    "--db",
+                    str(path),
+                    "repertoire",
+                    "--learner",
+                    "learner",
+                    "--unfamiliar-contexts",
+                    "--project-root",
+                    str(root),
+                ],
+            )
+            cli.main()
+        cli_report = json.loads(out.getvalue())
+        cli_item = next(
+            x
+            for group in cli_report["contexts"].values()
+            for p in group["parents"]
+            for x in p["items"]
+            if x["selection"] == item["selection"]
+        )
+        assert cli_item["public_fork"]["binding"] == identity
+        assert cli_item["public_fork"]["binding_sha256"] == payload["binding_sha256"]
+        assert cli_item["public_fork"]["coverage"] == coverage
+        app = create_app(
+            db_path=path,
+            project_root=root,
+            subject="learner",
+            actor="fixture",
+            corpus="test",
+            login="login",
+            origin="https://coach.invalid",
+        )
+        client = app.test_client()
+        response = client.get(
+            "/repertoire/unfamiliar?contexts=1&choice=" + choice,
+            base_url="https://coach.invalid",
+            headers={"Tailscale-User-Login": "login"},
+        )
+        assert response.status_code == 200 and b"Qh5+" in response.data
+        assert payload["binding_sha256"].encode() in response.data
+        assert identity["source"]["index_sha256"].encode() in response.data
+        assert example["history_sha256"].encode() in response.data
+        assert db.connection.total_changes == before
+
+        ingest_pgn(db, game("Learner", "Another", "1. d4 Nf6 2. c4 e6", "*", second=2))
+        db.connection.commit()
+        changed = inventory(db, root, "learner")
+        changed_parent = next(p for p in changed["contexts"]["white"]["parents"] if not p["path"])
+        changed_item = next(x for x in changed_parent["items"] if x["uci"] == "e2e4")
+        assert changed_item["public_fork"]["status"] == "stale"
+        assert hashlib.sha256(artifact.read_bytes()).hexdigest() == old_hash
     db.close()

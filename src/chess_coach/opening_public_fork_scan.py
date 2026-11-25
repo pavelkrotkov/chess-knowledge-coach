@@ -8,7 +8,7 @@ from .opening_public_fork_roots import roots
 from .opening_public_proof_versions import ROOTS_PER_GAME
 
 
-def scan(positions, rows, budget, deadline, *, safe=True):
+def scan(positions, rows, budget, deadline, *, safe=True, material_example=False):
     result = {
         "roots": 0,
         "geometries": 0,
@@ -36,6 +36,9 @@ def scan(positions, rows, budget, deadline, *, safe=True):
         if state == "none":
             continue
         record(result, state, example)
+        if material_example and state == "material":
+            result["example"] = example
+            material_example = False
     result["incomplete"] = True
     result["limit"] = "roots"
     return result

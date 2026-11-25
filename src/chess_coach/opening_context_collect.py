@@ -4,6 +4,7 @@ from .opening_context_candidates import choices
 from .opening_context_choice import token
 from .opening_context_fit import assess as fit
 from .opening_context_fit_inputs import attach
+from .opening_context_fork_read import enrich as public_fork
 from .opening_context_history import ordered
 from .opening_context_owned_measure import enrich as owned_comparison
 from .opening_distance_history import history
@@ -43,6 +44,7 @@ def collect(
             enrich(items, checked_history, budget, index)
             owned_comparison(db, root, subject, games, color, parent, path, items, budget)
             comparison(root, subject, items, index, budget)
+            public_fork(root, subject, items)
         group = {"parent": parent, "path": list(path), "occurrences": count, **found}
         parents.append(
             attach(
