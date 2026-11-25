@@ -100,12 +100,15 @@ def main(*, compatibility: bool | None = None) -> None:
     if args.command == "competencies":
         print(json.dumps(competency_report(), indent=2))
         return
-    # These commands do not initialize the CLI target database.
-    if args.command in recovery.COMMANDS:
-        recovery.COMMANDS[args.command](args)
+    if args.command == "repertoire" and args.unfamiliar_contexts:
+        from .opening_context_cli import report
+
+        print(json.dumps(report(args.project_root, args.learner, args.db), indent=2))
         return
-    if args.command in snapshot.COMMANDS:
-        snapshot.COMMANDS[args.command](args)
+    # These commands do not initialize the CLI target database.
+    standalone = snapshot.COMMANDS | recovery.COMMANDS
+    if args.command in standalone:
+        standalone[args.command](args)
         return
     # Only an omitted selection consults the configured private profile.
     if compatibility is None:

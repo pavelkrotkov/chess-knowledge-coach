@@ -1051,6 +1051,75 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     assert result["parent"] == "e4" and result["parent_count"] == 1
     assert result["white"]["uci"] == "e2e3" and result["black"]["uci"] == "e7e6"
     assert len(result["white"]["line"]["san"]) == 4
+
+    # Context inventory keeps checked history and public source replay separate.
+    import contextlib
+    import sys
+
+    from chess_coach.opening_context_inventory import inventory
+
+    before_inventory = experiment_db.connection.total_changes
+    before_inventory_hash = hashlib.sha256(experiment_path.read_bytes()).hexdigest()
+    contexts = inventory(experiment_db, tmp_path, "learner")
+    assert contexts["status"] == "prepared"
+    assert contexts["limits"]["parents_per_color"] == 2
+    assert all(group["omitted"] >= 0 for group in contexts["contexts"].values())
+    assert {len(item["path"]) for item in contexts["contexts"]["white"]["parents"]} == {0, 2}
+    assert {len(item["path"]) for item in contexts["contexts"]["black"]["parents"]} == {1}
+    items = [
+        item
+        for group in contexts["contexts"].values()
+        for parent in group["parents"]
+        for item in parent["items"]
+    ]
+    supported = next(item for item in items if item["source"] is not None)
+    assert supported["source"]["source_history"]["ply"] >= 1
+    assert supported["selection"]["sample_identity"] == contexts["sample_identity"]
+    assert supported["selection"]["reference_index_sha256"] == contexts["reference_index_sha256"]
+    assert supported["selection"]["source"]["reference"] == supported["source"]["line"]["reference"]
+    assert (
+        supported["selection"]["source"]["prefix_sha256"]
+        == supported["source"]["source_history"]["prefix_sha256"]
+    )
+    assert all(
+        item["history"] in {"seen_in_checked_sample", "not_seen_in_checked_sample"}
+        for item in items
+    )
+    assert experiment_db.connection.total_changes == before_inventory
+    empty_root = tmp_path / "unavailable-context"
+    (empty_root / ".runtime" / "planning").mkdir(parents=True, mode=0o700)
+    assert inventory(experiment_db, empty_root, "learner")["status"] == "unavailable"
+
+    from chess_coach import cli as context_cli
+
+    with monkeypatch.context() as context_patch, contextlib.redirect_stdout(io.StringIO()) as out:
+        context_patch.delenv("CHESS_DB", raising=False)
+        context_patch.delenv("CHESS_SCHEMA_COMPAT", raising=False)
+        context_patch.setattr(
+            sys,
+            "argv",
+            [
+                "chess-coach",
+                "--db",
+                str(experiment_path),
+                "repertoire",
+                "--learner",
+                "learner",
+                "--unfamiliar-contexts",
+                "--project-root",
+                str(tmp_path),
+            ],
+        )
+        context_patch.setattr(
+            Database, "initialize", lambda *_: pytest.fail("read-only CLI initialized DB")
+        )
+        context_patch.setattr(
+            Database, "__init__", lambda *_args, **_kwargs: pytest.fail("CLI constructed DB")
+        )
+        context_cli.main()
+    assert json.loads(out.getvalue())["version"] == "opening-context-inventory-v1"
+    assert experiment_db.connection.total_changes == before_inventory
+    assert hashlib.sha256(experiment_path.read_bytes()).hexdigest() == before_inventory_hash
     app_first = create_app(
         db_path=experiment_path,
         project_root=tmp_path,
@@ -2557,6 +2626,30 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         independent = measurements(experiment_db, tmp_path, "learner", result)
         assert independent["white"]["status"] == "unavailable"
         assert independent["black"]["status"] == "queued"
+    # A second actual opponent first move is a separate Black parent context.
+    ingest_pgn(experiment_db, game("Other", "Learner", "1. d4 d5 2. Nf3 Nf6", second=10))
+    multiple = inventory(experiment_db, tmp_path, "learner")
+    black_parents = multiple["contexts"]["black"]["parents"]
+    assert len(black_parents) == 2
+    assert len({item["parent"] for item in black_parents}) == 2
+    assert any(
+        parent["truncated"]
+        for group in multiple["contexts"].values()
+        for parent in group["parents"]
+    )
+    broken_game = experiment_db.connection.execute("SELECT MAX(id) FROM games").fetchone()[0]
+    experiment_db.connection.execute(
+        "UPDATE positions SET uci=? WHERE game_id=? AND ply=2", ("a1a1", broken_game)
+    )
+    experiment_db.connection.commit()
+    unknown = inventory(experiment_db, tmp_path, "learner")
+    assert unknown["sample_failed"] >= 1 and unknown["sample_incomplete"]
+    assert all(
+        item["history_incomplete"]
+        for group in unknown["contexts"].values()
+        for parent in group["parents"]
+        for item in parent["items"]
+    )
     experiment_db.close()
 
     start_key = position_key(chess.Board())
