@@ -390,6 +390,35 @@ explicitly labelled release-smoke review actor. Do not review production
 evidence or invent candidate evidence or mastery to make the test pass;
 insufficient evidence is a valid result.
 
+### Synthetic native-pair compatibility
+
+The reviewed primary `7b488e90a820ea15e1d8e129c2d5caf2a457f72e` and fallback
+`fa863c7d566ad5f6740f65efcac663753600e35b` were exercised in fresh,
+unpatched candidate processes against one anonymous native schema-41 fixture.
+The sequence checked completed records and active-session continuation through
+primary, fallback, and primary again. It checked the six supported learning
+families, typed history and permitted changes, accepted-time and FSRS lineage,
+due order, same-prompt conflicts, and idempotent replay. Ordinary and
+opening-linked launches used actual issued forms and created their expected
+enrollments; the opening experiment remained ungraded.
+
+The fallback refused the newer primary cursor; the primary resumed a genuine
+fallback-issued older cursor. The fallback accepted its supported opening form.
+Wrong-owner, expired-window, and stale or unavailable source checks refused
+without unintended typed writes. The source was restored
+after the controlled currentness fault. A real expired window was tested
+separately from the automated clock-controlled test for expiry during the final
+source check; the latter is not evidence of a real-time crossing.
+
+These observations apply only to the exact candidates, sealed dependencies,
+fixture and accounted state transitions in the retained private evidence.
+Independent review and a complete receipt are required before accepting a
+qualification. A different candidate, runtime or fixture, or an unaccounted
+source or state change, requires fresh qualification. Synthetic compatibility
+does not establish a native upgrade, a production rollback, or private learner
+acceptance. The separate backup and restore, capacity, quiescence and
+schema-32-to-41 requirements above remain in force.
+
 ### Official puzzle snapshots
 
 Install the `zstd` executable on the host. The following operator-only command
