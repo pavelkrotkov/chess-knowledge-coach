@@ -1,0 +1,26 @@
+{% if fork.status == "prepared" %}
+{% set coverage = fork.coverage %}
+{% if coverage.status == "checked" %}
+<p>One exact public record was checked after this branch: {{ coverage.positions }} same-side positions, {{ coverage.result.roots }} roots, {{ coverage.proofs }} material proofs attempted. {% if coverage.censored %}The recorded window was censored.{% endif %} {% if coverage.result.incomplete %}The {{ coverage.result.limit }} limit left roots unsearched.{% endif %} {{ coverage.result.unsupported }} roots or contexts were unsupported.</p>
+{% if coverage.result.example and coverage.result.example.kind == "material" %}
+{% set example = coverage.result.example %}
+<p><a href="{{ example.source }}">Public record {{ example.record }}</a>, ply {{ example.ply }}: {% if example.recorded %}the recorded move{% else %}the legal alternative{% endif %} {{ example.candidate_san }} proves a material fork on {{ example.proof.targets|join(", ") }}. All {{ example.proof.legal_replies }} legal immediate replies have a checked target capture with a gain floor of {{ example.proof.minimum_gain }}.</p>
+<details><summary>Fork reply and capture evidence</summary>
+{% for branch in example.proof.branches %}<p>{{ branch.reply_san }} — {{ branch.capture_san }} ({{ branch.reply }} {{ branch.capture }}).</p>{% endfor %}
+<p>{{ example.proof.boundary }}. Original history SHA-256 <code>{{ example.history_sha256 }}</code>.</p>
+</details>
+{% else %}<p>No material fork certificate is available from this bounded check; unproved and unsearched opportunities remain unknown.</p>{% endif %}
+{% else %}
+<p>The public fork check was {{ coverage.status|replace("_", " ") }}; a certificate and any negative demand claim remain unavailable.</p>
+{% endif %}
+<details><summary>Fork source and policy</summary>
+<p>Source: <a href="{{ fork.binding.source.source }}">{{ fork.binding.source.source }}</a> · <a href="{{ fork.binding.source.license_url }}">{{ fork.binding.source.license }}</a>. {{ fork.binding.source.filter }}. Binding SHA-256 <code>{{ fork.binding_sha256 }}</code>; reference index SHA-256 <code>{{ fork.binding.source.index_sha256 }}</code>; source line SHA-256 <code>{{ fork.binding.source.line_sha256 }}</code>; prefix SHA-256 <code>{{ fork.binding.source.history.prefix_sha256 }}</code>.</p>
+<p>Policy {{ fork.binding.version }}: at most {{ fork.binding.policy.window_plies_including_branch }} plies including the selected branch, {{ fork.binding.policy.roots_per_game }} roots and {{ fork.binding.policy.proofs_per_branch }} fork proofs, with {{ fork.binding.policy.proof_seconds }} seconds for proof and {{ fork.binding.policy.shared_seconds }} seconds shared. This is one bounded public example, not evidence of personal weakness, prevalence, preference, accuracy, or opening causation.</p>
+</details>
+{% elif fork.status == "stale" %}
+<p>The public fork preparation is stale; prepare it again for the current selection and source.</p>
+{% elif fork.status == "unmeasured" %}
+<p>No public fork certificate has been prepared for this selection; demand remains unknown.</p>
+{% else %}
+<p>A public fork certificate is unavailable; demand remains unknown.</p>
+{% endif %}

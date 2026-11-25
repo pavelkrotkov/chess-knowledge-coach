@@ -747,6 +747,18 @@ limits, exclusions and the switching inventory remain visible. This is one
 conditional opportunity observation, not a personality, performance or
 whole-opening judgment; other dimensions remain unmeasured.
 
+One exact unfamiliar selection can separately have an offline public fork
+preparation using the chess_coach.ops_opening_context_fork module with
+--project-root and --selection, and CHESS_DB and CHESS_SUBJECT set to the private
+database and learner. It replays the original public record from standard start,
+then checks same-side positions after the selected branch within the existing
+36-ply window, 64-root and eight-proof limits. The immutable result identifies
+its source, license, index, history and proof policy; the CLI inventory and
+private chooser only read and recheck it. A material example proves its bounded
+immediate-reply certificate, while unsupported, censored, interrupted and
+unsearched work remains unknown. It is not a prevalence or personal-weakness
+claim. Actual licensed-source qualification remains a separate gate.
+
 ### Descriptive choice profile
 
 `chess-coach --db PATH style-choices --learner NAME` and the private Choice
