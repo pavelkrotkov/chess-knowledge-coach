@@ -2209,6 +2209,22 @@ def _opening_fit_route(monkeypatch, tmp_path):
             rated_games.append(
                 rated_game(0, 300, "1800+0", moves=" ".join(long_line(nomination_fork)))
             )
+            # Same decision, independent synthetic public games: bounded style
+            # contrast and a separate candidate-branch material fork witness.
+            fit_low = "e4 Nc6 Nf3 e5 Nxe5 Nxe5 a3 a5 Ra2 a4 Ra1 Ra5 Ra2 Ra6 Ra1 Ra7 Ra2 Ra5 Ra1 Ra6"
+            fit_quiet = (
+                "e4 Nc6 Nf3 e5 Bc4 Nb8 Nc3 Nf6 d3 Be7 O-O O-O Re1 d6 Be3 c6 Qd2 Nbd7 Rad1 Re8"
+            )
+            fork_alternative = (
+                "e4 Nc6 Nf3 e5 Nc3 a6 Bc4 Nb8 Bf1 g5 Nxe5 d5 Bb5+ Qd7 exd5 Qxb5 "
+                "Nxf7 Kxf7 h3 Qxd5 b3 Qxb3 axb3 Bxh3 Qg4 Ne7"
+            )
+            rated_games += [
+                rated_game(0, 310, "1800+0", moves=" ".join(nomination_fork.split()[:20]))
+            ]
+            rated_games += [rated_game(0, 311 + i, "1800+0", moves=fit_quiet) for i in range(2)]
+            rated_games += [rated_game(0, 320 + i, "1800+0", moves=fit_low) for i in range(5)]
+            rated_games.append(rated_game(0, 330, "1800+0", moves=fork_alternative))
             continuation_fork = (
                 "e4 e5 Nf3 g5 Nxe5 d5 Bb5+ Qd7 exd5 Qxb5 Nxf7 Kxf7 h3 Qxd5 b3 Qxb3 "
                 "axb3 Bxh3 Rg1 h6 Rf1 c6 c3 Ne7 Rg1 c5 Ra2 Rh7 Rb2 b6 Rc2 Rh8 "
@@ -2334,7 +2350,7 @@ def _opening_fit_route(monkeypatch, tmp_path):
             assert len(requests) == 1 and not receipt["whole_archive_checksum_verified"]
             assert (recent_planning / PREFIX_NAME).stat().st_size == PREFIX_BYTES
             coverage = build_recent(recent_root, "learner")
-            assert coverage["accepted"] == 29 and coverage["truncated"]
+            assert coverage["accepted"] == 38 and coverage["truncated"]
             from chess_coach.opening_profile_source import profile as recent_before_history
 
             unavailable = recent_before_history(
@@ -3495,7 +3511,7 @@ def _opening_fit_route(monkeypatch, tmp_path):
                 own_engine.setattr(
                     chess.engine.SimpleEngine, "popen_uci", lambda *_args: NominationEngine()
                 )
-                for index in range(2):
+                for index in range(3):
                     original = chess.pgn.Game()
                     original.headers.update(
                         White="learner",
@@ -3533,7 +3549,7 @@ def _opening_fit_route(monkeypatch, tmp_path):
             nomination_db.connection.commit()
             sparse = exploration_report(nomination_db, recent_root, "learner", fork=True)
             assert sparse["fork_nomination"]["reason"] == "fewer_than_two_independent_miss_games"
-            for fork_position in fork_positions:
+            for fork_position in fork_positions[:2]:
                 observed = process_decision(nomination_db, fork_position, "learner")
                 assert observed["outcome"] == "failure"
                 evidence_ids.append(observed["evidence_ids"][0])

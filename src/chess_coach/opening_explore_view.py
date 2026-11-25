@@ -8,7 +8,7 @@ from .opening_fork_nomination import nomination
 def report(db, root, learner, *, fork=False, revision=False):
     revision = revision or fork == "revision"
     result = explore(db, learner)
-    if fork or revision:
+    if fork in (True, "1", "revision") or revision:
         result["fork_nomination"] = nomination(db, root, learner, result)
         if revision:
             from .opening_revision_judgments import judgments

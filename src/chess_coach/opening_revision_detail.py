@@ -53,7 +53,10 @@ def inventory(db, root, learner, decision, row, budget):
 
 def annotate(db, root, learner, report, nomination, decision, rows):
     budget = report["_budget"]
-    moves = [decision["played_uci"], *(row["choice"]["uci"] for row in rows)]
+    moves = [
+        decision["played_uci"],
+        *(row["choice"]["uci"] for row in rows if row["admission"]["status"] == "eligible"),
+    ]
     try:
         owned, public = center(
             db, root, learner, decision, moves, nomination["nominal_control"], budget
