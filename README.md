@@ -346,7 +346,7 @@ Goals are `balanced`, `capture`, `fork`, `mate` (public-source mate), and
 quotas. A goal
 changes the order of independently eligible new sources; due reviews remain
 first, and unavailable or unmeasured sources remain explicit. The window can
-be 1180 minutes and is measured by the server, independent of the plan's
+be 1 to 180 minutes and is measured by the server, independent of the plan's
 fixed snapshot time. It is not an estimate of individual task duration or
 performance. New plan offers and their signed start links expire with the
 window; a task already started can still finish, and due and ordinary practice
@@ -355,8 +355,11 @@ remain available.
 Use the returned `window_cursor` with the same subject, corpus and limits and
 `--renew` to start another window. Renewal retains offered prompt identities;
 when the snapshot or sources change, it explicitly rechecks due work and the
-bounded sources. Previously offered new work is not offered again as new, but
-can return as due review. A single continuation retains at most 50 prompt
+bounded sources. If an offer becomes stale after another task starts, return to
+the plan and renew. A complete bounded schedule check retains started work and
+can offer a still-eligible, unstarted task again with a fresh token. If that
+check is incomplete, renewal refuses rather than assuming it was unstarted.
+Previously started work can return as due review. A single continuation retains at most 50 prompt
 identities; start a fresh plan after that limit. Omitting goal and minutes
 keeps the existing plan and older cursor behavior.
 

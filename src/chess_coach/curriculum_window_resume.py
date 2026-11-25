@@ -5,13 +5,13 @@ from .curriculum_window_renew import checked_renew
 from .curriculum_window_scope import create, options
 
 
-def state(db, value, learner, version, limit, scan_limit, now, goal, minutes, renew):
+def state(db, value, learner, version, limit, scan_limit, now, goal, minutes, renew, budget):
     if not value:
         return create(new_state(db, learner, version, limit, scan_limit, now), goal, minutes, limit)
     selected_minutes = _scope(value, goal, minutes, renew, limit)
     state = value["state"]
     if renew:
-        return checked_renew(db, value, learner, version, scan_limit, now, selected_minutes)
+        return checked_renew(db, value, learner, version, scan_limit, now, selected_minutes, budget)
     resume_state(db, state, learner, version, state["limit"], scan_limit, now)
     return value
 

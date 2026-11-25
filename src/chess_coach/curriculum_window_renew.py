@@ -2,32 +2,34 @@
 
 from .curriculum_cursor import new_state, resume_state, revision
 from .curriculum_window_policy import check_policy
+from .curriculum_window_reoffer import history
 from .curriculum_window_scope import create
 from .fact_fingerprint import digest
 from .mastery_time import parse_utc
 
 
-def _renew(db, value, learner, version, scan_limit, now, minutes):
+def _renew(db, value, learner, version, scan_limit, now, minutes, budget):
     old = value["state"]
-    limit = min(50, len(old["seen"]) + value["page_limit"])
-    if len(old["seen"]) >= limit:
+    changed, seen, new_seen = history(db, value, budget)
+    limit = min(50, len(seen) + value["page_limit"])
+    if len(seen) >= limit:
         raise ValueError("practice window plan limit reached; start a new plan")
-    refreshed = old["revision"] != revision(db) or old["as_of"] != now.isoformat()
+    refreshed = changed or old["as_of"] != now.isoformat()
     if refreshed:
         state = new_state(db, learner, version, limit, scan_limit, now)
-        state["seen"] = list(old["seen"])
+        state["seen"] = seen
         state["family_turn"] = old["family_turn"]
     else:
         state = old
         state["limit"] = limit
     result = create(state, value["goal"], minutes, value["page_limit"], reset_turn=False)
-    result["new_seen"] = list(value["new_seen"])
-    result["repeat_due"] = list(value["new_seen"]) if refreshed else list(value["repeat_due"])
+    result["new_seen"] = new_seen
+    result["repeat_due"] = list(new_seen) if refreshed else list(value["repeat_due"])
     result["source_refreshed"] = refreshed
     return result
 
 
-def checked_renew(db, value, learner, version, scan_limit, now, minutes):
+def checked_renew(db, value, learner, version, scan_limit, now, minutes, budget):
     state = value["state"]
     if state["subject_hash"] != digest(learner):
         raise ValueError("practice window owner changed")
@@ -38,4 +40,4 @@ def checked_renew(db, value, learner, version, scan_limit, now, minutes):
         resume_state(
             db, state, learner, version, state["limit"], scan_limit, parse_utc(state["as_of"])
         )
-    return _renew(db, value, learner, version, scan_limit, now, minutes)
+    return _renew(db, value, learner, version, scan_limit, now, minutes, budget)

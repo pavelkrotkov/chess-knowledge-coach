@@ -1213,6 +1213,7 @@ def _window_legacy_workflow(original, tmp_path, patch, wall, subject):
 
 
 def _daily_fork_workflow(tmp_path, monkeypatch):
+    import html
     import io
     import sys
     from datetime import UTC, datetime, timedelta
@@ -1440,6 +1441,132 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
             )
         with pytest.raises(ValueError, match="unsupported"):
             daily_plan(db, subject=SUBJECT, corpus_version="fixture", goal="unknown")
+
+        # Both source-backed offers from one page should remain startable.
+        pair_path = tmp_path / "window-two-offers.sqlite"
+        target = sqlite3.connect(pair_path)
+        db.connection.backup(target)
+        target.close()
+        pair_app = create_app(
+            db_path=pair_path,
+            subject=SUBJECT,
+            actor="fixture",
+            corpus="fixture",
+            login="fixture-login",
+            origin="https://coach.invalid",
+        )
+        pair_client = pair_app.test_client()
+        pair_headers = {"Tailscale-User-Login": "fixture-login", "Origin": "https://coach.invalid"}
+        pair_page = pair_client.get(
+            "/plan?goal=fork&minutes=1", base_url="https://coach.invalid", headers=pair_headers
+        )
+        assert pair_page.status_code == 200
+        pair_forms = [
+            part.split("</form>", 1)[0]
+            for part in pair_page.get_data(as_text=True).split('<form method="post"')
+            if 'name="source_type" value="own-game"' in part.split("</form>", 1)[0]
+            and 'name="window_offer"' in part.split("</form>", 1)[0]
+        ]
+        assert len(pair_forms) == 2
+        pair_fields = [
+            _window_fields(
+                form, ("csrf", "version", "source_type", "key", "training", "window_offer")
+            )
+            for form in pair_forms
+        ]
+        first = pair_client.post(
+            "/unified/start",
+            base_url="https://coach.invalid",
+            headers=pair_headers,
+            data=pair_fields[0],
+        )
+        assert first.status_code == 303
+        stale = pair_client.post(
+            "/unified/start",
+            base_url="https://coach.invalid",
+            headers=pair_headers,
+            data=pair_fields[1],
+        )
+        assert stale.status_code == 400 and b"renew to recheck unstarted offers" in stale.data
+        renewal = re.search(
+            r'href="([^"]+)">Renew this plan window</a>', pair_page.get_data(as_text=True)
+        )
+        assert renewal is not None
+        renewal_url = html.unescape(renewal.group(1))
+        pair_db = Database(pair_path)
+        from chess_coach.evidence_review import review_evidence as review_pair
+
+        # A visible scheduled source that can no longer be reconstructed must
+        # prevent the absence proof instead of releasing the other offer.
+        unavailable_path = tmp_path / "window-unavailable.sqlite"
+        target = sqlite3.connect(unavailable_path)
+        pair_db.connection.backup(target)
+        target.close()
+        unavailable_db = Database(unavailable_path)
+        review_pair(unavailable_db, int(pair_fields[0]["key"]), decision="reject", actor="fixture")
+        unavailable_app = create_app(
+            db_path=unavailable_path,
+            subject=SUBJECT,
+            actor="fixture",
+            corpus="fixture",
+            login="fixture-login",
+            origin="https://coach.invalid",
+        )
+        unavailable_page = unavailable_app.test_client().get(
+            renewal_url, base_url="https://coach.invalid", headers=pair_headers
+        )
+        assert unavailable_page.status_code == 400
+        assert (
+            unavailable_db.connection.execute("SELECT count(*) FROM unified_sessions").fetchone()[0]
+            == 1
+        )
+        unavailable_db.close()
+
+        review_pair(pair_db, int(pair_fields[1]["key"]), decision="reject", actor="fixture")
+        revoked = pair_client.get(
+            renewal_url, base_url="https://coach.invalid", headers=pair_headers
+        )
+        assert revoked.status_code == 200
+        assert f'name="key" value="{pair_fields[1]["key"]}"'.encode() not in revoked.data
+        assert (
+            pair_client.post(
+                "/unified/start",
+                base_url="https://coach.invalid",
+                headers=pair_headers,
+                data=pair_fields[1],
+            ).status_code
+            == 400
+        )
+        review_pair(pair_db, int(pair_fields[1]["key"]), decision="accept", actor="fixture")
+        rechecked = pair_client.get(
+            renewal_url, base_url="https://coach.invalid", headers=pair_headers
+        )
+        assert rechecked.status_code == 200
+        forms = [
+            part.split("</form>", 1)[0]
+            for part in rechecked.get_data(as_text=True).split('<form method="post"')
+            if 'name="source_type" value="own-game"' in part.split("</form>", 1)[0]
+            and 'name="window_offer"' in part.split("</form>", 1)[0]
+        ]
+        assert len(forms) == 1
+        recovered = _window_fields(
+            forms[0], ("csrf", "version", "source_type", "key", "training", "window_offer")
+        )
+        assert recovered["key"] == pair_fields[1]["key"]
+        assert (
+            pair_client.post(
+                "/unified/start",
+                base_url="https://coach.invalid",
+                headers=pair_headers,
+                data=recovered,
+            ).status_code
+            == 303
+        )
+        assert (
+            pair_db.connection.execute("SELECT count(*) FROM unified_sessions").fetchone()[0] == 2
+        )
+        pair_db.close()
+
         copy_path = tmp_path / "window-plan.sqlite"
         target = sqlite3.connect(copy_path)
         db.connection.backup(target)

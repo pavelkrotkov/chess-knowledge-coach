@@ -15,7 +15,8 @@ def start(db, version, puzzle_id, offer):
         )
     except ValueError:
         return render_template(
-            "error.html", message="The practice window expired or the plan changed."
+            "error.html",
+            message="The offer changed or expired. Return to the plan and renew to recheck unstarted offers.",
         ), 400
     session["attempt"] = attempt
     session["item_id"] = item_id

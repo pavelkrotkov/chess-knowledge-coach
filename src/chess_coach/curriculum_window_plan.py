@@ -10,7 +10,7 @@ from .curriculum_window_scope import expired
 
 
 def build(db, value, learner, version, limit, scan_limit, now, budget, goal, minutes, renew):
-    value = state(db, value, learner, version, limit, scan_limit, now, goal, minutes, renew)
+    value = state(db, value, learner, version, limit, scan_limit, now, goal, minutes, renew, budget)
     plan_state = value["state"]
     before = deepcopy(value)
     selection = deepcopy(before)

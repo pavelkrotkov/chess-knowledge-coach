@@ -33,6 +33,7 @@ def build_page(
     summary = evidence_summary(db, learner, now, state["scan_limit"])
     status, invalid_ratings = corpus_status(db, state["corpus_version"])
     scan = initial_scan(invalid_ratings)
+    scan["scheduled_examined"] = getattr(budget, "renewal_examined", 0)
     previous = set(state["seen"])
     items, reason = due(db, state, now, summary, scan, window)
     reason = charge(state, window, previous, items, reason)
