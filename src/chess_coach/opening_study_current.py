@@ -6,9 +6,9 @@ from types import SimpleNamespace
 
 from .fact_fingerprint import canonical
 from .opening_queue_budget import study_budget
-from .opening_revision_course import preview
 from .opening_study_course import build
-from .opening_study_source import fingerprint, inputs
+from .opening_study_revision import current, watched
+from .opening_study_source import fingerprint
 from .schema_compat import readonly
 
 
@@ -35,15 +35,23 @@ def admitted(
         budget = study_budget(db, browser=browser)
         deadline = budget.expires if browser or bounded else None
         try:
-            first = preview(
-                db, root, learner, game, position, move, deadline=deadline, with_identity=True
+            first = current(
+                db,
+                root,
+                learner,
+                game,
+                position,
+                move,
+                version,
+                deadline=deadline,
+                with_identity=True,
             )
             budget.check()
             course = build(first, version, game, position, move)
-            files = inputs(directory, first["_identity"], root)
+            files, deadline = watched(first, directory, root, budget, deadline)
             before = fingerprint(files)
             budget.check()
-            second = preview(db, root, learner, game, position, move, deadline=deadline)
+            second = current(db, root, learner, game, position, move, version, deadline=deadline)
             budget.check()
             if canonical(build(second, version, game, position, move)) != canonical(course):
                 raise ValueError("opening preview changed")

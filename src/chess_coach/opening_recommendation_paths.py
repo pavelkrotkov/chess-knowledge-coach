@@ -5,11 +5,11 @@ from .opening_full_history_build import INDEX_NAME as FULL_INDEX
 from .opening_public_fork_later import bound as full_bound
 from .opening_public_proof_files import ATTEMPTS
 from .opening_public_proof_files import _path as proof_path
-from .opening_public_proof_source import binding as proof_binding
 from .opening_public_proof_versions import combined, continuation
-from .opening_queue_binding import identity, snapshot
+from .opening_queue_binding import identity
 from .opening_queue_location import location
 from .opening_recent_source import INDEX_NAME, MANIFEST_NAME, PREFIX_NAME
+from .opening_recommendation_binding import bindings
 from .opening_recommendation_queue_paths import paths as queue_paths
 from .opening_study_source import inputs as study_inputs
 
@@ -30,28 +30,9 @@ def inputs(db, root, learner, decision, budget):
     if not 1 <= len(choices) <= 8:
         raise ValueError("opening choices unavailable")
     directory, database = location(db, root, learner)
-    _, source, config, _ = snapshot(
-        db,
-        database,
-        learner,
-        decision["game_id"],
-        decision["position_id"],
-        choices[0]["uci"],
-        deadline=budget.expires,
-        budget=budget,
+    source, config, base = bindings(
+        db, root, learner, decision, database, choices[0]["uci"], budget
     )
-    with budget.scope(snapshot=False):
-        base, _ = proof_binding(
-            db,
-            root,
-            learner,
-            decision["game_id"],
-            decision["position_id"],
-            choices[0]["uci"],
-            budget.expires,
-        )
-    if base["source"] != source:
-        raise ValueError("opening binding changed")
     try:
         sha = full_bound(root, learner, budget.expires)[1]
     except (OSError, ValueError, TypeError, KeyError):

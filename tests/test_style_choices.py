@@ -1625,6 +1625,9 @@ def _opening_fit_route(monkeypatch, tmp_path):
     from chess_coach.purpose_lines import native
     from chess_coach.purpose_request import create
 
+    real_course_planning = coursepublic.planning
+    real_course_identity = coursepublic._identity
+    real_course_private = coursepublic._private_file
     owned = Database(":memory:")
     owned.initialize()
     import_snapshot(owned)
@@ -2735,6 +2738,24 @@ def _opening_fit_route(monkeypatch, tmp_path):
                 assert report["decision_ply"] == 3 and report["played"]["games"] == 8
                 assert report["played"]["queens"]["queenless_observed"] == 1
                 assert report["public_preparation"] is None
+                # Rechecking queue and proof bindings gives each the existing
+                # bounded history scope while retaining one shared deadline.
+                import chess_coach.opening_queue_binding as long_binding
+                from chess_coach.opening_decision import inspect as long_inspect
+                from chess_coach.opening_profile_cli_db import private_database
+                from chess_coach.opening_queue_budget import BrowserBudget
+                from chess_coach.opening_recommendation_paths import inputs as recommendation_inputs
+
+                with cli.context() as long_config:
+                    long_config.setattr(long_binding, "ENGINE", sys.executable)
+                    with private_database(recent_root, "learner") as long_db:
+                        long_decision = long_inspect(long_db, long_id, long_position, "learner")
+                        long_budget = BrowserBudget(long_db)
+                        long_budget.expires = min(long_budget.expires, time.monotonic() + 25)
+                        watched = recommendation_inputs(
+                            long_db, recent_root, "learner", long_decision, long_budget
+                        )
+                        assert watched and len(watched) <= 200
                 for branch in ("played", "alternative"):
                     tail = report[branch]["later_history"]
                     assert tail["example"]["example"]["ply"] > 52
@@ -3817,6 +3838,21 @@ def _opening_fit_route(monkeypatch, tmp_path):
                 nomination_db, "learner", "fork", "execute", (1 << 63) - 1
             )
             assert truncated and len(global_rows) == 300
+            # Give the selected course a distinct licensed broadcast continuation.
+            broadcast = recent_planning / SOURCE_NAME
+            broadcast.write_bytes(b"synthetic selected revision archive")
+            public_game = rated_game(0, 501, "1800+0", moves=fork_alternative)
+            with patch.context() as broadcast_source:
+                broadcast_source.setattr(reference_source, "SOURCE_BYTES", broadcast.stat().st_size)
+                broadcast_source.setattr(
+                    reference_source,
+                    "SOURCE_SHA256",
+                    hashlib.sha256(broadcast.read_bytes()).hexdigest(),
+                )
+                broadcast_source.setattr(
+                    reference_source, "_decode", lambda _file: (public_game.encode(), False)
+                )
+                assert build_previous(recent_root, "learner")["accepted"] == 1
             nomination_hash = hashlib.sha256(nomination_path.read_bytes()).hexdigest()
             with patch.context() as checked_read:
                 checked_read.setenv("CHESS_DB", str(nomination_path))
@@ -3915,6 +3951,151 @@ def _opening_fit_route(monkeypatch, tmp_path):
                 assert b"Development-eligible choices" in revision_page.data
                 assert b"not a global ranking" in revision_page.data
                 assert b"provisional learning experiment" in revision_page.data
+
+                # Restore actual file-backed readers for the selected course;
+                # the earlier first-turn fixture uses an in-memory index.
+                import chess_coach.opening_fit_later_index as actual_later_index
+                import chess_coach.opening_full_history_locate as actual_full_index
+
+                checked_read.setattr(sqlite3, "connect", real_connect)
+                checked_read.setattr(coursepublic, "planning", real_course_planning)
+                checked_read.setattr(coursepublic, "_identity", real_course_identity)
+                checked_read.setattr(coursepublic, "_private_file", real_course_private)
+                checked_read.setattr(actual_later_index, "_identity", real_course_identity)
+                checked_read.setattr(actual_later_index, "_private_file", real_course_private)
+                checked_read.setattr(actual_full_index, "_identity", real_course_identity)
+                checked_read.setattr(actual_full_index, "_private_file", real_course_private)
+
+                # The selected recommendation is a new immutable version of
+                # the normal course, preserving the prior preview and PGN.
+                import chess_coach.ops_opening_profile as selected_cli
+                import chess_coach.web_opening_course as selected_web
+                from chess_coach.opening_recommendation_preview import (
+                    preview as recommendation_preview,
+                )
+                from chess_coach.opening_revision_course import preview as legacy_preview
+                from chess_coach.opening_study_current import admitted as admitted_study
+                from chess_coach.opening_study_source import fingerprint as source_fingerprint
+
+                game_id, decision_id = exemplar["game_id"], exemplar["position_id"]
+                legacy = legacy_preview(
+                    nomination_db, recent_root, "learner", game_id, decision_id, "b1c3"
+                )
+                assert legacy["public_status"] == "available"
+                selected_course = recommendation_preview(
+                    nomination_db,
+                    recent_root,
+                    "learner",
+                    game_id,
+                    decision_id,
+                    "b1c3",
+                    with_identity=True,
+                )
+                assert selected_course["schema"] == "opening-revision-course-v2"
+                assert selected_course["version"] != legacy["version"]
+                assert selected_course["rationale"]["selected"] == "b1c3"
+                assert selected_course["rationale"]["judgments"]["development"]["provisional"]
+                assert "Selected by the learner" in selected_course["chapters"][0]["pgn"]
+                assert (
+                    "Public example after the recorded branch"
+                    in selected_course["chapters"][0]["pgn"]
+                )
+                assert (
+                    "Public example after the selected alternative"
+                    in selected_course["chapters"][0]["pgn"]
+                )
+                assert "CC0-1.0" in selected_course["chapters"][0]["pgn"]
+                with pytest.raises(ValueError):
+                    recommendation_preview(
+                        nomination_db, recent_root, "learner", game_id, decision_id, "b2b4"
+                    )
+                checked_read.setattr(
+                    sys,
+                    "argv",
+                    [
+                        "opening-profile",
+                        "--project-root",
+                        str(recent_root),
+                        "--game-id",
+                        str(game_id),
+                        "--position-id",
+                        str(decision_id),
+                        "--alternative",
+                        "b1c3",
+                        "--recommendation-course",
+                    ],
+                )
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    selected_cli.main()
+                assert json.loads(output.getvalue())["version"] == selected_course["version"]
+                checked_read.setattr(selected_web, "record", lambda *_args, **_kwargs: None)
+                selected_path = f"/repertoire/games/{game_id}/openings/{decision_id}/experiment/b1c3/course?recommendation=1"
+                selected_client = nomination_app.test_client()
+                selected_page = selected_client.get(
+                    selected_path, base_url="https://coach.invalid", headers=headers
+                )
+                assert (
+                    selected_page.status_code == 200
+                    and b"Why this line is available" in selected_page.data
+                )
+                assert b"provisional developmental evidence" in selected_page.data
+                assert b"Public example after the selected alternative" in selected_page.data
+                download = selected_client.get(
+                    selected_path + "&download=1&version=" + selected_course["version"],
+                    base_url="https://coach.invalid",
+                    headers=headers,
+                )
+                assert download.status_code == 200 and b"Selected by the learner" in download.data
+                assert (
+                    legacy_preview(
+                        nomination_db, recent_root, "learner", game_id, decision_id, "b1c3"
+                    )
+                    == legacy
+                )
+
+                with admitted_study(
+                    nomination_path,
+                    recent_planning,
+                    recent_root,
+                    "learner",
+                    game_id,
+                    decision_id,
+                    "b1c3",
+                    legacy["version"],
+                    browser=True,
+                ) as (legacy_study, _budget, check):
+                    assert legacy_study["course"]["preview_version"] == legacy["version"]
+                    check()
+
+                # Even an absent watched proof attempt becoming present must
+                # invalidate the exact course before a Study action proceeds.
+                absent = next(
+                    path
+                    for path in selected_course["_paths"]
+                    if path.name.startswith("opening-public-proof-") and not path.exists()
+                )
+                with admitted_study(
+                    nomination_path,
+                    recent_planning,
+                    recent_root,
+                    "learner",
+                    game_id,
+                    decision_id,
+                    "b1c3",
+                    selected_course["version"],
+                    browser=True,
+                ) as (study_course, _budget, check):
+                    assert study_course["course"]["preview_version"] == selected_course["version"]
+                    before_paths = source_fingerprint(selected_course["_paths"])
+                    try:
+                        absent.write_text("{}")
+                        absent.chmod(0o400)
+                        assert source_fingerprint(selected_course["_paths"]) != before_paths
+                        with pytest.raises(ValueError, match="source changed"):
+                            check()
+                    finally:
+                        absent.unlink()
             assert hashlib.sha256(nomination_path.read_bytes()).hexdigest() == nomination_hash
             import chess_coach.opening_fork_nomination_source as nomination_source
 

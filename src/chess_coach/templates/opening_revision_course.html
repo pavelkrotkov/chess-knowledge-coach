@@ -3,16 +3,19 @@
 {% block content %}
 {% if exposure_unavailable %}<p>Delivery tracking is unavailable in compatibility mode; held-out qualification is unavailable.</p>{% endif %}
 <h2>Opening revision course preview</h2>
-<p>This private exploratory preview pairs your checked opening decision with a public continuation of the same selected move when one is available. These examples support rehearsal; preparation, soundness and personal fit remain unknown.</p>
+{% if course.rationale is defined %}<p>This is your chosen revision with the current bounded evidence and its uncertainties. These examples do not establish opening causation, preference, or mastery.</p>{% else %}<p>This private exploratory preview pairs your checked opening decision with a public continuation of the same selected move when one is available. These examples support rehearsal; preparation, soundness and personal fit remain unknown.</p>{% endif %}
 <p>Preview version: <code>{{ course.version }}</code>. <a href="{{ download_url }}">Download this version as PGN</a> · <a href="{{ url_for('opening_experiments.show', game_id=course.decision.game_id, position_id=course.decision.position_id, move=course.choice.uci) }}">Return to your exact experiment</a>.</p>
 {% if study %}
 <section><h3>Private Lichess Study</h3>
 <p>Study credentials {% if study.credentials %}are available{% else %}are unavailable{% endif %}.</p>
 {% if study.link %}<p><a href="{{ study.link }}">Open verified private Study</a>.</p>{% else %}<p>{{ study.message }}</p>{% endif %}
-{% if study.credentials and not study.link %}<form method="post" action="{{ url_for('opening_experiments.study', game_id=course.decision.game_id, position_id=course.decision.position_id, move=course.choice.uci) }}">
+{% if study.credentials and not study.link %}<form method="post" action="{{ url_for('opening_experiments.study', game_id=course.decision.game_id, position_id=course.decision.position_id, move=course.choice.uci, recommendation=1 if course.rationale is defined else none) }}">
 <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="version" value="{{ course.version }}"><button type="submit">Request private Study</button></form>{% endif %}
 </section>
 {% endif %}
+{% if course.rationale is defined %}<section><h3>Why this line is available</h3>
+{% for item in course.rationale.judgments.alternatives if item.choice.uci == course.choice.uci %}<p>You chose {{ item.choice.san }}. Conditional fit: {{ item.fit.status|replace("_", " ") }}; developmental evidence: {{ item.development.status }}. {% if item.preparation.history is defined %}Checked preparation: {{ item.preparation.history.status }}; unseen edges in that sample: {{ item.preparation.history.not_seen_edges if item.preparation.history.not_seen_edges is not none else "unknown" }}.{% else %}Preparation remains unknown.{% endif %}</p>{% if item.development.source is defined %}<p>Public example after the selected alternative: <a href="{{ item.development.source.example.source }}">source</a>, <a href="{{ item.development.source.reference.license_url }}">{{ item.development.source.reference.license }}</a>. This bounded example is not a diagnosis.</p>{% endif %}{% endfor %}
+<p>Alternatives considered: {% for item in course.rationale.judgments.alternatives %}{{ item.choice.san }} ({{ item.admission.status }}){% if not loop.last %}, {% endif %}{% endfor %}. Unchecked evidence remains unknown; provisional developmental evidence is a learning experiment, not a diagnosis.</p></section>{% endif %}
 <section><h3>1. Your worked comparison</h3>
 <p>You play {{ course.decision.color|title }}.</p>
 {% set board_label = "Starting opening position; learner plays " + course.decision.color %}{% include "board.html" %}

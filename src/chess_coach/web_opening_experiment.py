@@ -107,5 +107,11 @@ def study(game_id, position_id, move):
     except (Exception, PreviewDeadline):
         abort(409, "This Study request cannot be checked now. Open a new preview.")
     return redirect(
-        url_for("opening_experiments.course", game_id=game_id, position_id=position_id, move=move)
+        url_for(
+            "opening_experiments.course",
+            game_id=game_id,
+            position_id=position_id,
+            move=move,
+            recommendation=request.args.get("recommendation"),
+        )
     )

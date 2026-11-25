@@ -1,7 +1,5 @@
 """Bind one admitted learner choice to current revision evidence."""
 
-VERSION = "opening-recommendation-v1"
-
 
 def _chosen(judgments, move):
     choices = [row for row in judgments["alternatives"] if row["choice"]["uci"] == move]
@@ -22,16 +20,3 @@ def selection(report, game_id, position_id, move):
     if not (judgments["fit"]["eligible"] or judgments["development"]["eligible"]):
         raise ValueError("no supported recommendation evidence")
     return selected
-
-
-def rationale_snapshot(report, move, state_hash):
-    return {
-        "version": VERSION,
-        "branch": report["branch"],
-        "nomination": report["fork_nomination"],
-        "judgments": report["revision_judgments"],
-        "sample": report["coverage"],
-        "partial": report["partial"],
-        "selected": move,
-        "input_state_sha256": state_hash,
-    }

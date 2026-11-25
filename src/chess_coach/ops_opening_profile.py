@@ -36,6 +36,9 @@ def main():
         action="store_true",
         help="Prepare bounded recent public knight-fork prevention evidence",
     )
+    mode.add_argument(
+        "--recommendation-course", action="store_true", help="Read a source-bound selected revision"
+    )
     args = parser.parse_args()
     try:
         arguments = (
@@ -54,6 +57,10 @@ def main():
                 fork_window=args.fork_window,
                 prevent=args.prepare_public_prevention,
             )
+        elif args.recommendation_course:
+            from .opening_recommendation_cli import report as recommendation
+
+            value = recommendation(*arguments)
         elif args.preparation:
             value = preparation(*arguments)
         else:
