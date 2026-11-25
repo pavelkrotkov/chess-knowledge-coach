@@ -17,6 +17,7 @@ from . import cli_unified_practice as unified_practice
 from . import cli_unified_training as unified_training
 from .capabilities import capability_report
 from .cli_parser import build_parser
+from .cli_private_repertoire import run as private_repertoire
 from .cli_related_commands import COMMANDS as RELATED_COMMANDS
 from .competency_coverage import competency_report
 from .competency_graph import seed_competency_graph
@@ -100,10 +101,7 @@ def main(*, compatibility: bool | None = None) -> None:
     if args.command == "competencies":
         print(json.dumps(competency_report(), indent=2))
         return
-    if args.command == "repertoire" and args.unfamiliar_contexts:
-        from .opening_context_cli import report
-
-        print(json.dumps(report(args.project_root, args.learner, args.db), indent=2))
+    if private_repertoire(args):
         return
     # These commands do not initialize the CLI target database.
     standalone = snapshot.COMMANDS | recovery.COMMANDS

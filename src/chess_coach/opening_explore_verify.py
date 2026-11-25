@@ -38,6 +38,7 @@ def verify(db, learner, key, candidate, budget, cache):
     return {
         **candidate,
         "game_key": identity["game_key"],
+        "ply": context["ply"],
         "fen": board.fen(),
         "played": board.san(played),
         "played_uci": context["played_move"],
