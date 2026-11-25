@@ -24,7 +24,7 @@ def prompt(db, subject, version, key):
 
 
 def retry_unavailable(state, found, info):
-    if state["v"] not in {5, 6} or not found or not info:
+    if state["v"] not in {5, 6, 8} or not found or not info:
         return False
     if info.get("diagnostic") != "unavailable" or state["prerequisite_offered"]:
         return False

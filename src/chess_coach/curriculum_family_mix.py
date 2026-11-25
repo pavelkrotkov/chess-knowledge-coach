@@ -9,6 +9,7 @@ from .curriculum_mix_order import advance as _advance
 from .curriculum_new_capture import scan as capture
 from .curriculum_new_fork import scan as fork
 from .curriculum_new_page import checked_page
+from .curriculum_priority_prepare import annotate, prepare_priority
 from .tactical_course_budget import SLICE_SECONDS, PreviewUnavailable
 
 
@@ -45,12 +46,13 @@ def scan(db, state, learner, summary, counts, corpus, budget):
     try:
         with scope:
             # Topic preparation precedes selection, but never changes grading.
-            if state["v"] in {4, 5, 6}:
+            if state["v"] in {4, 5, 6, 8}:
                 from .curriculum_prerequisite import prepare
 
                 progress["statuses"]["prerequisite"] = prepare(
                     db, state, learner, summary, check if budget is not None else None
                 )
+            prepare_priority(db, state, learner, budget, check)
             _loop(db, state, learner, summary, counts, corpus, budget, check, progress)
     except PreviewUnavailable:
         timeout(db, state, counts, budget, progress)
@@ -91,6 +93,7 @@ def _loop(db, state, learner, summary, counts, corpus, budget, check, progress):
             db, state, learner, found, phase, progress["statuses"].get("prerequisite"), check
         )
         record(state, phase, found, status, reason)
+        annotate(state, phase, found)
         progress["items"].extend(found)
         progress["statuses"][phase] = status
         progress["focuses"][phase] = focus
@@ -109,12 +112,12 @@ def _loop(db, state, learner, summary, counts, corpus, budget, check, progress):
 def _fill_quota(state, reason, found):
     if reason != "family_quota_complete":
         return False
-    return not found if state["v"] in {5, 6} else state["family_index"] == 3
+    return not found if state["v"] in {5, 6, 8} else state["family_index"] == 3
 
 
 def _finished(state, phase):
-    return (state["v"] in {5, 6} and phase == "new") or (
-        state["v"] not in {5, 6} and state["family_index"] == 3
+    return (state["v"] in {5, 6, 8} and phase == "new") or (
+        state["v"] not in {5, 6, 8} and state["family_index"] == 3
     )
 
 

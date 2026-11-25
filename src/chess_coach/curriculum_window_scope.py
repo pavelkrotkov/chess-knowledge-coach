@@ -1,48 +1,29 @@
 """Validate the explicit optional curriculum goal and wall-clock window."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
+from .curriculum_priority_cursor import bind_goal
+from .curriculum_window_options import GOALS
+from .curriculum_window_options import MAX_MINUTES as MAX_MINUTES
+from .curriculum_window_options import options as options
+from .curriculum_window_value import envelope
 from .mastery_time import parse_utc
 
 POLICY = "curriculum-goal-window-v1"
-GOALS = {"balanced": None, "capture": 0, "fork": 1, "mate": 2, "promotion": 3}
-MAX_MINUTES = 180
 
 
 def clock():
     return datetime.now(UTC)
 
 
-def options(goal, minutes):
-    if goal is None:
-        goal = "balanced"
-    if not isinstance(goal, str) or goal not in GOALS:
-        raise ValueError("unsupported practice goal")
-    if minutes is not None and (type(minutes) is not int or not 1 <= minutes <= MAX_MINUTES):
-        raise ValueError("window minutes must be 1..180")
-    return goal, minutes
-
-
 def create(state, goal, minutes, page_limit, *, reset_turn=True):
     goal, minutes = options(goal, minutes)
     issued = clock()
     turn = GOALS[goal]
+    bind_goal(state, goal)
     if reset_turn and turn is not None:
         state["family_turn"] = turn
-    return {
-        "v": 7,
-        "policy": POLICY,
-        "goal": goal,
-        "minutes": minutes,
-        "page_limit": page_limit,
-        "issued_at": issued.isoformat(),
-        "expires_at": (issued + timedelta(minutes=minutes)).isoformat() if minutes else None,
-        "state": state,
-        "new_seen": [],
-        "repeat_due": [],
-        "source_refreshed": False,
-        "selection_only": False,
-    }
+    return envelope(state, goal, minutes, page_limit, issued, POLICY)
 
 
 def expired(value):

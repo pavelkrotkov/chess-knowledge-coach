@@ -33,7 +33,7 @@ def _header(value):
 def _plan(value):
     if type(value["page_limit"]) is not int or not 1 <= value["page_limit"] <= 50:
         raise ValueError("invalid practice window limit")
-    if not isinstance(value["state"], dict) or value["state"].get("v") != 6:
+    if not isinstance(value["state"], dict) or value["state"].get("v") not in {6, 8}:
         raise ValueError("invalid practice window plan")
 
 

@@ -40,7 +40,7 @@ def build_page(
     if due_only:
         return expired_page(state, summary, status, items, scan, reason)
     # Old signed continuations keep their original two-phase selection.
-    if state["v"] in {3, 4, 5, 6} and state["phase"] != "due" and reason is None:
+    if state["v"] in {3, 4, 5, 6, 8} and state["phase"] != "due" and reason is None:
         return _finish(
             _mixed_page(db, state, learner, now, budget, summary, status, items, scan), state
         )
@@ -50,7 +50,7 @@ def build_page(
 
 
 def _finish(page, state):
-    if state["v"] == 6:
+    if state["v"] in {6, 8}:
         page["limit_reached"] = len(state["seen"]) >= state["limit"]
     return page
 
@@ -93,10 +93,10 @@ def _mixed_page(db, state, learner, now, budget, summary, corpus, items, scan):
         "corpus_status": statuses.get("new", "not_scanned" if corpus == "available" else corpus),
         "capture_status": statuses.get("capture"),
         "fork_status": statuses.get("fork"),
-        "public_status": state["public_status"] if state["v"] in {5, 6} else None,
-        "canonical_status": state["canonical_status"] if state["v"] == 6 else None,
-        "canonical_context": state["canonical_context"] if state["v"] == 6 else None,
-        "limit_reached": state["v"] == 6 and len(state["seen"]) >= state["limit"],
+        "public_status": state["public_status"] if state["v"] in {5, 6, 8} else None,
+        "canonical_status": state["canonical_status"] if state["v"] in {6, 8} else None,
+        "canonical_context": state["canonical_context"] if state["v"] in {6, 8} else None,
+        "limit_reached": state["v"] in {6, 8} and len(state["seen"]) >= state["limit"],
         "capture_focus": focuses.get("capture"),
         "capture_generation": capture_generation(budget, statuses.get("capture")),
         "fork_focus": focuses.get("fork"),
