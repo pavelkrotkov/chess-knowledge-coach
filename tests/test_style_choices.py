@@ -2759,9 +2759,34 @@ def _opening_fit_route(monkeypatch, tmp_path):
                         "--prepare-public",
                     ],
                 )
-                output = io.StringIO()
-                with contextlib.redirect_stdout(output):
-                    profile_cli.main()
+                import types
+
+                import chess_coach.opening_recent_capacity as recent_capacity
+                from chess_coach.opening_queue_files import MAX_BYTES as SLOT_MAX_BYTES
+                from chess_coach.opening_queue_write import staged
+
+                # A bounded proof fits where the unchanged full-index allowance cannot.
+                with cli.context() as scarce:
+                    used_kib = (recent_capacity.PROJECT_LIMIT - 96 * 1024 * 1024) // 1024
+                    scarce.setattr(
+                        recent_capacity,
+                        "subprocess",
+                        types.SimpleNamespace(
+                            run=lambda *_args, **_kwargs: types.SimpleNamespace(
+                                stdout=str(used_kib)
+                            )
+                        ),
+                    )
+                    with pytest.raises(ValueError, match="project storage reserve"):
+                        recent_capacity.check(recent_root, recent_planning)
+                    with (
+                        pytest.raises(ValueError, match="exceeds limit"),
+                        staged(recent_planning / "oversized.json", {"x": "x" * SLOT_MAX_BYTES}),
+                    ):
+                        pytest.fail("oversized slot was accepted")
+                    output = io.StringIO()
+                    with contextlib.redirect_stdout(output):
+                        profile_cli.main()
                 prepared = json.loads(output.getvalue())
                 assert prepared["branches"]["played"]["selected"] > 0
                 assert prepared["branches"]["alternative"]["selected"] > 0
@@ -2785,6 +2810,49 @@ def _opening_fit_route(monkeypatch, tmp_path):
                 legacy_hashes = {
                     path: hashlib.sha256(path.read_bytes()).hexdigest() for path in artifact_names
                 }
+                from chess_coach.opening_public_proof import PUBLICATION_WORKING
+
+                with cli.context() as full_project:
+                    used_kib = (
+                        recent_capacity.PROJECT_LIMIT
+                        - recent_capacity.RESERVE
+                        - PUBLICATION_WORKING
+                    ) // 1024 + 1
+                    full_project.setattr(
+                        recent_capacity,
+                        "subprocess",
+                        types.SimpleNamespace(
+                            run=lambda *_args, **_kwargs: types.SimpleNamespace(
+                                stdout=str(used_kib)
+                            )
+                        ),
+                    )
+                    with pytest.raises(ValueError, match="project storage reserve"):
+                        prepare_public(recent_root, "learner", *later_games[0], "f1c4")
+                with cli.context() as full_filesystem:
+                    full_filesystem.setattr(
+                        recent_capacity,
+                        "subprocess",
+                        types.SimpleNamespace(
+                            run=lambda *_args, **_kwargs: types.SimpleNamespace(stdout="0")
+                        ),
+                    )
+                    full_filesystem.setattr(
+                        recent_capacity,
+                        "shutil",
+                        types.SimpleNamespace(
+                            disk_usage=lambda *_: types.SimpleNamespace(
+                                free=recent_capacity.RESERVE + PUBLICATION_WORKING - 1
+                            )
+                        ),
+                    )
+                    with pytest.raises(ValueError, match="filesystem storage reserve"):
+                        prepare_public(recent_root, "learner", *later_games[0], "f1c4")
+                assert set(recent_planning.glob("opening-public-proof-*.json")) == artifact_names
+                assert all(
+                    hashlib.sha256(path.read_bytes()).hexdigest() == value
+                    for path, value in legacy_hashes.items()
+                )
                 fallback = cli_profile(recent_root, "learner", *later_games[0], "f1c4", "recent")
                 assert (
                     fallback["public_preparation"]["version"]
