@@ -2,6 +2,7 @@
 
 from datetime import datetime
 
+from .curriculum_due_window import charge
 from .curriculum_evidence import evidence_summary
 from .curriculum_family_mix import scan as scan_families
 from .curriculum_new_capture import scan as scan_capture
@@ -32,7 +33,9 @@ def build_page(
     summary = evidence_summary(db, learner, now, state["scan_limit"])
     status, invalid_ratings = corpus_status(db, state["corpus_version"])
     scan = initial_scan(invalid_ratings)
+    previous = set(state["seen"])
     items, reason = due(db, state, now, summary, scan, window)
+    reason = charge(state, window, previous, items, reason)
     if due_only:
         return expired_page(state, summary, status, items, scan, reason)
     # Old signed continuations keep their original two-phase selection.

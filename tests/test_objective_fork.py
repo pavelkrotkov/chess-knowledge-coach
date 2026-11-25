@@ -1169,16 +1169,40 @@ def _window_legacy_workflow(original, tmp_path, patch, wall, subject):
     ).fetchone()[0]
     review_item(db, item_id, "good", reviewed_at=datetime.now(UTC) - timedelta(days=3))
     due_page = client.get(
-        "/plan?goal=mate&minutes=1", base_url="https://coach.invalid", headers=headers
+        "/plan",
+        query_string={"cursor": planned["window_cursor"], "renew": "1"},
+        base_url="https://coach.invalid",
+        headers=headers,
     )
+    assert due_page.status_code == 200 and b"The plan rechecked current sources" in due_page.data
     due_form = next(
         part
         for part in due_page.get_data(as_text=True).split('<form method="post"')
         if 'name="puzzle_id" value="legacy-window"' in part.split("</form>", 1)[0]
     ).split("</form>", 1)[0]
     assert 'name="window_offer"' not in due_form
-    due_fields = _window_fields(due_form, ("csrf", "version", "puzzle_id"))
+    due_fields = _window_fields(due_form, ("csrf", "version", "puzzle_id", "cursor"))
+    assert due_fields["cursor"] != planned["window_cursor"]
+    with pytest.raises(ValueError, match="due recheck only"):
+        daily_plan(
+            db, subject=subject, corpus_version="window-fixture", cursor=due_fields["cursor"]
+        )
+    with pytest.raises(ValueError, match="due recheck only"):
+        daily_plan(
+            db,
+            subject=subject,
+            corpus_version="window-fixture",
+            cursor=due_fields["cursor"],
+            renew=True,
+        )
     wall[0] += timedelta(seconds=61)
+    stale_fields = {**due_fields, "cursor": planned["window_cursor"]}
+    assert (
+        client.post(
+            "/practice/start", base_url="https://coach.invalid", headers=headers, data=stale_fields
+        ).status_code
+        == 400
+    )
     assert (
         client.post(
             "/practice/start", base_url="https://coach.invalid", headers=headers, data=due_fields
@@ -1242,6 +1266,13 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
             "SELECT id FROM positions WHERE game_id=? ORDER BY ply LIMIT 1", (index,)
         ).fetchone()[0]
         process_decision(db, position, SUBJECT)
+    # Capture is not yet qualified, so the two-item window initially offers
+    # one real fork and leaves room for later independently eligible work.
+    two_item_plan = daily_plan(
+        db, subject=SUBJECT, corpus_version="fixture", goal="fork", duration_minutes=1, limit=2
+    )
+    assert len(two_item_plan["items"]) == 1 and two_item_plan["items"][0]["skill"] == "fork"
+    two_item_cursor = two_item_plan["window_cursor"]
     # A second synthetic learner has a distinct qualified capture need; the
     # fork learner also has capture evidence so one plan can exercise the mix.
     from chess_coach.material_detector import process_decision as material_decision
@@ -1497,6 +1528,27 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
         assert process(copy_db, SUBJECT)["outcomes"] == {"correct": 1}
         learned = show(copy_db, attempt, SUBJECT)["learning"]
         later = now + timedelta(days=2)
+        old_puzzles = copy_db.connection.execute(
+            "SELECT id FROM training_items WHERE source_type='puzzle'"
+        ).fetchall()
+        for row in old_puzzles:
+            review_item(copy_db, row["id"], "good", reviewed_at=later + timedelta(days=3))
+        mixed = daily_plan(
+            copy_db,
+            subject=SUBJECT,
+            corpus_version="fixture",
+            as_of=later,
+            limit=2,
+            cursor=two_item_cursor,
+            renew=True,
+        )
+        assert len(mixed["items"]) == 2
+        assert mixed["items"][0]["kind"] == "due"
+        assert mixed["items"][0]["item_id"] == learned["item_id"]
+        assert mixed["items"][1]["kind"] == "new"
+        assert mixed["items"][1]["skill"] == "hanging_piece"
+        mixed_state = decode_window(copy_db, mixed["window_cursor"])["state"]
+        assert len(mixed_state["seen"]) == mixed_state["limit"] == 2
         refreshed = daily_plan(
             copy_db,
             subject=SUBJECT,

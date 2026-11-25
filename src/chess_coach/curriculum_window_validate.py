@@ -20,6 +20,7 @@ def _header(value):
         "new_seen",
         "repeat_due",
         "source_refreshed",
+        "selection_only",
     }:
         raise ValueError("invalid practice window")
     if value["v"] != 7 or value["policy"] != POLICY:

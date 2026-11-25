@@ -28,3 +28,11 @@ def full(state, seen, window, selected):
 
 def incomplete(reason, rows, examined, window, selected):
     return reason is not None or len(rows) > examined or page_full(window, selected)
+
+
+def charge(state, window, previous, selected, reason):
+    if window is not None:
+        state["limit"] -= sum(item["prompt_key"] in previous for item in selected)
+        if reason == "due_scan_incomplete" and len(state["seen"]) >= state["limit"]:
+            return None
+    return reason

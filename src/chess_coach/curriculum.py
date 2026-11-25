@@ -24,6 +24,7 @@ def daily_plan(
     goal: str | None = None,
     duration_minutes: int | None = None,
     renew: bool = False,
+    _due_recheck: bool = False,
 ) -> dict:
     budget = None
     if not db.compat32 and not db.connection.in_transaction:
@@ -32,7 +33,7 @@ def daily_plan(
         from .curriculum_window_plan import build as build_window
         from .curriculum_window_request import requested
 
-        window = requested(db, cursor, goal, duration_minutes, renew)
+        window = requested(db, cursor, goal, duration_minutes, renew, _due_recheck)
         prior = _prior(db, cursor, window)
         requested_time = (
             as_of

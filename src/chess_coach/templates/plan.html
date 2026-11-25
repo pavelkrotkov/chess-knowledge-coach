@@ -14,7 +14,7 @@
 {% endif %}<p>Evidence: {{ plan.evidence.state }}. Corpus: {{ plan.corpus_status }}.</p>{% macro task(item) %}<li>
 <strong>{{ item.objective }}</strong> - {{ item.kind }}. {{ item.reason }}{% if item.due %} Due: {{ item.due }}.{% endif %}{% if item.source_evidence_id %} <a href="{{ url_for('views.evidence_detail', evidence_id=item.source_evidence_id) }}">Inspect the source observation</a>.{% endif %}{% if item.source_attribution %} Source: {{ item.source_attribution }} ({{ item.source_license }}).{% endif %}<form method="post" action="{{ url_for('unified_practice.begin') if item.unified_training else url_for('practice.start') }}">
 <input type="hidden" name="csrf" value="{{ csrf }}">
-<input type="hidden" name="cursor" value="{{ request.args.get('cursor', '') }}">
+<input type="hidden" name="cursor" value="{{ plan.window_selection_cursor if plan.window else request.args.get('cursor', '') }}">
 <input type="hidden" name="version" value="{{ item.source_version if item.source_type in ['own-game', 'public'] else item.corpus_version }}">
 {% if item.window_offer %}<input type="hidden" name="window_offer" value="{{ item.window_offer }}">{% endif %}
 {% if item.prerequisite_token %}<input type="hidden" name="prerequisite_token" value="{{ item.prerequisite_token }}">{% endif %}

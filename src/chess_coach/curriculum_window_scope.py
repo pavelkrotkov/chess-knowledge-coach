@@ -41,6 +41,7 @@ def create(state, goal, minutes, page_limit, *, reset_turn=True):
         "new_seen": [],
         "repeat_due": [],
         "source_refreshed": False,
+        "selection_only": False,
     }
 
 

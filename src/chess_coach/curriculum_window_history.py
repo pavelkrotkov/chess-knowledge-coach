@@ -9,6 +9,8 @@ def _keys(keys, seen):
 
 
 def validate_history(value):
+    if type(value["selection_only"]) is not bool:
+        raise ValueError("invalid practice window purpose")
     if type(value["source_refreshed"]) is not bool:
         raise ValueError("invalid practice window refresh")
     seen = value["state"].get("seen", [])
