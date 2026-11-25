@@ -37,6 +37,7 @@ def handle_start(db, args):
                 version=args.version,
                 key=args.key,
                 goal=getattr(args, "goal", None),
+                window_offer=getattr(args, "window_offer", None),
                 **options(args),
             ),
             indent=2,

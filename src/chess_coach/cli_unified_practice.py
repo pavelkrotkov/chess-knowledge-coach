@@ -44,6 +44,7 @@ def configure(sub):
     begin.add_argument("--version", required=True)
     begin.add_argument("--key", required=True)
     begin.add_argument("--goal", choices=("mate_in_one",))
+    begin.add_argument("--window-offer")
     from .cli_unified_training import configure as configure_training
 
     configure_training(sub, begin)

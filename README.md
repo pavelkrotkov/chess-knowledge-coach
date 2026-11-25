@@ -328,12 +328,40 @@ selected until due priority can be resolved. When `next_cursor` is present,
 repeat `daily-plan` with the same subject, corpus, limits and `--cursor` value
 to continue the same bounded plan; combine the incremental items from each page
 until no cursor remains. The cursor retains the original as-of time.
-The cursor is local to this database and must be restarted after source data
-changes. If a scheduled puzzle's prompt cannot be reconstructed, new selection
+Legacy cursors are local to this database and must be restarted after source
+data changes. If a scheduled puzzle's prompt cannot be reconstructed, new selection
 stops and identifies the scheduled item to repair or the corpus to restore.
 Selecting a plan changes no schedule or evidence; create an item and complete it
 using the verified practice flow below. Existing ontology edges describe
 containment, not prerequisites.
+
+The private plan also accepts a goal and optional wall-clock practice window:
+
+```bash
+uv run chess-coach --db coach.sqlite daily-plan corpus-v1 --subject learner --goal fork --minutes 25
+```
+
+Goals are `balanced`, `capture`, `fork`, `mate` (public-source mate), and
+`promotion`. Legacy corpus mate tasks retain their existing qualification and
+quotas. A goal
+changes the order of independently eligible new sources; due reviews remain
+first, and unavailable or unmeasured sources remain explicit. The window can
+be 1 to 180 minutes and is measured by the server, independent of the plan's
+fixed snapshot time. It is not an estimate of individual task duration or
+performance. New plan offers and their signed start links expire with the
+window; a task already started can still finish, and due and ordinary practice
+remain available.
+
+Use the returned `window_cursor` with the same subject, corpus and limits and
+`--renew` to start another window. Renewal retains offered prompt identities;
+when the snapshot or sources change, it explicitly rechecks due work and the
+bounded sources. If an offer becomes stale after another task starts, return to
+the plan and renew. A complete bounded schedule check retains started work and
+can offer a still-eligible, unstarted task again with a fresh token. If that
+check is incomplete, renewal refuses rather than assuming it was unstarted.
+Previously started work can return as due review. A single continuation retains at most 50 prompt
+identities; start a fresh plan after that limit. Omitting goal and minutes
+keeps the existing plan and older cursor behavior.
 
 ## Verified puzzle practice
 

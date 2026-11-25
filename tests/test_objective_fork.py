@@ -1054,7 +1054,166 @@ def test_certified_pawn_fork_miss_control():
     )
 
 
+def _window_fields(form_text, names):
+    import html
+
+    values = {}
+    for name in names:
+        match = re.search(r'name="' + name + r'" value="([^"]*)"', form_text)
+        assert match is not None
+        values[name] = html.unescape(match.group(1))
+    return values
+
+
+def _window_legacy_workflow(original, tmp_path, patch, wall, subject):
+    import io
+    import sqlite3
+    import sys
+    from contextlib import redirect_stdout
+    from datetime import UTC, datetime, timedelta
+
+    from chess_coach import cli
+    from chess_coach.curriculum import daily_plan
+    from chess_coach.db import Database
+    from chess_coach.training import review_item
+
+    path = tmp_path / "legacy-window.sqlite"
+    target = sqlite3.connect(path)
+    original.connection.backup(target)
+    target.close()
+    db = Database(path)
+    corpus = db.connection.execute(
+        "INSERT INTO puzzle_corpora(version,source,checksum,state) "
+        "VALUES('window-fixture','fixture','window-checksum','staging')"
+    ).lastrowid
+    db.connection.executemany(
+        """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,
+        rating_deviation,themes_json,objective)
+        VALUES(?,?,?,'fixture','b7b6 c5f8',1200,80,'[]','unknown')""",
+        [("legacy-window", corpus, "7k/1p6/6K1/2Q5/8/P7/8/8 b - - 17 14")],
+    )
+    db.connection.execute("UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus,))
+    db.connection.commit()
+    planned = daily_plan(
+        db, subject=subject, corpus_version="window-fixture", goal="mate", duration_minutes=1
+    )
+    item = next(item for item in planned["items"] if item.get("puzzle_id") == "legacy-window")
+    assert item["kind"] == "new" and not item.get("unified_training") and item["window_offer"]
+    with redirect_stdout(io.StringIO()) as output:
+        patch.setattr(
+            sys,
+            "argv",
+            [
+                "chess-coach",
+                "--db",
+                str(path),
+                "daily-plan",
+                "window-fixture",
+                "--subject",
+                subject,
+                "--goal",
+                "mate",
+                "--minutes",
+                "1",
+            ],
+        )
+        cli.main()
+    cli_plan = json.loads(output.getvalue())
+    assert cli_plan["window"]["goal"] == "mate" and cli_plan["window"]["minutes"] == 1
+    assert cli_plan["window"]["goal_status"] == "unavailable"
+    assert any(value.get("puzzle_id") == "legacy-window" for value in cli_plan["items"])
+
+    app = create_app(
+        db_path=path,
+        subject=subject,
+        actor="fixture",
+        corpus="window-fixture",
+        login="fixture-login",
+        origin="https://coach.invalid",
+    )
+    client = app.test_client()
+    headers = {"Tailscale-User-Login": "fixture-login"}
+    page = client.get(
+        "/plan?goal=mate&minutes=1", base_url="https://coach.invalid", headers=headers
+    )
+    assert page.status_code == 200 and b"Wall-clock window ends" in page.data
+    assert b"Goal: mate (unavailable)" in page.data
+    assert b"individual task duration is unknown" in page.data
+    form = next(
+        part
+        for part in page.get_data(as_text=True).split('<form method="post"')
+        if 'name="puzzle_id" value="legacy-window"' in part.split("</form>", 1)[0]
+    ).split("</form>", 1)[0]
+
+    fields = _window_fields(form, ("csrf", "version", "puzzle_id", "window_offer"))
+    headers = headers | {"Origin": "https://coach.invalid"}
+    before = db.connection.execute("SELECT count(*) FROM training_items").fetchone()[0]
+    wall[0] += timedelta(seconds=61)
+    denied = client.post(
+        "/practice/start", base_url="https://coach.invalid", headers=headers, data=fields
+    )
+    assert denied.status_code == 400
+    assert db.connection.execute("SELECT count(*) FROM training_items").fetchone()[0] == before
+    wall[0] -= timedelta(seconds=61)
+    started = client.post(
+        "/practice/start", base_url="https://coach.invalid", headers=headers, data=fields
+    )
+    assert started.status_code == 303
+    wall[0] += timedelta(seconds=61)
+    assert (
+        client.get("/practice", base_url="https://coach.invalid", headers=headers).status_code
+        == 200
+    )
+    item_id = db.connection.execute(
+        "SELECT id FROM training_items WHERE source_ref LIKE ?", ("%legacy-window%",)
+    ).fetchone()[0]
+    review_item(db, item_id, "good", reviewed_at=datetime.now(UTC) - timedelta(days=3))
+    due_page = client.get(
+        "/plan",
+        query_string={"cursor": planned["window_cursor"], "renew": "1"},
+        base_url="https://coach.invalid",
+        headers=headers,
+    )
+    assert due_page.status_code == 200 and b"The plan rechecked current sources" in due_page.data
+    due_form = next(
+        part
+        for part in due_page.get_data(as_text=True).split('<form method="post"')
+        if 'name="puzzle_id" value="legacy-window"' in part.split("</form>", 1)[0]
+    ).split("</form>", 1)[0]
+    assert 'name="window_offer"' not in due_form
+    due_fields = _window_fields(due_form, ("csrf", "version", "puzzle_id", "cursor"))
+    assert due_fields["cursor"] != planned["window_cursor"]
+    with pytest.raises(ValueError, match="due recheck only"):
+        daily_plan(
+            db, subject=subject, corpus_version="window-fixture", cursor=due_fields["cursor"]
+        )
+    with pytest.raises(ValueError, match="due recheck only"):
+        daily_plan(
+            db,
+            subject=subject,
+            corpus_version="window-fixture",
+            cursor=due_fields["cursor"],
+            renew=True,
+        )
+    wall[0] += timedelta(seconds=61)
+    stale_fields = {**due_fields, "cursor": planned["window_cursor"]}
+    assert (
+        client.post(
+            "/practice/start", base_url="https://coach.invalid", headers=headers, data=stale_fields
+        ).status_code
+        == 400
+    )
+    assert (
+        client.post(
+            "/practice/start", base_url="https://coach.invalid", headers=headers, data=due_fields
+        ).status_code
+        == 303
+    )
+    db.close()
+
+
 def _daily_fork_workflow(tmp_path, monkeypatch):
+    import html
     import io
     import sys
     from datetime import UTC, datetime, timedelta
@@ -1108,6 +1267,13 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
             "SELECT id FROM positions WHERE game_id=? ORDER BY ply LIMIT 1", (index,)
         ).fetchone()[0]
         process_decision(db, position, SUBJECT)
+    # Capture is not yet qualified, so the two-item window initially offers
+    # one real fork and leaves room for later independently eligible work.
+    two_item_plan = daily_plan(
+        db, subject=SUBJECT, corpus_version="fixture", goal="fork", duration_minutes=1, limit=2
+    )
+    assert len(two_item_plan["items"]) == 1 and two_item_plan["items"][0]["skill"] == "fork"
+    two_item_cursor = two_item_plan["window_cursor"]
     # A second synthetic learner has a distinct qualified capture need; the
     # fork learner also has capture evidence so one plan can exercise the mix.
     from chess_coach.material_detector import process_decision as material_decision
@@ -1180,6 +1346,418 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
     fork = next(item for item in plan["items"] if item["skill"] == "fork")
     assert fork["source_version"] == MISS_VERSION and fork["independent_games"] == 2
     assert fork["source_review"] == "unreviewed" and "Provisional" in fork["reason"]
+
+    # Goal choice reorders only already qualified new sources; the signed
+    # window uses server time independently of the plan's fixed as_of.
+    import sqlite3
+
+    import chess_coach.curriculum_window_scope as window_scope
+    from chess_coach.curriculum_window_cursor import decode as decode_window
+    from chess_coach.curriculum_window_cursor import encode as encode_window
+    from chess_coach.db import Database
+    from chess_coach.unified_sessions import start
+
+    with monkeypatch.context() as window_test:
+        wall = [datetime.now(UTC)]
+        window_test.setattr(window_scope, "clock", lambda: wall[0])
+        capture_goal = daily_plan(
+            db,
+            subject=SUBJECT,
+            corpus_version="fixture",
+            as_of=now,
+            limit=1,
+            goal="capture",
+            duration_minutes=1,
+        )
+        fork_goal = daily_plan(
+            db,
+            subject=SUBJECT,
+            corpus_version="fixture",
+            as_of=now,
+            limit=1,
+            goal="fork",
+            duration_minutes=1,
+        )
+        two_offers = daily_plan(
+            db,
+            subject=SUBJECT,
+            corpus_version="fixture",
+            as_of=now,
+            limit=2,
+            goal="fork",
+            duration_minutes=1,
+        )
+        assert {item["skill"] for item in two_offers["items"]} == {"fork", "hanging_piece"}
+        capture_item = capture_goal["items"][0]
+        fork_item = fork_goal["items"][0]
+        assert capture_item["skill"] == "hanging_piece" and fork_item["skill"] == "fork"
+        assert (
+            capture_goal["window"]["goal_status"]
+            == fork_goal["window"]["goal_status"]
+            == "available"
+        )
+        assert capture_item["window_offer"] and fork_item["window_offer"]
+        import chess_coach.curriculum_window_plan as window_plan
+
+        original_offers = window_plan.offers
+
+        def expire_during_page(db, value, page):
+            original_offers(db, value, page)
+            wall[0] += timedelta(seconds=61)
+
+        with monkeypatch.context() as crossing:
+            crossing.setattr(window_plan, "offers", expire_during_page)
+            crossed = daily_plan(
+                db,
+                subject=SUBJECT,
+                corpus_version="fixture",
+                as_of=now,
+                limit=1,
+                goal="fork",
+                duration_minutes=1,
+            )
+        wall[0] -= timedelta(seconds=61)
+        assert crossed["window"]["expired"]
+        assert all(
+            item["kind"] == "due" and "window_offer" not in item for item in crossed["items"]
+        )
+        cursor = fork_goal["window_cursor"]
+        original = decode_window(db, cursor)
+        assert original["v"] == 7 and original["goal"] == "fork"
+        assert original["state"]["as_of"] == now.isoformat()
+        with pytest.raises(ValueError):
+            daily_plan(
+                db, subject="other", corpus_version="fixture", as_of=now, limit=1, cursor=cursor
+            )
+        with pytest.raises(ValueError):
+            daily_plan(
+                db,
+                subject=SUBJECT,
+                corpus_version="fixture",
+                as_of=now,
+                limit=1,
+                cursor=cursor,
+                goal="capture",
+            )
+        with pytest.raises(ValueError, match="unsupported"):
+            daily_plan(db, subject=SUBJECT, corpus_version="fixture", goal="unknown")
+
+        # Both source-backed offers from one page should remain startable.
+        pair_path = tmp_path / "window-two-offers.sqlite"
+        target = sqlite3.connect(pair_path)
+        db.connection.backup(target)
+        target.close()
+        pair_app = create_app(
+            db_path=pair_path,
+            subject=SUBJECT,
+            actor="fixture",
+            corpus="fixture",
+            login="fixture-login",
+            origin="https://coach.invalid",
+        )
+        pair_client = pair_app.test_client()
+        pair_headers = {"Tailscale-User-Login": "fixture-login", "Origin": "https://coach.invalid"}
+        pair_page = pair_client.get(
+            "/plan?goal=fork&minutes=1", base_url="https://coach.invalid", headers=pair_headers
+        )
+        assert pair_page.status_code == 200
+        pair_forms = [
+            part.split("</form>", 1)[0]
+            for part in pair_page.get_data(as_text=True).split('<form method="post"')
+            if 'name="source_type" value="own-game"' in part.split("</form>", 1)[0]
+            and 'name="window_offer"' in part.split("</form>", 1)[0]
+        ]
+        assert len(pair_forms) == 2
+        pair_fields = [
+            _window_fields(
+                form, ("csrf", "version", "source_type", "key", "training", "window_offer")
+            )
+            for form in pair_forms
+        ]
+        first = pair_client.post(
+            "/unified/start",
+            base_url="https://coach.invalid",
+            headers=pair_headers,
+            data=pair_fields[0],
+        )
+        assert first.status_code == 303
+        stale = pair_client.post(
+            "/unified/start",
+            base_url="https://coach.invalid",
+            headers=pair_headers,
+            data=pair_fields[1],
+        )
+        assert stale.status_code == 400 and b"renew to recheck unstarted offers" in stale.data
+        renewal = re.search(
+            r'href="([^"]+)">Renew this plan window</a>', pair_page.get_data(as_text=True)
+        )
+        assert renewal is not None
+        renewal_url = html.unescape(renewal.group(1))
+        pair_db = Database(pair_path)
+        from chess_coach.evidence_review import review_evidence as review_pair
+
+        # A visible scheduled source that can no longer be reconstructed must
+        # prevent the absence proof instead of releasing the other offer.
+        unavailable_path = tmp_path / "window-unavailable.sqlite"
+        target = sqlite3.connect(unavailable_path)
+        pair_db.connection.backup(target)
+        target.close()
+        unavailable_db = Database(unavailable_path)
+        review_pair(unavailable_db, int(pair_fields[0]["key"]), decision="reject", actor="fixture")
+        unavailable_app = create_app(
+            db_path=unavailable_path,
+            subject=SUBJECT,
+            actor="fixture",
+            corpus="fixture",
+            login="fixture-login",
+            origin="https://coach.invalid",
+        )
+        unavailable_page = unavailable_app.test_client().get(
+            renewal_url, base_url="https://coach.invalid", headers=pair_headers
+        )
+        assert unavailable_page.status_code == 400
+        assert (
+            unavailable_db.connection.execute("SELECT count(*) FROM unified_sessions").fetchone()[0]
+            == 1
+        )
+        unavailable_db.close()
+
+        review_pair(pair_db, int(pair_fields[1]["key"]), decision="reject", actor="fixture")
+        revoked = pair_client.get(
+            renewal_url, base_url="https://coach.invalid", headers=pair_headers
+        )
+        assert revoked.status_code == 200
+        assert f'name="key" value="{pair_fields[1]["key"]}"'.encode() not in revoked.data
+        assert (
+            pair_client.post(
+                "/unified/start",
+                base_url="https://coach.invalid",
+                headers=pair_headers,
+                data=pair_fields[1],
+            ).status_code
+            == 400
+        )
+        review_pair(pair_db, int(pair_fields[1]["key"]), decision="accept", actor="fixture")
+        rechecked = pair_client.get(
+            renewal_url, base_url="https://coach.invalid", headers=pair_headers
+        )
+        assert rechecked.status_code == 200
+        forms = [
+            part.split("</form>", 1)[0]
+            for part in rechecked.get_data(as_text=True).split('<form method="post"')
+            if 'name="source_type" value="own-game"' in part.split("</form>", 1)[0]
+            and 'name="window_offer"' in part.split("</form>", 1)[0]
+        ]
+        assert len(forms) == 1
+        recovered = _window_fields(
+            forms[0], ("csrf", "version", "source_type", "key", "training", "window_offer")
+        )
+        assert recovered["key"] == pair_fields[1]["key"]
+        assert (
+            pair_client.post(
+                "/unified/start",
+                base_url="https://coach.invalid",
+                headers=pair_headers,
+                data=recovered,
+            ).status_code
+            == 303
+        )
+        assert (
+            pair_db.connection.execute("SELECT count(*) FROM unified_sessions").fetchone()[0] == 2
+        )
+        pair_db.close()
+
+        copy_path = tmp_path / "window-plan.sqlite"
+        target = sqlite3.connect(copy_path)
+        db.connection.backup(target)
+        target.close()
+        copy_db = Database(copy_path)
+        app = create_app(
+            db_path=copy_path,
+            subject=SUBJECT,
+            actor="fixture",
+            corpus="fixture",
+            login="fixture-login",
+            origin="https://coach.invalid",
+        )
+        client = app.test_client()
+        headers = {"Tailscale-User-Login": "fixture-login", "Origin": "https://coach.invalid"}
+        page = client.get(
+            "/plan?goal=fork&minutes=1", base_url="https://coach.invalid", headers=headers
+        )
+        assert page.status_code == 200
+        assert b"Replay the prepared capture" not in page.data
+        form = next(
+            part
+            for part in page.get_data(as_text=True).split('<form method="post"')
+            if f'name="key" value="{fork_item["source_key"]}"' in part.split("</form>", 1)[0]
+        ).split("</form>", 1)[0]
+        fields = _window_fields(
+            form, ("csrf", "version", "source_type", "key", "training", "window_offer")
+        )
+        web_cursor = daily_plan(
+            copy_db, subject=SUBJECT, corpus_version="fixture", goal="fork", duration_minutes=1
+        )["window_cursor"]
+        wall[0] += timedelta(seconds=61)
+        expired = daily_plan(
+            db, subject=SUBJECT, corpus_version="fixture", as_of=now, limit=1, cursor=cursor
+        )
+        assert expired["window"]["expired"] and all(
+            item["kind"] == "due" for item in expired["items"]
+        )
+        expired_page = client.get(
+            "/plan",
+            query_string={"cursor": web_cursor},
+            base_url="https://coach.invalid",
+            headers=headers,
+        )
+        assert expired_page.status_code == 200 and b'name="window_offer"' not in expired_page.data
+        with pytest.raises(ValueError, match="expired"):
+            start(
+                copy_db,
+                attempt_id="expired-window",
+                subject=SUBJECT,
+                source_type="own-game",
+                version=fork_item["source_version"],
+                key=fork_item["source_key"],
+                training=True,
+                window_offer=fork_item["window_offer"],
+            )
+        denied = client.post(
+            "/unified/start", base_url="https://coach.invalid", headers=headers, data=fields
+        )
+        assert denied.status_code == 400
+        assert (
+            copy_db.connection.execute("SELECT count(*) FROM unified_sessions").fetchone()[0] == 0
+        )
+        renewed = daily_plan(
+            db,
+            subject=SUBJECT,
+            corpus_version="fixture",
+            as_of=now,
+            limit=1,
+            cursor=expired["window_cursor"],
+            renew=True,
+        )
+        renewed_state = decode_window(db, renewed["window_cursor"])
+        assert not renewed["window"]["expired"]
+        assert set(original["state"]["seen"]).issubset(renewed_state["state"]["seen"])
+        assert all(item["prompt_key"] not in original["state"]["seen"] for item in renewed["items"])
+        wall[0] -= timedelta(seconds=61)
+        with pytest.raises(ValueError):
+            start(
+                copy_db,
+                attempt_id="other-owner",
+                subject="other",
+                source_type="own-game",
+                version=fork_item["source_version"],
+                key=fork_item["source_key"],
+                training=True,
+                window_offer=fork_item["window_offer"],
+            )
+        started = client.post(
+            "/unified/start", base_url="https://coach.invalid", headers=headers, data=fields
+        )
+        assert started.status_code == 303
+        attempt = started.location.rstrip("/").rsplit("/", 1)[-1]
+        wall[0] += timedelta(seconds=61)
+        assert show(copy_db, attempt, SUBJECT)["status"] == "active"
+        submit(copy_db, attempt, SUBJECT, event_id="answer", move="b5d6")
+        assert process(copy_db, SUBJECT)["outcomes"] == {"correct": 1}
+        learned = show(copy_db, attempt, SUBJECT)["learning"]
+        later = now + timedelta(days=2)
+        old_puzzles = copy_db.connection.execute(
+            "SELECT id FROM training_items WHERE source_type='puzzle'"
+        ).fetchall()
+        for row in old_puzzles:
+            review_item(copy_db, row["id"], "good", reviewed_at=later + timedelta(days=3))
+        mixed = daily_plan(
+            copy_db,
+            subject=SUBJECT,
+            corpus_version="fixture",
+            as_of=later,
+            limit=2,
+            cursor=two_item_cursor,
+            renew=True,
+        )
+        assert len(mixed["items"]) == 2
+        assert mixed["items"][0]["kind"] == "due"
+        assert mixed["items"][0]["item_id"] == learned["item_id"]
+        assert mixed["items"][1]["kind"] == "new"
+        assert mixed["items"][1]["skill"] == "hanging_piece"
+        mixed_state = decode_window(copy_db, mixed["window_cursor"])["state"]
+        assert len(mixed_state["seen"]) == mixed_state["limit"] == 2
+        refreshed = daily_plan(
+            copy_db,
+            subject=SUBJECT,
+            corpus_version="fixture",
+            as_of=later,
+            limit=1,
+            cursor=cursor,
+            renew=True,
+        )
+        assert refreshed["window"]["source_refreshed"]
+        found_due = False
+        for _ in range(5):
+            assert len(refreshed["items"]) <= 1
+            assert all(
+                item["kind"] == "due" or item["prompt_key"] not in original["state"]["seen"]
+                for item in refreshed["items"]
+            )
+            if any(item.get("item_id") == learned["item_id"] for item in refreshed["items"]):
+                found_due = True
+                assert refreshed["items"][0]["kind"] == "due"
+                break
+            refreshed = daily_plan(
+                copy_db,
+                subject=SUBJECT,
+                corpus_version="fixture",
+                as_of=later,
+                limit=1,
+                cursor=refreshed["window_cursor"],
+                renew=True,
+            )
+        assert found_due
+
+        # Exercise the signed 50-prompt limit with two actual completed tasks.
+        # The extra opaque keys represent prior selections, not learning events.
+        capture = mixed["items"][1]
+        start(
+            copy_db,
+            attempt_id="cap-capture",
+            subject=SUBJECT,
+            source_type="own-game",
+            version=capture["source_version"],
+            key=capture["source_key"],
+            training=True,
+            window_offer=capture["window_offer"],
+        )
+        submit(copy_db, "cap-capture", SUBJECT, event_id="answer", move="d1d4")
+        assert process(copy_db, SUBJECT)["outcomes"] == {"correct": 1}
+        capture_learned = show(copy_db, "cap-capture", SUBJECT)["learning"]
+        capped = decode_window(copy_db, two_offers["window_cursor"])
+        capped["state"]["limit"] = 50
+        capped["state"]["seen"].extend(f"fixture-seen-{index:02d}" for index in range(47))
+        assert len(capped["state"]["seen"]) == 49
+        old_seen = set(capped["state"]["seen"])
+        cap_page = daily_plan(
+            copy_db,
+            subject=SUBJECT,
+            corpus_version="fixture",
+            as_of=later,
+            limit=2,
+            cursor=encode_window(copy_db, capped),
+            renew=True,
+        )
+        assert {item["item_id"] for item in cap_page["items"]} == {
+            learned["item_id"],
+            capture_learned["item_id"],
+        }
+        assert all(item["kind"] == "due" for item in cap_page["items"])
+        cap_state = decode_window(copy_db, cap_page["window_cursor"])["state"]
+        assert set(cap_state["seen"]) == old_seen
+        assert cap_state["limit"] == len(cap_state["seen"]) == 49
+        copy_db.close()
 
     # A partially checked fork conflict keeps its exact binding and position.
     from types import SimpleNamespace

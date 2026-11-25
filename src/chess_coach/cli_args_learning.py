@@ -50,10 +50,19 @@ def configure(sub):
     plan.add_argument("--limit", type=int, default=10)
     plan.add_argument("--scan-limit", type=int, default=200)
     plan.add_argument("--cursor")
+    plan.add_argument(
+        "--goal",
+        choices=("balanced", "capture", "fork", "mate", "promotion"),
+        help="Prioritize a qualified source family; mate means public-source mate",
+    )
+    plan.add_argument("--minutes", type=int)
+    plan.add_argument("--renew", action="store_true")
     start = sub.add_parser("start-puzzle", help="Start or resume a versioned puzzle attempt")
     start.add_argument("version")
     start.add_argument("puzzle_id")
     start.add_argument("attempt_id")
+    start.add_argument("--window-offer")
+    start.add_argument("--subject")
     show = sub.add_parser("show-puzzle", help="Show the current position for an attempt")
     show.add_argument("attempt_id")
     show.add_argument("--training-item-id", type=int)

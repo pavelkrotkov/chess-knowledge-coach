@@ -13,6 +13,7 @@ def recommended(db: Database, version: str, puzzle_id: str, cursor: str | None) 
             subject=current_app.config["SUBJECT"],
             corpus_version=current_app.config["CORPUS"],
             cursor=cursor,
+            _due_recheck=True,
         )
     except ValueError:
         return False

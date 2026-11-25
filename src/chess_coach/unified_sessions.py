@@ -4,6 +4,8 @@ import json
 
 from .curriculum_prerequisite_launch import budget as _diagnostic_budget
 from .curriculum_prerequisite_launch import dispatch as _diagnostic_check
+from .curriculum_window_unified import check as _window_offer
+from .curriculum_window_unified import finish as _window_time
 from .objective_promotion_admission import admit as admit_promotion
 from .related_session_filter import apply_filter
 from .unified_corpus_mate import apply as apply_goal
@@ -25,6 +27,7 @@ def start(
     training=False,
     item_id=None,
     diagnostic=None,
+    window_offer=None,
 ):
     validate_goal(source_type, goal)
     if not all(
@@ -37,6 +40,9 @@ def start(
     budget = _diagnostic_budget(db, diagnostic, source_type, goal, training, item_id)
     try:
         db.connection.execute("BEGIN IMMEDIATE")
+        window = _window_offer(
+            db, window_offer, subject, source_type, version, key, training, item_id
+        )
         _diagnostic_check(db, subject, source_type, version, key, diagnostic, budget)
         old = db.connection.execute(
             "SELECT * FROM unified_sessions WHERE attempt_id=?", (attempt_id,)
@@ -59,6 +65,7 @@ def start(
 
         enroll_if_requested(db, row, training=training, item_id=item_id, created=not old, goal=goal)
         result = view(row)
+        _window_time(window)
         db.connection.commit()
         return result
     except BaseException:

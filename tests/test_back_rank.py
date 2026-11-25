@@ -595,4 +595,11 @@ def _prerequisite_workflow(tmp_path, monkeypatch):
     sufficient = daily_plan(db, subject="fixture_a", corpus_version="diagnostic")
     assert sufficient["prerequisite"]["mate_evidence"] == "reviewed_sufficient"
     assert sufficient["prerequisite"]["review"] == "accepted"
+    import chess_coach.curriculum_window_scope as window_scope
+    from tests.test_objective_fork import _window_legacy_workflow
+
+    with monkeypatch.context() as window_test:
+        wall = [datetime.now(UTC)]
+        window_test.setattr(window_scope, "clock", lambda: wall[0])
+        _window_legacy_workflow(db, tmp_path, window_test, wall, "fixture_a")
     db.close()

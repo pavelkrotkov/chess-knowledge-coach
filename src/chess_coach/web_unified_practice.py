@@ -40,10 +40,14 @@ def begin():
             goal=request.form.get("goal") or None,
             training=request.form.get("training") == "1",
             item_id=training_item_id(),
+            window_offer=request.form.get("window_offer") or None,
             **options,
         )
     except ValueError:
-        return render_template("error.html", message="That practice source is unavailable."), 400
+        message = "That practice source is unavailable."
+        if request.form.get("window_offer"):
+            message = "That offer changed or expired. Return to the plan and renew to recheck unstarted offers."
+        return render_template("error.html", message=message), 400
     session["unified_attempt"] = attempt
     return redirect(url_for("unified_practice.show_page", attempt=attempt), code=303)
 

@@ -18,6 +18,7 @@ from .training_feedback import puzzle_training_ref, show_training_puzzle, submit
 from .web_db import current_training, database, form_matches
 from .web_move_history import puzzle_input_fen
 from .web_move_input import normalize_move
+from .web_practice_window import start as _window_start
 from .web_recommendation import recommended
 from .web_training_page import render_training_page
 
@@ -29,6 +30,9 @@ def start():
     db = database()
     version = request.form.get("version", "")
     puzzle_id = request.form.get("puzzle_id", "")
+    offer = request.form.get("window_offer")
+    if offer:
+        return _window_start(db, version, puzzle_id, offer)
     ref = puzzle_training_ref(version, puzzle_id)
     if not recommended(db, version, puzzle_id, request.form.get("cursor") or None):
         return render_template(

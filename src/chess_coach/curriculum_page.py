@@ -2,11 +2,12 @@
 
 from datetime import datetime
 
-from .curriculum_due_scan import scan_due
+from .curriculum_due_window import charge
 from .curriculum_evidence import evidence_summary
 from .curriculum_family_mix import scan as scan_families
 from .curriculum_new_capture import scan as scan_capture
 from .curriculum_new_page import diagnostic, new_page
+from .curriculum_page_due import due
 from .curriculum_page_state import (
     capture_generation,
     initial_scan,
@@ -15,21 +16,29 @@ from .curriculum_page_state import (
     should_scan_new,
 )
 from .curriculum_query import corpus_status
+from .curriculum_window_page import due_only as expired_page
 from .db import Database
 
 
-def build_page(db: Database, state: dict, learner: str, now: datetime, budget=None) -> dict:
+def build_page(
+    db: Database,
+    state: dict,
+    learner: str,
+    now: datetime,
+    budget=None,
+    *,
+    due_only=False,
+    window=None,
+) -> dict:
     summary = evidence_summary(db, learner, now, state["scan_limit"])
     status, invalid_ratings = corpus_status(db, state["corpus_version"])
-    items = []
     scan = initial_scan(invalid_ratings)
-    reason = None
-    if state["phase"] == "due":
-        items, scan["due_examined"], scan["due_incomplete"], reason = scan_due(
-            db, state, now, summary, scan
-        )
-        if reason is None and scan["due_incomplete"] and len(state["seen"]) < state["limit"]:
-            reason = "due_scan_incomplete"
+    scan["scheduled_examined"] = getattr(budget, "renewal_examined", 0)
+    previous = set(state["seen"])
+    items, reason = due(db, state, now, summary, scan, window)
+    reason = charge(state, window, previous, items, reason)
+    if due_only:
+        return expired_page(state, summary, status, items, scan, reason)
     # Old signed continuations keep their original two-phase selection.
     if state["v"] in {3, 4, 5, 6} and state["phase"] != "due" and reason is None:
         return _finish(

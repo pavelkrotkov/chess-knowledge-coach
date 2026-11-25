@@ -15,6 +15,9 @@ def handle_daily_plan(db, args):
                 limit=args.limit,
                 scan_limit=args.scan_limit,
                 cursor=args.cursor,
+                goal=getattr(args, "goal", None),
+                duration_minutes=getattr(args, "minutes", None),
+                renew=getattr(args, "renew", False),
             ),
             indent=2,
         )
