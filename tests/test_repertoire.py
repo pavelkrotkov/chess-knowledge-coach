@@ -4487,6 +4487,7 @@ def _unfamiliar_public_fork_workflow(tmp_path, monkeypatch):
             ["opening-context-fork", "--project-root", str(root), "--selection", choice],
         )
         before = db.connection.total_changes
+        database_hash = hashlib.sha256(path.read_bytes()).hexdigest()
         with redirect_stdout(io.StringIO()) as out:
             prepare_cli()
         payload = json.loads(out.getvalue())
@@ -4519,6 +4520,10 @@ def _unfamiliar_public_fork_workflow(tmp_path, monkeypatch):
         )
         patch.setattr(
             chess.engine.SimpleEngine, "popen_uci", lambda *_a, **_k: pytest.fail("engine on GET")
+        )
+        patch.setattr(
+            "chess_coach.web_tactical_exposure.record",
+            lambda *_a, **_k: pytest.fail("learning exposure on GET"),
         )
         current = inventory(db, root, "learner")
         shown = next(
@@ -4578,6 +4583,7 @@ def _unfamiliar_public_fork_workflow(tmp_path, monkeypatch):
         assert identity["source"]["index_sha256"].encode() in response.data
         assert example["history_sha256"].encode() in response.data
         assert db.connection.total_changes == before
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == database_hash
 
         ingest_pgn(db, game("Learner", "Another", "1. d4 Nf6 2. c4 e6", "*", second=2))
         db.connection.commit()
