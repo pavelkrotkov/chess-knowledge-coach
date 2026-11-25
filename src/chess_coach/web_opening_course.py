@@ -4,11 +4,11 @@ import sqlite3
 
 from flask import Response, abort, current_app, render_template, request, url_for
 
-from .opening_revision_course import preview
 from .tactical_course_budget import PreviewUnavailable
 from .tactical_course_deadline import DeadlineConflict, PreviewDeadline
 from .web_board import board_rows
 from .web_db import database
+from .web_opening_course_select import preview
 from .web_tactical_exposure import record
 
 
@@ -40,6 +40,7 @@ def show(game_id, position_id, move):
             game_id,
             position_id,
             move,
+            request.args.get("recommendation"),
         )
     except (PreviewDeadline, PreviewUnavailable, DeadlineConflict, sqlite3.Error, OSError):
         abort(503, "The course preview could not be checked now. Please try again.")
@@ -70,6 +71,7 @@ def show(game_id, position_id, move):
         move=move,
         download=1,
         version=course["version"],
+        recommendation=request.args.get("recommendation"),
     )
     study = _study(course, game_id, position_id, move)
     page = render_template(

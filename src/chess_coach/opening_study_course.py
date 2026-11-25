@@ -3,6 +3,7 @@
 import re
 
 from .course_preview import preview_hash
+from .opening_recommendation_preview import SCHEMA as RECOMMENDATION_SCHEMA
 from .opening_revision_course import VERSION
 from .opening_study_chapter import chapter, line
 
@@ -30,7 +31,10 @@ def _content(current):
 def build(current, expected, game_id, position_id, move):
     if not re.fullmatch(r"[0-9a-f]{64}", expected) or current["version"] != expected:
         raise ValueError("opening preview version differs")
-    if current["schema"] != VERSION or current["public_status"] != "available":
+    if (
+        current["schema"] not in {VERSION, RECOMMENDATION_SCHEMA}
+        or current["public_status"] != "available"
+    ):
         raise ValueError("complete opening preview required")
     body = {
         "kind": "opening-study-course-v1",
