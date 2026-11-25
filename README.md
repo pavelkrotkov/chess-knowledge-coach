@@ -759,6 +759,16 @@ immediate-reply certificate, while unsupported, censored, interrupted and
 unsearched work remains unknown. It is not a prevalence or personal-weakness
 claim. Actual licensed-source qualification remains a separate gate.
 
+The same unfamiliar-context inventory separately labels a provisional
+developmental experiment only when at least two alternatives pass public
+admission, one has a current source-bound material-fork certificate, and
+independent same-side owned games contain at least two current accepted-review
+fork-execution misses with distinct game starts and a common known nominal
+control. The public record's nominal control is unknown. Multiple proved
+examples tie; absent or stale certificates and omitted evidence remain
+unknown. One bounded example cannot establish prevalence, personal ability,
+or opening causation, and this judgment does not replace conditional fit.
+
 ### Descriptive choice profile
 
 `chess-coach --db PATH style-choices --learner NAME` and the private Choice

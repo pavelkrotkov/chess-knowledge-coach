@@ -27,6 +27,7 @@
 <h4>{{ parent.description }}</h4>
 <p>{{ parent.occurrences }} checked occurrences. {% if parent.truncated %}Further catalog choices were omitted{% if parent.screen_incomplete %}; the catalog screen was also bounded{% endif %}.{% endif %}</p>
 {% with fit=parent.fit %}{% include "opening_context_fit.html" %}{% endwith %}
+{% with development=parent.development %}{% include "opening_context_development.html" %}{% endwith %}
 <ul>
 {% for item in parent["items"] %}
 <li>{{ item.name }} ({{ item.eco }}) — {{ item.san }}:
