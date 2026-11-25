@@ -8,9 +8,12 @@ from .opening_public_proof_files import publish
 from .opening_public_proof_read import view
 from .opening_public_proof_source import PROOF_SECONDS, SECONDS, binding
 from .opening_public_proof_window import evaluate, select
+from .opening_queue_files import MAX_BYTES
 from .opening_recent_capacity import check as capacity
 from .style_schedule_budget import history_budget
 from .tactical_study_path import planning
+
+PUBLICATION_WORKING = MAX_BYTES + 16 * 1024
 
 
 def prepare(
@@ -28,7 +31,7 @@ def prepare(
     start = time.monotonic()
     deadline = start + SECONDS
     directory, _ = planning(root, subject)
-    capacity(root, directory)
+    capacity(root, directory, working=PUBLICATION_WORKING)
     version = db.connection.execute("PRAGMA data_version").fetchone()[0]
     db.connection.set_progress_handler(lambda: int(time.monotonic() >= deadline), 1000)
     try:
@@ -49,7 +52,7 @@ def prepare(
         }
         if later_sample is not None:
             payload["fork_sample"] = later_sample
-        capacity(root, directory)
+        capacity(root, directory, working=PUBLICATION_WORKING)
 
         publish(
             directory,
