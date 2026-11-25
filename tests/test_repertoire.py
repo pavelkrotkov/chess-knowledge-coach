@@ -4397,8 +4397,8 @@ def _conditional_fit_workflow(tmp_path, monkeypatch, fake_engine, all_roots, sco
                 pass
 
             def analyse(self, board, limit, multipv, root_moves=None):
-                if len(board.move_stack) == 22:
-                    pv = "d1g4 g8e7" if root_moves else "d1h5 f7g7 h5h3 g8e7"
+                if len(board.move_stack) == 32:
+                    pv = "g1f3 h8g8" if root_moves else "b5c7 e8f8 c7a8 h8g8"
                     score = 0 if root_moves else 300
                     moves = [chess.Move.from_uci(move) for move in pv.split()]
                 else:
@@ -4420,8 +4420,9 @@ def _conditional_fit_workflow(tmp_path, monkeypatch, fake_engine, all_roots, sco
 
         evidence_ids = []
         own_line = (
-            "e4 Nc6 Nf3 e5 Bc4 Nb8 Bf1 g5 Nxe5 d5 Bb5+ Qd7 exd5 Qxb5 "
-            "Nxf7 Kxf7 h3 Qxd5 b3 Qxb3 axb3 Bxh3 Qg4 Ne7"
+            "c3 b6 g4 e6 Qb3 Bd6 Qxe6+ Be7 Qxb6 cxb6 b4 Bxb4 Na3 f5 "
+            "cxb4 Qf6 gxf5 Qxf5 b5 Qf4 e4 Qxe4+ Be2 Qxe2+ Kxe2 Ba6 "
+            "Bb2 Bxb5+ Nxb5 a5 Bc3 Ne7 Nf3 Rg8"
         )
         with patch.context() as own_engine:
             own_engine.setattr(
@@ -4453,7 +4454,7 @@ def _conditional_fit_workflow(tmp_path, monkeypatch, fake_engine, all_roots, sco
                 )
                 assert analysis["status"] == "complete"
                 position = db.connection.execute(
-                    "SELECT id FROM positions WHERE game_id=? AND ply=23", (game_id,)
+                    "SELECT id FROM positions WHERE game_id=? AND ply=33", (game_id,)
                 ).fetchone()[0]
                 db.connection.commit()
                 observed = process_decision(db, position, "learner")
@@ -4549,6 +4550,183 @@ def _conditional_fit_workflow(tmp_path, monkeypatch, fake_engine, all_roots, sco
         assert development["owned"]["games"] == 2
         assert all(item["review"] == "accepted" for item in development["owned"]["observations"])
         assert {"move": "g1f3", "reason": "certificate_unmeasured"} in development["unknown"]
+
+        # Keep the selected public experiment distinct from the owned fork
+        # task; opening selection and plan reads do not record learning.
+        import html
+        import re
+        import sqlite3
+
+        launch_path = data / "opening-launch-fixture.sqlite"
+        target = sqlite3.connect(launch_path)
+        db.connection.backup(target)
+        target.close()
+        launch_db = Database(launch_path)
+        launch_app = create_app(
+            db_path=launch_path,
+            project_root=root,
+            subject="learner",
+            actor="fixture",
+            corpus="test",
+            login="login",
+            origin="https://coach.invalid",
+        )
+        launch_client = launch_app.test_client()
+        launch_headers = {"Tailscale-User-Login": "login", "Origin": "https://coach.invalid"}
+        choice = token(next(item for item in parent["items"] if item["uci"] == "e2e3")["selection"])
+
+        def opening_form(url=None, *, require_offer=True):
+            response = launch_client.get(
+                url or "/plan",
+                query_string=None if url else {"opening": choice, "goal": "fork", "minutes": "5"},
+                base_url="https://coach.invalid",
+                headers=launch_headers,
+            )
+            assert response.status_code == 200
+            assert b"Selected opening experiment:" in response.data
+            renewal = re.search(
+                r'href="([^"]+)">Renew this plan window', response.get_data(as_text=True)
+            )
+            assert renewal is not None
+            renewal_url = html.unescape(renewal.group(1))
+            if not require_offer:
+                assert (
+                    b"A matching eligible fork task is unavailable on this page." in response.data
+                )
+                return None, renewal_url
+            assert b"opening experiment itself is not graded" in response.data
+            form = next(
+                part.split("</form>", 1)[0]
+                for part in response.get_data(as_text=True).split('<form method="post"')
+                if 'name="opening_token"' in part.split("</form>", 1)[0]
+                and 'name="source_type"' in part.split("</form>", 1)[0]
+            )
+            result = {}
+            for name in (
+                "csrf",
+                "source_type",
+                "version",
+                "key",
+                "training",
+                "window_offer",
+                "opening_token",
+                "opening_window_cursor",
+            ):
+                match = re.search(r'name="' + name + r'" value="([^"]*)"', form)
+                assert match is not None
+                result[name] = html.unescape(match.group(1))
+            return result, renewal_url
+
+        launch_form, _ = opening_form()
+        assert (
+            launch_db.connection.execute("SELECT count(*) FROM unified_sessions").fetchone()[0] == 0
+        )
+        review_evidence(launch_db, evidence_ids[0], decision="revoke", actor="fixture")
+        stale_launch = launch_client.post(
+            "/unified/start",
+            base_url="https://coach.invalid",
+            headers=launch_headers,
+            data=launch_form,
+        )
+        assert stale_launch.status_code == 400
+        assert (
+            launch_db.connection.execute("SELECT count(*) FROM unified_sessions").fetchone()[0] == 0
+        )
+        review_evidence(launch_db, evidence_ids[0], decision="accept", actor="fixture")
+        current_form, renewal_url = opening_form()
+        from urllib.parse import parse_qs, urlsplit
+
+        cursor = parse_qs(urlsplit(renewal_url).query)["cursor"][0]
+        unbound = launch_client.get(
+            "/plan",
+            query_string={"cursor": cursor, "opening": choice},
+            base_url="https://coach.invalid",
+            headers=launch_headers,
+        )
+        assert unbound.status_code == 400
+        opening_form(renewal_url, require_offer=False)
+        from chess_coach import unified_sessions
+
+        original_check = unified_sessions._opening_check
+        checks = []
+
+        def change_before_commit(*args):
+            checks.append(True)
+            if len(checks) == 2:
+                (root / ".runtime" / "config.env").touch(mode=0o600, exist_ok=False)
+            return original_check(*args)
+
+        with patch.context() as race:
+            race.setattr(unified_sessions, "_opening_check", change_before_commit)
+            changed = launch_client.post(
+                "/unified/start",
+                base_url="https://coach.invalid",
+                headers=launch_headers,
+                data=current_form,
+            )
+        assert len(checks) == 2 and changed.status_code == 400
+        assert (
+            launch_db.connection.execute("SELECT count(*) FROM unified_sessions").fetchone()[0] == 0
+        )
+        assert (
+            launch_db.connection.execute(
+                "SELECT count(*) FROM unified_training_enrollments"
+            ).fetchone()[0]
+            == 0
+        )
+        current_form, _ = opening_form()
+        from datetime import timedelta
+
+        from chess_coach import curriculum_window_scope
+        from chess_coach.curriculum_window_cursor import decode as decode_window
+        from chess_coach.mastery_time import parse_utc
+
+        deadline = parse_utc(
+            decode_window(launch_db, current_form["opening_window_cursor"])["expires_at"]
+        )
+        assert deadline is not None
+        wall = [deadline - timedelta(seconds=1)]
+        expiry_checks = []
+
+        def cross_deadline(*args):
+            result = original_check(*args)
+            expiry_checks.append(True)
+            if len(expiry_checks) == 2:
+                wall[0] = deadline
+            return result
+
+        with patch.context() as expiry:
+            expiry.setattr(curriculum_window_scope, "clock", lambda: wall[0])
+            expiry.setattr(unified_sessions, "_opening_check", cross_deadline)
+            expired = launch_client.post(
+                "/unified/start",
+                base_url="https://coach.invalid",
+                headers=launch_headers,
+                data=current_form,
+            )
+        assert len(expiry_checks) == 2 and expired.status_code == 400
+        assert (
+            launch_db.connection.execute("SELECT count(*) FROM unified_sessions").fetchone()[0] == 0
+        )
+        assert (
+            launch_db.connection.execute(
+                "SELECT count(*) FROM unified_training_enrollments"
+            ).fetchone()[0]
+            == 0
+        )
+        current_form, _ = opening_form()
+        launched = launch_client.post(
+            "/unified/start",
+            base_url="https://coach.invalid",
+            headers=launch_headers,
+            data=current_form,
+        )
+        assert launched.status_code == 303
+        assert (
+            launch_db.connection.execute("SELECT count(*) FROM unified_sessions").fetchone()[0] == 1
+        )
+        launch_db.close()
+
         database_hash = hashlib.sha256(path.read_bytes()).hexdigest()
         proof_impl = public_fork_candidate.fork_proof
         patch.setattr(

@@ -18,6 +18,8 @@ from .unified_session_events import show
 from .unified_sessions import start
 from .web_board import board_rows
 from .web_db import database
+from .web_opening_launch import options as opening_options
+from .web_opening_launch import start_error
 from .web_practice_history import selected_step, unified_history
 from .web_unified_actions import unified_practice
 from .web_unified_training import item_id as training_item_id
@@ -41,13 +43,11 @@ def begin():
             training=request.form.get("training") == "1",
             item_id=training_item_id(),
             window_offer=request.form.get("window_offer") or None,
+            **opening_options(),
             **options,
         )
     except ValueError:
-        message = "That practice source is unavailable."
-        if request.form.get("window_offer"):
-            message = "That offer changed or expired. Return to the plan and renew to recheck unstarted offers."
-        return render_template("error.html", message=message), 400
+        return start_error()
     session["unified_attempt"] = attempt
     return redirect(url_for("unified_practice.show_page", attempt=attempt), code=303)
 
