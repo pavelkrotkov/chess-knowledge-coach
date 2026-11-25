@@ -299,10 +299,75 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
     assert own["source"]["evidence_id"] in {evidence_id, second_id}
     assert own["mode"] == related["mode"] == "conceal"
     assert own["orientation"] == "white" and "attacks two valuable targets" in own["pgn"]
+    # The owned chapter replays one actual certificate branch, not a new proof.
+    import io
+
+    import chess.pgn
+
+    from chess_coach.tactical_course_display import chapter as display_chapter
+    from chess_coach.tactical_course_presentation import VERSION as PRESENTATION_VERSION
+    from chess_coach.tactical_exposure_positions import line_positions
+
+    snapshot = own["source_snapshot"]
+    proof = snapshot["provenance"]["fork_certificate"]
+    line = own["presentation"]["lines"][0].split()
+    assert own["presentation"]["version"] == PRESENTATION_VERSION
+    assert len(snapshot["lines"]) == 1 and snapshot["lines"][0] == proof["move"]
+    assert len(line) == 3 and line[0] == proof["move"]
+    assert any(
+        (branch["reply"], branch["capture"]) == tuple(line[1:]) for branch in proof["branches"]
+    )
+    played = chess.pgn.read_game(io.StringIO(own["pgn"]))
+    assert played is not None and not played.errors
+    assert [move.uci() for move in played.mainline_moves()] == line
+    assert "White to move" in own["pgn"] and "Worked example, ungraded" in own["pgn"]
+    assert "king on" in own["pgn"] and "rook on" in own["pgn"]
+    assert "illustrative reply" in own["pgn"] and "not necessarily best or forced" in own["pgn"]
+    assert "at least three material units" in own["pgn"]
+    shown = display_chapter(own, 0, 0)
+    assert len(shown["moves"]) == 3 and all(item["color"] == "white" for item in shown["moves"])
+    assert len(line_positions(own, 0)) == 4
+    import chess_coach.web_tactical_course as course_page
+
+    with monkeypatch.context() as browser_view:
+        offer = {"hash": course["preview_sha256"], "prepared_at": "fixture"}
+        browser_view.setattr(course_page, "offered", lambda *_args: (offer, course["preview"]))
+        browser_view.setattr(
+            course_page,
+            "status",
+            lambda *_args: {"configured": False, "state": "none", "receipt": None},
+        )
+        browser_view.setattr(course_page, "preparation", lambda *_args: None)
+        browser_view.setattr(course_page, "preparation_details", lambda: None)
+        browser_view.setattr(course_page, "_record", lambda *_args, **_kwargs: None)
+        shown_page = client.get("/coaching/tactical-course", base_url=base, headers=headers)
+        assert shown_page.status_code == 200
+        assert b"White to move" in shown_page.data and b"illustrative reply" in shown_page.data
+        assert all(item["san"].encode() in shown_page.data for item in shown["moves"])
+        download = client.get(
+            "/coaching/tactical-course?download=1&version=" + offer["hash"],
+            base_url=base,
+            headers=headers,
+        )
+        assert download.status_code == 200 and own["pgn"].encode() in download.data
+    assert db.connection.total_changes == before_course
     assert "Worked example, ungraded" in related["pgn"] and "CC0" in related["pgn"]
     exported = tactical_export(db, LEARNER, "test", course, Budget(db))
     assert exported["kind"] == "local-tactical-course-export-v6"
     assert study_preview(exported, exported["export_sha256"]) == course
+
+    # Saved pre-illustration chapters still rebuild byte-for-byte.
+    from chess_coach.course_preview import preview_hash
+    from chess_coach.tactical_course_chapters import owned_chapter
+
+    old = deepcopy(course)
+    old_own = owned_chapter(db, LEARNER, group, own["source"], pattern["supporting_sources"])
+    assert "presentation" not in old_own and old_own["source_snapshot"] == snapshot
+    old["preview"]["chapters"][0] = old_own
+    old["preview_sha256"] = preview_hash(old["preview"])
+    old_export = tactical_export(db, LEARNER, "test", old, Budget(db))
+    assert old_export["export"]["chapters"][0]["pgn"] == old_own["pgn"]
+    assert study_preview(old_export, old_export["export_sha256"]) == old
 
     # Previously saved v1 worked chapters still rebuild exactly after v2 becomes the default.
     from chess_coach.objective_fork_contract import VERSION as LEGACY_FORK_VERSION

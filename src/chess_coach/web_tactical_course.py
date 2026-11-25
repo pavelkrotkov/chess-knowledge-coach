@@ -7,6 +7,7 @@ from flask import Blueprint, Response, abort, current_app, render_template, requ
 
 from .tactical_course_display import chapter as display
 from .tactical_course_offer_read import offered
+from .tactical_course_presentation import lines as presentation_lines
 from .tactical_course_selection import CURRENT_PAIRS
 from .tactical_study_request_status import status
 from .web_db import database
@@ -45,7 +46,7 @@ def show():
         if expected is not None and expected != item["hash"]:
             abort(409, "The offered course changed. Return to Coaching.")
         index = _index("chapter", len(course["chapters"]))
-        lines = course["chapters"][index]["source_snapshot"]["lines"]
+        lines = presentation_lines(course["chapters"][index])
         shown = display(course["chapters"][index], index, _index("line", len(lines)))
         source = shown["chapter"]["source"]
         shown["evidence"] = source.get("evidence_id") or source.get("binding", {}).get(

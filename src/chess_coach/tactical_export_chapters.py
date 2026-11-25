@@ -4,6 +4,7 @@ from .course_guidance import challenge
 from .objective_fork_contract import VERSION as LEGACY_FORK_VERSION
 from .tactical_course_chapters import owned_chapter
 from .tactical_course_familiar import familiarity
+from .tactical_course_presentation import VERSION as FORK_PRESENTATION
 from .tactical_course_protection import source as teaching_source
 from .tactical_course_related import unfamiliar
 from .tactical_course_resolve import related as current_related
@@ -27,7 +28,12 @@ def verify(
     selected = _selected(db, subject, pattern, lesson, chapters[0], budget, modern)
     with budget.scope(snapshot=True):
         owned = owned_chapter(
-            db, subject, {"lesson": lesson}, selected, pattern["supporting_sources"]
+            db,
+            subject,
+            {"lesson": lesson},
+            selected,
+            pattern["supporting_sources"],
+            illustrated=chapters[0].get("presentation", {}).get("version") == FORK_PRESENTATION,
         )
     with budget.scope(snapshot=False):
         compare(chapters[0], owned)

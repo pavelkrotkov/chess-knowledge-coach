@@ -3,6 +3,7 @@
 import chess
 
 from .related_capture_position import prompt_key
+from .tactical_course_presentation import lines as presentation_lines
 
 MAX_POSITIONS = 4096
 MAX_CHAPTERS = 64
@@ -18,7 +19,7 @@ def position_key(board):
 def line_positions(chapter, line):
     snapshot = chapter["source_snapshot"]
     board = chess.Board(snapshot["prompt_fen"])
-    moves = snapshot["lines"][line].split()
+    moves = presentation_lines(chapter)[line].split()
     if len(moves) > MAX_POSITIONS:
         raise ValueError("tactical line exceeds exposure limit")
     result = {position_key(board)}
