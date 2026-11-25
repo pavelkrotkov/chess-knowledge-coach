@@ -23,11 +23,11 @@ def options(goal, minutes):
     return goal, minutes
 
 
-def create(state, goal, minutes, page_limit):
+def create(state, goal, minutes, page_limit, *, reset_turn=True):
     goal, minutes = options(goal, minutes)
     issued = clock()
     turn = GOALS[goal]
-    if turn is not None:
+    if reset_turn and turn is not None:
         state["family_turn"] = turn
     return {
         "v": 7,
@@ -38,6 +38,9 @@ def create(state, goal, minutes, page_limit):
         "issued_at": issued.isoformat(),
         "expires_at": (issued + timedelta(minutes=minutes)).isoformat() if minutes else None,
         "state": state,
+        "new_seen": [],
+        "repeat_due": [],
+        "source_refreshed": False,
     }
 
 

@@ -5,11 +5,12 @@ from datetime import datetime
 from .curriculum_cursor_phase import after_due
 from .curriculum_due import due_candidate, due_page
 from .curriculum_due_schedule import check_schedule, eligible
+from .curriculum_due_window import take_again
 from .curriculum_selection import select
 from .db import Database
 
 
-def scan_due(db: Database, state: dict, now: datetime, summary: dict, scan: dict):
+def scan_due(db: Database, state: dict, now: datetime, summary: dict, scan: dict, window=None):
     rows = due_page(db, now, state["due_after"], state["scan_limit"])
     selected = []
     seen = set(state["seen"])
@@ -18,11 +19,12 @@ def scan_due(db: Database, state: dict, now: datetime, summary: dict, scan: dict
     for row in rows[: state["scan_limit"]]:
         examined += 1
         candidate = due_candidate(db, row, now, state["subject_hash"])
-        if eligible(candidate, seen):
+        if eligible(candidate, seen, window):
             reason = check_schedule(db, state, candidate, scan)
             if reason:
                 break
             if state["scheduled_best"] == row["id"]:
+                take_again(candidate, seen, window)
                 items, seen = select([candidate], state["limit"] - len(seen), summary, seen)
                 selected.extend(items)
             state["scheduled_best"] = 0

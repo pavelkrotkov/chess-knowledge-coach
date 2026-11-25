@@ -9,7 +9,7 @@
 <button>Choose plan</button>
 </form><p><a href="{{ url_for('related_fork.find_next') }}">Find a comparable next fork assessment</a> · <a href="{{ url_for('related_fork.find_first') }}">Find a first unfamiliar fork assessment</a></p><p><a href="{{ url_for('short_mate_game_views.fork_samples') }}">Knight forks in your games</a></p><p><a href="{{ url_for('related_fork.history') }}">First-encounter fork assessment history</a> · <a href="{{ url_for('related_fork.progress') }}">Matched knight-fork practice over time</a></p><p><a href="{{ url_for('short_mate_game_views.capture_samples') }}">Capture choices in your games</a></p><p><a href="{{ url_for('related_capture.plan') }}">Practice finding captures</a></p><p><a href="{{ url_for('assessment_history_views.history') }}">Short-mate assessment history</a></p><p><a href="{{ url_for('recurrence_views.mate_game_samples') }}">Mate-in-one in your games</a></p><p><a href="{{ url_for('short_mate_game_views.skewer_samples') }}">Royal skewers in your games</a></p><p><a href="{{ url_for('coaching_views.index') }}">Practice your recurring patterns</a> · Source-position rehearsal is separate from scheduled reviews.</p>{% if error %}<p role="alert">{{ error }}</p>
 <a href="{{ url_for('views.plan') }}">Restart plan</a>{% elif plan %}{% if plan.window %}
-<p>Goal: {{ plan.window.goal }} ({{ plan.window.goal_status|replace("_", " ") }}). {% if plan.window.expires_at %}Wall-clock window ends {{ plan.window.expires_at }}. A started task may finish afterward; individual task duration is unknown.{% else %}No wall-clock window was selected.{% endif %}{% if plan.window.expired %} This window has expired; due work remains available.{% endif %}</p>
+<p>Goal: {{ plan.window.goal }} ({{ plan.window.goal_status|replace("_", " ") }}). {% if plan.window.expires_at %}Wall-clock window ends {{ plan.window.expires_at }}. A started task may finish afterward; individual task duration is unknown.{% else %}No wall-clock window was selected.{% endif %}{% if plan.window.expired %} This window has expired; due work remains available.{% endif %}{% if plan.window.source_refreshed %} The plan rechecked current sources and due work while retaining earlier offers.{% endif %}</p>
 <p><a href="{{ url_for('views.plan', cursor=plan.window_cursor, renew=1) }}">Renew this plan window</a></p>
 {% endif %}<p>Evidence: {{ plan.evidence.state }}. Corpus: {{ plan.corpus_status }}.</p>{% macro task(item) %}<li>
 <strong>{{ item.objective }}</strong> - {{ item.kind }}. {{ item.reason }}{% if item.due %} Due: {{ item.due }}.{% endif %}{% if item.source_evidence_id %} <a href="{{ url_for('views.evidence_detail', evidence_id=item.source_evidence_id) }}">Inspect the source observation</a>.{% endif %}{% if item.source_attribution %} Source: {{ item.source_attribution }} ({{ item.source_license }}).{% endif %}<form method="post" action="{{ url_for('unified_practice.begin') if item.unified_training else url_for('practice.start') }}">
@@ -22,7 +22,7 @@
 <input type="hidden" name="puzzle_id" value="{{ item.puzzle_id }}">
 <button>Start practice</button>
 </form>
-{% if item.kind == "new" and item.skill == "hanging_piece" and item.source_evidence_id and plan.capture_focus %}
+{% if not plan.window and item.kind == "new" and item.skill == "hanging_piece" and item.source_evidence_id and plan.capture_focus %}
 <h3>Capture practice</h3>
 {% set capture = plan.capture_focus %}{% set focus_bound = true %}{% set embedded = true %}{% include "plan_capture_action.html" %}
 <form method="post" action="{{ url_for('unified_practice.begin') }}">

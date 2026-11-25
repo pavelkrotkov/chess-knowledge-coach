@@ -1054,6 +1054,134 @@ def test_certified_pawn_fork_miss_control():
     )
 
 
+def _window_legacy_workflow(original, tmp_path, patch, wall):
+    import html
+    import io
+    import sqlite3
+    import sys
+    from contextlib import redirect_stdout
+    from datetime import UTC, datetime, timedelta
+
+    from chess_coach import cli
+    from chess_coach.curriculum import daily_plan
+    from chess_coach.db import Database
+    from chess_coach.training import review_item
+
+    path = tmp_path / "legacy-window.sqlite"
+    target = sqlite3.connect(path)
+    original.connection.backup(target)
+    target.close()
+    db = Database(path)
+    corpus = db.connection.execute(
+        "INSERT INTO puzzle_corpora(version,source,checksum,state) "
+        "VALUES('window-fixture','fixture','window-checksum','staging')"
+    ).lastrowid
+    db.connection.execute(
+        """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,
+        rating_deviation,themes_json,objective)
+        VALUES('legacy-window',?,'7k/1p6/6K1/2Q5/8/8/P7/8 b - - 17 14',
+        'fixture','b7b6 c5f8',1200,80,'[]','unknown')""",
+        (corpus,),
+    )
+    db.connection.execute("UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus,))
+    db.connection.commit()
+    planned = daily_plan(
+        db, subject=SUBJECT, corpus_version="window-fixture", goal="mate", duration_minutes=1
+    )
+    item = next(item for item in planned["items"] if item.get("puzzle_id") == "legacy-window")
+    assert item["kind"] == "new" and not item.get("unified_training") and item["window_offer"]
+    with redirect_stdout(io.StringIO()) as output:
+        patch.setattr(
+            sys,
+            "argv",
+            [
+                "chess-coach",
+                "--db",
+                str(path),
+                "daily-plan",
+                "window-fixture",
+                "--subject",
+                SUBJECT,
+                "--goal",
+                "mate",
+                "--minutes",
+                "1",
+            ],
+        )
+        cli.main()
+    cli_plan = json.loads(output.getvalue())
+    assert cli_plan["window"]["goal"] == "mate" and cli_plan["window"]["minutes"] == 1
+    assert any(value.get("puzzle_id") == "legacy-window" for value in cli_plan["items"])
+
+    app = create_app(
+        db_path=path,
+        subject=SUBJECT,
+        actor="fixture",
+        corpus="window-fixture",
+        login="fixture-login",
+        origin="https://coach.invalid",
+    )
+    client = app.test_client()
+    headers = {"Tailscale-User-Login": "fixture-login"}
+    page = client.get(
+        "/plan?goal=mate&minutes=1", base_url="https://coach.invalid", headers=headers
+    )
+    assert page.status_code == 200 and b"Wall-clock window ends" in page.data
+    assert b"individual task duration is unknown" in page.data
+    form = next(
+        part
+        for part in page.get_data(as_text=True).split('<form method="post"')
+        if 'name="puzzle_id" value="legacy-window"' in part.split("</form>", 1)[0]
+    ).split("</form>", 1)[0]
+    fields = {
+        name: html.unescape(re.search(r'name="' + name + r'" value="([^"]*)"', form).group(1))
+        for name in ("csrf", "version", "puzzle_id", "window_offer")
+    }
+    headers = headers | {"Origin": "https://coach.invalid"}
+    before = db.connection.execute("SELECT count(*) FROM training_items").fetchone()[0]
+    wall[0] += timedelta(seconds=61)
+    denied = client.post(
+        "/practice/start", base_url="https://coach.invalid", headers=headers, data=fields
+    )
+    assert denied.status_code == 400
+    assert db.connection.execute("SELECT count(*) FROM training_items").fetchone()[0] == before
+    wall[0] -= timedelta(seconds=61)
+    started = client.post(
+        "/practice/start", base_url="https://coach.invalid", headers=headers, data=fields
+    )
+    assert started.status_code == 303
+    wall[0] += timedelta(seconds=61)
+    assert (
+        client.get("/practice", base_url="https://coach.invalid", headers=headers).status_code
+        == 200
+    )
+    item_id = db.connection.execute(
+        "SELECT id FROM training_items WHERE source_ref LIKE ?", ("%legacy-window%",)
+    ).fetchone()[0]
+    review_item(db, item_id, "good", reviewed_at=datetime.now(UTC) - timedelta(days=3))
+    due_page = client.get(
+        "/plan?goal=mate&minutes=1", base_url="https://coach.invalid", headers=headers
+    )
+    due_form = next(
+        part
+        for part in due_page.get_data(as_text=True).split('<form method="post"')
+        if 'name="puzzle_id" value="legacy-window"' in part.split("</form>", 1)[0]
+    ).split("</form>", 1)[0]
+    assert 'name="window_offer"' not in due_form
+    due_fields = {
+        name: html.unescape(re.search(r'name="' + name + r'" value="([^"]*)"', due_form).group(1))
+        for name in ("csrf", "version", "puzzle_id")
+    }
+    wall[0] += timedelta(seconds=61)
+    assert (
+        client.post(
+            "/practice/start", base_url="https://coach.invalid", headers=headers, data=due_fields
+        ).status_code
+        == 303
+    )
+    db.close()
+
+
 def _daily_fork_workflow(tmp_path, monkeypatch):
     import io
     import sys
@@ -1292,7 +1420,42 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
         )
         wall[0] += timedelta(seconds=61)
         assert show(copy_db, "active-window", SUBJECT)["status"] == started["status"]
+        submit(copy_db, "active-window", SUBJECT, event_id="answer", move="b5d6")
+        assert process(copy_db, SUBJECT)["outcomes"] == {"correct": 1}
+        learned = show(copy_db, "active-window", SUBJECT)["learning"]
+        later = now + timedelta(days=2)
+        refreshed = daily_plan(
+            copy_db,
+            subject=SUBJECT,
+            corpus_version="fixture",
+            as_of=later,
+            limit=1,
+            cursor=cursor,
+            renew=True,
+        )
+        assert refreshed["window"]["source_refreshed"]
+        found_due = False
+        for _ in range(5):
+            assert all(
+                item["kind"] == "due" or item["prompt_key"] not in original["state"]["seen"]
+                for item in refreshed["items"]
+            )
+            if any(item.get("item_id") == learned["item_id"] for item in refreshed["items"]):
+                found_due = True
+                assert refreshed["items"][0]["kind"] == "due"
+                break
+            refreshed = daily_plan(
+                copy_db,
+                subject=SUBJECT,
+                corpus_version="fixture",
+                as_of=later,
+                limit=1,
+                cursor=refreshed["window_cursor"],
+                renew=True,
+            )
+        assert found_due
         copy_db.close()
+        _window_legacy_workflow(db, tmp_path, window_test, wall)
 
     # A partially checked fork conflict keeps its exact binding and position.
     from types import SimpleNamespace

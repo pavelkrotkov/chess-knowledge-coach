@@ -35,7 +35,9 @@ def daily_plan(
         window = requested(db, cursor, goal, duration_minutes, renew)
         prior = _prior(db, cursor, window)
         requested_time = (
-            as_of if as_of is not None else (parse_utc(prior["as_of"]) if prior else None)
+            as_of
+            if as_of is not None
+            else (parse_utc(prior["as_of"]) if prior and not renew else None)
         )
         learner, now = validate_plan_request(
             subject, corpus_version, limit, scan_limit, requested_time

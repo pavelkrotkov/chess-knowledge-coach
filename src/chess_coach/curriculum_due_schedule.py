@@ -2,6 +2,7 @@
 
 from typing import TypeGuard
 
+from .curriculum_due_window import eligible_again
 from .curriculum_schedule import due_schedule_page
 from .db import Database
 
@@ -28,5 +29,7 @@ def check_schedule(db: Database, state: dict, candidate: dict, scan: dict) -> st
     return None
 
 
-def eligible(candidate: dict | None, seen: set[str]) -> TypeGuard[dict]:
-    return candidate is not None and candidate["prompt_key"] not in seen
+def eligible(candidate: dict | None, seen: set[str], window=None) -> TypeGuard[dict]:
+    return candidate is not None and (
+        candidate["prompt_key"] not in seen or eligible_again(candidate, seen, window)
+    )

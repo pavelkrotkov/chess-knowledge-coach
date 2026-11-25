@@ -11,16 +11,20 @@ from .curriculum_window_scope import expired
 def build(db, value, learner, version, limit, scan_limit, now, budget, goal, minutes, renew):
     value = state(db, value, learner, version, limit, scan_limit, now, goal, minutes, renew)
     plan_state = value["state"]
-    before = deepcopy(plan_state)
+    before = deepcopy(value)
     initially_expired = expired(value)
-    page = build_page(db, plan_state, learner, now, budget, due_only=initially_expired)
+    page = build_page(
+        db, plan_state, learner, now, budget, due_only=initially_expired, window=value
+    )
     if not initially_expired and expired(value):
-        plan_state.clear()
-        plan_state.update(before)
-        page = build_page(db, plan_state, learner, now, budget, due_only=True)
+        value.clear()
+        value.update(deepcopy(before))
+        plan_state = value["state"]
+        page = build_page(db, plan_state, learner, now, budget, due_only=True, window=value)
     offers(db, value, page)
     if not initially_expired and expired(value):
-        plan_state.clear()
-        plan_state.update(before)
-        page = build_page(db, plan_state, learner, now, budget, due_only=True)
+        value.clear()
+        value.update(deepcopy(before))
+        plan_state = value["state"]
+        page = build_page(db, plan_state, learner, now, budget, due_only=True, window=value)
     return finish(db, value, plan_state, page)

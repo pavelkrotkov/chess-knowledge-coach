@@ -2,6 +2,7 @@
 
 from datetime import timedelta
 
+from .curriculum_window_history import validate_history
 from .curriculum_window_scope import POLICY, options
 from .mastery_time import parse_utc
 
@@ -16,12 +17,16 @@ def _header(value):
         "issued_at",
         "expires_at",
         "state",
+        "new_seen",
+        "repeat_due",
+        "source_refreshed",
     }:
         raise ValueError("invalid practice window")
     if value["v"] != 7 or value["policy"] != POLICY:
         raise ValueError("practice window policy changed")
     options(value["goal"], value["minutes"])
     _plan(value)
+    validate_history(value)
 
 
 def _plan(value):

@@ -21,6 +21,9 @@ def _continuation(page, value, plan_state, cursor):
 
 
 def finish(db, value, plan_state, page):
+    for item in page["items"]:
+        if item["kind"] == "new" and item["prompt_key"] not in value["new_seen"]:
+            value["new_seen"].append(item["prompt_key"])
     cursor = encode(db, value)
     _continuation(page, value, plan_state, cursor)
     page["window_cursor"] = cursor
@@ -32,5 +35,6 @@ def finish(db, value, plan_state, page):
         "issued_at": value["issued_at"],
         "expires_at": value["expires_at"],
         "expired": expired(value),
+        "source_refreshed": value["source_refreshed"],
     }
     return page

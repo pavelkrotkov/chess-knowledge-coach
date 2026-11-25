@@ -20,12 +20,19 @@ from .db import Database
 
 
 def build_page(
-    db: Database, state: dict, learner: str, now: datetime, budget=None, *, due_only=False
+    db: Database,
+    state: dict,
+    learner: str,
+    now: datetime,
+    budget=None,
+    *,
+    due_only=False,
+    window=None,
 ) -> dict:
     summary = evidence_summary(db, learner, now, state["scan_limit"])
     status, invalid_ratings = corpus_status(db, state["corpus_version"])
     scan = initial_scan(invalid_ratings)
-    items, reason = due(db, state, now, summary, scan)
+    items, reason = due(db, state, now, summary, scan, window)
     if due_only:
         return expired_page(state, summary, status, items, scan, reason)
     # Old signed continuations keep their original two-phase selection.
