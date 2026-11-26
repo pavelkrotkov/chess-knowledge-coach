@@ -839,12 +839,43 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
             reader.execute(f"SELECT count(*) FROM {table}").fetchone()[0] for table in tables
         )
 
-    sections = re.findall(r"<section>.*?</section>", page.get_data(as_text=True), re.DOTALL)
-    assessment_form = next(
-        section
-        for section in sections
-        if "content rating 1200" in section and 'name="assessment"' in section
-    )
+    def assessment_page(response):
+        from html import unescape
+
+        url = "/decisions/1/related-captures"
+        while True:
+            html = response.get_data(as_text=True)
+            form = next(
+                (
+                    section
+                    for section in re.findall(r"<section>.*?</section>", html, re.DOTALL)
+                    if "content rating 1200" in section and 'name="assessment"' in section
+                ),
+                None,
+            )
+            if form is not None:
+                return response, url, form
+            link = re.search(r'href="([^"]*cursor=[^"]+)"', html)
+            assert link
+            url = unescape(link.group(1))
+            with sqlite3.connect(path) as reader:
+                before = tuple(
+                    reader.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+                    for table in tables
+                )
+            with monkeypatch.context() as guard:
+                guard.setattr(candidate_features, "capture_gain", forbidden_proof)
+                guard.setattr(candidate_assessment, "judge", forbidden_proof)
+                response = client.get(url, base_url="https://coach.invalid", headers=headers)
+            assert response.status_code == 200
+            with sqlite3.connect(path) as reader:
+                assert before == tuple(
+                    reader.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+                    for table in tables
+                )
+
+    first_page = page
+    page, assessment_url, assessment_form = assessment_page(page)
     match = re.search(r'name="reference" value="([^"]+)"', assessment_form)
     assert match
     reference = match.group(1)
@@ -877,7 +908,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
             guard.setattr(candidate_features, "capture_gain", forbidden_proof)
             guard.setattr(candidate_assessment, "judge", forbidden_proof)
             unchanged = client.get(
-                "/decisions/1/related-captures", base_url="https://coach.invalid", headers=headers
+                assessment_url, base_url="https://coach.invalid", headers=headers
             )
         assert unchanged.status_code == 200 and reference.encode() in unchanged.data
         pool = deepcopy(old_pool)
@@ -905,7 +936,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         from chess_coach import related_capture_prepared_assessment
         from chess_coach.fact_fingerprint import canonical, digest
 
-        link = re.search(r'href="([^"]*cursor=[^"]+)"', page.get_data(as_text=True))
+        link = re.search(r'href="([^"]*cursor=[^"]+)"', first_page.get_data(as_text=True))
         assert link
         cursor = parse_qs(urlparse(unescape(link.group(1))).query)["cursor"][0]
         _, tag = json.loads(base64.urlsafe_b64decode(cursor))
@@ -1336,14 +1367,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         next_page = client.get(
             "/decisions/1/related-captures", base_url="https://coach.invalid", headers=headers
         )
-        sections = re.findall(
-            r"<section>.*?</section>", next_page.get_data(as_text=True), re.DOTALL
-        )
-        next_form = next(
-            section
-            for section in sections
-            if "content rating 1200" in section and 'name="assessment"' in section
-        )
+        next_page, _, next_form = assessment_page(next_page)
         next_match = re.search(r"name=\"reference\" value=\"([^\"]+)\"", next_form)
         assert next_match
         next_ref = next_match.group(1)
@@ -1425,12 +1449,23 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         run_analysis(db, game_id, game_input(db, game_id), config, engine_identity(sys.executable))
         assert process_decision(db, position, LEARNER)["evidence_ids"]
         certify(db, LEARNER, root)
-        second_source = capture_preview(db, LEARNER, position, "capture", secret=app.secret_key)
-        reference = next(
-            value["reference"]
-            for value in second_source["items"]
-            if value.get("assessment_available") and value.get("rating") == 1200
-        )
+        cursor = None
+        while True:
+            second_source = capture_preview(
+                db, LEARNER, position, "capture", cursor, secret=app.secret_key
+            )
+            reference = next(
+                (
+                    value["reference"]
+                    for value in second_source["items"]
+                    if value.get("assessment_available") and value.get("rating") == 1200
+                ),
+                None,
+            )
+            if reference is not None:
+                break
+            cursor = second_source["next_cursor"]
+            assert cursor
         start_related(
             db,
             attempt_id="another-source",
