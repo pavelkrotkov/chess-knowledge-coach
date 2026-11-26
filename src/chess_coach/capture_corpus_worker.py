@@ -21,7 +21,7 @@ def visit(db, subject, data, progress, check):
             building["incomplete"] = True
             pending.pop()
             return True, 0
-        used = prepare(db, entry, check)
+        used = _prepare(db, entry, check)
         if entry["state"] in {"complete", "unresolved"}:
             building["incomplete"] = (
                 building.get("incomplete", False) or entry["state"] == "unresolved"
@@ -33,3 +33,15 @@ def visit(db, subject, data, progress, check):
         data["prior"] = None
         return False, 0
     return finalize(db, data, building, prior)
+
+
+def _prepare(db, entry, check):
+    if entry["candidate"]["type"] != "public":
+        return prepare(db, entry, check)
+    from .capture_public_proof import qualify
+
+    try:
+        return qualify(db, entry, check)
+    except TimeoutError:
+        entry["state"] = "interrupted"
+        raise
