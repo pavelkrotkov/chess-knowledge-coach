@@ -29,11 +29,6 @@ def _limits(sections):
     )
 
 
-def room(state, item, section):
-    sections = [section if value is item else value.get("root_details") for value in _items(state)]
-    return _limits([value for value in sections if value])
-
-
 def fits(state):
     return len(canonical({**state, "checksum": "0" * 64}).encode()) <= MAX_BYTES
 
@@ -50,9 +45,6 @@ def fit(state):
 
 def record(state, item, row, detail):
     section = item.get("root_details") or {"version": VERSION, "proof": PROOF_VERSION, "turns": []}
-    value = {**detail, "position_id": row[0], "outcome": row[1]}
-    if value.get("reason") == "deadline":
-        value["reason"] = row[2]
-    section = {**section, "turns": [*section["turns"], value]}
-    if room(state, item, section):
-        item["root_details"] = section
+    value = {**detail, "position_id": row[0], "outcome": row[1], "reason": row[2]}
+    item["root_details"] = {**section, "turns": [*section["turns"], value]}
+    fit(state)

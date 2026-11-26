@@ -4,6 +4,19 @@ from .capture_game_proof import VERSION as PROOF_VERSION
 from .capture_game_root_budget import VERSION, _items, _limits
 
 
+def _coverage(turn):
+    roots, total, attempted = turn["roots"], turn["total"], turn["attempted"]
+    # An unenumerated turn is unknown, not a known empty capture set.
+    if total is None:
+        return (roots, attempted, turn["unsearched"]) == ([], 0, None)
+    return (
+        type(attempted) is int
+        and len(roots) <= attempted <= total
+        and turn["unsearched"] == total - attempted
+        and len({root[0] for root in roots}) == len(roots) <= 32
+    )
+
+
 def _section(item):
     section = item.get("root_details")
     if section is None:
@@ -11,19 +24,19 @@ def _section(item):
     try:
         turns = section["turns"]
         rows = {(row[0], row[1]) for row in item["results"]}
-        retained = [(turn["position_id"], turn["outcome"]) for turn in turns]
+        retained = {(turn["position_id"], turn["outcome"]) for turn in turns if _coverage(turn)}
         tag = (section["version"], section["proof"], type(turns))
         return (
             tag == (VERSION, PROOF_VERSION, list)
-            and set(retained) <= rows
-            and len(set(retained)) == len(retained)
+            and retained <= rows
+            and len(retained) == len(turns)
         )
-    except (TypeError, KeyError):
+    except (TypeError, KeyError, IndexError):
         return False
 
 
 def valid(games):
-    if not all(_section(item) for item in games):
+    if not all(map(_section, games)):
         return False
     return _limits([item["root_details"] for item in games if item.get("root_details")])
 
