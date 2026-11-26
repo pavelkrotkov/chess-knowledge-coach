@@ -892,7 +892,10 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
     monkeypatch.setattr(
         capture_scan,
         "classify",
-        lambda board, move, deadline, clock: ("played" if move.endswith("g7") else "other", None),
+        lambda board, move, deadline, clock, **_kwargs: (
+            "played" if move.endswith("g7") else "other",
+            None,
+        ),
     )
     capture_scan.run(db, "fixture_a", root)
     assert old_capture_cache.read_bytes() == b"synthetic prior capture cache"
