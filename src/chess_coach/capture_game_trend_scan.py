@@ -22,28 +22,27 @@ CYCLE_SECONDS = 10.0
 
 
 def _advance(db, learner, games, state, deadline, *, classifier=None, turn_seconds=TURN_SECONDS):
-    fields = ("root_details",) if classifier is None else ()
+    fields = ()
+    inspector = partial(inspect, classifier=classifier, seconds=turn_seconds)
     if classifier is None:
         discard_invalid(state)
+        fields = ("root_details", "root_refresh")
+        inspector = partial(inspect_roots, state=state, classifier=classify, seconds=turn_seconds)
     select(db, learner, games, state, deadline, retain_fields=fields)
     consumed = {str(row[0]) for row in state["checked"]}
     state["retained"] = {
         key: item for key, item in state["retained"].items() if key not in consumed
     }
-    if not state["selection_complete"]:
-        return
-    inspector = partial(inspect, classifier=classifier, seconds=turn_seconds)
-    if classifier is None:
-        inspector = partial(inspect_roots, state=state, classifier=classify, seconds=turn_seconds)
-    _inspect(
-        db,
-        learner,
-        state,
-        deadline,
-        inspector=inspector,
-        turn_seconds=turn_seconds,
-        recheck_complete=classifier is None,
-    )
+    if state["selection_complete"]:
+        _inspect(
+            db,
+            learner,
+            state,
+            deadline,
+            inspector=inspector,
+            turn_seconds=turn_seconds,
+            recheck_complete=classifier is None,
+        )
 
 
 def _resume(old, key, frontier, signatures, games):

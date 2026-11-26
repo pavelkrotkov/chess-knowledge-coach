@@ -1410,7 +1410,7 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
     assert cached_report(db, "fixture_a", root) is None
     db.close()
 
-    # The actual worker supplies fresh roots while old v3 decisions stay unattributed.
+    # The actual worker supplies fresh roots and refreshes completed legacy decisions.
     from chess_coach import capture_game_proof, capture_game_roots
 
     real_path = data / "root-capture-games.sqlite"
@@ -1426,7 +1426,6 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
         state = read(real_cache, real_key, validator=capture_validate)
         assert state and state["games"][0]["results"][0][1:] == ["played", None]
         triple = list(state["games"][0]["results"][0])
-        fresh = deepcopy(state)
         detail = state["games"][0]["root_details"]["turns"][0]
         assert any(root[0] == "d1d4" and root[2] == "proved" for root in detail["roots"])
 
@@ -1443,16 +1442,94 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
         assert partial_detail["attempted"] == 1 and not partial_detail["roots"]
         assert partial_detail["unsearched"] == partial_detail["total"] - 1
 
-        # Simulate an existing pre-upgrade v3 report, without inventing any roots.
+        # A completed legacy v3 report has no attributed roots or refresh marker.
+        from chess_coach import capture_game_root_budget as root_budget
+        from chess_coach.fact_fingerprint import canonical
+
         state["games"][0].pop("root_details")
-        write(real_cache, state)
+        state["games"][0].pop("root_refresh", None)
+        legacy = deepcopy(state)
+        write(real_cache, legacy)
         old = capture_report(real_db, "fixture_a", root)
         assert old and old["newer"]["root_unattributed"] == 1
+
+        # No checkpoint space means no optional proof and the old result remains visible.
+        with actual.context() as capped:
+            capped.setattr(root_budget, "DETAIL_BYTES", 1)
+            capped.setattr(
+                capture_scan,
+                "classify",
+                lambda *_args, **_kwargs: pytest.fail("proof started without checkpoint space"),
+            )
+            capture_scan.run(real_db, "fixture_a", root)
+            withheld = read(real_cache, real_key, validator=capture_validate)
+            assert withheld["games"][0]["results"][0] == triple
+            assert "root_details" not in withheld["games"][0]
+        write(real_cache, legacy)
+        full_bytes = len(canonical({**legacy, "checksum": "0" * 64}).encode())
+        with actual.context() as full:
+            full.setattr(root_budget, "MAX_BYTES", full_bytes)
+            full.setattr(
+                capture_scan,
+                "classify",
+                lambda *_args, **_kwargs: pytest.fail("proof started without total report space"),
+            )
+            capture_scan.run(real_db, "fixture_a", root)
+            assert read(real_cache, real_key, validator=capture_validate)["games"][0][
+                "results"
+            ] == [triple]
+        write(real_cache, legacy)
+
+        # A mismatched regeneration advances as unknown without rewriting its old triple.
+        mismatch = deepcopy(legacy)
+        mismatch["games"][0]["results"][0][1:] = ["other", None]
+        write(real_cache, mismatch)
         capture_scan.run(real_db, "fixture_a", root)
-        still_old = read(real_cache, real_key, validator=capture_validate)
-        assert still_old["games"][0]["results"][0] == triple
-        assert "root_details" not in still_old["games"][0]
-        write(real_cache, fresh)
+        unmatched = read(real_cache, real_key, validator=capture_validate)
+        assert unmatched["games"][0]["results"][0][1:] == ["other", None]
+        assert unmatched["games"][0]["root_refresh"]["next"] == 1
+        assert "root_details" not in unmatched["games"][0]
+        assert capture_report(real_db, "fixture_a", root)["newer"]["root_unattributed"] == 1
+        with actual.context() as no_repeat:
+            no_repeat.setattr(
+                capture_scan,
+                "classify",
+                lambda *_args, **_kwargs: pytest.fail("mismatched turn was proved twice"),
+            )
+            capture_scan.run(real_db, "fixture_a", root)
+
+        # Normal rotation upgrades the real legacy record from the actual source.
+        write(real_cache, legacy)
+        capture_scan.run(real_db, "fixture_a", root)
+        upgraded = read(real_cache, real_key, validator=capture_validate)
+        assert upgraded["games"][0]["results"][0] == triple
+        assert upgraded["games"][0]["root_refresh"]["next"] == 1
+        assert upgraded["games"][0]["root_details"]["turns"][0] == detail
+        assert capture_report(real_db, "fixture_a", root)["newer"]["root_unattributed"] == 0
+
+        # Trimming an optional payload keeps the frontier and must not repeat the proof.
+        evicted = deepcopy(upgraded)
+        checkpoint = evicted["games"][0]["root_refresh"]
+        checkpoint_bytes = len(canonical({"root_refresh": checkpoint}).encode())
+        with actual.context() as limited:
+            limited.setattr(root_budget, "DETAIL_BYTES", checkpoint_bytes)
+            root_budget.fit(evicted)
+            assert "root_details" not in evicted["games"][0]
+            assert evicted["games"][0]["root_refresh"] == checkpoint
+            assert root_budget.fits(evicted)
+            write(real_cache, evicted)
+            omitted = capture_report(real_db, "fixture_a", root)
+            assert omitted["newer"]["root_unattributed"] == 1
+            limited.setattr(
+                capture_scan,
+                "classify",
+                lambda *_args, **_kwargs: pytest.fail("trimmed turn was proved twice"),
+            )
+            capture_scan.run(real_db, "fixture_a", root)
+            persisted = read(real_cache, real_key, validator=capture_validate)
+            assert persisted["games"][0]["root_refresh"] == checkpoint
+            assert persisted["games"][0]["results"][0] == triple
+        write(real_cache, upgraded)
 
         real_app = create_app(
             db_path=real_path,

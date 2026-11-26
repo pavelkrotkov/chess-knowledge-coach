@@ -1,8 +1,8 @@
 """Retain exact-root detail from the existing capture scan."""
 
 from .capture_game_root_budget import record
+from .capture_game_root_checkpoint import remember
 from .capture_game_root_refresh import inspect as refresh
-from .capture_game_root_refresh import remember
 from .short_mate_trend_turns import inspect as inspect_turns
 
 
