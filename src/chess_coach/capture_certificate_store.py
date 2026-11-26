@@ -1,5 +1,7 @@
 """Bounded, checksummed worker certificates for exact owned captures."""
 
+from pathlib import Path
+
 from .capture_game_trend_paths import binding as material_binding
 from .capture_game_trend_paths import location as trend_location
 from .fact_fingerprint import canonical, digest
@@ -20,6 +22,16 @@ POLICY = (
     MATERIAL_VERSION,
 )
 LIMIT = 20
+
+
+def scope(root, previous=None):
+    """Retain an explicit root; contained certificate paths are checked at use."""
+    if root is None:
+        return previous
+    selected = Path(root).resolve()
+    if previous not in (None, selected):
+        raise ValueError("capture certificate scope differs")
+    return selected
 
 
 def location(db, root, subject):

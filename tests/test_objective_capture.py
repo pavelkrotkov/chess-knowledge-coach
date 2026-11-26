@@ -332,8 +332,10 @@ def test_owned_session_immutable_retry_and_stale_review(tmp_path, monkeypatch, v
 def test_browser_and_cli_resume_show_the_bound_objective(tmp_path, monkeypatch, capsys):
     from argparse import Namespace
 
+    from chess_coach.cli_parser import build_parser
     from chess_coach.cli_unified_practice import handle_show, handle_start
     from chess_coach.web import create_app
+    from tests.capture_certificate_fixture import cli as fresh_cli
     from tests.test_unified_sessions import token
 
     root, path = capture_project(tmp_path, "browser-project")
@@ -353,6 +355,42 @@ def test_browser_and_cli_resume_show_the_bound_objective(tmp_path, monkeypatch, 
     assert json.loads(capsys.readouterr().out)["objective_target"] == "d4"
     handle_show(db, Namespace(attempt="cli", subject=LEARNER))
     assert json.loads(capsys.readouterr().out)["gain_threshold"] == 3
+
+    def cli(command, *arguments, scoped=True, check=True):
+        options = [command, "--subject", LEARNER, *arguments]
+        if scoped:
+            options.extend(["--project-root", str(root)])
+        return fresh_cli(path, *options, check=check)
+
+    listed = json.loads(cli("list-own-game-practice").stdout)
+    assert any(item["key"].endswith(":" + str(evidence)) for item in listed["candidates"])
+    shown_cli = cli("show-unified", "--attempt", "cli")
+    assert json.loads(shown_cli.stdout)["objective_target"] == "d4"
+    assert cli("show-unified", "--attempt", "cli", scoped=False, check=False).returncode != 0
+    hint_cli = cli("hint-unified", "--attempt", "cli", "--event", "cli-hint")
+    assert json.loads(hint_cli.stdout)["feedback"] == "hint"
+    move_cli = cli("move-unified", "--attempt", "cli", "--event", "cli-move", "--move", "a1a2")
+    assert json.loads(move_cli.stdout)["feedback"] == "illegal"
+    related_cli = cli("related-captures", "--position", "1", "--corpus", "legacy")
+    assert json.loads(related_cli.stdout)["status"] == "corpus unavailable"
+    parsed = build_parser().parse_args(
+        [
+            "start-related-capture",
+            "--subject",
+            LEARNER,
+            "--position",
+            "1",
+            "--corpus",
+            "legacy",
+            "--attempt",
+            "fixture",
+            "--reference",
+            "fixture",
+            "--project-root",
+            str(root),
+        ]
+    )
+    assert parsed.project_root == str(root)
     db.close()
     app = create_app(
         db_path=path,
@@ -384,14 +422,15 @@ def test_browser_and_cli_resume_show_the_bound_objective(tmp_path, monkeypatch, 
     assert post.status_code == 303
     page = client.get(post.headers["Location"], base_url="https://coach.invalid", headers=headers)
     assert b"Capture the piece on d4" in page.data and b"at least 3 material points" in page.data
+    browser_attempt, browser_event = token(page, "attempt"), token(page, "event")
     move = client.post(
         "/unified/move",
         base_url="https://coach.invalid",
         headers=headers | {"Origin": "https://coach.invalid"},
         data={
             "csrf": token(page, "csrf"),
-            "attempt": token(page, "attempt"),
-            "event": token(page, "event"),
+            "attempt": browser_attempt,
+            "event": browser_event,
             "move": "e1f1",
         },
     )
@@ -403,7 +442,21 @@ def test_browser_and_cli_resume_show_the_bound_objective(tmp_path, monkeypatch, 
     from chess_coach.db import Database
 
     db = Database(path, capture_root=root)
-    assert process(db, LEARNER)["outcomes"] == {"incorrect": 1}
+    missing_scope = cli("process-objective-verifications", scoped=False, check=False)
+    assert missing_scope.returncode != 0 and "--project-root" in missing_scope.stderr
+    assert db.connection.execute("SELECT count(*) FROM objective_results").fetchone()[0] == 0
+    processed = json.loads(cli("process-objective-verifications").stdout)
+    assert processed["outcomes"] == {"incorrect": 1}
+    status = json.loads(
+        cli(
+            "show-objective-verification",
+            f"--attempt={browser_attempt}",
+            f"--event={browser_event}",
+        ).stdout
+    )
+    assert status["status"] == "incorrect"
+    completion = json.loads(cli("complete-unified-learning", f"--attempt={browser_attempt}").stdout)
+    assert completion["outcome"] == "failure"
     item_id = db.connection.execute(
         "SELECT item_id FROM unified_training_enrollments ORDER BY rowid DESC LIMIT 1"
     ).fetchone()[0]

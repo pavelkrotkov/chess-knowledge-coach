@@ -12,12 +12,14 @@ def configure(sub):
     listing.add_argument("--position", required=True, type=int)
     listing.add_argument("--corpus", required=True)
     listing.add_argument("--cursor")
+    listing.add_argument("--project-root")
     begin = sub.add_parser("start-related-capture")
     begin.add_argument("--subject", required=True)
     begin.add_argument("--position", required=True, type=int)
     begin.add_argument("--corpus", required=True)
     begin.add_argument("--attempt", required=True)
     begin.add_argument("--reference", required=True)
+    begin.add_argument("--project-root")
 
 
 def listing(db, args):

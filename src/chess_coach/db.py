@@ -254,9 +254,9 @@ class Database:
         self.capture_root = None
         if capture_root is not None:
             try:
-                from .opening_queue_location import scope
+                from .capture_certificate_store import scope
 
-                self.capture_root = scope(self, capture_root)
+                self.capture_root = scope(capture_root)
             except Exception:
                 self.connection.close()
                 raise

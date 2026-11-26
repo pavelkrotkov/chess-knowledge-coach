@@ -39,7 +39,10 @@ def _reject_between_course_slices(db, path, subject, group, monkeypatch):
 
 
 def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
-    path = tmp_path / "synthetic.sqlite"
+    from tests.capture_certificate_fixture import certify
+    from tests.capture_certificate_fixture import project as capture_project
+
+    project, path = capture_project(tmp_path, "fork-coaching-project")
     db, config = make_game(path, monkeypatch)
     result = process_decision(db, 1, LEARNER)
     evidence_id = result["evidence_ids"][0]
@@ -88,6 +91,7 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
 
     app = create_app(
         db_path=path,
+        project_root=project,
         subject=LEARNER,
         actor="fixture",
         corpus="test",
@@ -540,6 +544,7 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
                 == "complete"
             )
             material_decision(db, position_id, LEARNER)
+    certify(db, LEARNER, project)
     groups, coverage = candidates(db, LEARNER, Budget(db))
     capture_group = next(g for g in groups if g["lesson"]["skill"] == "hanging_piece")
     fork_group = next(g for g in groups if g["lesson"]["skill"] == "fork")
@@ -599,7 +604,7 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
         patch.setenv("CHESS_SUBJECT", LEARNER)
         patch.setenv("CHESS_CORPUS", "test")
         output = tmp_path / "deferred-course.json"
-        ops_tactical_course.prepare(tmp_path, output)
+        ops_tactical_course.prepare(project, output)
         assert json.loads(output.read_text()) == deferred
         patch.setattr(
             tactical_course_resolve,

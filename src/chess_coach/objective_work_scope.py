@@ -2,6 +2,8 @@
 
 from contextlib import nullcontext
 
+from .capture_certificate_store import location as capture_location
+from .objective_capture_contract import GAIN_OBJECTIVE, TARGET_OBJECTIVE
 from .objective_fork_avoidance_contract import OBJECTIVE as AVOIDANCE_OBJECTIVE
 from .objective_fork_defense_budget import scope as fork_scope
 from .objective_fork_defense_contract import OBJECTIVE as FORK_OBJECTIVE
@@ -24,3 +26,11 @@ def scope(request):
 def budget_result(base, error):
     family = "pin" if isinstance(error, PinBudgetExceeded) else "fork"
     return {**base, "status": "unresolved", "reason": family + "_proof_budget_exhausted"}
+
+
+def require_capture_scope(db, rows, subject):
+    if (
+        any(row["objective_version"] in {TARGET_OBJECTIVE, GAIN_OBJECTIVE} for row in rows)
+        and capture_location(db, getattr(db, "capture_root", None), subject) is None
+    ):
+        raise ValueError("capture verification requires an explicit --project-root")
