@@ -3,42 +3,48 @@
 import sqlite3
 
 from .capture_game_trend_current import current
+from .capture_game_trend_report import _comparison
 from .dated_game_trend import choose
-from .fork_game_counts import add, empty, finish
+from .fork_game_root_current import samples
 from .fork_game_trend_paths import binding, location
 from .fork_game_trend_validate import validate
 from .fork_miss_report import report as miss_report
+from .opening_study_source import fingerprint
 from .short_mate_trend_store import read
 
 
-def _sample(games):
-    result = empty(sum(item["eligible"] for item in games))
-    result["games"] = len(games)
-    result["newest"] = games[0]["date"] if games else None
-    result["oldest"] = games[-1]["date"] if games else None
-    for game in games:
-        for position, outcome, reason in game["results"]:
-            add(result, position, outcome, reason)
-    return finish(result)
+def _selected(db, learner, path, check, as_of):
+    state = read(path, binding(db, learner), validator=validate)
+    if state is None:
+        return None
+    return choose(db, learner, state, check=check, as_of=as_of)
 
 
-def report(db, learner, root):
+def report(db, learner, root, *, check=None, as_of=None):
     try:
-        state = read(location(db, root), binding(db, learner), validator=validate)
-        if not state:
-            return None
+        path = location(db, root)
+        before_file = fingerprint([path]) if path is not None else None
         before = db.connection.execute("PRAGMA data_version").fetchone()[0]
-        selected = choose(db, learner, state)
+        selected = _selected(db, learner, path, check, as_of)
         if not selected:
             return None
         state, candidates, coverage, historical = selected
         games = state["games"]
-        newer, earlier = _sample(games[:20]), _sample(games[20:40])
-        comparison = None if historical else miss_report(db, learner, root, state, coverage)
-        if not current(db, state, candidates, (newer, earlier), before):
+        newer, earlier = samples(db, learner, games, check)
+        comparison = (
+            None if historical else miss_report(db, learner, root, state, coverage, check=check)
+        )
+        reason = _comparison(
+            state, games, candidates, (newer, earlier), coverage, check or (lambda: None)
+        )
+        if not current(
+            db, state, candidates, (newer, earlier), before, artifact=(path, before_file)
+        ):
             return None
         return {
             "historical": historical,
+            "boundary": len(games) > 40,
+            "comparable": reason is None,
             "through": games[0]["date"] if historical else None,
             "newer": newer,
             "earlier": earlier,

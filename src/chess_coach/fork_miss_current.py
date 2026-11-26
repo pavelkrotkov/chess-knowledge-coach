@@ -21,12 +21,12 @@ def _linked(expected, key, row):
     return row[2] not in {"played", "miss"} or ((row[2] == "played") == (outcome == "played"))
 
 
-def _current(db, learner, state, rows, budget):
+def _current(db, learner, state, rows, check):
     expected = _positions(state)
     if any(not _linked(expected, key, row) for key, row in rows.items()):
         return False
     for key, row in rows.items():
-        budget.check()
+        check()
         if marker(db, row[0], int(key), learner) != row[1]:
             return False
     return True

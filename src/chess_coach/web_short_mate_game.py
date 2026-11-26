@@ -2,13 +2,14 @@
 
 import sqlite3
 from datetime import UTC, datetime
+from functools import partial
 
 from flask import Blueprint, current_app, render_template
 
 from .capture_context_comparison import read as capture_context_read
 from .capture_game_report import report as capture_report
 from .created_exposure_game_report import report as exposure_trend_report
-from .fork_game_trend_report import report as fork_trend_report
+from .fork_context_read import read as fork_context_read
 from .learner_identity import normalize_identity
 from .opening_queue_budget import BrowserBudget
 from .protection_game_report import report as protection_trend_report
@@ -54,25 +55,30 @@ def captures(game_id):
     return render_template("capture_game.html", report=result)
 
 
+def _profile(reader, db, subject, root):
+    try:
+        budget = BrowserBudget(db, project_root=root)
+        with budget.scope(snapshot=True):
+            return reader(
+                db,
+                subject,
+                current_app.config["CORPUS"],
+                root,
+                datetime.now(UTC).isoformat(),
+                budget.check,
+            )
+    except (sqlite3.Error, PreviewUnavailable):
+        return None
+
+
 @short_mate_game_views.get("/game-samples/captures")
 def capture_samples():
-    def read_profile(db, subject, root):
-        try:
-            budget = BrowserBudget(db, project_root=root)
-            with budget.scope(snapshot=True):
-                as_of = datetime.now(UTC).isoformat()
-                return capture_context_read(
-                    db, subject, current_app.config["CORPUS"], root, as_of, budget.check
-                )
-        except (sqlite3.Error, PreviewUnavailable):
-            return None
-
-    return _samples(read_profile, "capture_game_trend.html")
+    return _samples(partial(_profile, capture_context_read), "capture_game_trend.html")
 
 
 @short_mate_game_views.get("/game-samples/knight-forks")
 def fork_samples():
-    return _samples(fork_trend_report, "fork_game_trend.html")
+    return _samples(partial(_profile, fork_context_read), "fork_game_trend.html")
 
 
 @short_mate_game_views.get("/game-samples/protection")

@@ -8,6 +8,14 @@
 {% else %}
 {% if not report.selection_complete %}<p>The bounded game selection is incomplete.</p>{% endif %}
 {% if report.historical %}<p>Historical sample through {{ report.through }}. Newer games are pending and are not included in these results.</p>{% endif %}
+{% if report.context_profile %}
+{% set profile = report.context_profile %}
+<section><h3>One practiced fork context</h3>
+<p>For this source-linked <a href="{{ url_for('views.decision_detail', position_id=profile.source.turn.position_id) }}">private decision</a>, {{ profile.source.root.san }} was a proved knight fork. The source has a current first unassisted practice result.</p>
+{% for label, sample in (("More recent", profile.newer), ("Earlier", profile.earlier)) %}<p>{{ label }}: {{ sample.decisions }} matching decisions in at least {{ sample.lower }} and at most {{ sample.upper }} of {{ sample.denominator }} independent games. Unsearched or unavailable turns widen the upper bound.</p>{% endfor %}
+<p>These observations describe opportunity presence; they do not establish mastery or improvement.</p></section>
+{% else %}<p>A source-linked fork context is unavailable or inconclusive until both samples have enough matching proved decisions and current practice.</p>
+{% endif %}
 {% for label, sample, comparison in (("More recent", report.newer, report.comparison.newer if report.comparison else none), ("Earlier", report.earlier, report.comparison.earlier if report.comparison else none)) %}
 <section><h3>{{ label }} games</h3>
 <p>{{ sample.games }} independent games{% if sample.newest %}, {{ sample.oldest }} to {{ sample.newest }} UTC{% endif %}.</p>

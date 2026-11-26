@@ -49,7 +49,7 @@ def _turn(turn, context, board):
     }
 
 
-def _game(db, learner, item, check):
+def _game(db, learner, item, check, *, turn=_turn):
     turns = (item.get("root_details") or {}).get("turns", ())
     if not turns:
         return []
@@ -64,8 +64,9 @@ def _game(db, learner, item, check):
         for context, board in source["pairs"]
         if context["subject"]
     }
+    turn_fn = turn
     return [
-        {**_turn(turn, *pairs[turn["position_id"]]), "game_id": item["id"], "date": item["date"]}
+        {**turn_fn(turn, *pairs[turn["position_id"]]), "game_id": item["id"], "date": item["date"]}
         for turn in turns
     ]
 
