@@ -16,27 +16,27 @@ from .short_mate_trend_report import _qualified
 from .short_mate_trend_store import read
 
 
-def _game_counts(result, item):
-    outcomes = {row[1] for row in item["results"]}
-    result["opportunity_games"] += bool(outcomes & {"played", "other", "opportunity_unresolved"})
-    result["resolved_games"] += bool(outcomes & {"played", "other"})
-
-
 def _sample(games):
     result = empty(sum(item["eligible"] for item in games))
-    result["games"] = len(games)
-    result["newest"] = games[0]["date"] if games else None
-    result["oldest"] = games[-1]["date"] if games else None
-    result["opportunity_games"] = 0
-    result["resolved_games"] = 0
+    result.update(
+        games=len(games),
+        newest=games[0]["date"] if games else None,
+        oldest=games[-1]["date"] if games else None,
+        opportunity_games=0,
+        resolved_games=0,
+    )
     for item in games:
-        _game_counts(result, item)
+        outcomes = {row[1] for row in item["results"]}
+        result["opportunity_games"] += bool(
+            outcomes & {"played", "other", "opportunity_unresolved"}
+        )
+        result["resolved_games"] += bool(outcomes & {"played", "other"})
         for position_id, outcome, reason in item["results"]:
             add(result, {"position_id": position_id}, outcome, reason)
     return finish(result)
 
 
-def report(db, learner, root):
+def report(db, learner, root, *, check=None, as_of=None):
     try:
         path = location(db, root)
         before_file = fingerprint([path]) if path is not None else None
@@ -45,23 +45,30 @@ def report(db, learner, root):
             return None
         # Recheck every examined source, including duplicate and unavailable rows.
         before = db.connection.execute("PRAGMA data_version").fetchone()[0]
-        selected = choose(db, learner, state)
+        selected = choose(db, learner, state, check=check, as_of=as_of)
         if not selected:
             return None
         state, candidates, coverage, historical = selected
         games = state["games"]
         newer, earlier = _sample(games[:20]), _sample(games[20:40])
-        project(db, learner, games[:40], (newer, earlier))
-        reason = _comparison(state, games, candidates, (newer, earlier), coverage)
-        if not current(db, state, candidates, (newer, earlier), before):
+        project(db, learner, games[:40], (newer, earlier), check=check)
+        if check is None:
+
+            def check():
+                return None
+
+        reason = _comparison(state, games, candidates, (newer, earlier), coverage, check)
+        if not current(
+            db, state, candidates, (newer, earlier), before, artifact=(path, before_file)
+        ):
             return None
-        if fingerprint([path]) != before_file:
-            return None
+        check()
         comparable = reason is None
         return {
             "historical": historical,
             "through": games[0]["date"] if historical else None,
             "qualified": _qualified(comparable, (newer, earlier)),
+            "boundary": len(games) > 40,
             "bounds": bounds(comparable, earlier, newer),
             "newer": newer,
             "earlier": earlier,
@@ -75,10 +82,10 @@ def report(db, learner, root):
         return None
 
 
-def _comparison(state, games, candidates, samples, coverage):
+def _comparison(state, games, candidates, samples, coverage, check):
     if not state["selection_complete"]:
         return "selection_pending"
     dates = [item["date"] for item in games]
     return comparability_reason(samples, dates, coverage, state["unavailable"]) or control_reason(
-        games, candidates
+        games, candidates, check=check
     )

@@ -6,9 +6,7 @@ from .related_capture import VERSION as RANK_VERSION
 from .related_capture_assessment import HISTORY, PROOF_VERSION, VERSION
 
 
-def signature(context, corpus, *, rating_start=None):
-    if not valid(context):
-        raise ValueError("capture context unavailable")
+def _components(context, corpus, *, rating_start=None):
     baseline = context["ranking_baseline"]
     signature = [
         corpus,
@@ -31,4 +29,35 @@ def signature(context, corpus, *, rating_start=None):
         (context["content_rating"] if rating_start is None else rating_start) // 200,
         context["content_deviation"] // 100,
     ]
-    return canonical(signature)
+    return signature
+
+
+def signature(context, corpus, *, rating_start=None):
+    if not valid(context):
+        raise ValueError("capture context unavailable")
+    return canonical(_components(context, corpus, rating_start=rating_start))
+
+
+def projections(context, corpus):
+    """Separate validated shared controls from the original source pattern."""
+    values = _components(context, corpus)
+    names = (
+        "corpus",
+        "checksum",
+        "objective",
+        "rank_policy",
+        "assessment_policy",
+        "proof_policy",
+        "history",
+        "content_phase",
+        "source_phase",
+        "same_phase",
+        "same_geometry",
+        "same_opening",
+        "same_material",
+        "material_distance",
+        "baseline_band",
+        "rating_band",
+        "deviation_band",
+    )
+    return dict(zip(names, values[:7] + values[9:], strict=True)), values[8]

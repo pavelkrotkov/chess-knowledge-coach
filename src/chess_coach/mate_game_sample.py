@@ -7,15 +7,18 @@ from .mate_game_eligibility import require_consistent_result, require_game
 from .mate_proof import immediate_mates
 
 
-def prepared_game(db, game, learner):
+def prepared_game(db, game, learner, *, check=None):
     require_game(db, game)
-    pairs = list(decision_context_boards(db, game["id"], learner=learner))
-    if not pairs:
-        raise ValueError("game has no decisions")
-    for context, board in pairs:
+    pairs = []
+    for context, board in decision_context_boards(db, game["id"], learner=learner):
+        if check is not None:
+            check()
         if board.outcome(claim_draw=False):
             raise ValueError("moves continue after game termination")
         context["prompt_fen"] = position_key(board)
+        pairs.append((context, board))
+    if not pairs:
+        raise ValueError("game has no decisions")
     require_consistent_result(game, pairs)
     key = game_identity(db, game["id"], [context for context, _ in pairs])
     return key, pairs

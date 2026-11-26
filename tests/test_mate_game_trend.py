@@ -1087,6 +1087,7 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
         patch.setattr(capture_paths, "PROOF_VERSION", "future-capture-policy")
         assert capture_report(db, "fixture_a", root) is None
     assert db.connection.total_changes == before
+    assert not (root / ".runtime" / "planning").exists()
 
     app = create_app(
         db_path=path,
@@ -1099,14 +1100,19 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
     )
     client = app.test_client()
     for name, endpoint, dated in zip(
-        ("trend_report", "capture_trend_report", "fork_trend_report"),
+        (
+            "chess_coach.web_short_mate_game.trend_report",
+            "chess_coach.capture_context_comparison.capture_trend_report",
+            "chess_coach.web_short_mate_game.fork_trend_report",
+        ),
         ("/game-samples/short-mate", "/game-samples/captures", "/game-samples/knight-forks"),
         historical_reports,
         strict=True,
     ):
         with monkeypatch.context() as patch:
             patch.setattr(
-                f"chess_coach.web_short_mate_game.{name}", lambda *_args, dated=dated: dated
+                name,
+                lambda *_args, dated=dated, **_kwargs: dated,
             )
             page = client.get(
                 endpoint,
@@ -1119,7 +1125,8 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
             )
     with monkeypatch.context() as patch:
         patch.setattr(
-            "chess_coach.web_short_mate_game.capture_trend_report", lambda *_args: capture_partial
+            "chess_coach.capture_context_comparison.capture_trend_report",
+            lambda *_args, **_kwargs: capture_partial,
         )
         pending_page = client.get(
             "/game-samples/captures",
@@ -1141,8 +1148,8 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
     ):
         with monkeypatch.context() as patch:
             patch.setattr(
-                "chess_coach.web_short_mate_game.capture_trend_report",
-                lambda *_args, _gate=gate: {
+                "chess_coach.capture_context_comparison.capture_trend_report",
+                lambda *_args, _gate=gate, **_kwargs: {
                     **capture_complete,
                     "qualified": False,
                     "comparable": False,
@@ -1159,7 +1166,7 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
     with monkeypatch.context() as patch:
         patch.setattr("chess_coach.web_views.daily_plan", lambda *_args, **_kwargs: {})
         patch.setattr(
-            "chess_coach.web_short_mate_game.capture_trend_report",
+            "chess_coach.capture_context_comparison.capture_trend_report",
             lambda *_args: pytest.fail("Plan must not compute capture trend"),
         )
         plan = client.get(

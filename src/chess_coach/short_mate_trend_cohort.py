@@ -29,8 +29,14 @@ def signature(db, game):
     return "oversized" if extra else fingerprint(_signature(db, game))
 
 
-def snapshot(db, learner, checked=(), *, seconds=1.0):
-    deadline = time.monotonic() + seconds
+def snapshot(db, learner, checked=(), *, seconds=1.0, check=None):
+    if check is None:
+        deadline = time.monotonic() + seconds
+
+        def check():
+            if time.monotonic() >= deadline:
+                raise ValueError("frontier unavailable")
+
     with read_snapshot(db):
         games, coverage = recent_games(db, learner, limit=CANDIDATE_LIMIT)
         frontier = fingerprint(
@@ -39,8 +45,7 @@ def snapshot(db, learner, checked=(), *, seconds=1.0):
         lookup = {game["id"]: game for game, _ in games}
         signatures = []
         for game_id, _ in checked:
-            if time.monotonic() >= deadline:
-                raise ValueError("frontier unavailable")
+            check()
             value = signature(db, lookup[game_id]) if game_id in lookup else None
             signatures.append([game_id, value])
         return games, coverage, frontier, signatures

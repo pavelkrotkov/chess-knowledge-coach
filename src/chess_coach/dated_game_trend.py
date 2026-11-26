@@ -2,6 +2,7 @@
 
 from .capture_game_trend_current import frontier_matches
 from .capture_game_trend_validate import matches_frontier
+from .mastery_time import parse_utc
 from .mate_game_comparability import reason
 from .short_mate_trend_cohort import snapshot
 from .short_mate_trend_validate import independent
@@ -47,26 +48,44 @@ def _current(state, candidates, frontier, signatures, strict):
     return frontier == state["frontier"] and signatures == state["checked"]
 
 
-def _prior(db, learner, state, candidates, coverage, signatures):
+def _prior(db, learner, state, candidates, coverage, signatures, check):
     prior = state.get("prior") if not state["selection_complete"] else state
     if not prior:
         return None
     if prior is not state:
-        candidates, coverage, _, signatures = snapshot(db, learner, prior["checked"])
+        candidates, coverage, _, signatures = snapshot(db, learner, prior["checked"], check=check)
     if _historical(prior, candidates, coverage, signatures):
         return prior, candidates, coverage, True
     return None
 
 
-def choose(db, learner, state, *, strict=True):
-    candidates, coverage, frontier, signatures = snapshot(db, learner, state["checked"])
+def _as_of(selected, as_of, check):
+    if selected is None:
+        return None
+    cutoff = parse_utc(as_of)
+    if cutoff is None:
+        return None
+    state, candidates, _, _ = selected
+    lookup = {game["id"]: game["projected_start"] for game, _ in candidates}
+    for game_id, _ in state["checked"]:
+        if check is not None:
+            check()
+        started = parse_utc(lookup.get(game_id))
+        if started is None or started > cutoff:
+            return None
+    return selected
+
+
+def choose(db, learner, state, *, strict=True, check=None, as_of=None):
+    candidates, coverage, frontier, signatures = snapshot(
+        db, learner, state["checked"], check=check
+    )
     current = _current(state, candidates, frontier, signatures, strict)
     # Completed current work always replaces the historical view.
     if current and state["selection_complete"]:
-        return state, candidates, coverage, False
-    prior = _prior(db, learner, state, candidates, coverage, signatures)
-    if prior:
-        return prior
-    if current:
-        return state, candidates, coverage, False
-    return None
+        selected = state, candidates, coverage, False
+    else:
+        selected = _prior(db, learner, state, candidates, coverage, signatures, check)
+        if selected is None and current:
+            selected = state, candidates, coverage, False
+    return selected if as_of is None else _as_of(selected, as_of, check)

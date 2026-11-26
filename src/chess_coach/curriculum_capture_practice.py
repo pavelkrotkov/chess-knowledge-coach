@@ -47,4 +47,7 @@ def evidence(db, subject, corpus, position, history, as_of, check):
         "context": digest(matched["key"]),
         "side": row["learner_color"],
         "result": history["status"],
+        "practice_context": matched["context"],
+        "binding": matched["binding"],
+        "session": row,
     }

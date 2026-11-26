@@ -1,17 +1,22 @@
 """Private on-demand short-mate inspection of one owned game."""
 
+import sqlite3
+from datetime import UTC, datetime
+
 from flask import Blueprint, current_app, render_template
 
+from .capture_context_comparison import read as capture_context_read
 from .capture_game_report import report as capture_report
-from .capture_game_trend_report import report as capture_trend_report
 from .created_exposure_game_report import report as exposure_trend_report
 from .fork_game_trend_report import report as fork_trend_report
 from .learner_identity import normalize_identity
+from .opening_queue_budget import BrowserBudget
 from .protection_game_report import report as protection_trend_report
 from .short_mate_game_report import report
 from .short_mate_trend_report import report as trend_report
 from .skewer_game_report import report as skewer_report
 from .skewer_sample_report import report as skewer_samples_report
+from .tactical_course_budget import PreviewUnavailable
 from .web_board import board_rows
 from .web_db import database
 
@@ -51,7 +56,18 @@ def captures(game_id):
 
 @short_mate_game_views.get("/game-samples/captures")
 def capture_samples():
-    return _samples(capture_trend_report, "capture_game_trend.html")
+    def read_profile(db, subject, root):
+        try:
+            budget = BrowserBudget(db, project_root=root)
+            with budget.scope(snapshot=True):
+                as_of = datetime.now(UTC).isoformat()
+                return capture_context_read(
+                    db, subject, current_app.config["CORPUS"], root, as_of, budget.check
+                )
+        except (sqlite3.Error, PreviewUnavailable):
+            return None
+
+    return _samples(read_profile, "capture_game_trend.html")
 
 
 @short_mate_game_views.get("/game-samples/knight-forks")
