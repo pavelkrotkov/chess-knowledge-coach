@@ -15,7 +15,6 @@ from .short_mate_trend_cohort import snapshot
 from .short_mate_trend_scan import _inspect
 from .short_mate_trend_select import initial, select
 from .short_mate_trend_store import read, write
-from .short_mate_trend_turns import inspect
 
 # The earlier short-mate scan retains its own budget and runs before this one.
 CYCLE_SECONDS = 10.0
@@ -28,19 +27,16 @@ def _advance(
     state,
     deadline,
     *,
-    classifier=None,
     turn_seconds=TURN_SECONDS,
     inspector=None,
     retain_fields=(),
 ):
-    fields = retain_fields
+    recheck_complete = inspector is None
     if inspector is None:
-        inspector = partial(inspect, classifier=classifier, seconds=turn_seconds)
-    if classifier is None:
         discard_invalid(state)
-        fields = ("root_details", "root_refresh")
+        retain_fields = ("root_details", "root_refresh")
         inspector = partial(inspect_roots, state=state, classifier=classify, seconds=turn_seconds)
-    select(db, learner, games, state, deadline, retain_fields=fields)
+    select(db, learner, games, state, deadline, retain_fields=retain_fields)
     consumed = {str(row[0]) for row in state["checked"]}
     state["retained"] = {
         key: item for key, item in state["retained"].items() if key not in consumed
@@ -53,7 +49,7 @@ def _advance(
             deadline,
             inspector=inspector,
             turn_seconds=turn_seconds,
-            recheck_complete=classifier is None,
+            recheck_complete=recheck_complete,
         )
 
 

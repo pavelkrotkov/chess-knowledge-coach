@@ -32,3 +32,14 @@ def finish(counts):
     counts["unchecked"] = counts["eligible"] - counts["scanned"]
     counts["opportunities"] = counts["played"] + counts["awaiting"]
     return counts
+
+
+def sample(games):
+    result = empty(sum(item["eligible"] for item in games))
+    result["games"] = len(games)
+    result["newest"] = games[0]["date"] if games else None
+    result["oldest"] = games[-1]["date"] if games else None
+    for game in games:
+        for position, outcome, reason in game["results"]:
+            add(result, position, outcome, reason)
+    return finish(result)

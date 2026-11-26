@@ -25,11 +25,11 @@ def _turn(turn, wanted):
     return "proved" in states, uncertain
 
 
-def sample(sample, wanted, check):
+def sample(sample, wanted, check, *, turn=_turn):
     decisions = lower = upper = 0
     for game in sample["root_game_coverage"]:
         check()
-        states = [_turn(turn, wanted) for turn in game["turns"]]
+        states = [turn(row, wanted) for row in game["turns"]]
         hits = sum(found for found, _ in states)
         decisions += hits
         found = hits > 0

@@ -3,9 +3,10 @@
 import os
 import sqlite3
 import time
-from functools import partial
 from contextlib import suppress
+from functools import partial
 
+from .capture_game_root_budget import fit
 from .capture_game_trend_scan import _advance, _resume
 from .fork_game_proof import classify
 from .fork_game_root_detail import inspect as inspect_roots
@@ -35,7 +36,6 @@ def run(db, learner, root, *, seconds=CYCLE_SECONDS):
             games,
             state,
             deadline,
-            classifier=classify,
             turn_seconds=TURN_SECONDS,
             inspector=partial(
                 inspect_roots, state=state, classifier=classify, seconds=TURN_SECONDS
@@ -45,6 +45,7 @@ def run(db, learner, root, *, seconds=CYCLE_SECONDS):
     except (ValueError, TypeError, IndexError):
         state = initial(key, frontier, None)
         state["coverage"] = coverage
+    fit(state)
     write(path, state)
 
 

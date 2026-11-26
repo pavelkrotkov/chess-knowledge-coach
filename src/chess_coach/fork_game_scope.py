@@ -2,6 +2,7 @@
 
 import chess
 
+from .fork_targets import targets
 from .pawn_scope import history_known
 
 
@@ -26,3 +27,22 @@ def roots(board):
         ),
         key=lambda move: move.uci(),
     )
+
+
+def bind_root(board, row):
+    move, stored, state = row
+    parsed = board.parse_uci(move)
+    if parsed not in roots(board) or state not in {"proved", "unknown", "outside"}:
+        raise ValueError("fork root source changed")
+    shape = targets(board, parsed)
+    if state == "proved":
+        if shape is None:
+            raise ValueError("fork targets changed")
+        squares = list(shape[1])
+        expected = [chess.square_name(square) for square in squares]
+    else:
+        squares = list(shape[1]) if shape else []
+        expected = []
+    if stored != expected:
+        raise ValueError("fork root state changed")
+    return parsed, squares

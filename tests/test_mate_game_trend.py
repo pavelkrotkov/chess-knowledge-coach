@@ -1103,7 +1103,7 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
         (
             "chess_coach.web_short_mate_game.trend_report",
             "chess_coach.capture_context_comparison.capture_trend_report",
-            "chess_coach.web_short_mate_game.fork_trend_report",
+            "chess_coach.fork_context_read.trend_report",
         ),
         ("/game-samples/short-mate", "/game-samples/captures", "/game-samples/knight-forks"),
         historical_reports,
@@ -1727,8 +1727,8 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
         patch.setattr(
             fork_game_trend_scan,
             "classify",
-            lambda board, played, deadline, clock: fork_game_proof.classify(
-                board, played, deadline, lambda: deadline
+            lambda board, played, deadline, clock, **kwargs: fork_game_proof.classify(
+                board, played, deadline, lambda: deadline, **kwargs
             ),
         )
         run_forks(fork_db, "fixture_a", root)
@@ -1812,6 +1812,70 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
     assert (
         current["comparison"]["newer"]["played"] == current["comparison"]["earlier"]["played"] == 10
     )
+    # Two independently analyzed owned games admit the actual reviewed fork.
+    from chess_coach.evidence_review import review_evidence
+    from chess_coach.fork_detector import process_decision
+    from chess_coach.fork_plan_action import checked as fork_action
+    from chess_coach.objective_worker import process as process_objectives
+    from chess_coach.related_fork_assessment_finder import find as find_fork
+    from chess_coach.related_fork_assessment_start import start as start_fork
+    from chess_coach.unified_session_events import submit as submit_move
+
+    evidence = []
+    for game_id in (4, 6):
+        position_id = matched.connection.execute(
+            "SELECT id FROM positions WHERE game_id=? AND ply=1", (game_id,)
+        ).fetchone()[0]
+        result = process_decision(matched, position_id, "fixture_a")
+        assert result["outcome"] == "failure"
+        evidence_id = result["evidence_ids"][0]
+        review_evidence(matched, evidence_id, decision="accept", actor="fixture")
+        evidence.append(evidence_id)
+    action = fork_action(matched, "fixture_a", "test", lambda: None)
+    assert action and action["source"]["evidence_id"] in evidence
+    chosen = action["source"]["evidence_id"]
+    matched.connection.execute(
+        "INSERT INTO puzzle_corpora(version,source,checksum,state) VALUES('test','fixture','checksum','staging')"
+    )
+    corpus_id = matched.connection.execute(
+        "SELECT id FROM puzzle_corpora WHERE version='test'"
+    ).fetchone()[0]
+    matched.connection.execute(
+        """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,rating_deviation,
+        themes_json,objective) VALUES(?,?,?,?,?,?,?,?,'unknown')""",
+        (
+            "fork-context",
+            corpus_id,
+            "r3k3/7p/8/1N6/8/8/6P1/7K b - - 0 1",
+            "https://example.invalid",
+            "h7h6 b5c7 e8f8 c7a8",
+            1200,
+            80,
+            '["fork"]',
+        ),
+    )
+    matched.connection.execute(
+        "INSERT INTO puzzle_themes VALUES(?,?,'fork',1200)", (corpus_id, "fork-context")
+    )
+    matched.connection.execute("UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus_id,))
+    matched.connection.commit()
+    selected = find_fork(matched, "fixture_a", chosen, "test", b"synthetic-secret")
+    assert selected and selected["items"]
+    start_fork(
+        matched,
+        attempt_id="fork-context-first",
+        subject="fixture_a",
+        evidence_id=chosen,
+        corpus_version="test",
+        reference=selected["items"][0]["reference"],
+        secret=b"synthetic-secret",
+    )
+    submit_move(matched, "fork-context-first", "fixture_a", event_id="answer", move="b5c7")
+    process_objectives(matched, "fixture_a")
+    action = fork_action(matched, "fixture_a", "test", lambda: None)
+    assert action and action["assessment"]["status"] == "correct"
+    before_profile = matched.connection.total_changes
+
     app = create_app(
         db_path=matched_path,
         subject="fixture_a",
@@ -1821,9 +1885,34 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
         origin="https://coach.invalid",
         project_root=root,
     )
+    tables = (
+        "unified_sessions",
+        "unified_session_events",
+        "objective_requests",
+        "objective_results",
+        "unified_training_enrollments",
+        "unified_training_completions",
+        "training_items",
+        "training_attempts",
+        "mastery_states",
+        "mastery_events",
+        "evidence_mappings",
+        "evidence_review_events",
+        "tactical_exposure_coverage",
+        "tactical_exposures",
+    )
+    with sqlite3.connect(matched_path.resolve().as_uri() + "?mode=ro", uri=True) as observer:
+        observer.execute("PRAGMA query_only=ON")
+        before_reads = {
+            table: observer.execute(f"SELECT * FROM {table} ORDER BY rowid").fetchall()
+            for table in tables
+        }
     with monkeypatch.context() as patch:
         patch.setattr(
             fork_miss_candidate, "fork_proof", lambda *_args, **_kw: pytest.fail("browser proof")
+        )
+        patch.setattr(
+            fork_game_proof, "fork_proof", lambda *_args, **_kw: pytest.fail("browser proof")
         )
         patch.setattr(
             chess.engine.SimpleEngine, "popen_uci", lambda *_args: pytest.fail("browser engine")
@@ -1835,6 +1924,39 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
         )
     assert b"50.0% across 20 resolved opportunities" in page.data
     assert b"47.4% across 19 resolved opportunities" in page.data
+    assert b"One practiced fork context" in page.data and b"proved knight fork" in page.data
+    assert b"of 20 independent games" in page.data and b"fixture_a" not in page.data
+    assert matched.connection.total_changes == before_profile
+    with sqlite3.connect(matched_path.resolve().as_uri() + "?mode=ro", uri=True) as observer:
+        observer.execute("PRAGMA query_only=ON")
+        assert before_reads == {
+            table: observer.execute(f"SELECT * FROM {table} ORDER BY rowid").fetchall()
+            for table in tables
+        }
+
+    # Omitting the matched source root must not produce a qualified profile.
+    cache = fork_game_trend_paths.location(matched, root)
+    key = fork_game_trend_paths.binding(matched, "fixture_a")
+    complete = read(cache, key, validator=fork_validate)
+    missing = deepcopy(complete)
+    source_position = matched.connection.execute(
+        "SELECT position_id FROM evidence_mappings WHERE id=?", (chosen,)
+    ).fetchone()[0]
+    source_game = next(
+        game
+        for game in missing["games"]
+        if any(row[0] == source_position for row in game["results"])
+    )
+    source_game.pop("root_details")
+    write(cache, missing)
+    unavailable = app.test_client().get(
+        "/game-samples/knight-forks",
+        base_url="https://coach.invalid",
+        headers={"Tailscale-User-Login": "fixture"},
+    )
+    assert b"source-linked fork context is unavailable or inconclusive" in unavailable.data
+    assert b"One practiced fork context" not in unavailable.data
+    write(cache, complete)
 
     # A different known time control blocks comparison even for an unsupported turn.
     from chess_coach.fork_miss_time import _times

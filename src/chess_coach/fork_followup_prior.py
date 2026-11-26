@@ -5,12 +5,25 @@ import json
 from .fork_comparison_context import context
 from .fork_followup_first import first
 from .fork_history_item import item
+from .mastery_time import parse_utc
 from .opening_queue_budget import BrowserBudget
 from .related_fork_assessment_scope import is_source
 from .tactical_course_budget import PreviewUnavailable
 
 
-def _prior(db, subject, corpus, attempt, check):
+def _as_of(row, result, as_of):
+    if as_of is None:
+        return
+    cutoff, started, answered = map(
+        parse_utc, (as_of, row["started_at"], result.get("answered_at"))
+    )
+    if cutoff is None or started is None or answered is None:
+        raise ValueError("fork assessment chronology unavailable")
+    if not started <= answered <= cutoff:
+        raise ValueError("fork assessment chronology unavailable")
+
+
+def _prior(db, subject, corpus, attempt, check, *, as_of=None):
     row = db.connection.execute(
         "SELECT * FROM unified_sessions WHERE subject=? AND attempt_id=?", (subject, attempt)
     ).fetchone()
@@ -20,6 +33,7 @@ def _prior(db, subject, corpus, attempt, check):
     # Replay the existing immutable event and proof record; an unresolved,
     # assisted, or no-longer-current result cannot seed a comparison.
     result = item(db, row, corpus, check)
+    _as_of(row, result, as_of)
     if (result["status"], result.get("hints"), result.get("reveals")) != ("correct", 0, 0):
         raise ValueError("fork assessment is not current and unassisted")
     binding = json.loads(row["provenance_json"])["related_fork"]
