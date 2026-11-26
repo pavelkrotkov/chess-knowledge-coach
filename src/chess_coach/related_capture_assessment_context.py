@@ -16,7 +16,7 @@ def _same_opening(source, opening):
     return bool(source.get("opening") and source["opening"] in (opening or "").split())
 
 
-def capture(db, version, key, source, baseline, corpus):
+def capture(db, version, key, source, baseline, corpus, *, feature=None):
     row = db.connection.execute(
         """SELECT p.fen,p.solution,p.rating,p.rating_deviation,p.opening FROM puzzles p
         JOIN puzzle_corpora c ON c.id=p.corpus_id
@@ -26,7 +26,10 @@ def capture(db, version, key, source, baseline, corpus):
     if row is None:
         raise ValueError("assessment context unavailable")
     rating, deviation = _ratings(row)
-    _, content = corpus_features(row["fen"], row["solution"])
+    if feature is None:
+        _, content = corpus_features(row["fen"], row["solution"])
+    else:
+        content = feature
     original = certified_features(source["prompt_fen"], source["lines"][0].split())
     if not content or not original:
         raise ValueError("assessment context unavailable")

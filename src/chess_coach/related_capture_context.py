@@ -5,15 +5,22 @@ import io
 import chess.pgn
 
 
-def baseline(db, source):
-    position = source["provenance"]["position_id"]
+def rating(db, position, color):
     row = db.connection.execute(
         "SELECT g.white_elo,g.black_elo FROM positions p JOIN games g ON g.id=p.game_id WHERE p.id=?",
         (position,),
     ).fetchone()
-    field = "white_elo" if source["learner_color"] == "white" else "black_elo"
+    field = "white_elo" if color == "white" else "black_elo"
     rating = row[field] if row else None
     return rating if isinstance(rating, int) and 0 < rating < 4000 else None
+
+
+def baseline(db, source):
+    return rating(db, source["provenance"]["position_id"], source["learner_color"])
+
+
+def bounds(value):
+    return (max(0, value - 500), min(3999, value + 500)) if value else (600, 2200)
 
 
 def _opening(db, position):

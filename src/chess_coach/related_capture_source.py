@@ -3,6 +3,7 @@
 from .related_capture_admission import eligible_metadata
 from .related_capture_context import _opening as _opening
 from .related_capture_context import baseline as baseline
+from .related_capture_features import certified_features
 from .unified_own_game_evidence import LIMIT, _inspect, _rows
 from .unified_own_game_snapshot import snapshot
 
@@ -26,3 +27,10 @@ def source_for_position(db, subject, position, *, check=None):
         result["opening"] = _opening(db, position)
         return result
     raise ValueError("no current supported capture observation")
+
+
+def supported_source(db, subject, position):
+    source = source_for_position(db, subject, position)
+    if certified_features(source["prompt_fen"], source["lines"][0].split()) is None:
+        raise ValueError("unsupported capture source")
+    return source

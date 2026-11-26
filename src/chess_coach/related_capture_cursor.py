@@ -27,11 +27,14 @@ def _offset(cursor, scope):
         raise ValueError("transfer cursor changed; restart") from None
 
 
-def bind_scope(db, subject, selected, files):
+def bind_scope(db, subject, selected, files, prepared=None):
     if files != current(db, subject, db.capture_root):
         raise ValueError("capture source changed")
     if selected is None:
         return None
     source, rating, corpus, ordered, scope, diagnostics = selected
-    scope = digest(canonical(["capture-certificate-files-v1", scope, files]))
+    inputs = ["capture-certificate-files-v1", scope, files]
+    if prepared is not None:
+        inputs.append(prepared)
+    scope = digest(canonical(inputs))
     return source, rating, corpus, ordered, scope, diagnostics

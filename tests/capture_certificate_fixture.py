@@ -3,6 +3,7 @@
 import json
 import subprocess
 import sys
+import time
 
 from chess_coach.capture_game_trend_scan import run
 from chess_coach.opening_queue_location import scope
@@ -24,7 +25,22 @@ def certify(db, subject, root):
         run(db, subject, root)
 
 
-def cli(path, *args, check=True, source_guard=None):
+def prepare_corpus(db, subject, root, version, position):
+    from chess_coach.capture_certificate_worker import run as worker
+    from chess_coach.related_capture_context import baseline, bounds
+    from chess_coach.related_capture_pool import complete
+    from chess_coach.related_capture_source import source_for_position
+
+    lower, upper = bounds(baseline(db, source_for_position(db, subject, position)))
+    for _ in range(80):
+        with pipeline_lock(db.path):
+            worker(db, subject, root, time.monotonic() + 5)
+        if complete(db, root, version, lower, upper) is not None:
+            return
+    raise AssertionError("the finite capture window did not finish preparation")
+
+
+def cli(path, *args, check=True, source_guard=None, proof_free_candidates=False):
     # Real fresh CLI: fail if an admission proof runs while reopening the source.
     guard = """
 import chess_coach.material_opportunity_current as material
@@ -45,6 +61,13 @@ def guarded_gain(board, move, target, **kwargs):
         raise AssertionError("owned source proof ran during CLI request")
     return actual_gain(board, move, target, **kwargs)
 features.capture_gain = guarded_gain
+"""
+    if proof_free_candidates:
+        guard += """
+import chess_coach.related_capture_features as related_features
+import chess_coach.related_capture_assessment as assessment
+related_features.capture_gain = forbidden
+assessment.judge = forbidden
 """
     guard += """
 from chess_coach.cli import main

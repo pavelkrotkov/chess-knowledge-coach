@@ -40,6 +40,7 @@ def search(
                 source["position_id"],
                 corpus,
                 familiar_data=familiar,
+                finder=True,
                 **options(difficulty),
             )
             selection = difficulty_scope(selection, difficulty)
