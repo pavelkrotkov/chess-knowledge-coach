@@ -6,6 +6,9 @@ from contextlib import suppress
 from functools import partial
 
 from .capture_game_proof import classify
+from .capture_game_root_budget import fit
+from .capture_game_root_detail import inspect as inspect_roots
+from .capture_game_root_validate import discard_invalid
 from .capture_game_trend_paths import TURN_SECONDS, binding, location
 from .capture_game_trend_validate import matches_frontier, validate
 from .short_mate_trend_cohort import snapshot
@@ -19,14 +22,30 @@ CYCLE_SECONDS = 10.0
 
 
 def _advance(db, learner, games, state, deadline, *, classifier=None, turn_seconds=TURN_SECONDS):
-    select(db, learner, games, state, deadline)
+    fields = ()
+    if classifier is None:
+        fields = ("root_details",)
+        discard_invalid(state)
+    select(db, learner, games, state, deadline, retain_fields=fields)
     consumed = {str(row[0]) for row in state["checked"]}
     state["retained"] = {
         key: item for key, item in state["retained"].items() if key not in consumed
     }
     if state["selection_complete"]:
-        inspector = partial(inspect, classifier=classifier or classify, seconds=turn_seconds)
-        _inspect(db, learner, state, deadline, inspector=inspector, turn_seconds=turn_seconds)
+        if classifier is None:
+            inspector = partial(
+                inspect_roots, state=state, classifier=classify, seconds=turn_seconds
+            )
+        else:
+            inspector = partial(inspect, classifier=classifier, seconds=turn_seconds)
+        _inspect(
+            db,
+            learner,
+            state,
+            deadline,
+            inspector=inspector,
+            turn_seconds=turn_seconds,
+        )
 
 
 def _resume(old, key, frontier, signatures, games):
@@ -54,6 +73,7 @@ def run(db, learner, root, *, seconds=CYCLE_SECONDS):
     except (ValueError, TypeError, IndexError):
         state = initial(key, frontier, None)
         state["coverage"] = coverage
+    fit(state)
     write(path, state)
 
 

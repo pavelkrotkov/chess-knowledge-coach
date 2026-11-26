@@ -3,6 +3,7 @@
 import sqlite3
 
 from .capture_game_counts import add, empty, finish
+from .capture_game_root_current import project
 from .capture_game_trend_bounds import bounds
 from .capture_game_trend_current import current
 from .capture_game_trend_paths import binding, location
@@ -10,6 +11,7 @@ from .capture_game_trend_validate import validate
 from .dated_game_controls import reason as control_reason
 from .dated_game_trend import choose
 from .mate_game_comparability import reason as comparability_reason
+from .opening_study_source import fingerprint
 from .short_mate_trend_report import _qualified
 from .short_mate_trend_store import read
 
@@ -37,6 +39,7 @@ def _sample(games):
 def report(db, learner, root):
     try:
         path = location(db, root)
+        before_file = fingerprint([path]) if path is not None else None
         state = read(path, binding(db, learner), validator=validate)
         if not state:
             return None
@@ -48,8 +51,11 @@ def report(db, learner, root):
         state, candidates, coverage, historical = selected
         games = state["games"]
         newer, earlier = _sample(games[:20]), _sample(games[20:40])
+        project(db, learner, games[:40], (newer, earlier))
         reason = _comparison(state, games, candidates, (newer, earlier), coverage)
         if not current(db, state, candidates, (newer, earlier), before):
+            return None
+        if fingerprint([path]) != before_file:
             return None
         comparable = reason is None
         return {
