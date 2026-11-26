@@ -10,24 +10,69 @@ from .curriculum_capture_source_identity import require
 from .curriculum_capture_witnesses import candidates
 
 
+def _profile(db, subject, corpus, as_of, report, option, check):
+    turns = report["newer"]["root_details"] + report["earlier"]["root_details"]
+    try:
+        source = bind(db, subject, corpus, as_of, option, turns, check)
+        if source is None:
+            return None
+        newer = sample(report["newer"], source["wanted"], check)
+        earlier = sample(report["earlier"], source["wanted"], check)
+    except (ValueError, TypeError, KeyError, IndexError):
+        return None
+    if not newer["qualified"] or not earlier["qualified"]:
+        return None
+    return {"source": source, "newer": newer, "earlier": earlier}
+
+
+def _comparison(first, second):
+    left, right = first["source"], second["source"]
+    common_left = (left["practice"], left["turn"]["side"], left["turn"]["time_control"])
+    common_right = (right["practice"], right["turn"]["side"], right["turn"]["time_control"])
+    comparable = (
+        common_left == common_right
+        and left["practice"]["controls"]["baseline_band"] is not None
+        and left["wanted"] != right["wanted"]
+    )
+    winner = None
+    if comparable:
+        # Both profiles use the same qualified 20-game sample.
+        a, b = first["newer"], second["newer"]
+        if a["lower"] > b["upper"]:
+            winner = 0
+        elif b["lower"] > a["upper"]:
+            winner = 1
+    return {"other": second, "comparable": comparable, "winner": winner}
+
+
+def _options(db, subject, corpus, check):
+    try:
+        result = candidates(db, subject, corpus, check, include_snapshot=True, limit=2)
+        return result, 2
+    except (ValueError, TypeError, KeyError, IndexError):
+        # An unavailable second source must not hide the existing first profile.
+        result = candidates(db, subject, corpus, check, include_snapshot=True, limit=1)
+        return result, 1
+
+
 def profile(db, subject, corpus, as_of, report, check):
     # Unrelated unresolved turns widen bounds, not disqualify this context.
     # The boundary is the 41st independent game.
     if not report["comparable"] or not report["boundary"] or report["historical"]:
         return None
-    options, _, identity, _ = candidates(db, subject, corpus, check, include_snapshot=True, limit=1)
-    if not options:
+    (options, _, identity, _), limit = _options(db, subject, corpus, check)
+    profiles = []
+    for option in options:
+        current = _profile(db, subject, corpus, as_of, report, option, check)
+        if current is not None:
+            profiles.append(current)
+    if not profiles:
         return None
-    turns = report["newer"]["root_details"] + report["earlier"]["root_details"]
-    source = bind(db, subject, corpus, as_of, options[0], turns, check)
-    if source is None:
-        return None
-    newer = sample(report["newer"], source["wanted"], check)
-    earlier = sample(report["earlier"], source["wanted"], check)
-    if not newer["qualified"] or not earlier["qualified"]:
-        return None
-    require(db, subject, identity, check, limit=1)
-    return {"source": source, "newer": newer, "earlier": earlier}
+    first = profiles[0]
+    if len(profiles) == 2:
+        first["comparison"] = _comparison(first, profiles[1])
+    require(db, subject, identity, check, limit=limit)
+    return first
 
 
 def read(db, subject, corpus, root, as_of, check):
