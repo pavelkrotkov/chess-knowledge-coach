@@ -83,7 +83,11 @@ def daily_plan(
 def _prior(db, cursor, window):
     if window:
         return window["state"]
-    return decode_cursor(db, cursor) if cursor is not None else None
+    state = decode_cursor(db, cursor) if cursor is not None else None
+    # Preselection cursors authorize one due start, not further plan scanning.
+    if state is not None and state.get("capture_selection"):
+        raise ValueError("practice cursor is for due selection only")
+    return state
 
 
 def _budget(db, project_root):

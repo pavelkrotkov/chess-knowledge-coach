@@ -14,6 +14,15 @@ def checked_renew(db, value, learner, version, scan_limit, now, minutes, budget)
     if state["corpus_version"] != version or state["scan_limit"] != scan_limit:
         raise ValueError("practice window scope changed")
     check_policy(state)
+    from .curriculum_priority_cursor import CAPTURE_POLICIES
+
+    root = getattr(budget, "project_root", None)
+    if state.get("priority_policy") in CAPTURE_POLICIES:
+        from .curriculum_capture_file_guard import current
+
+        before_files = current(db, learner, root)
+    else:
+        before_files = None
     capture_changed = False
     if state["revision"] == revision(db):
         resume_state(
@@ -22,7 +31,7 @@ def checked_renew(db, value, learner, version, scan_limit, now, minutes, budget)
         from .curriculum_capture_guard import changed
 
         capture_changed = changed(db, state, learner, getattr(budget, "project_root", None), budget)
-    return _renew(
+    result = _renew(
         db,
         value,
         learner,
@@ -33,3 +42,6 @@ def checked_renew(db, value, learner, version, scan_limit, now, minutes, budget)
         budget,
         capture_changed=capture_changed,
     )
+    if before_files is not None and before_files != current(db, learner, root):
+        raise ValueError("capture practice changed; restart the plan")
+    return result

@@ -2,8 +2,8 @@
 
 import chess
 
+from .capture_certificate_buckets import observe
 from .capture_certificate_producer import identity
-from .capture_certificate_store import load, location
 from .material_opportunity_current import _qualify, _same_source
 from .material_reply_guard import MAX_REPLIES
 from .material_source import prepare
@@ -44,22 +44,16 @@ def _proof(board, view, review, evidence_id, entry):
 
 
 def _entry(db, subject, evidence, fact, source):
-    if evidence["lifecycle_status"] != "active" or fact["detector_status"] != "active":
+    if (evidence["lifecycle_status"], fact["detector_status"]) != ("active", "active"):
         return None
-    root = db.capture_root
-    path = location(db, root, subject)
-    if path is None:
+    observed = observe(db, db.capture_root, subject, evidence["id"])
+    if observed is None:
         return None
-    # The worker can atomically replace this file while a request is reading it.
-    before = fingerprint([path])
-    data = load(db, root, subject)
-    entry = data["certificates"].get(str(evidence["id"])) if data else None
-    if entry is None:
-        return None
+    paths, before, entry = observed
     review = _review(db, evidence["id"])
     if entry["input"] != identity(evidence, fact, source, review):
         return None
-    return path, before, entry, review
+    return paths, before, entry, review
 
 
 def _source_valid(prepared, source):
@@ -71,7 +65,7 @@ def _apply(db, subject, evidence, fact, source, result, history, check):
     binding = _entry(db, subject, evidence, fact, source)
     if binding is None:
         return
-    path, before, entry, review = binding
+    paths, before, entry, review = binding
     prepared = prepare(db, evidence["position_id"], subject, history=history)
     check()
     if not _source_valid(prepared, source):
@@ -87,7 +81,7 @@ def _apply(db, subject, evidence, fact, source, result, history, check):
         or not _proof(prepared["board"], result, review, evidence["id"], entry)
         or source_marker(db, evidence["position_id"], evidence["game_id"], subject)
         != prepared["source_marker"]
-        or fingerprint([path]) != before
+        or fingerprint(paths) != before
     ):
         raise ValueError("capture certificate changed")
 

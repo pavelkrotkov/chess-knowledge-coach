@@ -41,7 +41,7 @@ def validate_state(state, *, allow_full=False) -> None:
         raise ValueError("invalid cursor fields")
     if state["v"] not in {1, 2, 3, 4, 5, 6, 8}:
         raise ValueError("invalid cursor version")
-    if set(state) != _fields(state["v"]):
+    if set(state) != _fields(state):
         raise ValueError("invalid cursor fields")
     validate_scope(state)
     validate_positions(state, allow_full=allow_full)
@@ -51,7 +51,8 @@ def validate_state(state, *, allow_full=False) -> None:
         validate(state)
 
 
-def _fields(version):
+def _fields(state):
+    version = state["v"]
     fields = set(BASE)
     for minimum, extra in VERSION_FIELDS:
         if version >= minimum:
@@ -66,4 +67,9 @@ def _fields(version):
         fields.update(canonical_fields())
     if version == 8:
         fields.update({"priority_policy", "priority_goal", "priority"})
+        # The new file-bound policy leaves the prior v8 cursor shape unchanged.
+        from .curriculum_priority_cursor import CAPTURE_POLICY
+
+        if state.get("priority_policy") == CAPTURE_POLICY:
+            fields.update({"capture_files", "capture_selection"})
     return fields

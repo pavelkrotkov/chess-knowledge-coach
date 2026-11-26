@@ -1655,10 +1655,24 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
         )
         review_pair(pair_db, int(pair_fields[1]["key"]), decision="accept", actor="fixture")
         certify(pair_db, SUBJECT, root)
-        rechecked = pair_client.get(
-            renewal_url, base_url="https://coach.invalid", headers=pair_headers
-        )
-        assert rechecked.status_code == 200
+        from chess_coach import web_views
+
+        failures = []
+        real_plan = web_views.daily_plan
+
+        def report_plan_failure(*args, **kwargs):
+            try:
+                return real_plan(*args, **kwargs)
+            except BaseException as error:
+                failures.append(f"{type(error).__name__}: {error}")
+                raise
+
+        with monkeypatch.context() as diagnostic:
+            diagnostic.setattr(web_views, "daily_plan", report_plan_failure)
+            rechecked = pair_client.get(
+                renewal_url, base_url="https://coach.invalid", headers=pair_headers
+            )
+        assert rechecked.status_code == 200, failures
         forms = [
             part.split("</form>", 1)[0]
             for part in rechecked.get_data(as_text=True).split('<form method="post"')
@@ -2942,13 +2956,15 @@ def _v6_source_mix(path, project_root, planning, now, monkeypatch):
     import chess_coach.curriculum_canonical_scan as canonical_scan
     import chess_coach.curriculum_capture_conflict as conflict
     import chess_coach.curriculum_family_mix as family_mix
-    from chess_coach.capture_certificate_store import load as load_certificates
+    from chess_coach.capture_certificate_buckets import observe as observe_certificate
     from chess_coach.curriculum import daily_plan
     from chess_coach.curriculum_cursor_codec import decode_cursor
     from chess_coach.db import Database
     from chess_coach.deep_selection_source import learner_key
     from chess_coach.fact_fingerprint import digest
     from chess_coach.public_training import import_collection
+    from chess_coach.recurrence_cursor import MAX_ID
+    from chess_coach.recurrence_sources import evidence as capture_evidence
     from chess_coach.tactical_course_budget import PreviewUnavailable
     from chess_coach.tactical_study_exposure import VERSION as EXPOSURE_VERSION
     from chess_coach.unified_sessions import start
@@ -2959,7 +2975,8 @@ def _v6_source_mix(path, project_root, planning, now, monkeypatch):
     db = Database(path, capture_root=project_root)
     # The copied database needs its own worker certificate and identity binding.
     certify(db, SUBJECT, project_root)
-    assert load_certificates(db, project_root, SUBJECT)["certificates"]
+    rows, _ = capture_evidence(db, SUBJECT, "hanging_piece", "execute", MAX_ID, limit=20)
+    assert any(observe_certificate(db, project_root, SUBJECT, row["id"]) for row in rows)
     assert import_collection(db, CONTENT, CONTENT, MANIFEST, project_root=ROOT)["accepted"] == 8
     start(
         db,
