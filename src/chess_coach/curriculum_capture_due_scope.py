@@ -8,7 +8,7 @@ from .curriculum_capture_file_guard import current
 from .curriculum_cursor import revision
 from .curriculum_cursor_codec import decode_cursor
 from .curriculum_due import due_candidate
-from .curriculum_priority_cursor import CAPTURE_POLICY
+from .curriculum_priority_cursor import CAPTURE_FILE_POLICIES, CONTEXT_CAPTURE_POLICY
 from .curriculum_window_cursor import decode
 from .fact_fingerprint import digest
 from .learner_identity import normalize_identity
@@ -41,9 +41,9 @@ def prepare(db, root, cursor, corpus, subject, source, version, key, item_id, tr
         return None
     state = _state(db, cursor)
     owner = normalize_identity(subject)
-    if not owner or state.get("priority_policy") != CAPTURE_POLICY or not training:
+    if not owner or state.get("priority_policy") not in CAPTURE_FILE_POLICIES or not training:
         raise ValueError("capture practice changed; restart the plan")
-    if state["subject_hash"] != digest(owner) or state["corpus_version"] != corpus or root is None:
+    if (state["subject_hash"], state["corpus_version"]) != (digest(owner), corpus) or root is None:
         raise ValueError("capture practice changed; restart the plan")
     budget = BrowserBudget(db)
     budget.expires = min(budget.expires, time.monotonic() + SLICE_SECONDS)
@@ -51,6 +51,7 @@ def prepare(db, root, cursor, corpus, subject, source, version, key, item_id, tr
         "owner": owner,
         "root": root,
         "files": state["capture_files"],
+        "context": state["priority_policy"] == CONTEXT_CAPTURE_POLICY,
         "item": item_id,
         "revision": state["revision"],
         "version": version,
@@ -63,7 +64,9 @@ def prepare(db, root, cursor, corpus, subject, source, version, key, item_id, tr
 
 # SQLite's write lock does not freeze the worker's sidecar publications.
 def _current(db, selected):
-    return current(db, selected["owner"], selected["root"]) == selected["files"]
+    return selected["files"] == current(
+        db, selected["owner"], selected["root"], context=selected["context"]
+    )
 
 
 def _due(db, selected):

@@ -10,10 +10,10 @@ from .curriculum_capture_source_identity import require
 from .curriculum_capture_witnesses import descriptive
 
 
-def _profile(db, subject, corpus, as_of, report, option, check):
+def _profile(db, subject, corpus, as_of, report, option, check, *, observed=None):
     turns = report["newer"]["root_details"] + report["earlier"]["root_details"]
     try:
-        source = bind(db, subject, corpus, as_of, option, turns, check)
+        source = bind(db, subject, corpus, as_of, option, turns, check, observed=observed)
         if source is None:
             return None
         newer = sample(report["newer"], source["wanted"], check)

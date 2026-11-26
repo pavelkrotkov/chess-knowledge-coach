@@ -2,12 +2,19 @@
 
 from .curriculum_capture_conflicts import scheduled
 from .curriculum_capture_rank import choice
-from .curriculum_capture_source import practice_reason
 from .curriculum_capture_witnesses import candidates, pending
 
 
-def select(db, state, subject, scan, check):
-    options, status, identity, advisory = candidates(db, subject, state["corpus_version"], check)
+def select(db, state, subject, scan, check, *, root=None):
+    from .curriculum_priority_cursor import CONTEXT_CAPTURE_POLICY
+
+    options, status, identity, advisory = candidates(
+        db,
+        subject,
+        state["corpus_version"],
+        check,
+        include_snapshot=state["priority_policy"] == CONTEXT_CAPTURE_POLICY,
+    )
     state["priority"]["capture_sources"] = identity
     if not options:
         if state["capture_pending"] is not None:
@@ -20,16 +27,19 @@ def select(db, state, subject, scan, check):
     state["capture_pending"] = binding
     matched, incomplete, reason = scheduled(db, state, scan, options, check)
     if incomplete is not None:
-        return [], incomplete, reason, options[0][1]
+        report = options[0][1]
+        report.pop("snapshot", None)
+        return [], incomplete, reason, report
     state["capture_pending"] = None
     state["scheduled_after"] = 0
     state["priority"]["capture_matches"] = 0
-    chosen, qualified = choice(db, subject, state, options, matched, check)
+    chosen, rationale = choice(db, subject, state, options, matched, check, root=root)
     candidate, report = options[chosen]
+    report.pop("snapshot", None)
     if candidate["prompt_key"] in matched | set(state["seen"]):
         state["phase"] = "new"
         return [], "already_scheduled", None, report
-    candidate["reason"] += " " + practice_reason(qualified)
+    candidate["reason"] += " " + rationale
     state["seen"] = sorted([*state["seen"], candidate["prompt_key"]])
     state["phase"] = "new"
     return (

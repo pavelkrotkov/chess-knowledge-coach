@@ -14,13 +14,15 @@ def checked_renew(db, value, learner, version, scan_limit, now, minutes, budget)
     if state["corpus_version"] != version or state["scan_limit"] != scan_limit:
         raise ValueError("practice window scope changed")
     check_policy(state)
-    from .curriculum_priority_cursor import CAPTURE_POLICIES
+    from .curriculum_priority_cursor import CAPTURE_POLICIES, CONTEXT_CAPTURE_POLICY
 
     root = getattr(budget, "project_root", None)
     if state.get("priority_policy") in CAPTURE_POLICIES:
         from .curriculum_capture_file_guard import current
 
-        before_files = current(db, learner, root)
+        before_files = current(
+            db, learner, root, context=state["priority_policy"] == CONTEXT_CAPTURE_POLICY
+        )
     else:
         before_files = None
     capture_changed = False
@@ -50,10 +52,11 @@ def _carry_files(db, result, learner, root, before):
     if before is None:
         return
     from .curriculum_capture_file_guard import current
-    from .curriculum_priority_cursor import CAPTURE_POLICY
+    from .curriculum_priority_cursor import CAPTURE_FILE_POLICIES, CONTEXT_CAPTURE_POLICY
 
-    if before != current(db, learner, root):
+    policy = result["state"].get("priority_policy")
+    if before != current(db, learner, root, context=policy == CONTEXT_CAPTURE_POLICY):
         raise ValueError("capture practice changed; restart the plan")
-    if result["state"].get("priority_policy") == CAPTURE_POLICY:
+    if policy in CAPTURE_FILE_POLICIES:
         # Carry the pre-history observation through window initialization.
         result["state"]["capture_files"] = before
