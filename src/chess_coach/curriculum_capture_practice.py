@@ -1,6 +1,9 @@
 """Compare exact-source verified capture practice without scoring missing evidence."""
 
+import json
+
 from .capture_compare_scope import scope
+from .capture_compare_signature import projections
 from .capture_plan_history import _matching
 from .fact_fingerprint import digest
 from .mastery_time import parse_utc
@@ -24,7 +27,7 @@ def _chronology(row, history, as_of):
     return bool(started and answered and cutoff and started <= answered <= cutoff)
 
 
-def evidence(db, subject, corpus, position, history, as_of, check):
+def evidence(db, subject, corpus, position, history, as_of, check, *, project=False):
     """Return a fact only when its complete source and practice scope is current."""
     if not _complete(history):
         return None
@@ -43,8 +46,15 @@ def evidence(db, subject, corpus, position, history, as_of, check):
         or not _chronology(row, history, as_of)
     ):
         return None
-    return {
+    result = {
         "context": digest(matched["key"]),
         "side": row["learner_color"],
         "result": history["status"],
     }
+    if project:
+        result["controls"], result["pattern"] = projections(matched["key"])
+        binding = json.loads(row["provenance_json"])["related_capture"]
+        result["source"] = tuple(
+            binding[key] for key in ("evidence_id", "source_fingerprint", "review_event_id")
+        )
+    return result

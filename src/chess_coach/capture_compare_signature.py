@@ -1,5 +1,7 @@
 """Canonical cohort signature for validated capture contexts."""
 
+import json
+
 from .capture_compare_context import valid
 from .fact_fingerprint import canonical
 from .related_capture import VERSION as RANK_VERSION
@@ -32,3 +34,9 @@ def signature(context, corpus, *, rating_start=None):
         context["content_deviation"] // 100,
     ]
     return canonical(signature)
+
+
+def projections(key):
+    """Separate shared practice controls from the validated source pattern."""
+    values = json.loads(key)
+    return canonical(values[:7] + values[9:]), values[8]

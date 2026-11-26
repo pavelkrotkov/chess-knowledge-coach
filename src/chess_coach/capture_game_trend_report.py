@@ -5,7 +5,7 @@ import sqlite3
 from .capture_game_counts import add, empty, finish
 from .capture_game_root_current import project
 from .capture_game_trend_bounds import bounds
-from .capture_game_trend_current import current
+from .capture_game_trend_current import current, within_as_of
 from .capture_game_trend_paths import binding, location
 from .capture_game_trend_validate import validate
 from .dated_game_controls import reason as control_reason
@@ -36,7 +36,7 @@ def _sample(games):
     return finish(result)
 
 
-def report(db, learner, root):
+def report(db, learner, root, *, check=None, as_of=None):
     try:
         path = location(db, root)
         before_file = fingerprint([path]) if path is not None else None
@@ -45,23 +45,28 @@ def report(db, learner, root):
             return None
         # Recheck every examined source, including duplicate and unavailable rows.
         before = db.connection.execute("PRAGMA data_version").fetchone()[0]
-        selected = choose(db, learner, state)
+        selected = choose(db, learner, state, check=check)
         if not selected:
             return None
         state, candidates, coverage, historical = selected
         games = state["games"]
+        if as_of is not None and not within_as_of(games, as_of):
+            return None
         newer, earlier = _sample(games[:20]), _sample(games[20:40])
-        project(db, learner, games[:40], (newer, earlier))
-        reason = _comparison(state, games, candidates, (newer, earlier), coverage)
+        project(db, learner, games[:40], (newer, earlier), check=check)
+        reason = _comparison(state, games, candidates, (newer, earlier), coverage, check)
         if not current(db, state, candidates, (newer, earlier), before):
             return None
         if fingerprint([path]) != before_file:
             return None
+        if check is not None:
+            check()
         comparable = reason is None
         return {
             "historical": historical,
             "through": games[0]["date"] if historical else None,
             "qualified": _qualified(comparable, (newer, earlier)),
+            "boundary": len(games) > 40,
             "bounds": bounds(comparable, earlier, newer),
             "newer": newer,
             "earlier": earlier,
@@ -75,10 +80,11 @@ def report(db, learner, root):
         return None
 
 
-def _comparison(state, games, candidates, samples, coverage):
+def _comparison(state, games, candidates, samples, coverage, check):
     if not state["selection_complete"]:
         return "selection_pending"
     dates = [item["date"] for item in games]
+    options = {"check": check} if check is not None else {}
     return comparability_reason(samples, dates, coverage, state["unavailable"]) or control_reason(
-        games, candidates
+        games, candidates, **options
     )

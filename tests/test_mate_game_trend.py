@@ -1106,7 +1106,8 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
     ):
         with monkeypatch.context() as patch:
             patch.setattr(
-                f"chess_coach.web_short_mate_game.{name}", lambda *_args, dated=dated: dated
+                f"chess_coach.web_short_mate_game.{name}",
+                lambda *_args, dated=dated, **_kwargs: dated,
             )
             page = client.get(
                 endpoint,
@@ -1119,7 +1120,8 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
             )
     with monkeypatch.context() as patch:
         patch.setattr(
-            "chess_coach.web_short_mate_game.capture_trend_report", lambda *_args: capture_partial
+            "chess_coach.web_short_mate_game.capture_trend_report",
+            lambda *_args, **_kwargs: capture_partial,
         )
         pending_page = client.get(
             "/game-samples/captures",
@@ -1142,7 +1144,7 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
         with monkeypatch.context() as patch:
             patch.setattr(
                 "chess_coach.web_short_mate_game.capture_trend_report",
-                lambda *_args, _gate=gate: {
+                lambda *_args, _gate=gate, **_kwargs: {
                     **capture_complete,
                     "qualified": False,
                     "comparable": False,

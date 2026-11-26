@@ -9,14 +9,18 @@ from .style_time_candidates import verified
 from .style_time_query import load_game
 
 
-def prepare(db, learner, game_id):
+def prepare(db, learner, game_id, *, check=None):
     subject = normalize_identity(learner)
     if not subject:
         raise ValueError("learner unavailable")
+    if check is not None:
+        check()
     with read_snapshot(db):
         game = _game(db, subject, game_id)
-        identity, pairs = prepared_game(db, game, subject)
+        identity, pairs = prepared_game(db, game, subject, check=check)
         signature = _signature(db, game)
+        if check is not None:
+            check()
         return {
             "game_id": game_id,
             "started_at": game["projected_start"],

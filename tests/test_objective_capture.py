@@ -3844,6 +3844,210 @@ def _capture_practice_priority_workflow(tmp_path, monkeypatch):
     monkeypatch.setattr(unified_sessions, "now", original_start_clock)
     monkeypatch.setattr(unified_session_apply, "now", original_event_clock)
     db.close()
+    _capture_context_comparison_workflow(tmp_path, monkeypatch)
+
+
+def _capture_context_comparison_workflow(tmp_path, monkeypatch):
+    """Compare real dated capture roots against two admitted practice sources."""
+    import sqlite3
+    import sys
+
+    import chess.engine
+    import chess.pgn
+
+    from chess_coach import capture_game_proof, capture_game_roots
+    from chess_coach.capture_game_trend_paths import binding, location
+    from chess_coach.curriculum_capture_witnesses import candidates
+    from chess_coach.db import Database
+    from chess_coach.ingest import ingest_pgn
+    from chess_coach.objective_capture_source import resolve
+    from chess_coach.pipeline_config import PipelineConfig
+    from chess_coach.pipeline_inputs import engine_identity, game_input
+    from chess_coach.pipeline_work import run_analysis
+    from chess_coach.related_capture import preview
+    from chess_coach.related_capture_start import start_related
+    from chess_coach.short_mate_trend_store import read, write
+    from chess_coach.web import create_app
+    from tests.capture_certificate_fixture import prepare_corpus
+    from tests.test_material_pipeline import Engine
+
+    root, path = capture_project(tmp_path, "context-comparison-project")
+    db = Database(path, capture_root=root)
+    db.initialize()
+    boards = (
+        "4k3/8/8/8/3q4/5N2/8/3RK3 w - - 0 1",
+        "4k3/8/8/8/3q4/7N/8/3RK3 w - - 0 1",
+        "4k3/8/8/8/4q3/7N/8/3RK3 w - - 0 1",
+    )
+    source_games = {}
+    for index in range(41):
+        kind = (
+            2 if index == 0 else (0 if (index - 1) % 20 < 5 else 1 if (index - 1) % 20 < 10 else 2)
+        )
+        board = chess.Board(boards[kind])
+        game = chess.pgn.Game()
+        game.setup(board)
+        game.headers.update(
+            White=LEARNER,
+            Black="fixture_opponent",
+            WhiteElo="1200",
+            BlackElo="1200",
+            TimeControl="600+0",
+            Result="1-0",
+            UTCDate="2026.01.10",
+            UTCTime=f"12:00:{index:02d}",
+        )
+        game.add_variation(board.parse_uci("e1f1"))
+        ingest_pgn(db, str(game))
+        game_id = db.connection.execute("SELECT MAX(id) FROM games").fetchone()[0]
+        if kind in (0, 1):
+            source_games[kind] = game_id
+
+    config = PipelineConfig(learner=LEARNER, engine_path=sys.executable, nodes=100)
+    positions = []
+    for kind, move in ((0, "f3d4"), (1, "d1d4")):
+        game_id = source_games[kind]
+        with monkeypatch.context() as engine:
+            engine.setattr(
+                chess.engine.SimpleEngine, "popen_uci", lambda _, move=move: Engine(move, "e8f8")
+            )
+            assert (
+                run_analysis(
+                    db, game_id, game_input(db, game_id), config, engine_identity(sys.executable)
+                )["status"]
+                == "complete"
+            )
+        position = db.connection.execute(
+            "SELECT id FROM positions WHERE game_id=? ORDER BY ply LIMIT 1", (game_id,)
+        ).fetchone()[0]
+        evidence_id = process_decision(db, position, LEARNER)["evidence_ids"][0]
+        review_evidence(db, evidence_id, decision="accept", actor="fixture")
+        positions.append(position)
+
+    corpus = db.connection.execute(
+        "INSERT INTO puzzle_corpora(version,source,checksum,state) VALUES(?,?,?,?)",
+        ("context-priority", "fixture", "checksum", "staging"),
+    ).lastrowid
+    for kind, move in ((0, "f3d4"), (1, "d1d4")):
+        for pawn_file in ("a", "b"):
+            board = chess.Board(boards[kind])
+            board.turn = chess.BLACK
+            board.set_piece_at(
+                chess.parse_square(pawn_file + "7"), chess.Piece(chess.PAWN, chess.BLACK)
+            )
+            key = f"context-{kind}-{pawn_file}"
+            db.connection.execute(
+                """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,
+                rating_deviation,themes_json,objective)
+                VALUES(?,?,?,'fixture',?,1200,80,'["hangingPiece"]','unknown')""",
+                (key, corpus, board.fen(), pawn_file + "7" + pawn_file + "6 " + move),
+            )
+            db.connection.execute(
+                "INSERT INTO puzzle_themes VALUES(?,?,'hangingPiece',1200)", (corpus, key)
+            )
+    db.connection.execute("UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus,))
+    db.connection.commit()
+
+    for _ in range(3):
+        certify(db, LEARNER, root)
+    prepare_corpus(db, LEARNER, root, "context-priority", positions[0])
+    secret = b"context-comparison-fixture"
+    for index, position in enumerate(positions):
+        selected = preview(db, LEARNER, position, "context-priority", secret=secret)
+        item = next(value for value in selected["items"] if value.get("assessment_available"))
+        attempt_id = f"context-assessment-{index}"
+        start_related(
+            db,
+            attempt_id=attempt_id,
+            subject=LEARNER,
+            position=position,
+            corpus_version="context-priority",
+            reference=item["reference"],
+            assessment=True,
+            secret=secret,
+        )
+        row = db.connection.execute(
+            "SELECT lines_json FROM unified_sessions WHERE attempt_id=?", (attempt_id,)
+        ).fetchone()
+        move = json.loads(row["lines_json"])[0][0]
+        submit(db, attempt_id, LEARNER, event_id="answer", move=move)
+        assert process(db, LEARNER)["outcomes"] == {"correct": 1}
+
+    app = create_app(
+        db_path=path,
+        project_root=root,
+        subject=LEARNER,
+        actor="fixture",
+        corpus="context-priority",
+        login="fixture",
+        origin="https://coach.invalid",
+    )
+    client = app.test_client()
+    headers = {"Tailscale-User-Login": "fixture"}
+    options, status, _, _ = candidates(db, LEARNER, "context-priority", lambda: None)
+    assert status == "available" and len(options) == 2
+    rook_index = next(
+        index
+        for index, (candidate, _) in enumerate(options)
+        if resolve(db, candidate["source_version"], candidate["source_key"], LEARNER)["lines"][0]
+        == "d1d4"
+    )
+    tables = (
+        "unified_sessions",
+        "unified_session_events",
+        "objective_requests",
+        "objective_results",
+        "unified_training_enrollments",
+        "unified_training_completions",
+        "training_items",
+        "training_attempts",
+        "mastery_states",
+        "mastery_events",
+        "evidence_mappings",
+        "evidence_review_events",
+        "tactical_exposure_coverage",
+        "tactical_exposures",
+    )
+    with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True) as observer:
+        observer.execute("PRAGMA query_only=ON")
+        before = {
+            name: observer.execute(f"SELECT * FROM {name} ORDER BY rowid").fetchall()
+            for name in tables
+        }
+        with monkeypatch.context() as guard:
+
+            def forbidden(*_args, **_kwargs):
+                raise AssertionError("capture proof ran during comparison GET")
+
+            guard.setattr(capture_game_proof, "inspect", forbidden)
+            guard.setattr(capture_game_roots, "capture_gain", forbidden)
+            guard.setattr(capture_game_roots, "inspect_checking", forbidden)
+            guard.setattr(capture_game_roots, "inspect_replies", forbidden)
+            guard.setattr("chess_coach.related_capture_features.capture_gain", forbidden)
+            guard.setattr("chess_coach.related_capture_assessment.judge", forbidden)
+            guard.setattr("chess_coach.objective_capture_snapshot.judge", forbidden)
+            guard.setattr("chess_coach.material_opportunity_current.verified_witness", forbidden)
+            page = client.get(
+                "/game-samples/captures", base_url="https://coach.invalid", headers=headers
+            )
+            assert page.status_code == 200
+            assert f"Source {rook_index + 1} has the strictly higher".encode() in page.data
+        assert before == {
+            name: observer.execute(f"SELECT * FROM {name} ORDER BY rowid").fetchall()
+            for name in tables
+        }
+
+    cache = location(db, root)
+    state = read(cache, binding(db, LEARNER))
+    target = options[0][1]["source"]["position_id"]
+    for item in state["games"]:
+        section = item.get("root_details")
+        if section:
+            section["turns"] = [turn for turn in section["turns"] if turn["position_id"] != target]
+    write(cache, state)
+    page = client.get("/game-samples/captures", base_url="https://coach.invalid", headers=headers)
+    assert b"qualified comparison between capture contexts is unavailable" in page.data
+    db.close()
 
 
 def _retained_capture_workflow(tmp_path, monkeypatch):

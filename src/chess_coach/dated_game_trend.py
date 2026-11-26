@@ -47,24 +47,26 @@ def _current(state, candidates, frontier, signatures, strict):
     return frontier == state["frontier"] and signatures == state["checked"]
 
 
-def _prior(db, learner, state, candidates, coverage, signatures):
+def _prior(db, learner, state, candidates, coverage, signatures, check):
     prior = state.get("prior") if not state["selection_complete"] else state
     if not prior:
         return None
     if prior is not state:
-        candidates, coverage, _, signatures = snapshot(db, learner, prior["checked"])
+        candidates, coverage, _, signatures = snapshot(db, learner, prior["checked"], check=check)
     if _historical(prior, candidates, coverage, signatures):
         return prior, candidates, coverage, True
     return None
 
 
-def choose(db, learner, state, *, strict=True):
-    candidates, coverage, frontier, signatures = snapshot(db, learner, state["checked"])
+def choose(db, learner, state, *, strict=True, check=None):
+    candidates, coverage, frontier, signatures = snapshot(
+        db, learner, state["checked"], check=check
+    )
     current = _current(state, candidates, frontier, signatures, strict)
     # Completed current work always replaces the historical view.
     if current and state["selection_complete"]:
         return state, candidates, coverage, False
-    prior = _prior(db, learner, state, candidates, coverage, signatures)
+    prior = _prior(db, learner, state, candidates, coverage, signatures, check)
     if prior:
         return prior
     if current:

@@ -47,11 +47,11 @@ def _turn(turn, context, board):
     }
 
 
-def _game(db, learner, item):
+def _game(db, learner, item, check):
     turns = (item.get("root_details") or {}).get("turns", ())
     if not turns:
         return []
-    source = prepare(db, learner, item["id"])
+    source = prepare(db, learner, item["id"], check=check)
     if (source["identity"], fingerprint(source["signature"])) != (
         item["identity"],
         item["signature"],
@@ -68,12 +68,17 @@ def _game(db, learner, item):
     ]
 
 
-def project(db, learner, games, samples):
+def project(db, learner, games, samples, *, check=None):
     if not valid(games):
         raise ValueError("root coverage unavailable")
     for group, sample in zip((games[:20], games[20:40]), samples, strict=True):
-        turns = [turn for item in group for turn in _game(db, learner, item)]
+        by_game = [(item, _game(db, learner, item, check)) for item in group]
+        turns = [turn for _, values in by_game for turn in values]
         sample.update(
             root_details=turns,
             root_unattributed=sample["eligible"] - sample["unchecked"] - len(turns),
+            root_game_coverage=[
+                {"game_id": item["id"], "eligible": item["eligible"], "retained": len(values)}
+                for item, values in by_game
+            ],
         )
