@@ -1,5 +1,6 @@
 """Walk actual indexed rows and overflow boundaries of one corpus window."""
 
+from .capture_corpus_capacity import reserve
 from .capture_corpus_coverage import bind
 from .related_corpus_window import band
 
@@ -40,7 +41,7 @@ def discover(db, data, building, check):
 
 def stage(data, building, keys, key, candidate):
     keys.append(key)
-    if key not in data["entries"]:
+    if reserve(data, building, key):
         data["prior"]["entries"][key] = {
             "identity": key,
             "state": "feature",

@@ -2321,6 +2321,63 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         ).fetchone()
         assert tuple(row) == ("public", "fixture-public-c", "legal_line")
 
+        # A real third corpus cannot displace a protected complete window when
+        # the combined retained/building entry budget is exhausted.
+        import chess_coach.capture_corpus_capacity as corpus_capacity
+
+        saved = load_pool(db, root)
+        assert saved is not None and saved.get("complete")
+        staged = (saved.get("prior") or {}).get("entries", {})
+        cap = len(saved["entries"].keys() | staged.keys())
+        active = saved["complete"]
+        active_keys = set(active["keys"] + active["public"]["keys"])
+        needed = cap - len(active_keys) + 1
+        assert 0 < needed <= 32
+        cursor = db.connection.execute(
+            "INSERT INTO puzzle_corpora(version,source,checksum,state) "
+            "VALUES('capacity-fixture','fixture','capacity-checksum','ready')"
+        )
+        capacity_corpus = cursor.lastrowid
+        for index in range(needed):
+            key = f"capacity-{index:02}"
+            inserted = db.connection.execute(
+                """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,
+                rating_deviation,opening,themes_json,objective)
+                SELECT ?,?,fen,source,solution,rating,rating_deviation,opening,themes_json,objective
+                FROM puzzles WHERE corpus_id=? AND puzzle_id='private-fixture-a'""",
+                (key, capacity_corpus, corpus),
+            )
+            assert inserted.rowcount == 1
+            db.connection.execute(
+                "INSERT INTO puzzle_themes VALUES(?,?,'hangingPiece',1200)",
+                (capacity_corpus, key),
+            )
+        db.connection.commit()
+        before = learning_rows()
+        with monkeypatch.context() as capacity_test:
+            capacity_test.setattr(corpus_capacity, "LIMIT", cap)
+            for _ in range(80):
+                previous = load_pool(db, root)
+                assert previous is not None and previous.get("complete")
+                previous_active = previous["complete"]
+                protected = set(previous_active["keys"] + previous_active["public"]["keys"])
+                with pipeline_lock(db.path):
+                    certificate_worker.run(db, LEARNER, root, time.monotonic() + 5)
+                actual_pool = load_pool(db, root)
+                assert actual_pool is not None and actual_pool.get("complete")
+                actual_staged = (actual_pool.get("prior") or {}).get("entries", {})
+                assert len(actual_pool["entries"].keys() | actual_staged.keys()) <= cap
+                assert all(
+                    actual_pool["entries"].get(key) == previous["entries"].get(key)
+                    for key in protected
+                )
+                pending = actual_pool.get("pending_scope") or []
+                if pending and pending[0] == "capacity-fixture":
+                    break
+            else:
+                pytest.fail("the real worker did not report the capacity-limited window")
+        assert learning_rows() == before
+
     review_evidence(db, evidence, decision="reject", actor="reviewer")
     with pytest.raises(ValueError):
         show(db, attempt, LEARNER)
