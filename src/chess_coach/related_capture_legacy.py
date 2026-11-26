@@ -1,46 +1,27 @@
 """Preserve the explicit verified-finder path until prepared finder delivery."""
 
-from .capture_difficulty_binding import difficulty_scope, options, progression
-from .fact_fingerprint import canonical, digest
-from .related_capture_cursor import bind_scope
-from .related_capture_features import certified_features
+from .capture_difficulty_binding import difficulty_scope, progression
 from .related_capture_prepared_assessment import legacy_assessment
 from .related_capture_view import _reference
 from .related_transfer_admission import admit as admit_selection
-from .related_transfer_select import select
 
 
 def choose(db, subject, position, corpus, familiar_data, difficulty):
-    from .curriculum_capture_file_guard import current
-    from .related_capture import VERSION, _selection
-    from .related_capture_source import supported_source
+    from .capture_finder_prepared import PreparationPending
+    from .related_capture import _selection
 
-    if difficulty is None:
-        from .capture_finder_prepared import PreparationPending
-
-        selected = _selection(
-            db, subject, position, corpus, familiar_data=familiar_data, finder=True
-        )
-        if selected is None:
-            raise PreparationPending()
-        return selected
-    files = current(db, subject, db.capture_root)
-    source = supported_source(db, subject, position)
-    selected = select(
+    selected = _selection(
         db,
         subject,
-        source,
+        position,
         corpus,
-        VERSION,
         familiar_data=familiar_data,
-        feature=certified_features,
-        **options(difficulty),
+        finder=True,
+        difficulty=difficulty,
     )
-    selected = bind_scope(db, subject, selected, files)
     if selected is None:
-        return None
-    scope = digest(canonical(["verified-capture-finder-v1", selected[4]]))
-    return (*selected[:4], scope, selected[5])
+        raise PreparationPending()
+    return selected
 
 
 def admit(db, subject, position, corpus, reference, secret, assessment_requested, difficulty):

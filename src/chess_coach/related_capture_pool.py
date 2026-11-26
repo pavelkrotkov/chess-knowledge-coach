@@ -15,19 +15,19 @@ def complete(db, root, version, lower, upper, subject=None, games=None):
     row = db.connection.execute(
         "SELECT id,checksum FROM puzzle_corpora WHERE version=? AND state=?", (version, "ready")
     ).fetchone()
-    if row is None or not isinstance(window, dict):
+    if row is None or not isinstance(window, dict) or not isinstance(window.get("scope"), list):
         return None
-    if window.get("scope") != [version, row["checksum"], lower, upper]:
-        return None
-    selected = entries(db, row, version, lower, upper, window, data["entries"])
-    public = public_entries(db, subject, window.get("public"), data["entries"], games)
+    scope = [version, row["checksum"], lower, upper]
+    active = window if window.get("scope") == scope else None
+    selected = entries(db, row, version, lower, upper, active, data["entries"])
+    public = public_entries(db, subject, active, data["entries"], games)
     if selected is None or public is None:
         return None
     return {
         "binding": data["policy"],
-        "scope": window["scope"],
-        "limited": window["limited"],
-        "entries": selected,
+        "scope": scope,
+        "limited": selected[1],
+        "entries": selected[0],
         "public": public,
     }
 
