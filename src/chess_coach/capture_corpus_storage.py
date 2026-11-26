@@ -4,6 +4,8 @@ import json
 import subprocess
 from contextlib import suppress
 
+from .capture_corpus_capacity import LIMIT as LIMIT
+from .capture_corpus_capacity import valid as valid_capacity
 from .capture_game_trend_paths import location as trend_location
 from .fact_fingerprint import canonical, digest
 from .material_capture_gain import MIN_GAIN
@@ -34,7 +36,6 @@ POLICY = (
     CORPUS_PLIES_LIMIT,
     digest(canonical(VALUES)),
 )
-LIMIT = 2000
 
 
 def location(db, root):
@@ -47,7 +48,7 @@ def _valid(data, expected):
     return (
         data.get("policy") == expected
         and isinstance(entries, dict)
-        and len(entries) <= LIMIT
+        and valid_capacity(data)
         and all(isinstance(k, str) and isinstance(v, dict) for k, v in entries.items())
     )
 

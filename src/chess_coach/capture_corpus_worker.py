@@ -1,6 +1,6 @@
 """Prepare one finite corpus window under the capture worker budget."""
 
-from .capture_corpus_coverage import finalize
+from .capture_corpus_finalize import finalize
 from .capture_corpus_nomination import build
 from .capture_corpus_page import discover
 from .capture_corpus_proof import prepare

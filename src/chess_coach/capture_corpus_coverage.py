@@ -30,36 +30,13 @@ def bind(row, version, checksum):
 def entries(db, row, version, lower, upper, window, records):
     rows, limited = corpus_rows(db, row["id"], lower, upper, "hangingPiece", 100)
     keys = [bind(item, version, row["checksum"])[0] for item in rows]
-    if window.get("keys") != keys or window.get("limited") != limited:
+    if window is not None and (window.get("keys") != keys or window.get("limited") != limited):
         return None
-    return select_entries(keys, records)
+    selected = select_entries(keys, records)
+    return (selected, limited) if selected is not None else None
 
 
 def select_entries(keys, records):
     if any(records.get(key, {}).get("state") != "complete" for key in keys):
         return None
     return {key: records[key] for key in keys}
-
-
-def finalize(db, data, building, prior):
-    keys = building["keys"] + building["public"]["keys"]
-    version, checksum, _, _ = building["scope"]
-    current = db.connection.execute(
-        "SELECT 1 FROM puzzle_corpora WHERE id=? AND version=? AND checksum=? AND state='ready'",
-        (building["corpus_id"], version, checksum),
-    ).fetchone()
-    if current is None:
-        data["prior"] = None
-        return False, 0
-    data["complete"] = {
-        "scope": building["scope"],
-        "keys": building["keys"],
-        "limited": building["limited"],
-        "public": {"owner": building["public"]["owner"], "keys": building["public"]["keys"]},
-    }
-    entries = {**data["entries"], **prior["entries"]}
-    data["entries"] = {key: entries[key] for key in keys}
-    data["prior"] = None
-    data.pop("overflow", None)
-    data.pop("pending_scope", None)
-    return False, 0

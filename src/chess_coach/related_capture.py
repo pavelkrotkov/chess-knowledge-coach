@@ -30,6 +30,7 @@ def _selection(
     rating_bounds=None,
     score=None,
     finder=False,
+    difficulty=None,
 ):
     files = current(db, subject, db.capture_root)
     source = supported_source(db, subject, position)
@@ -38,7 +39,9 @@ def _selection(
     if familiar_data is None:
         familiar_data = familiarity(db, subject)
     games = familiar_data[1]
-    lower, upper = bounds(baseline(db, source))
+    from .capture_difficulty_binding import options
+
+    lower, upper = options(difficulty).get("rating_bounds", bounds(baseline(db, source)))
     prepared = prepared_window(db, db.capture_root, corpus_version, lower, upper, subject, games)
     if prepared is None:
         return None
@@ -50,7 +53,7 @@ def _selection(
         VERSION,
         familiar_data=familiar_data,
         feature=certified_features,
-        score=prepared_score(prepared),
+        **options(difficulty, scorer=prepared_score(prepared)),
     )
     if (
         prepared_window(db, db.capture_root, corpus_version, lower, upper, subject, games)

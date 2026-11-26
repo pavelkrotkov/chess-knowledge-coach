@@ -2,18 +2,14 @@
 
 from functools import partial
 
-from .capture_finder_match import matches, prepared_matches
+from .capture_finder_match import prepared_matches
 from .capture_finder_prepared import prepared as prepared_proof
 from .capture_finder_prior import prepare
-from .capture_finder_proof import prove
 
 
 def operations(db, selection, expected, subject, games, version, difficulty):
-    if difficulty:
-        run, match = prove, matches
-    else:
-        run = partial(prepared_proof, subject=subject, games=games, version=version)
-        match = partial(prepared_matches, subject=subject, games=games)
+    run = partial(prepared_proof, subject=subject, games=games, version=version)
+    match = partial(prepared_matches, subject=subject, games=games)
     accept = (
         {} if expected is None else {"accept": partial(match, db, selection, expected=expected)}
     )
@@ -26,9 +22,13 @@ def prepared(db, subject, corpus, attempt, position, deadline, expired, harder):
         return position, expected, None
     if attempt is None or position is None:
         raise ValueError("harder capture unavailable")
-    from .capture_difficulty import eligible
+    from .capture_difficulty import checked
 
-    difficulty = eligible(db, subject, corpus, position, attempt)
+    def check():
+        if expired(deadline):
+            raise ValueError("capture finder deadline")
+
+    difficulty = checked(db, subject, corpus, position, attempt, check)
     return position, difficulty["expected"], difficulty
 
 

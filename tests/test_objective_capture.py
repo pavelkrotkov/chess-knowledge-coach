@@ -1373,6 +1373,175 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
     assert b"Comparisons need more comparable first attempts" in adaptive.data
     assert db.connection.execute("SELECT COUNT(*) FROM training_attempts").fetchone()[0] == 0
     if mode == "correct":
+        import chess_coach.capture_corpus_worker as corpus_worker
+        import chess_coach.related_capture as capture_selection
+        from chess_coach.capture_certificate_buckets import _load, publish
+        from chess_coach.capture_certificate_paths import paths
+        from chess_coach.capture_difficulty import eligible
+        from chess_coach.curriculum_capture_file_guard import current
+
+        difficulty = eligible(db, LEARNER, "capture", 1, second_attempt)
+        assert difficulty["band"] == 1400
+        with pytest.raises(ValueError):
+            eligible(db, LEARNER, "capture", 1, attempt)
+        familiar_games = familiarity(db, LEARNER)[1]
+        ordinary = prepared_window(db, root, "capture", lower, upper, LEARNER, familiar_games)
+        assert ordinary is not None
+        saved_pool = load_pool(db, root)
+        assert saved_pool is not None
+        existing = set(saved_pool["entries"])
+        original_prepare = corpus_worker.prepare
+        reused = []
+
+        def count_preparation(db_, entry, check):
+            if entry["identity"] in existing:
+                reused.append(entry["identity"])
+            return original_prepare(db_, entry, check)
+
+        harder_scope = ["capture", "checksum", difficulty["band"], difficulty["band"] + 199]
+        ordinary_scope = ["capture", "checksum", lower, upper]
+
+        def await_scope(scope):
+            for _ in range(80):
+                visits.clear()
+                proofs.clear()
+                with pipeline_lock(db.path):
+                    certificate_worker.run(db, LEARNER, root, time.monotonic() + 5)
+                assert len(visits) <= certificate_worker.SCAN
+                assert len(proofs) <= certificate_worker.PROOFS
+                actual_pool = load_pool(db, root)
+                result = prepared_window(
+                    db, root, "capture", scope[2], scope[3], LEARNER, familiar_games
+                )
+                if (
+                    actual_pool
+                    and (actual_pool.get("complete") or {}).get("scope") == scope
+                    and result is not None
+                ):
+                    return result
+            pytest.fail("the real worker did not publish the requested window")
+
+        with monkeypatch.context() as accounting:
+            accounting.setattr(corpus_worker, "prepare", count_preparation)
+            accounting.setattr(certificate_worker, "_visit", visit)
+            accounting.setattr(certificate_refresh, "prove", owned_proof)
+            accounting.setattr(candidate_features, "capture_gain", candidate_gain)
+            accounting.setattr(candidate_assessment, "judge", candidate_judge)
+            harder_window = await_scope(harder_scope)
+            assert harder_window["entries"]
+            assert await_scope(ordinary_scope) == ordinary
+        assert not reused
+        assert (
+            prepared_window(
+                db, root, "capture", harder_scope[2], harder_scope[3], LEARNER, familiar_games
+            )
+            == harder_window
+        )
+
+        bucket_path = paths(db, root, LEARNER, evidence)[0]
+        bucket = _load(db, LEARNER, bucket_path, evidence)
+        assert bucket is not None and str(evidence) in bucket["certificates"]
+        files_before = current(db, LEARNER, root)
+        learning_before = learning_rows()
+        original_select = capture_selection.select
+        published = []
+
+        def publish_during_selection(*args, **kwargs):
+            selected = original_select(*args, **kwargs)
+            publish(db, root, LEARNER, evidence, bucket["certificates"])
+            published.append(True)
+            return selected
+
+        with monkeypatch.context() as race:
+            race.setattr(capture_selection, "select", publish_during_selection)
+            race.setattr(candidate_features, "capture_gain", forbidden_proof)
+            race.setattr(candidate_assessment, "judge", forbidden_proof)
+            with pytest.raises(ValueError, match="capture source changed"):
+                capture_selection._selection(
+                    db, LEARNER, 1, "capture", finder=True, difficulty=difficulty
+                )
+        assert published and current(db, LEARNER, root) != files_before
+        assert learning_rows() == learning_before
+
+        before = learning_rows()
+        with monkeypatch.context() as guard:
+            guard.setattr(candidate_features, "capture_gain", forbidden_proof)
+            guard.setattr(candidate_assessment, "judge", forbidden_proof)
+            guard.setattr(finder_proof, "certificate", forbidden_proof)
+            guard.setattr("chess_coach.related_capture_match._prompt", forbidden_proof)
+            harder = client.get(
+                f"/plan/captures/find-verified?position=1&attempt={second_attempt}&harder=1",
+                base_url="https://coach.invalid",
+                headers=headers,
+            )
+        assert b"1400" in harder.data and b"Check my capture choice" in harder.data
+        assert learning_rows() == before
+        harder_form = {
+            "csrf": token(harder, "csrf"),
+            "reference": token(harder, "reference"),
+            "assessment": "1",
+            "harder_attempt": second_attempt,
+            "finder": token(harder, "finder"),
+        }
+        current_pool = load_pool(db, root)
+        assert current_pool is not None
+        missing_pool = deepcopy(current_pool)
+        missing_key = next(iter(harder_window["entries"]))
+        missing_pool["entries"].pop(missing_key)
+        write_pool(pool_path, missing_pool)
+        with monkeypatch.context() as guard:
+            guard.setattr(candidate_features, "capture_gain", forbidden_proof)
+            guard.setattr(candidate_assessment, "judge", forbidden_proof)
+            guard.setattr(finder_proof, "certificate", forbidden_proof)
+            pending = client.get(
+                f"/plan/captures/find-verified?position=1&attempt={second_attempt}&harder=1",
+                base_url="https://coach.invalid",
+                headers=headers,
+            )
+            refused = client.post(
+                "/decisions/1/related-captures/start",
+                base_url="https://coach.invalid",
+                headers=headers | {"Origin": "https://coach.invalid"},
+                data=harder_form,
+            )
+        assert b"Capture preparation is pending" in pending.data and refused.status_code == 400
+        assert learning_rows() == before
+        write_pool(pool_path, current_pool)
+        with monkeypatch.context() as guard:
+            guard.setattr(candidate_features, "capture_gain", forbidden_proof)
+            guard.setattr(candidate_assessment, "judge", forbidden_proof)
+            guard.setattr(finder_proof, "certificate", forbidden_proof)
+            guard.setattr("chess_coach.related_capture_match._prompt", forbidden_proof)
+            started = client.post(
+                "/decisions/1/related-captures/start",
+                base_url="https://coach.invalid",
+                headers=headers | {"Origin": "https://coach.invalid"},
+                data=harder_form,
+            )
+        assert started.status_code == 303
+        binding = json.loads(
+            db.connection.execute(
+                "SELECT provenance_json FROM unified_sessions ORDER BY rowid DESC LIMIT 1"
+            ).fetchone()[0]
+        )["related_capture"]
+        assert binding["progression"]["prior_attempts"] == [attempt, second_attempt]
+        harder_shown = client.get(
+            started.headers["Location"], base_url="https://coach.invalid", headers=headers
+        )
+        harder_move = client.post(
+            "/unified/move",
+            base_url="https://coach.invalid",
+            headers=headers | {"Origin": "https://coach.invalid"},
+            data={
+                "csrf": token(harder_shown, "csrf"),
+                "attempt": token(harder_shown, "attempt"),
+                "event": token(harder_shown, "event"),
+                "move": "d1d4",
+            },
+        )
+        assert harder_move.status_code == 303
+        assert process(db, LEARNER)["outcomes"] == {"correct": 1}
+
         again = client.get(
             "/decisions/1/related-captures", base_url="https://coach.invalid", headers=headers
         )
@@ -1441,9 +1610,9 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         with monkeypatch.context() as patch:
             patch.setattr(source_module, "source_for_position", counted_source)
             assessed = first_history(db, LEARNER, "capture")
-        assert assessed["counts"]["unassisted_correct"] == 2
+        assert assessed["counts"]["unassisted_correct"] == 3
         assert assessed["counts"]["incomplete"] == 1 and len(checks) == 1
-        assert {entry["rating"] for entry in assessed["items"]} == {None, 1200}
+        assert {entry["rating"] for entry in assessed["items"]} == {None, 1200, 1400}
         from chess_coach.capture_history_first import HistoryDeadline
 
         checks = []
@@ -1522,7 +1691,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
             secret=app.secret_key,
         )
         across_sources = first_history(db, LEARNER, "capture")
-        assert across_sources["counts"]["unassisted_correct"] == 2
+        assert across_sources["counts"]["unassisted_correct"] == 3
         assert across_sources["counts"]["incomplete"] == 2
         # Two synthetic nonoverlapping, matched cohorts exercise the comparison
         # gates without creating or publishing any learner attempts.
@@ -1566,86 +1735,6 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         with pytest.raises(ValueError):
             _ordered([dated[0], dated[1], dated[1]], dated[2]["started_at"])
 
-        # Use the two real verified results while isolating this control from
-        # unrelated later incomplete fixture attempts.
-        import chess_coach.capture_difficulty_history as difficulty_history
-        import chess_coach.capture_finder as difficulty_finder
-        import chess_coach.capture_finder_search as difficulty_search
-        from chess_coach.capture_difficulty import eligible
-
-        pair = [
-            dict(
-                db.connection.execute(
-                    "SELECT * FROM unified_sessions WHERE attempt_id=?", (value,)
-                ).fetchone()
-            )
-            for value in (second_attempt, attempt)
-        ]
-        with monkeypatch.context() as patch:
-            patch.setattr(difficulty_history, "_rows", lambda *_: pair)
-            difficulty = eligible(db, LEARNER, "capture", 1, second_attempt)
-            assert difficulty["band"] == 1400
-            with pytest.raises(ValueError):
-                eligible(db, LEARNER, "capture", 1, attempt)
-
-            import chess_coach.related_capture_legacy as legacy_capture
-            from chess_coach.capture_certificate_buckets import _load, publish
-            from chess_coach.capture_certificate_paths import paths
-            from chess_coach.curriculum_capture_file_guard import current
-
-            bucket_path = paths(db, root, LEARNER, evidence)[0]
-            bucket = _load(db, LEARNER, bucket_path, evidence)
-            assert bucket is not None and str(evidence) in bucket["certificates"]
-            files_before = current(db, LEARNER, root)
-            learning_before = learning_rows()
-            original_select = legacy_capture.select
-            published = []
-
-            def publish_during_selection(*args, **kwargs):
-                selected = original_select(*args, **kwargs)
-                publish(db, root, LEARNER, evidence, bucket["certificates"])
-                published.append(True)
-                return selected
-
-            with monkeypatch.context() as race:
-                race.setattr(legacy_capture, "select", publish_during_selection)
-                with pytest.raises(ValueError, match="capture source changed"):
-                    legacy_capture.choose(db, LEARNER, 1, "capture", None, difficulty)
-            assert published and current(db, LEARNER, root) != files_before
-            assert learning_rows() == learning_before
-            patch.setattr(
-                difficulty_finder,
-                "_groups",
-                lambda *_: ({("capture", "v"): [{"position_id": 1}]}, False, 1),
-            )
-            patch.setattr(
-                difficulty_search, "witnesses", lambda *_args, **_kwargs: iter([{"position_id": 1}])
-            )
-            harder = client.get(
-                f"/plan/captures/find-verified?position=1&attempt={second_attempt}&harder=1",
-                base_url="https://coach.invalid",
-                headers=headers,
-            )
-            assert b"1400" in harder.data and b"Check my capture choice" in harder.data
-            started = client.post(
-                "/decisions/1/related-captures/start",
-                base_url="https://coach.invalid",
-                headers=headers | {"Origin": "https://coach.invalid"},
-                data={
-                    "csrf": token(harder, "csrf"),
-                    "reference": token(harder, "reference"),
-                    "assessment": "1",
-                    "harder_attempt": second_attempt,
-                    "finder": token(harder, "finder"),
-                },
-            )
-            assert started.status_code == 303
-            binding = json.loads(
-                db.connection.execute(
-                    "SELECT provenance_json FROM unified_sessions ORDER BY rowid DESC LIMIT 1"
-                ).fetchone()[0]
-            )["related_capture"]
-            assert binding["progression"]["prior_attempts"] == [attempt, second_attempt]
         synthetic = []
         for index in range(20):
             position_board = chess.Board.empty()
@@ -2231,6 +2320,66 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
             "SELECT source_type,source_version,objective FROM unified_sessions ORDER BY rowid DESC LIMIT 1"
         ).fetchone()
         assert tuple(row) == ("public", "fixture-public-c", "legal_line")
+
+        # A real third corpus cannot displace a protected complete window when
+        # the combined retained/building entry budget is exhausted.
+        import chess_coach.capture_corpus_capacity as corpus_capacity
+
+        saved = load_pool(db, root)
+        assert saved is not None and saved.get("complete")
+        staged = (saved.get("prior") or {}).get("entries", {})
+        cap = len(saved["entries"].keys() | staged.keys())
+        active = saved["complete"]
+        active_keys = set(active["keys"] + active["public"]["keys"])
+        needed = cap - len(active_keys) + 1
+        assert 0 < needed <= 32
+        cursor = db.connection.execute(
+            "INSERT INTO puzzle_corpora(version,source,checksum,state) "
+            "VALUES('capacity-fixture','fixture','capacity-checksum','staging')"
+        )
+        capacity_corpus = cursor.lastrowid
+        for index in range(needed):
+            key = f"capacity-{index:02}"
+            inserted = db.connection.execute(
+                """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,
+                rating_deviation,opening,themes_json,objective)
+                SELECT ?,?,fen,source,solution,rating,rating_deviation,opening,themes_json,objective
+                FROM puzzles WHERE corpus_id=? AND puzzle_id='private-fixture-a'""",
+                (key, capacity_corpus, corpus),
+            )
+            assert inserted.rowcount == 1
+            db.connection.execute(
+                "INSERT INTO puzzle_themes VALUES(?,?,'hangingPiece',1200)",
+                (capacity_corpus, key),
+            )
+        db.connection.execute(
+            "UPDATE puzzle_corpora SET state='ready' WHERE id=?", (capacity_corpus,)
+        )
+        db.connection.commit()
+        before = learning_rows()
+        with monkeypatch.context() as capacity_test:
+            capacity_test.setattr(corpus_capacity, "LIMIT", cap)
+            for _ in range(80):
+                previous = load_pool(db, root)
+                assert previous is not None and previous.get("complete")
+                previous_active = previous["complete"]
+                protected = set(previous_active["keys"] + previous_active["public"]["keys"])
+                with pipeline_lock(db.path):
+                    certificate_worker.run(db, LEARNER, root, time.monotonic() + 5)
+                actual_pool = load_pool(db, root)
+                assert actual_pool is not None and actual_pool.get("complete")
+                actual_staged = (actual_pool.get("prior") or {}).get("entries", {})
+                assert len(actual_pool["entries"].keys() | actual_staged.keys()) <= cap
+                assert all(
+                    actual_pool["entries"].get(key) == previous["entries"].get(key)
+                    for key in protected
+                )
+                pending = actual_pool.get("pending_scope") or []
+                if pending and pending[0] == "capacity-fixture":
+                    break
+            else:
+                pytest.fail("the real worker did not report the capacity-limited window")
+        assert learning_rows() == before
 
     review_evidence(db, evidence, decision="reject", actor="reviewer")
     with pytest.raises(ValueError):
