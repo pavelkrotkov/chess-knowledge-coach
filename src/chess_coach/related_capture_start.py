@@ -1,56 +1,46 @@
 """Atomically admit a source-bound capture rehearsal or assessment."""
 
-from .capture_difficulty_binding import difficulty_scope, options, progression
 from .curriculum_capture_file_guard import current
-from .fact_fingerprint import canonical, digest
-from .related_capture import VERSION, _selection
-from .related_mate_search_token import fingerprint
+from .related_capture import VERSION, _selection, bounds
+from .related_capture_prepared_assessment import attach
+from .related_capture_view import _reference as _reference
 from .related_session_start import start_selected
 from .related_transfer_admission import admit
 from .unified_source_current import require_current
 
 
-def _reference(selected, reference, secret):
-    scope = selected[4]
-    for item in selected[3]:
-        identity = [scope, item["type"], item["version"], item["key"]]
-        if fingerprint(secret, "capture-reference", identity) == reference:
-            return digest(canonical(identity))
-    raise ValueError("capture selection changed")
-
-
-def _attach_assessment(db, source_type, version, key, binding, selected, secret):
-    if secret is None or source_type != "corpus":
-        raise ValueError("capture assessment unavailable")
-    from .related_capture_assessment import certificate
-    from .related_capture_assessment_context import capture
-
-    binding["assessment"] = certificate(db, version, key)
-    try:
-        binding["assessment"]["context"] = capture(db, version, key, *selected[:3])
-    except (ValueError, TypeError, KeyError):
-        binding["assessment"]["context"] = None
-
-
 def _admit(
-    db, subject, position, corpus_version, reference, secret, assessment, *, difficulty=None
+    db,
+    subject,
+    position,
+    corpus_version,
+    reference,
+    secret,
+    assessment,
+    *,
+    finder=False,
+    difficulty=None,
 ):
+    if finder:
+        from .related_capture_legacy import admit as finder_admit
+
+        return finder_admit(
+            db, subject, position, corpus_version, reference, secret, assessment, difficulty
+        )
     if secret is None and not assessment:
         from .related_capture_admission import admit as legacy_admit
 
         return legacy_admit(db, subject, position, corpus_version, reference)
-    selected = _selection(db, subject, position, corpus_version, **options(difficulty))
+    selected = _selection(db, subject, position, corpus_version)
     if selected is None:
         raise ValueError("capture selection unavailable")
-    selected = difficulty_scope(selected, difficulty)
     if secret is not None:
         reference = _reference(selected, reference, secret)
     source_type, version, key, binding, lines = admit(
         selected, reference, VERSION, "material_capture"
     )
     if assessment:
-        _attach_assessment(db, source_type, version, key, binding, selected, secret)
-    progression(binding, version, difficulty)
+        attach(db, source_type, version, key, binding, selected, secret)
     return source_type, version, key, binding, lines
 
 
@@ -65,12 +55,10 @@ def start_related(
     assessment=False,
     secret=None,
     harder_attempt=None,
+    finder=False,
 ):
     if db.connection.in_transaction:
         raise RuntimeError("cannot start during an existing transaction")
-    files = current(db, subject, db.capture_root)
-    version = db.connection.execute("PRAGMA data_version").fetchone()[0]
-    # Selection and certification stay outside the writer transaction.
     difficulty = None
     if harder_attempt is not None:
         from .capture_difficulty import eligible
@@ -78,9 +66,30 @@ def start_related(
         if not assessment or secret is None:
             raise ValueError("harder capture assessment unavailable")
         difficulty = eligible(db, subject, corpus_version, position, harder_attempt)
-    options = {"difficulty": difficulty} if difficulty else {}
+        finder = True
+    files = current(db, subject, db.capture_root)
+    version = db.connection.execute("PRAGMA data_version").fetchone()[0]
+    from .related_capture_pool import observation
+    from .related_capture_source import baseline, source_for_position
+
+    prepared = None
+    if not finder:
+        source = source_for_position(db, subject, position)
+        lower, upper = bounds(baseline(db, source))
+        prepared = observation(db, db.capture_root, corpus_version, lower, upper)
+    # Selection and certification stay outside the writer transaction.
     selected = (
-        _admit(db, subject, position, corpus_version, reference, secret, True, **options)
+        _admit(
+            db,
+            subject,
+            position,
+            corpus_version,
+            reference,
+            secret,
+            True,
+            finder=finder,
+            difficulty=difficulty,
+        )
         if assessment
         else None
     )
@@ -91,12 +100,26 @@ def start_related(
             if db.connection.execute("PRAGMA data_version").fetchone()[0] != version:
                 raise ValueError("capture selection changed")
             return selected
-        return _admit(db, subject, position, corpus_version, reference, secret, False)
+        return _admit(
+            db,
+            subject,
+            position,
+            corpus_version,
+            reference,
+            secret,
+            False,
+            finder=finder,
+            difficulty=difficulty,
+        )
 
     def currentness(database, row):
         require_current(database, row)
         if files != current(database, subject, database.capture_root):
             raise ValueError("capture source changed")
+        if not finder and prepared != observation(
+            database, database.capture_root, corpus_version, lower, upper
+        ):
+            raise ValueError("capture preparation changed")
 
     return start_selected(
         db,

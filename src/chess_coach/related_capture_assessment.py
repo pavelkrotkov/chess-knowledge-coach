@@ -37,7 +37,7 @@ def setup(db, version, key):
     return board, moves, fingerprint
 
 
-def certificate(db, version, key):
+def certificate(db, version, key, *, check=None):
     board, moves, fingerprint = setup(db, version, key)
     move = board.parse_uci(moves[1])
     result = judge(
@@ -50,7 +50,10 @@ def certificate(db, version, key):
         time.monotonic(),
         SECONDS,
         {},
+        check=check,
     )
+    if check is not None and result.get("reason") == "timeout":
+        raise TimeoutError("capture assessment deadline reached")
     if result["status"] != "correct":
         raise ValueError("capture assessment proof unavailable")
     return {

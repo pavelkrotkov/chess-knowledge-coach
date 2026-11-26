@@ -2,116 +2,60 @@
 
 from .curriculum_capture_file_guard import current
 from .fact_fingerprint import canonical, digest
-from .related_capture_cursor import _cursor, _offset, bind_scope
+from .related_capture_context import bounds as bounds
+from .related_capture_cursor import PAGE as PAGE
+from .related_capture_cursor import bind_scope
 from .related_capture_features import certified_features
-from .related_capture_source import source_for_position
+from .related_capture_pool import complete as prepared_window
+from .related_capture_preview import preview as preview
+from .related_capture_ready import score as prepared_score
+from .related_capture_source import baseline, supported_source
+from .related_capture_view import _assessment_options as _assessment_options
+from .related_capture_view import _present as _present
+from .related_capture_view import present as present
+from .related_capture_view import unavailable
 from .related_transfer_select import select
 
 VERSION = "capture-transfer-v1"
-PAGE = 4
 
 
 def _selection(
-    db, subject, position, corpus_version, *, familiar_data=None, rating_bounds=None, score=None
+    db,
+    subject,
+    position,
+    corpus_version,
+    *,
+    familiar_data=None,
+    rating_bounds=None,
+    score=None,
+    finder=False,
 ):
     files = current(db, subject, db.capture_root)
-    source = source_for_position(db, subject, position)
-    if certified_features(source["prompt_fen"], source["lines"][0].split()) is None:
-        raise ValueError("unsupported capture source")
+    source = supported_source(db, subject, position)
+    if finder:
+        from .related_capture_legacy import selection as finder_selection
+
+        return finder_selection(
+            db, subject, source, corpus_version, VERSION, files, familiar_data, rating_bounds, score
+        )
+    if score is not None or rating_bounds is not None:
+        return None
     options = {"feature": certified_features}
-    if rating_bounds is not None:
-        options["rating_bounds"] = rating_bounds
-    if score is not None:
-        options["score"] = score
+    lower, upper = bounds(baseline(db, source))
+    prepared = prepared_window(db, db.capture_root, corpus_version, lower, upper)
+    if prepared is None:
+        return None
+    public_pending = [False]
+    options["score"] = prepared_score(prepared, public_pending)
     selected = select(
         db, subject, source, corpus_version, VERSION, familiar_data=familiar_data, **options
     )
-    return bind_scope(db, subject, selected, files)
-
-
-def preview(db, subject, position, corpus_version, cursor=None, *, secret=None):
-    selection = _selection(db, subject, position, corpus_version)
-    result = present(selection, cursor, secret=secret)
-    # Only the browser receives opaque references and assessment controls.
-    if selection is not None and secret is not None:
-        _assessment_options(db, result["items"], selection[3], cursor, result["scope"], subject)
-    return result
-
-
-def _assessment_options(db, visible, ordered, cursor, scope, subject):
-    from .related_capture_assessment import setup
-    from .tactical_exposure_admission import eligible
-
-    offset = _offset(cursor, scope)
-    for item, source in zip(visible, ordered[offset : offset + PAGE], strict=True):
-        if source["type"] != "corpus":
-            continue
-        # Eligibility is cheap; admission separately runs the capture proof.
-        try:
-            setup(db, source["version"], source["key"])
-            if eligible(db, subject, source):
-                item["assessment_available"] = True
-            else:
-                item["assessment_reason"] = "provided or exposure coverage unavailable"
-        except (ValueError, TypeError, KeyError, IndexError):
-            continue
-
-
-def present(selection, cursor, *, secret=None):
-    if selection is None:
-        return {"status": "corpus unavailable", "items": [], "next_cursor": None}
-    source, rating, corpus, ordered, scope, diagnostics = selection
-    # A cursor may expose its tag, so reference MACs use the hidden scope itself.
-    if secret is not None:
-        from .related_mate_search_token import fingerprint
-
-        cursor_scope = fingerprint(secret, "capture-scope", scope)
-    else:
-        cursor_scope = scope
-    offset = _offset(cursor, cursor_scope)
-    selected = ordered[offset : offset + PAGE]
-    items = [_present(item, scope, secret) for item in selected]
-    return {
-        "status": "available"
-        if ordered
-        else "insufficient compatible unfamiliar examples in the bounded scan",
-        "items": items,
-        "next_cursor": _cursor(offset + PAGE, cursor_scope)
-        if offset + PAGE < len(ordered)
-        else None,
-        "review_status": source["provenance"]["review_status"],
-        "baseline": rating,
-        "bounds": [corpus["lower"], corpus["upper"]],
-        "scanned": corpus["scanned"],
-        "public_scanned": corpus["public"]["scanned"],
-        "excluded": diagnostics,
-        "selection": corpus["selection"],
-        "scope": cursor_scope,
-    }
-
-
-def _present(item, scope, secret=None):
-    result = {
-        key: value
-        for key, value in item.items()
-        if key
-        not in {
-            "order",
-            "prompt_key",
-            "key",
-            "game",
-            "diversity",
-            "round",
-            "matching_lines",
-            "matching_line_indices",
-            "source_lines_hash",
-        }
-    }
-    identity = [scope, item["type"], item["version"], item["key"]]
-    if secret is None:
-        result["reference"] = digest(canonical(identity))
-    else:
-        from .related_mate_search_token import fingerprint
-
-        result["reference"] = fingerprint(secret, "capture-reference", identity)
-    return result
+    if public_pending[0]:
+        return None
+    if prepared_window(db, db.capture_root, corpus_version, lower, upper) != prepared:
+        raise ValueError("capture preparation changed")
+    fingerprint = digest(canonical(prepared))
+    if selected is not None:
+        selected[2]["capture_preparation"] = fingerprint
+        selected[5]["qualification_unavailable"] = unavailable(prepared)
+    return bind_scope(db, subject, selected, files, fingerprint)

@@ -573,8 +573,102 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         "INSERT INTO puzzle_themes VALUES(?,?,'hangingPiece',1200)",
         (corpus, "private-fixture-no-reset"),
     )
+    if mode == "correct":
+        unresolved_board = chess.Board("4k3/3p4/8/4P3/3q4/8/8/3RK3 b - - 0 1")
+        db.connection.execute(
+            """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,
+            rating_deviation,themes_json,objective)
+            VALUES('unresolved-fixture',?,?,'https://example.invalid',
+            'd7d5 d1d4',1200,80,'["hangingPiece"]','unknown')""",
+            (corpus, unresolved_board.fen()),
+        )
+        db.connection.execute(
+            "INSERT INTO puzzle_themes VALUES(?,'unresolved-fixture','hangingPiece',1200)",
+            (corpus,),
+        )
     db.connection.execute("UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus,))
     db.connection.commit()
+    # The real worker builds this finite window over several bounded turns.
+    import time
+
+    import chess_coach.capture_certificate_refresh as certificate_refresh
+    import chess_coach.capture_certificate_worker as certificate_worker
+    import chess_coach.related_capture_assessment as candidate_assessment
+    import chess_coach.related_capture_features as candidate_features
+    from chess_coach.pipeline_lock import pipeline_lock
+    from chess_coach.related_capture import preview as prepared_preview
+    from chess_coach.related_capture_context import baseline, bounds
+    from chess_coach.related_capture_pool import complete as prepared_window
+    from chess_coach.related_capture_pool import load as load_pool
+    from chess_coach.related_capture_source import source_for_position
+
+    assert prepared_preview(db, LEARNER, 1, "capture")["status"] == "capture preparation pending"
+    lower, upper = bounds(baseline(db, source_for_position(db, LEARNER, 1)))
+    original_visit = certificate_worker._visit
+    original_owned_proof = certificate_refresh.prove
+    original_gain = candidate_features.capture_gain
+    original_judge = candidate_assessment.judge
+    with monkeypatch.context() as accounting:
+        visits, proofs, interruptions, pending_passes = [], [], [], []
+
+        def visit(*args):
+            try:
+                result = original_visit(*args)
+            except TimeoutError:
+                visits.append(1)
+                raise
+            visits.extend([1] * int(result[0]))
+            return result
+
+        def owned_proof(*args, **kwargs):
+            proofs.append("owned")
+            return original_owned_proof(*args, **kwargs)
+
+        def candidate_gain(*args, **kwargs):
+            proofs.append("feature")
+            if mode == "correct" and not interruptions:
+                interruptions.append(True)
+                raise TimeoutError("synthetic candidate deadline")
+            return original_gain(*args, **kwargs)
+
+        def candidate_judge(*args, **kwargs):
+            proofs.append("assessment")
+            return original_judge(*args, **kwargs)
+
+        accounting.setattr(certificate_worker, "_visit", visit)
+        accounting.setattr(certificate_refresh, "prove", owned_proof)
+        accounting.setattr(candidate_features, "capture_gain", candidate_gain)
+        accounting.setattr(candidate_assessment, "judge", candidate_judge)
+        for _ in range(80):
+            visits.clear()
+            proofs.clear()
+            with pipeline_lock(db.path):
+                certificate_worker.run(db, LEARNER, root, time.monotonic() + 5)
+            assert len(visits) <= certificate_worker.SCAN
+            assert len(proofs) <= certificate_worker.PROOFS
+            pool = load_pool(db, root)
+            if pool and pool.get("pending_scope") == ["capture", "checksum", lower, upper]:
+                pending_passes.append(True)
+            if prepared_window(db, root, "capture", lower, upper) is not None:
+                break
+        else:
+            pytest.fail("the finite capture window did not finish preparation")
+
+    if mode == "correct":
+        assert interruptions and pending_passes
+        window = prepared_window(db, root, "capture", lower, upper)
+        assert window is not None
+        unavailable = [
+            entry
+            for entry in window["entries"].values()
+            if entry.get("reason") == "exchange_unresolved"
+        ]
+        assert len(unavailable) == 1 and unavailable[0].get("feature") is None
+        assert (
+            prepared_preview(db, LEARNER, 1, "capture")["excluded"]["qualification_unavailable"]
+            == 1
+        )
+
     if mode == "correct":
         from chess_coach.recurrence_snapshot import read_snapshot
         from chess_coach.tactical_course_related import unfamiliar
@@ -656,11 +750,59 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
     )
     client = app.test_client()
     headers = {"Tailscale-User-Login": "fixture"}
-    page = client.get(
-        "/decisions/1/related-captures", base_url="https://coach.invalid", headers=headers
+    import sqlite3
+
+    from tests.capture_certificate_fixture import cli as fresh_cli
+
+    tables = (
+        "unified_sessions",
+        "unified_session_events",
+        "objective_requests",
+        "objective_results",
+        "unified_training_enrollments",
+        "training_items",
+        "mastery_events",
     )
-    assert page.status_code == 200 and b"Check my capture choice" in page.data
-    assert b"private-fixture" not in page.data and b"b7b6 d1d4" not in page.data
+    with sqlite3.connect(path) as reader:
+        before_gets = tuple(
+            reader.execute(f"SELECT count(*) FROM {table}").fetchone()[0] for table in tables
+        )
+
+    def forbidden_proof(*_args, **_kwargs):
+        raise AssertionError("candidate admission proof ran in a consumer")
+
+    with monkeypatch.context() as guard:
+        guard.setattr(candidate_features, "capture_gain", forbidden_proof)
+        guard.setattr(candidate_assessment, "judge", forbidden_proof)
+        page = client.get(
+            "/decisions/1/related-captures", base_url="https://coach.invalid", headers=headers
+        )
+        assert page.status_code == 200 and b"Check my capture choice" in page.data
+        assert b"private-fixture" not in page.data and b"b7b6 d1d4" not in page.data
+        if mode == "correct":
+            assert b"outside the current capture proof coverage" in page.data
+            fresh = Database(path, capture_root=root)
+            assert prepared_preview(fresh, LEARNER, 1, "capture")["items"]
+            fresh.close()
+            command = fresh_cli(
+                path,
+                "related-captures",
+                "--subject",
+                LEARNER,
+                "--position",
+                "1",
+                "--corpus",
+                "capture",
+                "--project-root",
+                str(root),
+                proof_free_candidates=True,
+            )
+            assert json.loads(command.stdout)["items"]
+    with sqlite3.connect(path) as reader:
+        assert before_gets == tuple(
+            reader.execute(f"SELECT count(*) FROM {table}").fetchone()[0] for table in tables
+        )
+
     sections = re.findall(r"<section>.*?</section>", page.get_data(as_text=True), re.DOTALL)
     assessment_form = next(
         section
@@ -671,12 +813,60 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
     assert match
     reference = match.group(1)
     if mode == "correct":
+        from copy import deepcopy
+
+        from chess_coach.related_capture_pool import load as load_pool
+        from chess_coach.related_capture_pool import location as pool_location
+        from chess_coach.short_mate_trend_store import write as write_pool
+
+        pool_path = pool_location(db, root)
+        assert pool_path is not None
+        pool = load_pool(db, root)
+        assert pool is not None and pool["complete"] is not None
+        old_pool = deepcopy(pool)
+        pool["prior"] = {
+            "building": {
+                "scope": ["other-ready-version", "checksum", lower, upper],
+                "band": 0,
+                "count": 0,
+                "last": None,
+                "keys": [],
+                "limited": False,
+                "pending": [],
+            },
+            "entries": {},
+        }
+        write_pool(pool_path, pool)
+        with monkeypatch.context() as guard:
+            guard.setattr(candidate_features, "capture_gain", forbidden_proof)
+            guard.setattr(candidate_assessment, "judge", forbidden_proof)
+            unchanged = client.get(
+                "/decisions/1/related-captures", base_url="https://coach.invalid", headers=headers
+            )
+        assert unchanged.status_code == 200 and reference.encode() in unchanged.data
+        pool = deepcopy(old_pool)
+        pool["complete"]["limited"] = not pool["complete"]["limited"]
+        write_pool(pool_path, pool)
+        changed = client.post(
+            "/decisions/1/related-captures/start",
+            base_url="https://coach.invalid",
+            headers=headers | {"Origin": "https://coach.invalid"},
+            data={"csrf": token(page, "csrf"), "reference": reference, "assessment": "1"},
+        )
+        assert changed.status_code == 400
+        with sqlite3.connect(path) as reader:
+            assert before_gets == tuple(
+                reader.execute(f"SELECT count(*) FROM {table}").fetchone()[0] for table in tables
+            )
+        write_pool(pool_path, old_pool)
+
+    if mode == "correct":
         import base64
         import sqlite3
         from html import unescape
         from urllib.parse import parse_qs, urlparse
 
-        from chess_coach import related_capture_assessment
+        from chess_coach import related_capture_prepared_assessment
         from chess_coach.fact_fingerprint import canonical, digest
 
         link = re.search(r'href="([^"]*cursor=[^"]+)"', page.get_data(as_text=True))
@@ -698,16 +888,16 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
             reference != digest(canonical([tag, "corpus", "capture", "private-fixture-" + file]))
             for file in ("a", "b", "c", "f", "g")
         )
-        original = related_capture_assessment.certificate
+        original = related_capture_prepared_assessment.assessment
 
-        def racing(*args):
-            result = original(*args)
+        def racing(*args, **kwargs):
+            result = original(*args, **kwargs)
             with sqlite3.connect(path) as other:
                 other.execute("UPDATE games SET event=event WHERE id=1")
             return result
 
         with monkeypatch.context() as patch:
-            patch.setattr(related_capture_assessment, "certificate", racing)
+            patch.setattr(related_capture_prepared_assessment, "assessment", racing)
             changed = client.post(
                 "/decisions/1/related-captures/start",
                 base_url="https://coach.invalid",
@@ -719,9 +909,9 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
             assert check.execute("SELECT count(*) FROM unified_sessions").fetchone()[0] == 0
         with monkeypatch.context() as patch:
             patch.setattr(
-                related_capture_assessment,
-                "certificate",
-                lambda *args: (_ for _ in ()).throw(ValueError("unresolved")),
+                related_capture_prepared_assessment,
+                "assessment",
+                lambda *args, **kwargs: (_ for _ in ()).throw(ValueError("unresolved")),
             )
             unavailable = client.post(
                 "/decisions/1/related-captures/start",
@@ -731,16 +921,19 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
             )
             assert unavailable.status_code == 400
             assert b"capture could not be verified" in unavailable.data
-    post = client.post(
-        "/decisions/1/related-captures/start",
-        base_url="https://coach.invalid",
-        headers=headers | {"Origin": "https://coach.invalid"},
-        data={
-            "csrf": token(page, "csrf"),
-            "reference": reference,
-            "assessment": "1",
-        },
-    )
+    with monkeypatch.context() as guard:
+        guard.setattr(candidate_features, "capture_gain", forbidden_proof)
+        guard.setattr(candidate_assessment, "judge", forbidden_proof)
+        post = client.post(
+            "/decisions/1/related-captures/start",
+            base_url="https://coach.invalid",
+            headers=headers | {"Origin": "https://coach.invalid"},
+            data={
+                "csrf": token(page, "csrf"),
+                "reference": reference,
+                "assessment": "1",
+            },
+        )
     assert post.status_code == 303
     shown = client.get(post.headers["Location"], base_url="https://coach.invalid", headers=headers)
     assert b"Capture the piece on d4" in shown.data and b"It is your turn as white" in shown.data
@@ -951,7 +1144,9 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         reference_match = re.search(r'name="reference" value="([^"]+)"', form)
         assert reference_match
         matched_reference = reference_match.group(1)
-        admitted_again = _admit(db, LEARNER, 1, "capture", matched_reference, app.secret_key, True)
+        admitted_again = _admit(
+            db, LEARNER, 1, "capture", matched_reference, app.secret_key, True, finder=True
+        )
         next_context = json.loads(canonical(admitted_again[3]["assessment"]["context"]))
         assert signature(next_context, "capture") == signature(context, "capture")
 
@@ -963,6 +1158,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
                 "csrf": token(matched_page, "csrf"),
                 "reference": matched_reference,
                 "assessment": "1",
+                "finder": token(matched_page, "finder"),
             },
         )
         assert second_post.status_code == 303
@@ -1297,6 +1493,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
                     "reference": token(harder, "reference"),
                     "assessment": "1",
                     "harder_attempt": second_attempt,
+                    "finder": token(harder, "finder"),
                 },
             )
             assert started.status_code == 303
@@ -1575,6 +1772,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
                 "csrf": token(found, "csrf"),
                 "reference": proved_reference.group(1),
                 "assessment": "1",
+                "finder": token(found, "finder"),
             },
         )
         assert accepted.status_code == 303
@@ -1586,6 +1784,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
                 "csrf": token(found, "csrf"),
                 "reference": proved_reference.group(1),
                 "assessment": "1",
+                "finder": token(found, "finder"),
             },
         )
         assert stale.status_code == 400
@@ -2620,6 +2819,9 @@ def _capture_practice_priority_workflow(tmp_path, monkeypatch):
     for evidence_id in (first, second):
         observed = observe_certificate(db, root, LEARNER, evidence_id)
         assert observed and observed[2]
+    from tests.capture_certificate_fixture import prepare_corpus
+
+    prepare_corpus(db, LEARNER, root, "priority", position)
     options, status, _, _ = candidates(db, LEARNER, "priority", lambda: None)
     assert status == "available" and len(options) == 2
     assert options[0][0]["prompt_key"] != options[1][0]["prompt_key"]
@@ -3344,6 +3546,9 @@ def _retained_capture_workflow(tmp_path, monkeypatch):
         )
     db.connection.execute("UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus,))
     db.connection.commit()
+    from tests.capture_certificate_fixture import prepare_corpus
+
+    prepare_corpus(db, LEARNER, root, "capture", related_position)
     secret = b"retained-related-fixture"
 
     # The source remains byte-identical while a genuine neighboring certificate
@@ -3734,7 +3939,7 @@ def _retained_capture_workflow(tmp_path, monkeypatch):
         assert related_page.status_code == 200 and b"Check my capture choice" in related_page.data
         assert learning_fingerprint() == before_http
         assert db.connection.total_changes == before_read
-        assert candidate_checks
+        assert not candidate_checks
     cli_result = fresh_cli(
         path,
         "related-captures",
@@ -3747,6 +3952,7 @@ def _retained_capture_workflow(tmp_path, monkeypatch):
         "--project-root",
         str(root),
         source_guard=(owned_prompt, owned_move),
+        proof_free_candidates=True,
     )
     assert json.loads(cli_result.stdout)["status"] == "available"
     for name, row in related_rows.items():

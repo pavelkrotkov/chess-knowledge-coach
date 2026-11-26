@@ -30,23 +30,29 @@ def certified_features(prompt, line):
     return _features(*shape) if shape else None
 
 
-def capture_features(prompt, line):
-    """Return a supported immediate capture shape, or None for unsupported lines."""
-    shape = _shape(prompt, line)
-    if shape is None:
-        return None
+def inspect_shape(shape, *, check=None):
     board, move, mover, target = shape
     try:
-        _, reason, _ = capture_gain(board, move, target)
-        return None if reason else _features(board, move, mover, target)
+        _, reason, _ = capture_gain(board, move, target, check=check)
+        return (None if reason else _features(board, move, mover, target)), reason
     except (ValueError, TypeError, IndexError):
-        return None
+        return None, "unavailable"
 
 
-def corpus_features(fen, solution):
+def proved_features(shape, *, check=None):
+    return inspect_shape(shape, check=check)[0]
+
+
+def capture_features(prompt, line, *, check=None):
+    """Return a supported immediate capture shape, or None for unsupported lines."""
+    shape = _shape(prompt, line)
+    return proved_features(shape, check=check) if shape is not None else None
+
+
+def corpus_features(fen, solution, *, check=None):
     """Replay the setup and full line before measuring the learner prompt."""
     try:
         prompt = validate_line(fen, solution)
-        return prompt, capture_features(prompt, solution.split()[1:])
+        return prompt, capture_features(prompt, solution.split()[1:], check=check)
     except (ValueError, TypeError):
         return None, None

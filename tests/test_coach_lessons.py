@@ -1941,13 +1941,16 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
     )
     db.connection.execute("UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus_id,))
     db.connection.commit()
+    from tests.capture_certificate_fixture import prepare_corpus
+
+    position_id = json.loads(first_content)["preview"]["chapters"][0]["source"]["position_id"]
+    prepare_corpus(db, LEARNER, project, "test", position_id)
     related_preview_path = planning / "related-preview.json"
     related_output = planning / "related-export.json"
     prepare(project, related_preview_path)
     related_preview = json.loads(related_preview_path.read_bytes())
     from chess_coach.related_capture import _selection as capture_selection
 
-    position_id = json.loads(first_content)["preview"]["chapters"][0]["source"]["position_id"]
     old_selection = capture_selection(db, LEARNER, position_id, "test")
     new_selection = capture_selection(
         db, LEARNER, position_id, "test", familiar_data=paged_familiarity(db, LEARNER, Budget(db))

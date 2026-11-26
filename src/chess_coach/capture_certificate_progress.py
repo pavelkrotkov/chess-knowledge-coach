@@ -20,12 +20,14 @@ def checkpoint(db, subject, root):
     path = base.with_name(base.name + ".progress.json")
     old = read(path, binding(db, subject), validator=_valid) or {}
     lane = old.get("lane", 0)
+    corpus = old.get("corpus")
     return path, {
         "before": old.get("before", MAX_ID),
-        "lane": lane if type(lane) is int and 0 <= lane < 4 else 0,
+        "lane": lane if type(lane) is int and 0 <= lane < 5 else 0,
         "session": session_marker(old.get("session")),
         "related": session_marker(old.get("related")),
         "schedule": schedule_marker(old.get("schedule")),
+        "corpus": corpus if isinstance(corpus, dict) else {"before": MAX_ID, "context": None},
     }
 
 
