@@ -11,9 +11,23 @@ from .tactical_course_budget import PreviewUnavailable
 SECONDS = 3.0
 
 
-def eligible(db, subject, corpus, position, attempt, check=lambda: None):
+def checked(db, subject, corpus, position, attempt, check):
+    """Use the caller's existing deadline for the real eligibility checks."""
     if not isinstance(attempt, str) or not attempt or len(attempt) > 128 or not attempt.isascii():
         raise ValueError("harder capture unavailable")
+    recent, earlier = pair(db, subject, corpus, position, attempt, check)
+    expected, band, side = context(db, corpus, recent, earlier, check)
+    return {
+        "position": position,
+        "earlier": earlier["attempt_id"],
+        "attempt": attempt,
+        "expected": expected,
+        "band": band,
+        "side": side,
+    }
+
+
+def eligible(db, subject, corpus, position, attempt, check=lambda: None):
     try:
         budget = BrowserBudget(db)
         budget.expires = min(budget.expires, time.monotonic() + SECONDS)
@@ -23,15 +37,6 @@ def eligible(db, subject, corpus, position, attempt, check=lambda: None):
                 budget.check()
                 check()
 
-            recent, earlier = pair(db, subject, corpus, position, attempt, bounded)
-            expected, band, side = context(db, corpus, recent, earlier, bounded)
-            return {
-                "position": position,
-                "earlier": earlier["attempt_id"],
-                "attempt": attempt,
-                "expected": expected,
-                "band": band,
-                "side": side,
-            }
+            return checked(db, subject, corpus, position, attempt, bounded)
     except (sqlite3.Error, TypeError, KeyError, IndexError, AttributeError, PreviewUnavailable):
         raise ValueError("harder capture unavailable") from None
