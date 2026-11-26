@@ -1,8 +1,7 @@
 """Search current ranked sources for a proved unfamiliar capture."""
 
 from .capture_difficulty_binding import difficulty_scope
-from .capture_finder_dispatch import accept_options, decorate
-from .capture_finder_prepared import select as prove
+from .capture_finder_dispatch import decorate, operations
 from .capture_plan_sources import witnesses
 from .related_capture import present
 from .related_capture_legacy import choose
@@ -44,17 +43,14 @@ def search(
         if selection is None:
             continue
         available = filter_eligible(db, subject, selection[3], 16)
-        candidate, used = prove(
+        run, accept = operations(db, selection, expected, subject, familiar[1], corpus, difficulty)
+        candidate, used = run(
             db,
             (*selection[:3], available, *selection[4:]),
             deadline,
             min(PER_SOURCE_PROOFS, MAX_PROOFS - checked),
             expired,
-            subject,
-            familiar[1],
-            corpus,
-            difficulty,
-            **accept_options(db, selection, expected, subject, familiar[1], difficulty),
+            **accept,
         )
         checked += used
         if candidate is not None:

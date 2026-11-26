@@ -1862,30 +1862,36 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         form_action = re.search(r"action=\"([^\"]+)\"", proved_form)
         proved_reference = re.search(r"name=\"reference\" value=\"([^\"]+)\"", proved_form)
         assert form_action and proved_reference
-        accepted = client.post(
-            form_action.group(1),
-            base_url="https://coach.invalid",
-            headers=headers | {"Origin": "https://coach.invalid"},
-            data={
-                "csrf": token(found, "csrf"),
-                "reference": proved_reference.group(1),
-                "assessment": "1",
-                "finder": token(found, "finder"),
-            },
-        )
+        proved_form_data = {
+            "csrf": token(found, "csrf"),
+            "reference": proved_reference.group(1),
+            "assessment": "1",
+            "finder": token(found, "finder"),
+        }
+        with monkeypatch.context() as guard:
+            guard.setattr(candidate_features, "capture_gain", forbidden_proof)
+            guard.setattr(candidate_assessment, "judge", forbidden_proof)
+            guard.setattr(finder_proof, "certificate", forbidden_proof)
+            guard.setattr("chess_coach.related_capture_match._prompt", forbidden_proof)
+            accepted = client.post(
+                form_action.group(1),
+                base_url="https://coach.invalid",
+                headers=headers | {"Origin": "https://coach.invalid"},
+                data=proved_form_data,
+            )
         assert accepted.status_code == 303
-        stale = client.post(
-            form_action.group(1),
-            base_url="https://coach.invalid",
-            headers=headers | {"Origin": "https://coach.invalid"},
-            data={
-                "csrf": token(found, "csrf"),
-                "reference": proved_reference.group(1),
-                "assessment": "1",
-                "finder": token(found, "finder"),
-            },
-        )
-        assert stale.status_code == 400
+        before = learning_rows()
+        with monkeypatch.context() as guard:
+            guard.setattr(candidate_features, "capture_gain", forbidden_proof)
+            guard.setattr(candidate_assessment, "judge", forbidden_proof)
+            guard.setattr(finder_proof, "certificate", forbidden_proof)
+            stale = client.post(
+                form_action.group(1),
+                base_url="https://coach.invalid",
+                headers=headers | {"Origin": "https://coach.invalid"},
+                data=proved_form_data,
+            )
+        assert stale.status_code == 400 and learning_rows() == before
         assert (
             db.connection.execute("SELECT COUNT(*) FROM unified_sessions").fetchone()[0]
             == before_count + 1
@@ -2007,7 +2013,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
                 "choose",
                 lambda *_args, **_kwargs: (None, None, None, [fake_candidate], None, None),
             )
-            patch.setattr(finder_search, "prove", per_source)
+            patch.setattr(finder_search, "operations", lambda *_args: (per_source, {}))
             patch.setattr(finder_search, "present", lambda *_args, **_kwargs: {"items": [{}]})
             answer = finder_search.search(
                 db,
