@@ -2,7 +2,6 @@
 
 import chess
 
-from .fork_proof import fork_proof
 from .material_opportunity_source import load_source
 from .objective_contract import OWNED_HISTORY
 from .objective_fork_contract import GOAL, OBJECTIVE
@@ -11,9 +10,8 @@ from .objective_fork_contract import GOAL, OBJECTIVE
 def snapshot(db, board, evidence, fact, *, objective=OBJECTIVE, check=None):
     original = fact["payload"]["proof"]
     move = board.parse_uci(original["move"])
-    options = {"check": check} if check is not None else {}
-    if fork_proof(board, move, **options) != original:
-        raise ValueError("fork certificate changed")
+    if check is not None:
+        check()
     anchor = _anchor(board, original["targets"])
     reviews = evidence["reviews"]
     source = load_source(db, fact["detector_run_id"])

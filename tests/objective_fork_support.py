@@ -8,8 +8,11 @@ import chess.pgn
 
 from chess_coach.db import Database
 from chess_coach.fork_detector import process_decision
+from chess_coach.fork_proof import fork_proof
 from chess_coach.ingest import ingest_pgn
-from chess_coach.objective_fork_contract import VERSION
+from chess_coach.material_opportunity_source import load_source
+from chess_coach.objective_contract import OWNED_HISTORY
+from chess_coach.objective_fork_contract import GOAL, OBJECTIVE, VERSION
 from chess_coach.pipeline_config import PipelineConfig
 from chess_coach.pipeline_inputs import engine_identity, game_input
 from chess_coach.pipeline_work import run_analysis
@@ -116,3 +119,49 @@ def begin(db, evidence, attempt="fork", *, version=VERSION):
         version=version,
         key=str(evidence),
     )
+
+
+# Frozen constructor from d30d82e3dc0e161afb559a7dff175da9b6da7e1c;
+# original blob e92874e7ab5c7a8713f4521a8b8bfbc4fdc82014.
+def previous_snapshot(db, board, evidence, fact, *, objective=OBJECTIVE, check=None):
+    original = fact["payload"]["proof"]
+    move = board.parse_uci(original["move"])
+    options = {"check": check} if check is not None else {}
+    if fork_proof(board, move, **options) != original:
+        raise ValueError("fork certificate changed")
+    anchor = _previous_anchor(board, original["targets"])
+    reviews = evidence["reviews"]
+    source = load_source(db, fact["detector_run_id"])
+    return {
+        "prompt_fen": board.fen(),
+        "learner_color": "white" if board.turn else "black",
+        "objective": GOAL,
+        "lines": [move.uci()],
+        "provenance": {
+            "source_fingerprint": source["source_marker"],
+            "evidence_id": evidence["id"],
+            "position_id": evidence["position_id"],
+            "review_status": evidence["review_status"],
+            "review_event_id": reviews[-1]["id"] if reviews else None,
+            "mapping_run_id": evidence["mapping_run_id"],
+            "mapper_version": evidence["mapper_version"],
+            "fact_id": fact["id"],
+            "detector_run_id": fact["detector_run_id"],
+            "fork_certificate": original,
+            "objective_version": objective,
+            "history_mode": OWNED_HISTORY,
+            "fork_attacker": chess.square_name(move.from_square),
+            "fork_anchor": anchor,
+            "gain_threshold": 3,
+            "source_outcome": evidence["outcome"],
+        },
+    }
+
+
+def _previous_anchor(board, targets):
+    kings = [
+        square
+        for square in targets
+        if board.piece_at(chess.parse_square(square)).piece_type == chess.KING
+    ]
+    return kings[0] if kings else targets[0]

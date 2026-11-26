@@ -111,6 +111,29 @@ def test_fork_source_replay_review_and_eligibility(tmp_path, monkeypatch):
     assert inspect_evidence(db, evidence_id)["review_status"] == "accepted"
     assert inspect_evidence(db, evidence_id)["lifecycle_status"] == "superseded"
 
+    # Restoring the real prior source makes the writer reactivate its original
+    # input with a new identity; the accepted old review remains historical.
+    db.connection.execute(
+        "UPDATE decision_analysis_lines SET score_value=score_value-1 WHERE position_id=1 AND role=?",
+        ("best",),
+    )
+    db.connection.commit()
+    restored = process_decision(db, 1, LEARNER)
+    restored_id = restored["evidence_ids"][0]
+    assert restored_id not in (evidence_id, second["evidence_ids"][0])
+    import chess_coach.fork_observation as fork_observation
+    from chess_coach.material_opportunity_source import load_source
+
+    assert "reactivation" in load_source(db, restored["detector_run_id"])
+    with monkeypatch.context() as guard:
+        guard.setattr(
+            fork_observation,
+            "fork_proof",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("proof reran")),
+        )
+        assert inspect_evidence(db, restored_id)["fork_source_currentness"] == "current"
+    assert inspect_evidence(db, evidence_id)["review_status"] == "accepted"
+
 
 def test_automatic_worker_and_private_browser_show_source_fork(tmp_path, monkeypatch):
     path = tmp_path / "worker.sqlite"

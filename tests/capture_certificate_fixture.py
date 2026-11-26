@@ -42,7 +42,9 @@ def prepare_corpus(db, subject, root, version, position):
     raise AssertionError("the finite capture window did not finish preparation")
 
 
-def cli(path, *args, check=True, source_guard=None, proof_free_candidates=False):
+def cli(
+    path, *args, check=True, source_guard=None, proof_free_candidates=False, proof_free_forks=False
+):
     # Real fresh CLI: fail if an admission proof runs while reopening the source.
     guard = """
 import chess_coach.material_opportunity_current as material
@@ -72,6 +74,13 @@ import chess_coach.related_capture_match as related_match
 related_features.capture_gain = forbidden
 assessment.judge = forbidden
 related_match._prompt = forbidden
+"""
+    if proof_free_forks:
+        guard += """
+import chess_coach.fork_observation as fork_observation
+import chess_coach.objective_fork_judge as fork_judge
+fork_observation.fork_proof = forbidden
+fork_judge.fork_proof = forbidden
 """
     guard += """
 from chess_coach.cli import main
