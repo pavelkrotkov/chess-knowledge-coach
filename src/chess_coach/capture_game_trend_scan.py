@@ -8,6 +8,7 @@ from functools import partial
 from .capture_game_proof import classify
 from .capture_game_root_budget import fit
 from .capture_game_root_detail import inspect as inspect_roots
+from .capture_game_root_validate import discard_invalid
 from .capture_game_trend_paths import TURN_SECONDS, binding, location
 from .capture_game_trend_validate import matches_frontier, validate
 from .short_mate_trend_cohort import snapshot
@@ -21,7 +22,10 @@ CYCLE_SECONDS = 10.0
 
 
 def _advance(db, learner, games, state, deadline, *, classifier=None, turn_seconds=TURN_SECONDS):
-    fields = ("root_details",) if classifier is None else ()
+    fields = ()
+    if classifier is None:
+        fields = ("root_details",)
+        discard_invalid(state)
     select(db, learner, games, state, deadline, retain_fields=fields)
     consumed = {str(row[0]) for row in state["checked"]}
     state["retained"] = {
@@ -29,7 +33,6 @@ def _advance(db, learner, games, state, deadline, *, classifier=None, turn_secon
     }
     if state["selection_complete"]:
         if classifier is None:
-            fit(state)
             inspector = partial(
                 inspect_roots, state=state, classifier=classify, seconds=turn_seconds
             )
@@ -42,7 +45,6 @@ def _advance(db, learner, games, state, deadline, *, classifier=None, turn_secon
             deadline,
             inspector=inspector,
             turn_seconds=turn_seconds,
-            recheck_complete=classifier is None,
         )
 
 

@@ -1,5 +1,8 @@
 """Bound optional root detail in the existing atomic report."""
 
+from itertools import chain
+
+from .capture_game_proof import VERSION as PROOF_VERSION
 from .fact_fingerprint import canonical
 from .short_mate_trend_store import MAX_BYTES
 
@@ -9,12 +12,13 @@ DETAIL_TURNS = 2048
 
 
 def _items(state):
-    yield from state.get("games", [])
-    yield from state.get("retained", {}).values()
-    prior = state.get("prior")
-    if prior:
-        yield from prior.get("games", [])
-        yield from prior.get("retained", {}).values()
+    prior = state.get("prior") or {}
+    return chain(
+        state.get("games", ()),
+        state.get("retained", {}).values(),
+        prior.get("games", ()),
+        prior.get("retained", {}).values(),
+    )
 
 
 def _limits(sections):
@@ -34,19 +38,21 @@ def fits(state):
     return len(canonical({**state, "checksum": "0" * 64}).encode()) <= MAX_BYTES
 
 
-def _trim(state, items):
+def fit(state):
+    items = list(_items(state))
     pending = [item for item in items if item.get("root_details")]
     while pending and (
         not _limits([item["root_details"] for item in items if item.get("root_details")])
         or not fits(state)
     ):
-        item = pending.pop()
-        item["root_details"] = {**item["root_details"], "turns": []}
+        pending.pop().pop("root_details", None)
 
 
-def fit(state):
-    items = list(_items(state))
-    _trim(state, items)
-    if not fits(state):
-        for item in items:
-            item.pop("root_details", None)
+def record(state, item, row, detail):
+    section = item.get("root_details") or {"version": VERSION, "proof": PROOF_VERSION, "turns": []}
+    value = {**detail, "position_id": row[0], "outcome": row[1]}
+    if value.get("reason") == "deadline":
+        value["reason"] = row[2]
+    section = {**section, "turns": [*section["turns"], value]}
+    if room(state, item, section):
+        item["root_details"] = section

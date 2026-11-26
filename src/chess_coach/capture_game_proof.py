@@ -1,36 +1,24 @@
 """Identify capture opportunities before considering the recorded move."""
 
-import chess
-
 from .capture_game_roots import inspect
 from .pawn_scope import history_known
-from .related_capture_position import _material, _phase
 
 # Bump when qualification or played-choice semantics change.
 VERSION = "direct-capture-v3"
 MAX_CANDIDATES = 32
 
 
-def _detail(board, move, state):
-    target = board.piece_at(move.to_square)
-    mover = board.piece_at(move.from_square)
-    mechanism = ("checking" if board.gives_check(move) else "direct") if mover and target else None
-    geometry = (
-        [
-            abs(chess.square_file(move.to_square) - chess.square_file(move.from_square)),
-            abs(chess.square_rank(move.to_square) - chess.square_rank(move.from_square)),
-        ]
-        if mover and target
-        else None
+def _target(board, move):
+    square = (
+        move.to_square + (-8 if board.turn else 8) if board.is_en_passant(move) else move.to_square
     )
-    return [
-        move.uci(),
-        target.symbol() if target else None,
-        state,
-        mechanism,
-        mover.piece_type if mover else None,
-        geometry,
-    ]
+    return square, board.piece_at(square)
+
+
+def _detail(board, move, state):
+    _, target = _target(board, move)
+    mechanism = ("checking" if board.gives_check(move) else "direct") if target else None
+    return [move.uci(), target.symbol() if target else None, state, mechanism]
 
 
 def _scan(board, captures, deadline, clock, details=None):
@@ -39,13 +27,15 @@ def _scan(board, captures, deadline, clock, details=None):
         if clock() >= deadline:
             return None, None, "deadline"
         state = inspect(board, move)
-        # Discard even a proved root if its bounded inspection passed the deadline.
-        if clock() >= deadline:
-            return None, None, "deadline"
+        expired = clock() >= deadline
         if details is not None:
-            details["roots"].append(_detail(board, move, state))
-            if clock() >= deadline:
-                return None, None, "deadline"
+            details["attempted"] += 1
+            if not expired:
+                details["roots"].append(_detail(board, move, state))
+                expired = clock() >= deadline
+        # Discard even a proved root if its bounded inspection passed the deadline.
+        if expired:
+            return None, None, "deadline"
         if state == "proved":
             proved.add(move.uci())
         elif state == "unknown":
@@ -91,18 +81,13 @@ def classify(board, played, deadline, clock, *, details=None):
     if details is None:
         return _outcome(*opportunities(board, deadline, clock), played)
     details.update(
-        side="white" if board.turn else "black",
-        played=played,
-        material=_material(board),
-        phase=_phase(board),
-        total=None,
-        roots=[],
+        side="white" if board.turn else "black", played=played, total=None, attempted=0, roots=[]
     )
     proved, unknown, reason = opportunities(board, deadline, clock, details=details)
     if reason:
         details["roots"] = []
     details["unsearched"] = (
-        None if details["total"] is None else details["total"] - len(details["roots"])
+        None if details["total"] is None else details["total"] - details["attempted"]
     )
     details["reason"] = reason
     return _outcome(proved, unknown, reason, played)

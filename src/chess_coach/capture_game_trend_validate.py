@@ -1,7 +1,6 @@
 """Validate capture cache relationships before trusting derived results."""
 
 from .capture_game_counts import OUTCOMES
-from .capture_game_root_validate import valid as valid_roots
 from .capture_game_trend_relations import valid_relations
 from .short_mate_trend_validate import valid
 
@@ -16,7 +15,7 @@ def validate(data, expected, *, outcomes=OUTCOMES):
         return False
     if len(data["games"]) + data["duplicates"] + data["unavailable"] != len(checked):
         return False
-    return valid_relations(data, checked) and valid_roots(data)
+    return valid_relations(data, checked)
 
 
 def matches_frontier(data, candidates):

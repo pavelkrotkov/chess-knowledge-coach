@@ -1410,7 +1410,7 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
     assert cached_report(db, "fixture_a", root) is None
     db.close()
 
-    # The actual capture worker upgrades an old complete v3 report without changing its decisions.
+    # The actual worker supplies fresh roots while old v3 decisions stay unattributed.
     from chess_coach import capture_game_proof, capture_game_roots
 
     real_path = data / "root-capture-games.sqlite"
@@ -1426,8 +1426,22 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
         state = read(real_cache, real_key, validator=capture_validate)
         assert state and state["games"][0]["results"][0][1:] == ["played", None]
         triple = list(state["games"][0]["results"][0])
+        fresh = deepcopy(state)
         detail = state["games"][0]["root_details"]["turns"][0]
         assert any(root[0] == "d1d4" and root[2] == "proved" for root in detail["roots"])
+
+        partial_detail = {}
+        capture_ticks = iter((0, 0, 0, 2))
+        partial_result = capture_game_proof.classify(
+            chess.Board("4k3/8/8/8/3q4/8/8/3RK3 w - - 0 1"),
+            "d1d4",
+            1,
+            lambda: next(capture_ticks, 2),
+            details=partial_detail,
+        )
+        assert partial_result == ("unknown", "deadline")
+        assert partial_detail["attempted"] == 1 and not partial_detail["roots"]
+        assert partial_detail["unsearched"] == partial_detail["total"] - 1
 
         # Simulate an existing pre-upgrade v3 report, without inventing any roots.
         state["games"][0].pop("root_details")
@@ -1435,9 +1449,10 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
         old = capture_report(real_db, "fixture_a", root)
         assert old and old["newer"]["root_unattributed"] == 1
         capture_scan.run(real_db, "fixture_a", root)
-        refreshed = read(real_cache, real_key, validator=capture_validate)
-        assert refreshed["games"][0]["results"][0] == triple
-        assert refreshed["games"][0]["root_details"]["turns"][0]["roots"] == detail["roots"]
+        still_old = read(real_cache, real_key, validator=capture_validate)
+        assert still_old["games"][0]["results"][0] == triple
+        assert "root_details" not in still_old["games"][0]
+        write(real_cache, fresh)
 
         real_app = create_app(
             db_path=real_path,
@@ -1451,15 +1466,25 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
         real_client = real_app.test_client()
         tables = (
             "unified_sessions",
+            "unified_session_events",
+            "objective_requests",
+            "objective_results",
             "unified_training_enrollments",
             "unified_training_completions",
             "training_items",
             "training_attempts",
+            "mastery_states",
+            "mastery_events",
+            "evidence_mappings",
+            "evidence_review_events",
+            "tactical_exposure_coverage",
             "tactical_exposures",
         )
-        with sqlite3.connect(f"file:{real_path}?mode=ro", uri=True) as observer:
+        with sqlite3.connect(real_path.resolve().as_uri() + "?mode=ro", uri=True) as observer:
+            observer.execute("PRAGMA query_only=ON")
             before_reads = {
-                table: observer.execute(f"SELECT * FROM {table}").fetchall() for table in tables
+                table: observer.execute(f"SELECT * FROM {table} ORDER BY rowid").fetchall()
+                for table in tables
             }
             with actual.context() as guard:
 
@@ -1468,14 +1493,18 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
 
                 guard.setattr(capture_game_proof, "inspect", no_proof)
                 guard.setattr(capture_game_roots, "capture_gain", no_proof)
+                guard.setattr(capture_game_roots, "inspect_checking", no_proof)
+                guard.setattr(capture_game_roots, "inspect_replies", no_proof)
                 page = real_client.get(
                     "/game-samples/captures",
                     base_url="https://coach.invalid",
                     headers={"Tailscale-User-Login": "fixture"},
                 )
-                assert page.status_code == 200 and b"d1d4 (proved)" in page.data
+                assert page.status_code == 200
+                assert b"White: Rxd4 captures queen on d4" in page.data and b"(proved)" in page.data
             assert before_reads == {
-                table: observer.execute(f"SELECT * FROM {table}").fetchall() for table in tables
+                table: observer.execute(f"SELECT * FROM {table} ORDER BY rowid").fetchall()
+                for table in tables
             }
         real_db.connection.execute("UPDATE games SET result=? WHERE id=1", ("0-1",))
         real_db.connection.commit()
@@ -1484,7 +1513,7 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
             base_url="https://coach.invalid",
             headers={"Tailscale-User-Login": "fixture"},
         )
-        assert b"d1d4 (proved)" not in changed.data
+        assert b"White: Rxd4 captures queen on d4" not in changed.data
     real_db.close()
 
     # Real worker-to-browser readiness: proved played, proved alternative,

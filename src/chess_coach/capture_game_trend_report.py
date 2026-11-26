@@ -3,7 +3,8 @@
 import sqlite3
 
 from .capture_game_counts import add, empty, finish
-from .capture_game_root_current import links
+from .capture_game_root_current import project
+from .capture_game_root_validate import valid as valid_roots
 from .capture_game_trend_bounds import bounds
 from .capture_game_trend_current import current
 from .capture_game_trend_paths import binding, location
@@ -22,7 +23,8 @@ def _game_counts(result, item):
     result["resolved_games"] += bool(outcomes & {"played", "other"})
 
 
-def _sample(games):
+def _sample(games, projection=None):
+    projection = projection or {}
     result = empty(sum(item["eligible"] for item in games))
     result["games"] = len(games)
     result["newest"] = games[0]["date"] if games else None
@@ -32,7 +34,7 @@ def _sample(games):
     result["root_details"] = []
     for item in games:
         for turn in (item.get("root_details") or {}).get("turns", ()):
-            result["root_details"].append({**turn, "game_id": item["id"], "date": item["date"]})
+            result["root_details"].append(projection[turn["position_id"]])
         _game_counts(result, item)
         for position_id, outcome, reason in item["results"]:
             add(result, {"position_id": position_id}, outcome, reason)
@@ -53,16 +55,17 @@ def report(db, learner, root):
             return None
         # Recheck every examined source, including duplicate and unavailable rows.
         before = db.connection.execute("PRAGMA data_version").fetchone()[0]
-        if not links(db, state):
-            return None
         selected = choose(db, learner, state)
         if not selected:
             return None
         state, candidates, coverage, historical = selected
         games = state["games"]
-        newer, earlier = _sample(games[:20]), _sample(games[20:40])
+        if not valid_roots(games[:40]):
+            return None
+        projection = project(db, learner, games[:40])
+        newer, earlier = _sample(games[:20], projection), _sample(games[20:40], projection)
         reason = _comparison(state, games, candidates, (newer, earlier), coverage)
-        if not current(db, state, candidates, (newer, earlier), before, learner=learner):
+        if not current(db, state, candidates, (newer, earlier), before):
             return None
         if fingerprint([path]) != before_file:
             return None
