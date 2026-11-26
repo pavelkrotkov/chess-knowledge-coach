@@ -3503,9 +3503,37 @@ def _retained_capture_workflow(tmp_path, monkeypatch):
         )
         assert show(db, "retained-active", LEARNER)["objective"] == "capture_named_target"
         hint(db, "retained-active", LEARNER, event_id="hint")
+        response = submit(db, "retained-active", LEARNER, event_id="answer", move="e1f1")
+        assert response["status"] == "needs_verification"
+        replay_before = tuple(
+            db.connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+            for table in (
+                "unified_session_events",
+                "objective_requests",
+                "training_attempts",
+                "mastery_events",
+            )
+        )
+        stored_response = db.connection.execute(
+            "SELECT response_json FROM unified_session_events WHERE attempt_id=? AND event_id=?",
+            ("retained-active", "answer"),
+        ).fetchone()[0]
+        assert submit(db, "retained-active", LEARNER, event_id="answer", move="e1f1") == response
+        assert replay_before == tuple(
+            db.connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+            for table in (
+                "unified_session_events",
+                "objective_requests",
+                "training_attempts",
+                "mastery_events",
+            )
+        )
         assert (
-            submit(db, "retained-active", LEARNER, event_id="answer", move="e1f1")["status"]
-            == "needs_verification"
+            db.connection.execute(
+                "SELECT response_json FROM unified_session_events WHERE attempt_id=? AND event_id=?",
+                ("retained-active", "answer"),
+            ).fetchone()[0]
+            == stored_response
         )
     # A due selection rechecks the same file scope inside the start transaction.
     from chess_coach import curriculum_capture_due_scope
@@ -3818,6 +3846,85 @@ def _retained_capture_workflow(tmp_path, monkeypatch):
     )
     with pytest.raises(ValueError, match="practice source unavailable or stale"):
         show(db, "retained-revoked", LEARNER)
+
+    # A genuine scheduled source with no session can only use its schedule lane.
+    from chess_coach.training import create_training_item
+    from chess_coach.unified_training_item import source_ref
+    from chess_coach.unified_training_owned_capture import SOURCE
+
+    schedule_source = newer[2]
+    current_snapshot = observe(db, root, LEARNER, schedule_source)[2]["snapshot"]
+    schedule_item = create_training_item(
+        db,
+        source_type=SOURCE,
+        source_ref=source_ref(
+            LEARNER, TARGET_VERSION, str(schedule_source), snapshot_hash(current_snapshot)
+        ),
+        skill="hanging_piece",
+        operation="execute",
+    )
+    assert (
+        db.connection.execute(
+            """SELECT 1 FROM unified_sessions WHERE subject=? AND source_type='own-game'
+        AND source_key=?""",
+            (LEARNER, str(schedule_source)),
+        ).fetchone()
+        is None
+    )
+
+    from chess_coach.recurrence_cursor import MAX_ID
+
+    for _ in range(20):
+        if checkpoint(db, LEARNER, root)[1]["before"] == MAX_ID:
+            break
+        turn()
+    assert checkpoint(db, LEARNER, root)[1]["before"] == MAX_ID
+    records, _ = bucket_entries(db, root, LEARNER, schedule_source)
+    records.pop(str(schedule_source))
+    publish_bucket(db, root, LEARNER, schedule_source, records)
+    progress_path, current = checkpoint(db, LEARNER, root)
+    current["lane"], current["schedule"] = 2, []
+    save(db, LEARNER, progress_path, current)
+    schedules = []
+    original_schedule = worker.schedule_reference
+
+    def record_schedule(row, subject):
+        reference = original_schedule(row, subject)
+        if row["id"] == schedule_item:
+            schedules.append(reference)
+        return reference
+
+    with monkeypatch.context() as references:
+        references.setattr(worker, "schedule_reference", record_schedule)
+        for _ in range(8):
+            turn()
+            if schedules and observe(db, root, LEARNER, schedule_source):
+                break
+    assert schedules and schedules[0]["id"] == schedule_source
+    assert observe(db, root, LEARNER, schedule_source)
+    assert checkpoint(db, LEARNER, root)[1]["before"] > schedule_source
+
+    # Over twenty actual nontraining sessions retain distinct source bindings;
+    # both start and show must use the worker certificates without proof calls.
+    with monkeypatch.context() as guard:
+        guard.setattr("chess_coach.material_opportunity_current.verified_witness", forbidden)
+        guard.setattr("chess_coach.objective_capture_snapshot.judge", forbidden)
+        for evidence_id in valid:
+            attempt = f"retained-many-{evidence_id}"
+            start(
+                db,
+                attempt_id=attempt,
+                subject=LEARNER,
+                source_type="own-game",
+                version=TARGET_VERSION,
+                key=str(evidence_id),
+            )
+            stored = db.connection.execute(
+                "SELECT snapshot_hash FROM unified_sessions WHERE attempt_id=?", (attempt,)
+            ).fetchone()[0]
+            assert stored == snapshot_hash(observe(db, root, LEARNER, evidence_id)[2]["snapshot"])
+            assert show(db, attempt, LEARNER)["objective"] == "capture_named_target"
+    assert len(set(valid)) > 20
     db.close()
 
     # An unrelated project database outside the private data directory still plans normally.
