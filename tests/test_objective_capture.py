@@ -2819,6 +2819,9 @@ def _capture_practice_priority_workflow(tmp_path, monkeypatch):
     for evidence_id in (first, second):
         observed = observe_certificate(db, root, LEARNER, evidence_id)
         assert observed and observed[2]
+    from tests.capture_certificate_fixture import prepare_corpus
+
+    prepare_corpus(db, LEARNER, root, "priority", position)
     options, status, _, _ = candidates(db, LEARNER, "priority", lambda: None)
     assert status == "available" and len(options) == 2
     assert options[0][0]["prompt_key"] != options[1][0]["prompt_key"]
