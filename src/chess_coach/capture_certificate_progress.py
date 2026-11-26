@@ -1,8 +1,10 @@
-"""Resume one bounded pass through owner-scoped capture evidence."""
+"""Resume bounded passes through capture evidence and direct references."""
 
+from .capture_certificate_reference import session_marker
+from .capture_certificate_schedule import schedule_marker
 from .capture_certificate_store import binding, location
+from .learner_identity import normalize_identity
 from .recurrence_cursor import MAX_ID
-from .recurrence_sources import evidence
 from .short_mate_trend_store import read, write
 
 
@@ -14,24 +16,31 @@ def _valid(data, expected):
 def checkpoint(db, subject, root):
     base = location(db, root, subject)
     if base is None:
-        return None, MAX_ID
+        return None, {}
     path = base.with_name(base.name + ".progress.json")
-    old = read(path, binding(db, subject), validator=_valid)
-    return path, old["before"] if old else MAX_ID
+    old = read(path, binding(db, subject), validator=_valid) or {}
+    lane = old.get("lane", 0)
+    return path, {
+        "before": old.get("before", MAX_ID),
+        "lane": lane if type(lane) is int and 0 <= lane < 3 else 0,
+        "session": session_marker(old.get("session")),
+        "schedule": schedule_marker(old.get("schedule")),
+    }
 
 
-def save(db, subject, path, before):
-    write(path, {"binding": binding(db, subject), "before": before})
+def save(db, subject, path, current):
+    write(path, {"binding": binding(db, subject), **current})
 
 
-def page(db, subject, before, limit):
-    rows, more = evidence(db, subject, "hanging_piece", "execute", before, limit=limit)
-    if not rows and before != MAX_ID:
-        return evidence(db, subject, "hanging_piece", "execute", MAX_ID, limit=limit)
-    return rows, more
-
-
-def next_before(rows, more, last):
-    if not more and (not rows or last == rows[-1]["id"]):
-        return MAX_ID
-    return last
+def next_evidence(db, subject, before):
+    frontiers = (before, MAX_ID) if before != MAX_ID else (before,)
+    for frontier in frontiers:
+        row = db.connection.execute(
+            """SELECT id FROM evidence_mappings INDEXED BY idx_curriculum_evidence
+            WHERE subject=? AND skill='hanging_piece' AND operation='execute' AND id<?
+            ORDER BY id DESC LIMIT 1""",
+            (normalize_identity(subject), frontier),
+        ).fetchone()
+        if row is not None:
+            return row, row["id"]
+    return None, MAX_ID

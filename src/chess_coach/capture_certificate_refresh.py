@@ -36,7 +36,7 @@ def _unchanged(db, subject, row, entry):
     return entry.get("input") == identity(record, fact, source_data, _review(db, row["id"]))
 
 
-def refresh(db, subject, root, row, deadline):
+def refresh(db, subject, root, row, deadline, *, reference=None):
     evidence_id = row["id"]
     # Migrate the entire bucket from the legacy file so other evidence remains available.
     records, published = entries(db, root, subject, evidence_id)
@@ -50,6 +50,18 @@ def refresh(db, subject, root, row, deadline):
     except (ValueError, TypeError, KeyError, IndexError):
         records.pop(key, None)
     check(deadline)
+    if reference is not None:
+        _retain_matching(records, previous, key, reference)
     if records != previous or not published:
         publish(db, root, subject, evidence_id, records)
     return changed
+
+
+def _retain_matching(records, previous, key, reference):
+    from .capture_certificate_reference import matches
+
+    if key in records and not matches(records[key], reference):
+        if key in previous:
+            records[key] = previous[key]
+        else:
+            records.pop(key)
