@@ -145,6 +145,7 @@ def test_private_access_and_csrf(setup, tmp_path, monkeypatch):
     for name in TABLES:
         destination.execute(f"DROP TABLE {name}")
     destination.execute("DROP INDEX IF EXISTS idx_engine_outputs_position_id")
+    destination.execute("DROP INDEX IF EXISTS idx_games_source_id")
     destination.execute("DROP INDEX IF EXISTS idx_curriculum_capture_due")
     destination.execute("DROP INDEX IF EXISTS idx_curriculum_capture_scheduled")
     destination.execute("DROP INDEX IF EXISTS idx_curriculum_fork_due")
