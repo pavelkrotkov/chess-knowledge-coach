@@ -1,11 +1,13 @@
 """Atomically admit a source-bound capture rehearsal or assessment."""
 
 from .capture_difficulty_binding import difficulty_scope, options, progression
+from .curriculum_capture_file_guard import current
 from .fact_fingerprint import canonical, digest
 from .related_capture import VERSION, _selection
 from .related_mate_search_token import fingerprint
 from .related_session_start import start_selected
 from .related_transfer_admission import admit
+from .unified_source_current import require_current
 
 
 def _reference(selected, reference, secret):
@@ -66,6 +68,7 @@ def start_related(
 ):
     if db.connection.in_transaction:
         raise RuntimeError("cannot start during an existing transaction")
+    files = current(db, subject, db.capture_root)
     version = db.connection.execute("PRAGMA data_version").fetchone()[0]
     # Selection and certification stay outside the writer transaction.
     difficulty = None
@@ -90,6 +93,11 @@ def start_related(
             return selected
         return _admit(db, subject, position, corpus_version, reference, secret, False)
 
+    def currentness(database, row):
+        require_current(database, row)
+        if files != current(database, subject, database.capture_root):
+            raise ValueError("capture source changed")
+
     return start_selected(
         db,
         attempt_id=attempt_id,
@@ -97,5 +105,6 @@ def start_related(
         corpus_version=corpus_version,
         reference=reference,
         binding_key="related_capture",
+        currentness=currentness,
         resolver=resolve,
     )

@@ -3286,6 +3286,8 @@ def _retained_capture_workflow(tmp_path, monkeypatch):
         game = chess.pgn.read_game(io.StringIO(original_pgn))
         assert game is not None
         game.headers["UTCDate"] = f"2026.01.{day:02d}"
+        if day == 2:
+            game.headers["Opening"] = "Fixture Opening: line"
         assert ingest_pgn(db, str(game))["games"] == 1
         game_id = db.connection.execute("SELECT max(id) FROM games").fetchone()[0]
         assert (
@@ -3313,6 +3315,175 @@ def _retained_capture_workflow(tmp_path, monkeypatch):
         ).fetchone()
         is None
     )
+    # Two actual related assessments bind the original annotated source before
+    # later evidence pushes it outside the ordinary candidate page.
+    from chess_coach.related_capture import preview
+    from chess_coach.related_capture_source import source_for_position
+    from chess_coach.related_capture_start import start_related
+
+    related_position = db.connection.execute(
+        "SELECT position_id FROM evidence_mappings WHERE id=?", (newer[0],)
+    ).fetchone()[0]
+    original_source = source_for_position(db, LEARNER, related_position)
+    assert original_source["opening"] == "Fixture_Opening"
+    corpus = db.connection.execute(
+        "INSERT INTO puzzle_corpora(version,source,checksum,state) VALUES('capture','fixture','checksum','staging')"
+    ).lastrowid
+    for file in ("a", "b", "c", "f", "g"):
+        board = chess.Board("4k3/8/8/8/3q4/8/8/3RK3 b - - 0 1")
+        board.set_piece_at(chess.parse_square(file + "7"), chess.Piece(chess.PAWN, chess.BLACK))
+        key = "retained-related-" + file
+        db.connection.execute(
+            """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,
+            rating_deviation,themes_json,objective)
+            VALUES(?,?,?,'fixture',?,1200,80,'["hangingPiece"]','unknown')""",
+            (key, corpus, board.fen(), file + "7" + file + "6 d1d4"),
+        )
+        db.connection.execute(
+            "INSERT INTO puzzle_themes VALUES(?,?,'hangingPiece',1200)", (corpus, key)
+        )
+    db.connection.execute("UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus,))
+    db.connection.commit()
+    secret = b"retained-related-fixture"
+
+    # The source remains byte-identical while a genuine neighboring certificate
+    # changes. Existing unsigned-file-scope references and continuations expire.
+    from chess_coach import tactical_exposure_admission
+    from chess_coach.related_capture import VERSION as transfer_version
+    from chess_coach.related_capture import present as present_transfer
+    from chess_coach.related_transfer_select import select as select_transfer
+
+    old_selection = select_transfer(db, LEARNER, original_source, "capture", transfer_version)
+    old_preview = present_transfer(old_selection, None, secret=secret)
+    assert old_preview["next_cursor"] is not None
+    with pytest.raises(ValueError):
+        preview(db, LEARNER, related_position, "capture", old_preview["next_cursor"], secret=secret)
+    with pytest.raises(ValueError):
+        start_related(
+            db,
+            attempt_id="unbound-refused",
+            subject=LEARNER,
+            position=related_position,
+            corpus_version="capture",
+            reference=old_preview["items"][0]["reference"],
+            assessment=True,
+            secret=secret,
+        )
+    assert (
+        db.connection.execute(
+            "SELECT 1 FROM unified_sessions WHERE attempt_id='unbound-refused'"
+        ).fetchone()
+        is None
+    )
+
+    stale_page = preview(db, LEARNER, related_position, "capture", secret=secret)
+    assert stale_page["next_cursor"] is not None
+    stale_item = next(item for item in stale_page["items"] if item.get("assessment_available"))
+    neighbor_records, _ = bucket_entries(db, root, LEARNER, newer[0])
+    selected_entry = neighbor_records[str(newer[0])]
+    neighbor_entry = neighbor_records.pop(str(old))
+    publish_bucket(db, root, LEARNER, newer[0], neighbor_records)
+    assert observe(db, root, LEARNER, newer[0])[2] == selected_entry
+    with pytest.raises(ValueError):
+        preview(db, LEARNER, related_position, "capture", stale_page["next_cursor"], secret=secret)
+    with pytest.raises(ValueError):
+        start_related(
+            db,
+            attempt_id="changed-preview",
+            subject=LEARNER,
+            position=related_position,
+            corpus_version="capture",
+            reference=stale_item["reference"],
+            assessment=True,
+            secret=secret,
+        )
+    assert (
+        db.connection.execute(
+            "SELECT 1 FROM unified_sessions WHERE attempt_id='changed-preview'"
+        ).fetchone()
+        is None
+    )
+    neighbor_records[str(old)] = neighbor_entry
+    publish_bucket(db, root, LEARNER, newer[0], neighbor_records)
+
+    fresh_page = preview(db, LEARNER, related_position, "capture", secret=secret)
+    fresh_item = next(item for item in fresh_page["items"] if item.get("assessment_available"))
+    tables = (
+        "unified_sessions",
+        "unified_session_events",
+        "objective_requests",
+        "objective_results",
+        "unified_training_enrollments",
+        "training_items",
+        "training_attempts",
+        "mastery_events",
+    )
+    before_commit = tuple(
+        db.connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0] for table in tables
+    )
+    real_assessment = tactical_exposure_admission.require_assessment
+
+    def publish_before_commit(database, subject, row, binding):
+        real_assessment(database, subject, row, binding)
+        records, _ = bucket_entries(database, root, subject, newer[0])
+        assert records[str(newer[0])] == selected_entry
+        records.pop(str(old))
+        publish_bucket(database, root, subject, newer[0], records)
+
+    with monkeypatch.context() as changing:
+        changing.setattr(tactical_exposure_admission, "require_assessment", publish_before_commit)
+        with pytest.raises(ValueError, match="capture source changed"):
+            start_related(
+                db,
+                attempt_id="changed-before-commit",
+                subject=LEARNER,
+                position=related_position,
+                corpus_version="capture",
+                reference=fresh_item["reference"],
+                assessment=True,
+                secret=secret,
+            )
+    assert before_commit == tuple(
+        db.connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0] for table in tables
+    )
+    restored, _ = bucket_entries(db, root, LEARNER, newer[0])
+    assert restored[str(newer[0])] == selected_entry
+    restored[str(old)] = neighbor_entry
+    publish_bucket(db, root, LEARNER, newer[0], restored)
+
+    for name in ("related-completed", "related-active"):
+        choices = preview(db, LEARNER, related_position, "capture", secret=secret)
+        selected = next(item for item in choices["items"] if item.get("assessment_available"))
+        start_related(
+            db,
+            attempt_id=name,
+            subject=LEARNER,
+            position=related_position,
+            corpus_version="capture",
+            reference=selected["reference"],
+            assessment=True,
+            secret=secret,
+        )
+        if name == "related-completed":
+            submit(db, name, LEARNER, event_id="answer", move="d1d4")
+            assert process(db, LEARNER)["outcomes"] == {"correct": 1}
+    related_rows = {
+        name: dict(
+            db.connection.execute(
+                "SELECT snapshot_hash,provenance_json FROM unified_sessions WHERE attempt_id=?",
+                (name,),
+            ).fetchone()
+        )
+        for name in ("related-completed", "related-active")
+    }
+    for row in related_rows.values():
+        binding = json.loads(row["provenance_json"])["related_capture"]
+        assert (
+            binding["evidence_id"],
+            binding["position_id"],
+            binding["source_snapshot_hash"],
+        ) == (newer[0], related_position, snapshot_hash(original_source))
+
     # A pre-upgrade checkpoint with only the original global cursor survives.
     from chess_coach.capture_certificate_store import binding
     from chess_coach.short_mate_trend_store import write
@@ -3393,10 +3564,23 @@ def _retained_capture_workflow(tmp_path, monkeypatch):
         records.pop(str(evidence_id))
         publish_bucket(db, root, LEARNER, evidence_id, records)
 
+    with pytest.raises(ValueError, match="practice source unavailable or stale"):
+        show(db, "related-active", LEARNER)
+    with pytest.raises(ValueError, match="practice source unavailable or stale"):
+        show(db, "related-completed", LEARNER)
+
     # A timed-out direct reference advances only its own visited frontier and
     # is retried after that finite pass, so it cannot starve the other lanes.
     progress_path, current = checkpoint(db, LEARNER, root)
-    current["lane"], current["session"] = 1, []
+    # Preserve the real session frontier after the newer related attempts.
+    marker = []
+    while True:
+        row, following = worker.session(db, LEARNER, marker)
+        assert row is not None
+        if row["attempt_id"] == "retained-gain":
+            break
+        marker = following
+    current["lane"], current["session"], current["related"] = 1, marker, following
     save(db, LEARNER, progress_path, current)
     session_key = db.connection.execute(
         "SELECT started_at,attempt_id FROM unified_sessions WHERE attempt_id=?",
@@ -3422,6 +3606,99 @@ def _retained_capture_workflow(tmp_path, monkeypatch):
     assert all(observe(db, root, LEARNER, evidence_id) for evidence_id in (old, newer[0]))
     assert checkpoint(db, LEARNER, root)[1]["before"] > newer[0]
     assert show(db, "retained-gain", LEARNER)["objective"] == "bounded_material_gain"
+
+    # Restore the same source specifically from a real related-history reference.
+    records, _ = bucket_entries(db, root, LEARNER, newer[0])
+    records.pop(str(newer[0]))
+    publish_bucket(db, root, LEARNER, newer[0], records)
+    progress_path, current = checkpoint(db, LEARNER, root)
+    current["lane"], current["related"] = 3, []
+    save(db, LEARNER, progress_path, current)
+    related_visits = []
+    restored_by = []
+    original_reference = worker.related_reference
+    original_visit = worker._visit
+
+    def record_visit(database, subject, project, state, lane, deadline):
+        before = observe(database, project, subject, newer[0])
+        result = original_visit(database, subject, project, state, lane, deadline)
+        if before is None and observe(database, project, subject, newer[0]):
+            restored_by.append(lane)
+        return result
+
+    def record_related(row, subject):
+        reference = original_reference(row, subject)
+        if reference and reference["id"] == newer[0]:
+            related_visits.append(reference)
+        return reference
+
+    with monkeypatch.context() as references:
+        references.setattr(worker, "related_reference", record_related)
+        references.setattr(worker, "_visit", record_visit)
+        for _ in range(15):
+            turn()
+            if related_visits and observe(db, root, LEARNER, newer[0]):
+                break
+    assert related_visits and observe(db, root, LEARNER, newer[0])
+    assert restored_by == [3]
+    assert checkpoint(db, LEARNER, root)[1]["before"] > newer[0]
+
+    from chess_coach.capture_history_first import report as capture_history
+    from chess_coach.capture_plan_history import latest as capture_latest
+
+    def forbid_source_proof(*_args, **_kwargs):
+        raise AssertionError("capture source proof ran during related history")
+
+    with monkeypatch.context() as guard:
+        guard.setattr(
+            "chess_coach.material_opportunity_current.verified_witness", forbid_source_proof
+        )
+        guard.setattr("chess_coach.objective_capture_snapshot.judge", forbid_source_proof)
+        before_read = db.connection.total_changes
+        assert source_for_position(db, LEARNER, related_position) == original_source
+        assert show(db, "related-active", LEARNER)["status"] == "active"
+        assert show(db, "related-completed", LEARNER)["verification"]["status"] == "correct"
+        history = capture_history(db, LEARNER, "capture")
+        assert {item["attempt_id"] for item in history["items"]} >= {
+            "related-active",
+            "related-completed",
+        }
+        assert capture_latest(db, LEARNER, related_position, "capture")["status"] == "incomplete"
+        app = create_app(
+            db_path=path,
+            project_root=root,
+            subject=LEARNER,
+            actor="fixture",
+            corpus="capture",
+            login="fixture",
+            origin="https://coach.invalid",
+        )
+        page = app.test_client().get(
+            "/plan/captures/history",
+            base_url="https://coach.invalid",
+            headers={"Tailscale-User-Login": "fixture"},
+        )
+        assert page.status_code == 200
+        assert b"related-active" in page.data and b"related-completed" in page.data
+        assert db.connection.total_changes == before_read
+    cli_result = fresh_cli(
+        path,
+        "related-captures",
+        "--subject",
+        LEARNER,
+        "--position",
+        str(related_position),
+        "--corpus",
+        "capture",
+        "--project-root",
+        str(root),
+    )
+    assert json.loads(cli_result.stdout)["status"] == "available"
+    for name, row in related_rows.items():
+        current_row = db.connection.execute(
+            "SELECT snapshot_hash,provenance_json FROM unified_sessions WHERE attempt_id=?", (name,)
+        ).fetchone()
+        assert dict(current_row) == row
 
     valid = [old, *newer[:-3]]
     for _ in range(15):
@@ -3769,6 +4046,26 @@ def _retained_capture_workflow(tmp_path, monkeypatch):
         == item_before
     )
 
+    # Request-side hint, submit and replay must not re-prove the owned source.
+    with monkeypatch.context() as guard:
+        guard.setattr(
+            "chess_coach.material_opportunity_current.verified_witness", forbid_source_proof
+        )
+        guard.setattr("chess_coach.objective_capture_snapshot.judge", forbid_source_proof)
+        hint(db, "related-active", LEARNER, event_id="hint")
+        related_reply = submit(db, "related-active", LEARNER, event_id="answer", move="d1d4")
+    # Answer verification is allowed to run its normal separate proof.
+    assert process(db, LEARNER)["outcomes"] == {"correct": 1}
+    with monkeypatch.context() as guard:
+        guard.setattr(
+            "chess_coach.material_opportunity_current.verified_witness", forbid_source_proof
+        )
+        guard.setattr("chess_coach.objective_capture_snapshot.judge", forbid_source_proof)
+        assert show(db, "related-active", LEARNER)["verification"]["status"] == "correct"
+        assert (
+            submit(db, "related-active", LEARNER, event_id="answer", move="d1d4") == related_reply
+        )
+
     # A same-time insertion after the pass began is outside its rowid horizon.
     import chess_coach.unified_sessions as sessions
     from chess_coach.capture_certificate_reference_page import session as session_page
@@ -3920,6 +4217,12 @@ def _retained_capture_workflow(tmp_path, monkeypatch):
             assert stored == snapshot_hash(observe(db, root, LEARNER, evidence_id)[2]["snapshot"])
             assert show(db, attempt, LEARNER)["objective"] == "capture_named_target"
     assert len(set(valid)) > 20
+    review_evidence(db, newer[0], decision="reject", actor="fixture")
+    before_refusal = db.connection.total_changes
+    with pytest.raises(ValueError, match="practice source unavailable or stale"):
+        show(db, "related-active", LEARNER)
+    assert capture_latest(db, LEARNER, related_position, "capture")["status"] == "stale"
+    assert db.connection.total_changes == before_refusal
     db.close()
 
     # An unrelated project database outside the private data directory still plans normally.

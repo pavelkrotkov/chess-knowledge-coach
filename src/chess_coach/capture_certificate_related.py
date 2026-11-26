@@ -28,7 +28,7 @@ def related_reference(row, subject):
 
 
 def related_matches(db, entry, reference):
-    from .related_capture_source import _opening
+    from .related_capture_context import _opening
     from .unified_source_current import snapshot_hash
 
     snapshot = deepcopy(entry["snapshot"])

@@ -1,7 +1,8 @@
 """Preview and safely select bounded capture-transfer practice."""
 
+from .curriculum_capture_file_guard import current
 from .fact_fingerprint import canonical, digest
-from .related_capture_cursor import _cursor, _offset
+from .related_capture_cursor import _cursor, _offset, bind_scope
 from .related_capture_features import capture_features
 from .related_capture_source import source_for_position
 from .related_transfer_select import select
@@ -13,15 +14,17 @@ PAGE = 4
 def _selection(
     db, subject, position, corpus_version, *, familiar_data=None, rating_bounds=None, score=None
 ):
+    files = current(db, subject, db.capture_root)
     source = source_for_position(db, subject, position)
     if capture_features(source["prompt_fen"], source["lines"][0].split()) is None:
         raise ValueError("unsupported capture source")
     options = {"rating_bounds": rating_bounds} if rating_bounds is not None else {}
     if score is not None:
         options["score"] = score
-    return select(
+    selected = select(
         db, subject, source, corpus_version, VERSION, familiar_data=familiar_data, **options
     )
+    return bind_scope(db, subject, selected, files)
 
 
 def preview(db, subject, position, corpus_version, cursor=None, *, secret=None):
