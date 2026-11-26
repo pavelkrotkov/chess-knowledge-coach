@@ -2335,7 +2335,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         assert 0 < needed <= 32
         cursor = db.connection.execute(
             "INSERT INTO puzzle_corpora(version,source,checksum,state) "
-            "VALUES('capacity-fixture','fixture','capacity-checksum','ready')"
+            "VALUES('capacity-fixture','fixture','capacity-checksum','staging')"
         )
         capacity_corpus = cursor.lastrowid
         for index in range(needed):
@@ -2352,6 +2352,9 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
                 "INSERT INTO puzzle_themes VALUES(?,?,'hangingPiece',1200)",
                 (capacity_corpus, key),
             )
+        db.connection.execute(
+            "UPDATE puzzle_corpora SET state='ready' WHERE id=?", (capacity_corpus,)
+        )
         db.connection.commit()
         before = learning_rows()
         with monkeypatch.context() as capacity_test:
