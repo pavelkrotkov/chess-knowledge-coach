@@ -6,6 +6,7 @@ from .opening_snapshot import SOURCE, VERSION
 def configure(sub):
     parser = sub.add_parser("process-pipeline", help="Synchronize and process bounded pending work")
     parser.add_argument("username", nargs="?")
+    parser.add_argument("--project-root")
     parser.add_argument("--max-games", type=int, default=25)
     parser.add_argument("--max-scan", type=int, default=1000)
     parser.add_argument("--max-positions", type=int, default=300)

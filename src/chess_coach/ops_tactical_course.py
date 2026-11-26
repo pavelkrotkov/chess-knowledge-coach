@@ -6,6 +6,7 @@ import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
 
+from .opening_queue_location import scope
 from .schema_compat import readonly
 from .tactical_course import build
 from .tactical_course_budget import Budget
@@ -21,7 +22,8 @@ def prepare(root, output):
     readonly(connection, database)
     connection.execute("PRAGMA query_only=ON")
     try:
-        db = SimpleNamespace(connection=connection)
+        db = SimpleNamespace(connection=connection, path=database, capture_root=None)
+        db.capture_root = scope(db, root)
         budget = Budget(db)
         result = build(db, os.environ["CHESS_SUBJECT"], os.environ["CHESS_CORPUS"], budget=budget)
         publish(output, result, budget)

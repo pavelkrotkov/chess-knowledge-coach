@@ -1067,15 +1067,13 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
     from chess_coach.pipeline_inputs import engine_identity, game_input
     from chess_coach.pipeline_work import run_analysis
     from chess_coach.web import create_app
+    from tests.capture_certificate_fixture import certify
+    from tests.capture_certificate_fixture import project as capture_project
     from tests.test_material_pipeline import LEARNER, make_game
     from tests.test_unified_sessions import token
 
-    project = tmp_path / "project"
-    path = project / ".runtime" / "data" / "coaching.sqlite"
-    path.parent.mkdir(parents=True)
-    (project / ".runtime").chmod(0o700)
+    project, path = capture_project(tmp_path, "project")
     planning = project / ".runtime" / "planning"
-    planning.mkdir(mode=0o700)
     (project / ".runtime" / "entry").mkdir(mode=0o700)
     monkeypatch.setenv("CHESS_DB", str(path))
     monkeypatch.setenv("CHESS_SUBJECT", LEARNER)
@@ -1094,6 +1092,7 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
         == "complete"
     )
     material_decision(db, position, LEARNER)
+    certify(db, LEARNER, project)
 
     # Compare the paged scan with the established complete scan.
     import sqlite3
@@ -1836,7 +1835,9 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
         build_export(db, LEARNER, "test", invalid_legacy, Budget(db))
     from chess_coach.tactical_study_current import revalidate as study_revalidate
 
-    with study_revalidate(path, legacy_export, legacy_export["export_sha256"]) as check:
+    with study_revalidate(
+        path, legacy_export, legacy_export["export_sha256"], project_root=project
+    ) as check:
         check()
     selected_preview = study_preview(selected_export, selected_v5_hash)
     selected_preview_file = planning / "selected-preview.json"
@@ -1847,7 +1848,7 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
         project, selected_preview_file, selected_preview["preview_sha256"], selected_copy
     )
     assert json.loads(selected_copy.read_text()) == selected_export
-    with study_revalidate(path, selected_export, selected_v5_hash) as check:
+    with study_revalidate(path, selected_export, selected_v5_hash, project_root=project) as check:
         check()
     changed_policy = json.loads(json.dumps(selected_preview))
     changed_policy["preview"]["selection"]["related_match_seconds"] = 9
@@ -2098,7 +2099,10 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
 
     other_id = next(item["evidence_id"] for item in supports if item["evidence_id"] != selected_id)
     review_evidence(db, other_id, decision="accept", actor="fixture")
-    with pytest.raises(ValueError), study_revalidate(path, selected_export, selected_v5_hash):
+    with (
+        pytest.raises(ValueError),
+        study_revalidate(path, selected_export, selected_v5_hash, project_root=project),
+    ):
         pass
     with monkeypatch.context() as patch:
         patch.setattr(tactical_session, "_publish", synthetic_publish)
@@ -2110,8 +2114,10 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
         export_candidate(project, first_preview, preview["preview_sha256"], stale_output)
     assert not stale_output.exists() and export_path.read_bytes() == exported_bytes
     reviewed_first = planning / "reviewed-first.json"
+    certify(db, LEARNER, project)
     prepare(project, reviewed_first)
     review_evidence(db, other_id, decision="accept", actor="fixture")
+    certify(db, LEARNER, project)
     reviewed_second = planning / "reviewed-second.json"
     prepare(project, reviewed_second)
     first_reviewed = json.loads(reviewed_first.read_bytes())
@@ -2272,7 +2278,7 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
         calls.append(kwargs["limit"])
         return original_evidence(*args, **kwargs)
 
-    read_only = Database(path)
+    read_only = Database(path, capture_root=project)
     statements = []
     read_only.connection.set_trace_callback(
         lambda sql: statements.append(sql.split(None, 1)[0].upper())
@@ -2346,7 +2352,7 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
     def interrupted(*_args, **_kwargs):
         raise PreviewUnavailable("synthetic in-snapshot cutoff")
 
-    reading = Database(path)
+    reading = Database(path, capture_root=project)
     with monkeypatch.context() as patch:
         patch.setattr("chess_coach.web_coaching.database", lambda: reading)
         patch.setattr(failures_page, "source", interrupted)
@@ -2431,7 +2437,7 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
     completed = client.get(moved.location, base_url="https://coach.invalid", headers=headers)
     assert b"bounded capture objective was verified" in completed.data
     assert b"checkmate objective was verified" not in completed.data
-    db = Database(path)
+    db = Database(path, capture_root=project)
     assert (
         db.connection.execute(
             "SELECT COUNT(*) FROM unified_session_events WHERE attempt_id=?", (attempt,)

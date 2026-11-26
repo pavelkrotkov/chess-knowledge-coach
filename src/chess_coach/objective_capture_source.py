@@ -4,7 +4,7 @@ from .decision_history import decision_board
 from .mate_inspection_source import position_row
 from .objective_capture_contract import valid_key
 from .objective_capture_current import current
-from .objective_capture_snapshot import snapshot
+from .objective_capture_snapshot import _snapshot
 from .objective_source_budget import within_budget
 from .pawn_scope import history_known
 
@@ -19,7 +19,7 @@ def resolve(db, version, key, subject, *, check=None):
     board = decision_board(db, position_row(db, view["position_id"]))
     if not history_known(board) or board.fen() != view["decision_fen"]:
         raise ValueError("capture history unavailable")
-    result = snapshot(board, view, review, evidence_id, version, **options)
+    result = _snapshot(board, view, review, evidence_id, version)
     _check(check)
     if (view, review) != current(db, evidence_id, subject, **options):
         raise ValueError("capture source changed")

@@ -353,6 +353,11 @@ successful one; a tie or incomplete comparison keeps the existing source order.
 Source-specific dated opportunity importance remains unknown. These observations
 do not establish mastery, a practice effect, or rating gain. For CLI plans,
 pass `--project-root "$PWD"` to use this capture-practice policy.
+Owned capture sources require a current certificate produced by the bounded
+worker; missing certificates remain unavailable while backfill is pending.
+Applications embedding `create_app` can pass `capture_root` explicitly for
+certificate reads without enabling the separate project-root plan policy.
+When `project_root` is provided, it is also the default certificate root.
 The window can
 be 1 to 180 minutes and is measured by the server, independent of the plan's
 fixed snapshot time. It is not an estimate of individual task duration or

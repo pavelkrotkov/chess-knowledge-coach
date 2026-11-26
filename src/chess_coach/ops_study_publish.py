@@ -15,7 +15,7 @@ def run(root, preview, course):
         envelope = json.load(handle)
     with course.open(encoding="utf-8") as handle:
         frozen = json.load(handle)
-    return publish_locked(database, planning, envelope, frozen)
+    return publish_locked(database, planning, envelope, frozen, project_root=root)
 
 
 def main():

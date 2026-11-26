@@ -1,6 +1,5 @@
 """Advance a separate bounded capture scan after ordinary worker duties."""
 
-import os
 import sqlite3
 import time
 from contextlib import suppress
@@ -41,6 +40,10 @@ def run(db, learner, root, *, seconds=CYCLE_SECONDS):
     if path is None:
         return
     deadline = time.monotonic() + min(seconds, CYCLE_SECONDS)
+    from .capture_certificate_worker import run as certify
+
+    with suppress(TimeoutError):
+        certify(db, learner, root, min(deadline, time.monotonic() + CYCLE_SECONDS / 2))
     key = binding(db, learner)
     old = read(path, key, validator=validate)
     games, coverage, frontier, signatures = snapshot(db, learner, old["checked"] if old else ())
@@ -58,4 +61,4 @@ def after_pipeline(db, learner, started):
     if time.monotonic() - started > 29 * 60:
         return
     with suppress(OSError, sqlite3.Error, ValueError, TypeError, KeyError, IndexError):
-        run(db, learner, os.environ.get("CHESS_PROJECT_ROOT"))
+        run(db, learner, db.capture_root)

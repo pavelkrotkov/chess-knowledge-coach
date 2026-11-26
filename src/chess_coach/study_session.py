@@ -27,10 +27,10 @@ def locked(path, planning, *, sync_wait=True):
         os.close(lock)
 
 
-def publish_locked(path, planning, preview, course):
+def publish_locked(path, planning, preview, course, *, project_root=None):
     intent = planning / "poc-study-336-intent.json"
     with locked(path, planning):
-        revalidate(path, preview, course)
+        revalidate(path, preview, course, project_root=project_root)
         return _publish(path, intent, course)
 
 

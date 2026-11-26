@@ -22,7 +22,7 @@ def prepare_locked(root, export_path, expected_hash):
     database, planning, _, _ = paths(root, export_path, export_path, output=False)
     with locked(database, planning):
         export = load(root, export_path)
-        with revalidate(database, export, expected_hash) as check:
+        with revalidate(database, export, expected_hash, project_root=root) as check:
             destination = intent(planning, expected_hash)
             course = {"course": export["export"], "course_sha256": expected_hash}
             return _publish(database, destination, course, action=partial(prepare, check=check))
@@ -33,7 +33,9 @@ def publish_locked(root, export_path, expected_hash, *, queued=False):
     database, planning, _, _ = paths(root, export_path, export_path, output=False)
     with locked(database, planning, sync_wait=not queued):
         export = load(root, export_path)
-        with revalidate(database, export, expected_hash, with_budget=queued) as source:
+        with revalidate(
+            database, export, expected_hash, with_budget=queued, project_root=root
+        ) as source:
             check = source.check if queued else source
             destination = intent(planning, expected_hash)
             course = {"course": export["export"], "course_sha256": expected_hash}

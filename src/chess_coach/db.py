@@ -242,9 +242,24 @@ SCHEMA += RUN_TABLE
 
 
 class Database:
-    def __init__(self, path: str | Path, *, compatibility: bool = False):
+    def __init__(
+        self,
+        path: str | Path,
+        *,
+        compatibility: bool = False,
+        capture_root: str | Path | None = None,
+    ):
         self.path = Path(path)
         self.connection = sqlite3.connect(self.path)
+        self.capture_root = None
+        if capture_root is not None:
+            try:
+                from .opening_queue_location import scope
+
+                self.capture_root = scope(self, capture_root)
+            except Exception:
+                self.connection.close()
+                raise
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA foreign_keys = ON")
         self.compat32 = False

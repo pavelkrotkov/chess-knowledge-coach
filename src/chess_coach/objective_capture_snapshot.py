@@ -10,6 +10,11 @@ from .objective_contract import OWNED_HISTORY
 
 
 def snapshot(board, view, review, evidence_id, version, *, check=None):
+    return qualify(board, view, review, evidence_id, version, check=check)[0]
+
+
+def qualify(board, view, review, evidence_id, version, *, check=None):
+    """Return the ordinary snapshot and the actual successful verifier result."""
     objective = "capture_named_target" if version == TARGET_VERSION else "bounded_material_gain"
     target = view["objective"]["target"]
     square = chess.parse_square(target)
@@ -30,6 +35,13 @@ def snapshot(board, view, review, evidence_id, version, *, check=None):
     )
     if result["status"] != "correct":
         raise ValueError("capture exemplar unavailable")
+    return _snapshot(board, view, review, evidence_id, version), result
+
+
+def _snapshot(board, view, review, evidence_id, version):
+    objective = "capture_named_target" if version == TARGET_VERSION else "bounded_material_gain"
+    target = view["objective"]["target"]
+    witness = view["objective_witness"]["uci"][0]
     return {
         "prompt_fen": board.fen(),
         "learner_color": "white" if board.turn else "black",

@@ -55,8 +55,15 @@ def create_app(
     origin: str,
     backend_host: str | None = None,
     project_root: str | Path | None = None,
+    capture_root: str | Path | None = None,
     compatibility: bool = False,
 ) -> Flask:
+    if (
+        project_root is not None
+        and capture_root is not None
+        and Path(project_root).resolve() != Path(capture_root).resolve()
+    ):
+        raise ValueError("capture certificate scope differs from project")
     host = validate_config(subject, actor, corpus, login, origin)
     app = Flask(__name__)
     app.config.update(
@@ -70,6 +77,7 @@ def create_app(
         DB_PATH=str(db_path),
         SCHEMA_COMPAT=compatibility,
         PROJECT_ROOT=str(project_root) if project_root is not None else None,
+        CAPTURE_ROOT=str(capture_root or project_root) if (capture_root or project_root) else None,
         SUBJECT=subject,
         ACTOR=actor,
         CORPUS=corpus,

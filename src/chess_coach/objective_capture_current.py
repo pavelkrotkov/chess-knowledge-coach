@@ -20,6 +20,11 @@ def current(
     view, review, reasons = _inspect(db, evidence_id, subject, history=_history, **options)
     if reasons or view["objective"]["kind"] != kind:
         raise ValueError("capture source unavailable")
+    require_mapping(db, view, operation)
+    return view, dict(review) if review else None
+
+
+def require_mapping(db, view, operation):
     row = db.connection.execute(
         "SELECT producer,mapper_version,subject,operation,position_id,scope_key,status FROM mapping_runs WHERE id=?",
         (view["lineage"]["mapping_run_id"],),
@@ -35,7 +40,6 @@ def current(
     )
     if row is None or tuple(row) != expected:
         raise ValueError("capture source unavailable")
-    return view, dict(review) if review else None
 
 
 def require_protection_scope(db, evidence_id, subject, kind, *, check=None):
