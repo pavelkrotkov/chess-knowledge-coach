@@ -34,6 +34,7 @@ def evaluate(board, move, objective="capture_named_target", target="d4"):
 def test_owned_session_immutable_retry_and_stale_review(tmp_path, monkeypatch, version):
     if version == TARGET_VERSION:
         _daily_capture_workflow(tmp_path, monkeypatch)
+        _capture_practice_priority_workflow(tmp_path, monkeypatch)
     db = make_game(tmp_path / "capture.sqlite", monkeypatch)
     evidence = process_decision(db, 1, LEARNER)["evidence_ids"][0]
     state = start(
@@ -2457,3 +2458,309 @@ def _scheduled_deadline_controls(db, tmp_path, monkeypatch, now):
     )
     assert not matched and not more and examined == 1 and unavailable is None
     fork_db.close()
+
+
+def _capture_practice_priority_workflow(tmp_path, monkeypatch):
+    """Exercise real same-context source and practice selection on one project."""
+    import io
+    import sys
+    from contextlib import redirect_stdout
+    from datetime import UTC, datetime, timedelta
+
+    import chess.pgn
+
+    from chess_coach import cli, unified_session_apply, unified_sessions
+    from chess_coach.capture_plan_history import latest
+    from chess_coach.curriculum import daily_plan
+    from chess_coach.curriculum_capture_witnesses import candidates
+    from chess_coach.ingest import ingest_pgn
+    from chess_coach.pipeline_config import PipelineConfig
+    from chess_coach.pipeline_inputs import engine_identity, game_input
+    from chess_coach.pipeline_work import run_analysis
+    from chess_coach.related_capture import preview
+    from chess_coach.related_capture_start import start_related
+    from chess_coach.web import create_app
+
+    root = tmp_path / "capture-priority-project"
+    data = root / ".runtime" / "data"
+    data.mkdir(parents=True, mode=0o700)
+    (root / ".runtime" / "planning").mkdir(mode=0o700)
+    path = data / "plan.sqlite"
+    db = make_game(path, monkeypatch)
+    first = process_decision(db, 1, LEARNER)["evidence_ids"][0]
+    review_evidence(db, first, decision="accept", actor="fixture")
+
+    board = chess.Board("4k3/8/8/8/3q4/8/8/3R1K2 w - - 0 1")
+    game = chess.pgn.Game()
+    game.setup(board)
+    game.headers.update(
+        White=LEARNER,
+        Black="fixture_opponent",
+        Result="*",
+        UTCDate="2026.01.02",
+        UTCTime="12:00:00",
+    )
+    node = game.add_variation(board.parse_uci("f1e1"))
+    board.push_uci("f1e1")
+    node.add_variation(board.parse_uci("e8f8"))
+    ingest_pgn(db, str(game))
+    config = PipelineConfig(learner=LEARNER, engine_path=sys.executable, nodes=100)
+    assert (
+        run_analysis(db, 2, game_input(db, 2), config, engine_identity(sys.executable))["status"]
+        == "complete"
+    )
+    position = db.connection.execute(
+        "SELECT id FROM positions WHERE game_id=2 ORDER BY ply LIMIT 1"
+    ).fetchone()[0]
+    second = process_decision(db, position, LEARNER)["evidence_ids"][0]
+    review_evidence(db, second, decision="accept", actor="fixture")
+    corpus = db.connection.execute(
+        "INSERT INTO puzzle_corpora(version,source,checksum,state) VALUES('priority','fixture','checksum','staging')"
+    ).lastrowid
+    for file in ("a", "b", "c", "f", "g"):
+        puzzle = chess.Board("4k3/8/8/8/3q4/8/8/3RK3 b - - 0 1")
+        puzzle.set_piece_at(chess.parse_square(file + "7"), chess.Piece(chess.PAWN, chess.BLACK))
+        key = "priority-fixture-" + file
+        db.connection.execute(
+            """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,
+            rating_deviation,themes_json,objective)
+            VALUES(?,?,?,'fixture',?,1200,80,'["hangingPiece"]','unknown')""",
+            (key, corpus, puzzle.fen(), file + "7" + file + "6 d1d4"),
+        )
+        db.connection.execute(
+            "INSERT INTO puzzle_themes VALUES(?,?,'hangingPiece',1200)", (corpus, key)
+        )
+    db.connection.execute("UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus,))
+    base = datetime.now(UTC) - timedelta(minutes=2)
+    db.connection.execute(
+        "UPDATE tactical_exposure_coverage SET tracking_started_at=? WHERE id=1",
+        ((base - timedelta(days=1)).isoformat(),),
+    )
+    db.connection.commit()
+    options, status, _ = candidates(db, LEARNER, "priority", lambda: None)
+    assert status == "available" and len(options) == 2
+    assert options[0][0]["prompt_key"] != options[1][0]["prompt_key"]
+    positions = [report["source"]["position_id"] for _, report in options]
+    assert set(positions) == {1, position}
+    clock = [base]
+    original_start_clock, original_event_clock = unified_sessions.now, unified_session_apply.now
+    monkeypatch.setattr(unified_sessions, "now", lambda: clock[0].isoformat())
+    monkeypatch.setattr(unified_session_apply, "now", lambda: clock[0].isoformat())
+    secret = b"capture-priority-fixture"
+
+    def attempt(source_position, outcome, number):
+        selected = preview(db, LEARNER, source_position, "priority", secret=secret)
+        entry = next(item for item in selected["items"] if item.get("assessment_available"))
+        clock[0] += timedelta(seconds=1)
+        attempt_id = f"priority-attempt-{number}"
+        start_related(
+            db,
+            attempt_id=attempt_id,
+            subject=LEARNER,
+            position=source_position,
+            corpus_version="priority",
+            reference=entry["reference"],
+            assessment=True,
+            secret=secret,
+        )
+        clock[0] += timedelta(seconds=1)
+        submit(
+            db,
+            attempt_id,
+            LEARNER,
+            event_id="answer",
+            move="d1d4" if outcome == "correct" else "e1f1",
+        )
+        assert process(db, LEARNER)["outcomes"] == {outcome: 1}
+        assert latest(db, LEARNER, source_position, "priority")["status"] == outcome
+
+    def plan(**kwargs):
+        return daily_plan(
+            db,
+            subject=LEARNER,
+            corpus_version="priority",
+            limit=1,
+            goal="capture",
+            project_root=root,
+            **kwargs,
+        )
+
+    unknown = plan()
+    assert unknown["items"][0]["source_key"] == options[0][0]["source_key"]
+    assert "unknown or tied" in unknown["items"][0]["reason"]
+    attempt(positions[0], "correct", 1)
+    attempt(positions[1], "correct", 2)
+    before = db.connection.total_changes
+    tied = plan()
+    assert db.connection.total_changes == before
+    assert tied["items"][0]["source_key"] == options[0][0]["source_key"]
+    assert "unknown or tied" in tied["items"][0]["reason"]
+    assert "importance is unknown" in tied["items"][0]["reason"]
+    unchanged = plan(cursor=tied["window_cursor"])
+    assert unchanged["window"]["goal"] == "capture"
+    renewed = plan(cursor=tied["window_cursor"], renew=True)
+    assert renewed["window"]["goal"] == "capture"
+
+    from chess_coach.capture_game_trend_paths import location as trend_location
+    from tests.native_pair_probe import Forms
+
+    app = create_app(
+        db_path=path,
+        subject=LEARNER,
+        actor="fixture",
+        corpus="priority",
+        login="fixture",
+        origin="https://coach.invalid",
+        project_root=root,
+    )
+    client = app.test_client()
+    headers = {"Tailscale-User-Login": "fixture"}
+
+    def form(query):
+        response = client.get("/plan?" + query, base_url="https://coach.invalid", headers=headers)
+        assert response.status_code == 200
+        parsed = Forms()
+        parsed.feed(response.get_data(as_text=True))
+        return next(
+            item
+            for item in parsed.forms
+            if item.get("training") == "1"
+            and item.get("source_type") == "own-game"
+            and item.get("window_offer")
+        )
+
+    timed_form, untimed_form = form("goal=capture&minutes=1"), form("goal=capture")
+    count = db.connection.execute("SELECT count(*) FROM unified_sessions").fetchone()[0]
+    trend = trend_location(db, root)
+    assert trend is not None and not trend.exists()
+    trend.write_text("{}")
+    with pytest.raises(ValueError, match="capture practice changed"):
+        plan(cursor=tied["window_cursor"])
+    for old_form in (timed_form, untimed_form):
+        response = client.post(
+            "/unified/start",
+            data=old_form,
+            base_url="https://coach.invalid",
+            headers=headers | {"Origin": "https://coach.invalid"},
+        )
+        assert response.status_code == 400
+    assert db.connection.execute("SELECT count(*) FROM unified_sessions").fetchone()[0] == count
+    assert (
+        db.connection.execute("SELECT count(*) FROM unified_training_enrollments").fetchone()[0]
+        == 0
+    )
+
+    tied = plan()
+    old_offer = tied["items"][0]["window_offer"]
+    old_cursor = tied["window_cursor"]
+    attempt(positions[1], "incorrect", 3)
+    with pytest.raises(ValueError, match="capture practice changed"):
+        plan(cursor=old_cursor)
+    with pytest.raises(ValueError, match="capture practice offer changed"):
+        start(
+            db,
+            attempt_id="stale-priority",
+            subject=LEARNER,
+            source_type="own-game",
+            version=TARGET_VERSION,
+            key=options[0][0]["source_key"],
+            training=True,
+            window_offer=old_offer,
+            project_root=root,
+        )
+    chosen = plan()
+    assert chosen["items"][0]["source_key"] == options[1][0]["source_key"]
+    assert "Comparable verified practice selected" in chosen["items"][0]["reason"]
+    output = io.StringIO()
+    with monkeypatch.context() as patch, redirect_stdout(output):
+        patch.setattr(
+            sys,
+            "argv",
+            [
+                "chess-coach",
+                "--db",
+                str(path),
+                "daily-plan",
+                "priority",
+                "--subject",
+                LEARNER,
+                "--limit",
+                "1",
+                "--goal",
+                "capture",
+                "--project-root",
+                str(root),
+            ],
+        )
+        cli.main()
+    assert (
+        json.loads(output.getvalue())["items"][0]["source_key"] == chosen["items"][0]["source_key"]
+    )
+    page = client.get(
+        "/plan?goal=capture",
+        base_url="https://coach.invalid",
+        headers=headers,
+    )
+    assert page.status_code == 200
+    assert f'name="key" value="{chosen["items"][0]["source_key"]}"'.encode() in page.data
+    assert b"Comparable verified practice selected" in page.data
+    selected_form = form("goal=capture&minutes=1")
+    from chess_coach.curriculum_capture_offer import POLICY as NEW_OFFER_POLICY
+    from chess_coach.curriculum_cursor import revision
+    from chess_coach.curriculum_prerequisite_token import _decode
+    from chess_coach.curriculum_window_scope import POLICY as OLD_OFFER_POLICY
+
+    assert _decode(db, selected_form["window_offer"])[0] == NEW_OFFER_POLICY
+    assert NEW_OFFER_POLICY != OLD_OFFER_POLICY
+    other_game = db.connection.execute(
+        "SELECT game_id FROM positions WHERE id=?", (positions[0],)
+    ).fetchone()[0]
+    old_generation = db.connection.execute(
+        "SELECT generation FROM pipeline_stages WHERE game_id=? AND stage='analysis'",
+        (other_game,),
+    ).fetchone()[0]
+    previous_revision = revision(db)
+    db.connection.execute(
+        "UPDATE pipeline_stages SET generation=generation+1 WHERE game_id=? AND stage='analysis'",
+        (other_game,),
+    )
+    db.connection.commit()
+    assert revision(db) == previous_revision
+    with pytest.raises(ValueError, match="capture sources changed"):
+        plan(cursor=chosen["window_cursor"])
+    prior_sessions = db.connection.execute("SELECT count(*) FROM unified_sessions").fetchone()[0]
+    refused = client.post(
+        "/unified/start",
+        data=selected_form,
+        base_url="https://coach.invalid",
+        headers=headers | {"Origin": "https://coach.invalid"},
+    )
+    assert refused.status_code == 400
+    assert (
+        db.connection.execute("SELECT count(*) FROM unified_sessions").fetchone()[0]
+        == prior_sessions
+    )
+    assert (
+        db.connection.execute("SELECT count(*) FROM unified_training_enrollments").fetchone()[0]
+        == 0
+    )
+    db.connection.execute(
+        "UPDATE pipeline_stages SET generation=? WHERE game_id=? AND stage='analysis'",
+        (old_generation, other_game),
+    )
+    db.connection.commit()
+    selected_form = form("goal=capture&minutes=1")
+    response = client.post(
+        "/unified/start",
+        data=selected_form,
+        base_url="https://coach.invalid",
+        headers=headers | {"Origin": "https://coach.invalid"},
+    )
+    assert response.status_code == 303
+    assert (
+        db.connection.execute("SELECT count(*) FROM unified_training_enrollments").fetchone()[0]
+        == 1
+    )
+    monkeypatch.setattr(unified_sessions, "now", original_start_clock)
+    monkeypatch.setattr(unified_session_apply, "now", original_event_clock)
+    db.close()

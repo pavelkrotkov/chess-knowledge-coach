@@ -5,6 +5,12 @@ from .curriculum_capture_source import read
 
 
 def check_candidate(db, state, subject, scan, check):
+    from .curriculum_priority_cursor import CAPTURE_POLICY
+
+    if state.get("priority_policy") == CAPTURE_POLICY:
+        from .curriculum_capture_choice import select
+
+        return select(db, state, subject, scan, check)
     candidate, status, report = read(db, subject, state["corpus_version"], check)
     pending = state["capture_pending"]
     if pending is not None and (candidate is None or candidate["binding"] != pending):

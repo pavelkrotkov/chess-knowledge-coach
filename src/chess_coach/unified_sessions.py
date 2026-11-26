@@ -6,6 +6,7 @@ from .curriculum_prerequisite_launch import budget as _diagnostic_budget
 from .curriculum_prerequisite_launch import dispatch as _diagnostic_check
 from .curriculum_window_unified import check as _window_offer
 from .curriculum_window_unified import finish as _window_time
+from .curriculum_window_unified import prepare as _capture_budget
 from .objective_promotion_admission import admit as admit_promotion
 from .opening_context_launch_prepare import check as _opening_check
 from .opening_context_launch_prepare import prepare as _opening_prepare
@@ -56,11 +57,21 @@ def start(
         item_id,
     )
     budget = _diagnostic_budget(db, diagnostic, source_type, goal, training, item_id)
+    capture = _capture_budget(db, window_offer, project_root)
     try:
         db.connection.execute("BEGIN IMMEDIATE")
         _opening_check(opening, db, project_root, subject)
         window = _window_offer(
-            db, window_offer, subject, source_type, version, key, training, item_id
+            db,
+            window_offer,
+            subject,
+            source_type,
+            version,
+            key,
+            training,
+            item_id,
+            project_root=project_root,
+            capture_budget=capture,
         )
         _diagnostic_check(db, subject, source_type, version, key, diagnostic, budget)
         old = db.connection.execute(
@@ -85,7 +96,7 @@ def start(
         enroll_if_requested(db, row, training=training, item_id=item_id, created=not old, goal=goal)
         result = view(row)
         _opening_check(opening, db, project_root, subject)
-        _window_time(window)
+        _window_time(window, db, capture)
         db.connection.commit()
         return result
     except BaseException:

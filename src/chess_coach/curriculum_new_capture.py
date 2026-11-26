@@ -26,7 +26,7 @@ def scan(db, state, subject, scan, budget, *, shared_check=None):
     check = shared_check or local_check
 
     # Preserve the signed scan state unless a complete check can be committed.
-    working, work_scan = dict(state), dict(scan)
+    working, work_scan = _working(state, scan)
     try:
         with nullcontext() if shared_check else budget.scope(snapshot=False):
             result = check_candidate(db, working, subject, work_scan, check)
@@ -58,3 +58,10 @@ def _failed(state, working, check):
         return [], "deferred", "capture_scan_incomplete", None
     state["phase"] = "new"
     return [], "unavailable", None, None
+
+
+def _working(state, scan):
+    working = dict(state)
+    if state.get("priority") is not None:
+        working["priority"] = dict(state["priority"])
+    return working, dict(scan)

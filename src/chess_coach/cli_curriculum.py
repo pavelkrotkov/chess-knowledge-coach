@@ -18,6 +18,7 @@ def handle_daily_plan(db, args):
                 goal=getattr(args, "goal", None),
                 duration_minutes=getattr(args, "minutes", None),
                 renew=getattr(args, "renew", False),
+                project_root=getattr(args, "project_root", None),
             ),
             indent=2,
         )
