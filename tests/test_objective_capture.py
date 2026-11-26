@@ -3972,13 +3972,13 @@ def _retained_capture_workflow(tmp_path, monkeypatch):
         str(item_id),
         "--project-root",
         str(root),
-        "--plan-cursor",
-        cli_plan["plan_selection_cursor"],
+        f"--plan-cursor={cli_plan['plan_selection_cursor']}",
         "--plan-corpus",
         "other",
         check=False,
     )
     assert wrong_scope.returncode != 0
+    assert "capture practice changed; restart the plan" in wrong_scope.stderr
     assert before_wrong_scope == tuple(
         db.connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
         for table in ("unified_sessions", "unified_training_enrollments")
@@ -4002,8 +4002,7 @@ def _retained_capture_workflow(tmp_path, monkeypatch):
             str(item_id),
             "--project-root",
             str(root),
-            "--plan-cursor",
-            cli_plan["plan_selection_cursor"],
+            f"--plan-cursor={cli_plan['plan_selection_cursor']}",
             "--plan-corpus",
             "fixture",
         ).stdout
