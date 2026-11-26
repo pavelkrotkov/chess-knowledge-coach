@@ -356,7 +356,7 @@ def test_browser_and_cli_resume_show_the_bound_objective(tmp_path, monkeypatch, 
     db.close()
     app = create_app(
         db_path=path,
-        capture_root=root,
+        project_root=root,
         subject=LEARNER,
         actor="operator",
         corpus="legacy",
@@ -452,6 +452,25 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
 
     root, path = capture_project(tmp_path, "transfer-project")
     db = make_game(path, monkeypatch)
+    # Admit two independently dated games, with the original source checked last.
+    import sys
+
+    from chess_coach.ingest import ingest_pgn
+    from chess_coach.pipeline_config import PipelineConfig
+    from chess_coach.pipeline_inputs import engine_identity, game_input
+    from chess_coach.pipeline_work import run_analysis
+
+    pgn = db.connection.execute("SELECT pgn FROM games WHERE id=1").fetchone()[0]
+    ingest_pgn(db, pgn.replace("2026.01.01", "2026.01.02"))
+    config = PipelineConfig(learner=LEARNER, engine_path=sys.executable, nodes=100)
+    assert (
+        run_analysis(db, 2, game_input(db, 2), config, engine_identity(sys.executable))["status"]
+        == "complete"
+    )
+    supporting = db.connection.execute(
+        "SELECT id FROM positions WHERE game_id=2 ORDER BY ply LIMIT 1"
+    ).fetchone()[0]
+    assert process_decision(db, supporting, LEARNER)["evidence_ids"]
     evidence = process_decision(db, 1, LEARNER)["evidence_ids"][0]
     certify(db, LEARNER, root)
     db.connection.execute(
@@ -574,7 +593,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
     db.close()
     app = create_app(
         db_path=path,
-        capture_root=root,
+        project_root=root,
         subject=LEARNER,
         actor="operator",
         corpus="capture",
@@ -684,21 +703,6 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
 
     def daily_attempt():
         with monkeypatch.context() as patch:
-            patch.setattr(
-                "chess_coach.capture_plan.choose",
-                lambda *_, **_kwargs: {
-                    "source": {
-                        "position_id": 1,
-                        "evidence_id": evidence,
-                        "games": 2,
-                        "version": "material-own-v2",
-                        "key": f"1:material_capture:{evidence}",
-                    },
-                    "limited": False,
-                    "scanned": 2,
-                },
-            )
-            patch.setattr("chess_coach.plan_capture_action.resolve_source", lambda *_a, **_k: {})
             patch.setattr("chess_coach.web_protection_plan.report", lambda *_: None)
             patch.setattr("chess_coach.web_protection_plan.fork_recommendation", lambda *_: None)
             return client.get("/plan", base_url="https://coach.invalid", headers=headers)
@@ -728,28 +732,22 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
                 raise PreviewUnavailable()
             return protection
 
+        from chess_coach.capture_plan import choose as actual_choose
+        from chess_coach.plan_capture_action import resolve_source as actual_resolve
+
+        def checked_choose(*args, **kwargs):
+            result = actual_choose(*args, **kwargs)
+            assert result["source"] and result["source"]["games"] == 2
+            return {**result, "limited": True}
+
         with monkeypatch.context() as patch:
-            patch.setattr(
-                "chess_coach.capture_plan.choose",
-                lambda *_, **_kwargs: {
-                    "source": {
-                        "position_id": 1,
-                        "evidence_id": evidence,
-                        "games": 2,
-                        "reviewed": False,
-                        "version": "material-own-v2",
-                        "key": f"1:material_capture:{evidence}",
-                    },
-                    "limited": True,
-                    "scanned": 2,
-                },
-            )
+            patch.setattr("chess_coach.capture_plan.choose", checked_choose)
             patch.setattr("chess_coach.web_protection_plan.report", checked_protection)
 
-            def checked_capture(*_args, **_kwargs):
+            def checked_capture(*args, **kwargs):
                 if capture_unavailable:
                     raise ValueError("replay unavailable")
-                return {}
+                return actual_resolve(*args, **kwargs)
 
             patch.setattr("chess_coach.plan_capture_action.resolve_source", checked_capture)
             return client.get("/plan/next-focus", base_url="https://coach.invalid", headers=headers)
@@ -1785,7 +1783,7 @@ def test_capture_plan_uses_independent_current_sources_and_is_lazy(tmp_path, mon
 
     app = create_app(
         db_path=path,
-        capture_root=root,
+        project_root=root,
         subject=LEARNER,
         actor="operator",
         corpus="legacy",
@@ -1865,18 +1863,18 @@ def test_capture_plan_uses_independent_current_sources_and_is_lazy(tmp_path, mon
     repeated = report(db, LEARNER, "legacy")
     assert repeated["source"]["games"] == 2
     assert repeated["source"]["observations"] == 2
-    import chess_coach.capture_plan as capture_plan
+    import chess_coach.curriculum_capture_choice as capture_choice
 
-    original_report = capture_plan.report
+    original_candidates = capture_choice.candidates
     calls = []
 
     def counted(*args, **kwargs):
         calls.append(True)
-        return original_report(*args, **kwargs)
+        return original_candidates(*args, **kwargs)
 
     with monkeypatch.context() as patch:
         patch.setattr("chess_coach.capture_finder.find", forbidden)
-        patch.setattr(capture_plan, "report", counted)
+        patch.setattr(capture_choice, "candidates", counted)
         daily = client.get("/plan", base_url="https://coach.invalid", headers=headers)
     assert calls == [True]
     assert b"<h3>Capture practice</h3>" in daily.data
@@ -2009,14 +2007,15 @@ def test_capture_plan_uses_independent_current_sources_and_is_lazy(tmp_path, mon
 
     with monkeypatch.context() as patch:
         patch.setattr(
-            "chess_coach.capture_plan.report",
+            "chess_coach.curriculum_capture_choice.candidates",
             lambda *_, **_kwargs: (_ for _ in ()).throw(PreviewUnavailable()),
         )
         timed_out = client.get("/plan", base_url="https://coach.invalid", headers=headers)
     assert timed_out.status_code == 200 and b"<h3>Capture practice</h3>" not in timed_out.data
     with monkeypatch.context() as patch:
         patch.setattr(
-            "chess_coach.capture_plan.report", lambda *_: (_ for _ in ()).throw(ValueError())
+            "chess_coach.curriculum_capture_choice.candidates",
+            lambda *_: (_ for _ in ()).throw(ValueError()),
         )
         fallback = client.get("/plan", base_url="https://coach.invalid", headers=headers)
     assert fallback.status_code == 200 and b"<h3>Capture practice</h3>" not in fallback.data
@@ -2231,7 +2230,7 @@ def _daily_capture_workflow(tmp_path, monkeypatch):
 
     app = create_app(
         db_path=path,
-        capture_root=root,
+        project_root=root,
         subject=LEARNER,
         actor="fixture",
         corpus="plan-fixture",
@@ -2812,6 +2811,7 @@ def _capture_practice_priority_workflow(tmp_path, monkeypatch):
 
     # A new review leaves the evidence usable but invalidates its old assessment binding.
     review_evidence(db, options[0][1]["source"]["evidence_id"], decision="accept", actor="fixture")
+    certify(db, LEARNER, root)
     guidance("stale", b"The latest assessment could not be checked", b"/plan/captures")
     attempt(positions[0], "correct", "guidance-refreshed")
     assert plan()["items"][0]["source_key"] == options[0][0]["source_key"]

@@ -10,7 +10,7 @@ def database() -> Database:
         g.db = Database(
             current_app.config["DB_PATH"],
             compatibility=current_app.config["SCHEMA_COMPAT"],
-            capture_root=current_app.config["CAPTURE_ROOT"],
+            capture_root=current_app.config["PROJECT_ROOT"],
         )
     return g.db
 
