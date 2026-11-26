@@ -13,6 +13,8 @@ from chess_coach.objective_status import inspect
 from chess_coach.objective_worker import process
 from chess_coach.unified_session_events import hint, show, submit
 from chess_coach.unified_sessions import start
+from tests.capture_certificate_fixture import certify
+from tests.capture_certificate_fixture import project as capture_project
 from tests.test_material_pipeline import LEARNER, make_game
 
 
@@ -35,8 +37,10 @@ def test_owned_session_immutable_retry_and_stale_review(tmp_path, monkeypatch, v
     if version == TARGET_VERSION:
         _daily_capture_workflow(tmp_path, monkeypatch)
         _capture_practice_priority_workflow(tmp_path, monkeypatch)
-    db = make_game(tmp_path / "capture.sqlite", monkeypatch)
+    root, path = capture_project(tmp_path, "capture-project")
+    db = make_game(path, monkeypatch)
     evidence = process_decision(db, 1, LEARNER)["evidence_ids"][0]
+    certify(db, LEARNER, root)
     state = start(
         db,
         attempt_id="one",
@@ -252,8 +256,10 @@ def test_owned_session_immutable_retry_and_stale_review(tmp_path, monkeypatch, v
     assert json.loads(frozen)["feedback"] == "needs_verification"
 
     if version == TARGET_VERSION:
-        black_db = make_game(tmp_path / "black-capture.sqlite", monkeypatch, black=True)
+        black_root, black_path = capture_project(tmp_path, "black-capture-project")
+        black_db = make_game(black_path, monkeypatch, black=True)
         black_evidence = process_decision(black_db, 1, LEARNER)["evidence_ids"][0]
+        certify(black_db, LEARNER, black_root)
         black_state = start(
             black_db,
             attempt_id="black-alternative",
@@ -326,13 +332,16 @@ def test_owned_session_immutable_retry_and_stale_review(tmp_path, monkeypatch, v
 def test_browser_and_cli_resume_show_the_bound_objective(tmp_path, monkeypatch, capsys):
     from argparse import Namespace
 
+    from chess_coach.cli_parser import build_parser
     from chess_coach.cli_unified_practice import handle_show, handle_start
     from chess_coach.web import create_app
+    from tests.capture_certificate_fixture import cli as fresh_cli
     from tests.test_unified_sessions import token
 
-    path = tmp_path / "browser.sqlite"
+    root, path = capture_project(tmp_path, "browser-project")
     db = make_game(path, monkeypatch)
     evidence = process_decision(db, 1, LEARNER)["evidence_ids"][0]
+    certify(db, LEARNER, root)
     handle_start(
         db,
         Namespace(
@@ -346,9 +355,46 @@ def test_browser_and_cli_resume_show_the_bound_objective(tmp_path, monkeypatch, 
     assert json.loads(capsys.readouterr().out)["objective_target"] == "d4"
     handle_show(db, Namespace(attempt="cli", subject=LEARNER))
     assert json.loads(capsys.readouterr().out)["gain_threshold"] == 3
+
+    def cli(command, *arguments, scoped=True, check=True):
+        options = [command, "--subject", LEARNER, *arguments]
+        if scoped:
+            options.extend(["--project-root", str(root)])
+        return fresh_cli(path, *options, check=check)
+
+    listed = json.loads(cli("list-own-game-practice").stdout)
+    assert any(item["key"].endswith(":" + str(evidence)) for item in listed["candidates"])
+    shown_cli = cli("show-unified", "--attempt", "cli")
+    assert json.loads(shown_cli.stdout)["objective_target"] == "d4"
+    assert cli("show-unified", "--attempt", "cli", scoped=False, check=False).returncode != 0
+    hint_cli = cli("hint-unified", "--attempt", "cli", "--event", "cli-hint")
+    assert json.loads(hint_cli.stdout)["feedback"] == "hint"
+    move_cli = cli("move-unified", "--attempt", "cli", "--event", "cli-move", "--move", "a1a2")
+    assert json.loads(move_cli.stdout)["feedback"] == "illegal"
+    related_cli = cli("related-captures", "--position", "1", "--corpus", "legacy")
+    assert json.loads(related_cli.stdout)["status"] == "corpus unavailable"
+    parsed = build_parser().parse_args(
+        [
+            "start-related-capture",
+            "--subject",
+            LEARNER,
+            "--position",
+            "1",
+            "--corpus",
+            "legacy",
+            "--attempt",
+            "fixture",
+            "--reference",
+            "fixture",
+            "--project-root",
+            str(root),
+        ]
+    )
+    assert parsed.project_root == str(root)
     db.close()
     app = create_app(
         db_path=path,
+        project_root=root,
         subject=LEARNER,
         actor="operator",
         corpus="legacy",
@@ -376,14 +422,15 @@ def test_browser_and_cli_resume_show_the_bound_objective(tmp_path, monkeypatch, 
     assert post.status_code == 303
     page = client.get(post.headers["Location"], base_url="https://coach.invalid", headers=headers)
     assert b"Capture the piece on d4" in page.data and b"at least 3 material points" in page.data
+    browser_attempt, browser_event = token(page, "attempt"), token(page, "event")
     move = client.post(
         "/unified/move",
         base_url="https://coach.invalid",
         headers=headers | {"Origin": "https://coach.invalid"},
         data={
             "csrf": token(page, "csrf"),
-            "attempt": token(page, "attempt"),
-            "event": token(page, "event"),
+            "attempt": browser_attempt,
+            "event": browser_event,
             "move": "e1f1",
         },
     )
@@ -394,8 +441,22 @@ def test_browser_and_cli_resume_show_the_bound_objective(tmp_path, monkeypatch, 
     assert b"Verification is queued" in pending.data
     from chess_coach.db import Database
 
-    db = Database(path)
-    assert process(db, LEARNER)["outcomes"] == {"incorrect": 1}
+    db = Database(path, capture_root=root)
+    missing_scope = cli("process-objective-verifications", scoped=False, check=False)
+    assert missing_scope.returncode != 0 and "--project-root" in missing_scope.stderr
+    assert db.connection.execute("SELECT count(*) FROM objective_results").fetchone()[0] == 0
+    processed = json.loads(cli("process-objective-verifications").stdout)
+    assert processed["outcomes"] == {"incorrect": 1}
+    status = json.loads(
+        cli(
+            "show-objective-verification",
+            f"--attempt={browser_attempt}",
+            f"--event={browser_event}",
+        ).stdout
+    )
+    assert status["status"] == "incorrect"
+    completion = json.loads(cli("complete-unified-learning", f"--attempt={browser_attempt}").stdout)
+    assert completion["outcome"] == "failure"
     item_id = db.connection.execute(
         "SELECT item_id FROM unified_training_enrollments ORDER BY rowid DESC LIMIT 1"
     ).fetchone()[0]
@@ -442,9 +503,29 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
     from chess_coach.web import create_app
     from tests.test_unified_sessions import token
 
-    path = tmp_path / "transfer.sqlite"
+    root, path = capture_project(tmp_path, "transfer-project")
     db = make_game(path, monkeypatch)
+    # Admit two independently dated games, with the original source checked last.
+    import sys
+
+    from chess_coach.ingest import ingest_pgn
+    from chess_coach.pipeline_config import PipelineConfig
+    from chess_coach.pipeline_inputs import engine_identity, game_input
+    from chess_coach.pipeline_work import run_analysis
+
+    pgn = db.connection.execute("SELECT pgn FROM games WHERE id=1").fetchone()[0]
+    ingest_pgn(db, pgn.replace("2026.01.01", "2026.01.02"))
+    config = PipelineConfig(learner=LEARNER, engine_path=sys.executable, nodes=100)
+    assert (
+        run_analysis(db, 2, game_input(db, 2), config, engine_identity(sys.executable))["status"]
+        == "complete"
+    )
+    supporting = db.connection.execute(
+        "SELECT id FROM positions WHERE game_id=2 ORDER BY ply LIMIT 1"
+    ).fetchone()[0]
+    assert process_decision(db, supporting, LEARNER)["evidence_ids"]
     evidence = process_decision(db, 1, LEARNER)["evidence_ids"][0]
+    certify(db, LEARNER, root)
     db.connection.execute(
         "INSERT INTO puzzle_corpora(version,source,checksum,state) VALUES('capture','fixture','checksum','staging')"
     )
@@ -565,6 +646,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
     db.close()
     app = create_app(
         db_path=path,
+        project_root=root,
         subject=LEARNER,
         actor="operator",
         corpus="capture",
@@ -602,7 +684,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         _, tag = json.loads(base64.urlsafe_b64decode(cursor))
         from chess_coach.related_capture import preview
 
-        check_db = Database(path)
+        check_db = Database(path, capture_root=root)
         first = preview(check_db, LEARNER, 1, "capture", secret=app.secret_key)
         later = preview(check_db, LEARNER, 1, "capture", cursor, secret=app.secret_key)
         no_reset.push_uci("e8f8")
@@ -661,7 +743,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
     assert post.status_code == 303
     shown = client.get(post.headers["Location"], base_url="https://coach.invalid", headers=headers)
     assert b"Capture the piece on d4" in shown.data and b"It is your turn as white" in shown.data
-    check_db = Database(path)
+    check_db = Database(path, capture_root=root)
     assert latest(check_db, LEARNER, 1, "capture")["status"] == "incomplete"
     admitted = check_db.connection.execute(
         "SELECT provenance_json FROM unified_sessions"
@@ -674,21 +756,6 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
 
     def daily_attempt():
         with monkeypatch.context() as patch:
-            patch.setattr(
-                "chess_coach.capture_plan.choose",
-                lambda *_, **_kwargs: {
-                    "source": {
-                        "position_id": 1,
-                        "evidence_id": evidence,
-                        "games": 2,
-                        "version": "material-own-v2",
-                        "key": f"1:material_capture:{evidence}",
-                    },
-                    "limited": False,
-                    "scanned": 2,
-                },
-            )
-            patch.setattr("chess_coach.plan_capture_action.resolve_source", lambda *_a, **_k: {})
             patch.setattr("chess_coach.web_protection_plan.report", lambda *_: None)
             patch.setattr("chess_coach.web_protection_plan.fork_recommendation", lambda *_: None)
             return client.get("/plan", base_url="https://coach.invalid", headers=headers)
@@ -718,28 +785,22 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
                 raise PreviewUnavailable()
             return protection
 
+        from chess_coach.capture_plan import choose as actual_choose
+        from chess_coach.plan_capture_action import resolve_source as actual_resolve
+
+        def checked_choose(*args, **kwargs):
+            result = actual_choose(*args, **kwargs)
+            assert result["source"] and result["source"]["games"] == 2
+            return {**result, "limited": True}
+
         with monkeypatch.context() as patch:
-            patch.setattr(
-                "chess_coach.capture_plan.choose",
-                lambda *_, **_kwargs: {
-                    "source": {
-                        "position_id": 1,
-                        "evidence_id": evidence,
-                        "games": 2,
-                        "reviewed": False,
-                        "version": "material-own-v2",
-                        "key": f"1:material_capture:{evidence}",
-                    },
-                    "limited": True,
-                    "scanned": 2,
-                },
-            )
+            patch.setattr("chess_coach.capture_plan.choose", checked_choose)
             patch.setattr("chess_coach.web_protection_plan.report", checked_protection)
 
-            def checked_capture(*_args, **_kwargs):
+            def checked_capture(*args, **kwargs):
                 if capture_unavailable:
                     raise ValueError("replay unavailable")
-                return {}
+                return actual_resolve(*args, **kwargs)
 
             patch.setattr("chess_coach.plan_capture_action.resolve_source", checked_capture)
             return client.get("/plan/next-focus", base_url="https://coach.invalid", headers=headers)
@@ -809,7 +870,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         and b"largest group has 1 recorded matches" in sparse_page.data
     )
     assert b"not verified comparison results" in sparse_page.data
-    db = Database(path)
+    db = Database(path, capture_root=root)
     pending_history = latest(db, LEARNER, 1, "capture")
     assert pending_history["status"] == "pending"
     assert pending_history["hints"] == (2 if mode == "assisted" else 0)
@@ -1130,6 +1191,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         config = PipelineConfig(learner=LEARNER, engine_path=sys.executable, nodes=100)
         run_analysis(db, game_id, game_input(db, game_id), config, engine_identity(sys.executable))
         assert process_decision(db, position, LEARNER)["evidence_ids"]
+        certify(db, LEARNER, root)
         second_source = capture_preview(db, LEARNER, position, "capture", secret=app.secret_key)
         reference = next(
             value["reference"]
@@ -1723,9 +1785,10 @@ def test_capture_plan_uses_independent_current_sources_and_is_lazy(tmp_path, mon
     from chess_coach.pipeline_work import run_analysis
     from chess_coach.web import create_app
 
-    path = tmp_path / "capture-plan.sqlite"
+    root, path = capture_project(tmp_path, "capture-plan-project")
     db = make_game(path, monkeypatch)
     first = process_decision(db, 1, LEARNER)["evidence_ids"][0]
+    certify(db, LEARNER, root)
     from chess_coach.capture_plan_sources import _groups
     from chess_coach.tactical_course_budget import PreviewUnavailable
 
@@ -1773,6 +1836,7 @@ def test_capture_plan_uses_independent_current_sources_and_is_lazy(tmp_path, mon
 
     app = create_app(
         db_path=path,
+        project_root=root,
         subject=LEARNER,
         actor="operator",
         corpus="legacy",
@@ -1840,6 +1904,7 @@ def test_capture_plan_uses_independent_current_sources_and_is_lazy(tmp_path, mon
             == "complete"
         )
         new_evidence.append(process_decision(db, position, LEARNER)["evidence_ids"][0])
+    certify(db, LEARNER, root)
 
     from chess_coach.recurrence_cursor import MAX_ID
     from chess_coach.recurrence_sources import evidence as recurrence_evidence
@@ -1851,18 +1916,18 @@ def test_capture_plan_uses_independent_current_sources_and_is_lazy(tmp_path, mon
     repeated = report(db, LEARNER, "legacy")
     assert repeated["source"]["games"] == 2
     assert repeated["source"]["observations"] == 2
-    import chess_coach.capture_plan as capture_plan
+    import chess_coach.curriculum_capture_choice as capture_choice
 
-    original_report = capture_plan.report
+    original_candidates = capture_choice.candidates
     calls = []
 
     def counted(*args, **kwargs):
         calls.append(True)
-        return original_report(*args, **kwargs)
+        return original_candidates(*args, **kwargs)
 
     with monkeypatch.context() as patch:
         patch.setattr("chess_coach.capture_finder.find", forbidden)
-        patch.setattr(capture_plan, "report", counted)
+        patch.setattr(capture_choice, "candidates", counted)
         daily = client.get("/plan", base_url="https://coach.invalid", headers=headers)
     assert calls == [True]
     assert b"<h3>Capture practice</h3>" in daily.data
@@ -1995,14 +2060,15 @@ def test_capture_plan_uses_independent_current_sources_and_is_lazy(tmp_path, mon
 
     with monkeypatch.context() as patch:
         patch.setattr(
-            "chess_coach.capture_plan.report",
+            "chess_coach.curriculum_capture_choice.candidates",
             lambda *_, **_kwargs: (_ for _ in ()).throw(PreviewUnavailable()),
         )
         timed_out = client.get("/plan", base_url="https://coach.invalid", headers=headers)
     assert timed_out.status_code == 200 and b"<h3>Capture practice</h3>" not in timed_out.data
     with monkeypatch.context() as patch:
         patch.setattr(
-            "chess_coach.capture_plan.report", lambda *_: (_ for _ in ()).throw(ValueError())
+            "chess_coach.curriculum_capture_choice.candidates",
+            lambda *_: (_ for _ in ()).throw(ValueError()),
         )
         fallback = client.get("/plan", base_url="https://coach.invalid", headers=headers)
     assert fallback.status_code == 200 and b"<h3>Capture practice</h3>" not in fallback.data
@@ -2046,7 +2112,7 @@ def _daily_capture_workflow(tmp_path, monkeypatch):
     from chess_coach.web import create_app
     from tests.test_unified_sessions import token
 
-    path = tmp_path / "capture-plan.sqlite"
+    root, path = capture_project(tmp_path, "daily-capture-project")
     db = make_game(path, monkeypatch)
     evidence = process_decision(db, 1, LEARNER)["evidence_ids"][0]
     cold = daily_plan(db, subject=LEARNER, corpus_version="plan-fixture")
@@ -2063,6 +2129,7 @@ def _daily_capture_workflow(tmp_path, monkeypatch):
         "SELECT id FROM positions WHERE game_id=2 ORDER BY ply LIMIT 1"
     ).fetchone()[0]
     process_decision(db, second, LEARNER)
+    certify(db, LEARNER, root)
 
     corpus = db.connection.execute(
         "INSERT INTO puzzle_corpora(version,source,checksum,state) "
@@ -2216,6 +2283,7 @@ def _daily_capture_workflow(tmp_path, monkeypatch):
 
     app = create_app(
         db_path=path,
+        project_root=root,
         subject=LEARNER,
         actor="fixture",
         corpus="plan-fixture",
@@ -2297,14 +2365,12 @@ def _daily_capture_workflow(tmp_path, monkeypatch):
 def _scheduled_deadline_controls(db, tmp_path, monkeypatch, now):
     from types import SimpleNamespace
 
+    import chess_coach.capture_certificate_reader as certificate_reader
     import chess_coach.curriculum_capture_source as capture_source
     import chess_coach.curriculum_family_mix as family_mix
     import chess_coach.curriculum_new_capture as new_capture
     import chess_coach.curriculum_unified_owned as owned
     import chess_coach.fork_proof as fork_proof
-    import chess_coach.material_reply_guard as reply_guard
-    import chess_coach.material_threat_actions as threat_actions
-    import chess_coach.objective_capture_snapshot as capture_snapshot
     from chess_coach.curriculum import daily_plan
     from chess_coach.curriculum_conflicts import scheduled_page
     from chess_coach.curriculum_cursor_codec import decode_cursor
@@ -2331,9 +2397,9 @@ def _scheduled_deadline_controls(db, tmp_path, monkeypatch, now):
     clock = [0.0]
     inside = [False]
     visited = []
-    original_capture, original_reply = owned.capture_candidate, reply_guard._unresolved
-    original_gain, original_judge = threat_actions._gain, capture_snapshot.judge
-    in_judge = [False]
+    original_capture = owned.capture_candidate
+    original_prepare = certificate_reader.prepare
+    original_proof = certificate_reader._proof
 
     def scheduled_capture(*args, **kwargs):
         inside[0] = True
@@ -2342,17 +2408,12 @@ def _scheduled_deadline_controls(db, tmp_path, monkeypatch, now):
         finally:
             inside[0] = False
 
-    def gain(*args, **kwargs):
-        if inside[0] and kwargs.get("check") is not None:
-            original_check = kwargs["check"]
-
-            def expire():
-                visited.append(True)
-                clock[0] = 3.0
-                original_check()
-
-            kwargs["check"] = expire
-        return original_gain(*args, **kwargs)
+    def prepare(*args, **kwargs):
+        result = original_prepare(*args, **kwargs)
+        if inside[0]:
+            visited.append(True)
+            clock[0] = 3.0
+        return result
 
     original_resolve = capture_source.resolve_source
 
@@ -2367,7 +2428,7 @@ def _scheduled_deadline_controls(db, tmp_path, monkeypatch, now):
         patch.setattr(new_capture, "time", SimpleNamespace(monotonic=lambda: clock[0]))
         patch.setattr(family_mix, "time", SimpleNamespace(monotonic=lambda: clock[0]))
         patch.setattr(capture_source, "resolve_source", admission_resolve)
-        patch.setattr(threat_actions, "_gain", gain)
+        patch.setattr(certificate_reader, "prepare", prepare)
         admission_expired = page(second["next_cursor"])
     assert visited and admission_expired["continuation_reason"] == "capture_scan_incomplete"
     admission_state = decode_cursor(db, admission_expired["next_cursor"])
@@ -2383,7 +2444,7 @@ def _scheduled_deadline_controls(db, tmp_path, monkeypatch, now):
         patch.setattr(new_capture, "time", SimpleNamespace(monotonic=lambda: clock[0]))
         patch.setattr(family_mix, "time", SimpleNamespace(monotonic=lambda: clock[0]))
         patch.setattr(owned, "capture_candidate", scheduled_capture)
-        patch.setattr(threat_actions, "_gain", gain)
+        patch.setattr(certificate_reader, "prepare", prepare)
         currentness_expired = page(second["next_cursor"])
     assert visited and currentness_expired["continuation_reason"] == "capture_scan_incomplete"
     currentness_state = decode_cursor(db, currentness_expired["next_cursor"])
@@ -2394,16 +2455,9 @@ def _scheduled_deadline_controls(db, tmp_path, monkeypatch, now):
     clock[0] = 0.0
     visited.clear()
 
-    def judge(*args, **kwargs):
-        in_judge[0] = True
-        try:
-            return original_judge(*args, **kwargs)
-        finally:
-            in_judge[0] = False
-
-    def reply(*args, **kwargs):
-        result = original_reply(*args, **kwargs)
-        if inside[0] and in_judge[0]:
+    def proof(*args, **kwargs):
+        result = original_proof(*args, **kwargs)
+        if inside[0]:
             visited.append(True)
             clock[0] = 3.0
         return result
@@ -2412,8 +2466,7 @@ def _scheduled_deadline_controls(db, tmp_path, monkeypatch, now):
         patch.setattr(new_capture, "time", SimpleNamespace(monotonic=lambda: clock[0]))
         patch.setattr(family_mix, "time", SimpleNamespace(monotonic=lambda: clock[0]))
         patch.setattr(owned, "capture_candidate", scheduled_capture)
-        patch.setattr(capture_snapshot, "judge", judge)
-        patch.setattr(reply_guard, "_unresolved", reply)
+        patch.setattr(certificate_reader, "_proof", proof)
         expired = page(second["next_cursor"])
     assert visited and expired["continuation_reason"] == "capture_scan_incomplete"
     after = decode_cursor(db, expired["next_cursor"])
@@ -2481,11 +2534,7 @@ def _capture_practice_priority_workflow(tmp_path, monkeypatch):
     from chess_coach.related_capture_start import start_related
     from chess_coach.web import create_app
 
-    root = tmp_path / "capture-priority-project"
-    data = root / ".runtime" / "data"
-    data.mkdir(parents=True, mode=0o700)
-    (root / ".runtime" / "planning").mkdir(mode=0o700)
-    path = data / "plan.sqlite"
+    root, path = capture_project(tmp_path, "capture-priority-project")
     db = make_game(path, monkeypatch)
     first = process_decision(db, 1, LEARNER)["evidence_ids"][0]
     review_evidence(db, first, decision="accept", actor="fixture")
@@ -2537,6 +2586,38 @@ def _capture_practice_priority_workflow(tmp_path, monkeypatch):
         ((base - timedelta(days=1)).isoformat(),),
     )
     db.connection.commit()
+    from chess_coach.capture_certificate_store import load as load_certificates
+    from chess_coach.opening_queue_location import scope as certificate_scope
+
+    db.capture_root = certificate_scope(db, root)
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("capture proof ran in a request")
+
+    with monkeypatch.context() as guard:
+        guard.setattr("chess_coach.material_opportunity_current.verified_witness", forbidden)
+        guard.setattr("chess_coach.objective_capture_snapshot.judge", forbidden)
+        before_worker = daily_plan(
+            db,
+            subject=LEARNER,
+            corpus_version="priority",
+            limit=1,
+            goal="capture",
+            project_root=root,
+        )
+    certify(db, LEARNER, root)
+    with pytest.raises(ValueError, match="capture practice changed"):
+        daily_plan(
+            db,
+            subject=LEARNER,
+            corpus_version="priority",
+            limit=1,
+            goal="capture",
+            cursor=before_worker["window_cursor"],
+            project_root=root,
+        )
+    certificates = load_certificates(db, root, LEARNER)
+    assert certificates and set(certificates["certificates"]) >= {str(first), str(second)}
     options, status, _, _ = candidates(db, LEARNER, "priority", lambda: None)
     assert status == "available" and len(options) == 2
     assert options[0][0]["prompt_key"] != options[1][0]["prompt_key"]
@@ -2602,7 +2683,34 @@ def _capture_practice_priority_workflow(tmp_path, monkeypatch):
             **kwargs,
         )
 
-    unknown = plan()
+    from chess_coach.unified_session_events import show as show_unified
+    from chess_coach.unified_source_current import snapshot_hash
+
+    existing_key = options[0][0]["source_key"]
+    start(
+        db,
+        attempt_id="existing-certified-capture",
+        subject=LEARNER,
+        source_type="own-game",
+        version=TARGET_VERSION,
+        key=existing_key,
+        project_root=root,
+    )
+    existing_hash = db.connection.execute(
+        "SELECT snapshot_hash FROM unified_sessions WHERE attempt_id=?",
+        ("existing-certified-capture",),
+    ).fetchone()[0]
+    assert existing_hash == snapshot_hash(certificates["certificates"][existing_key]["snapshot"])
+
+    with monkeypatch.context() as guard:
+        guard.setattr("chess_coach.material_opportunity_current.verified_witness", forbidden)
+        guard.setattr("chess_coach.objective_capture_snapshot.judge", forbidden)
+        assert show_unified(db, "existing-certified-capture", LEARNER)["objective"] == (
+            "capture_named_target"
+        )
+        before_read = db.connection.total_changes
+        unknown = plan()
+        assert db.connection.total_changes == before_read
     assert unknown["items"][0]["source_key"] == options[0][0]["source_key"]
     assert "unknown or tied" in unknown["items"][0]["reason"]
 
@@ -2756,6 +2864,7 @@ def _capture_practice_priority_workflow(tmp_path, monkeypatch):
 
     # A new review leaves the evidence usable but invalidates its old assessment binding.
     review_evidence(db, options[0][1]["source"]["evidence_id"], decision="accept", actor="fixture")
+    certify(db, LEARNER, root)
     guidance("stale", b"The latest assessment could not be checked", b"/plan/captures")
     attempt(positions[0], "correct", "guidance-refreshed")
     assert plan()["items"][0]["source_key"] == options[0][0]["source_key"]
@@ -2776,7 +2885,7 @@ def _capture_practice_priority_workflow(tmp_path, monkeypatch):
     timed_form, untimed_form = form("goal=capture&minutes=1"), form("goal=capture")
     count = db.connection.execute("SELECT count(*) FROM unified_sessions").fetchone()[0]
     trend = trend_location(db, root)
-    assert trend is not None and not trend.exists()
+    assert trend is not None and trend.exists() and trend.read_text() != "{}"
     trend.write_text("{}")
     with pytest.raises(ValueError, match="capture practice changed"):
         plan(cursor=tied["window_cursor"])
@@ -2823,6 +2932,8 @@ def _capture_practice_priority_workflow(tmp_path, monkeypatch):
     assert "Comparable verified practice selected" in chosen["items"][0]["reason"]
     output = io.StringIO()
     with monkeypatch.context() as patch, redirect_stdout(output):
+        patch.setattr("chess_coach.material_opportunity_current.verified_witness", forbidden)
+        patch.setattr("chess_coach.objective_capture_snapshot.judge", forbidden)
         patch.setattr(
             sys,
             "argv",
@@ -2846,14 +2957,43 @@ def _capture_practice_priority_workflow(tmp_path, monkeypatch):
     assert (
         json.loads(output.getvalue())["items"][0]["source_key"] == chosen["items"][0]["source_key"]
     )
-    page = client.get(
-        "/plan?goal=capture",
-        base_url="https://coach.invalid",
-        headers=headers,
-    )
+    with monkeypatch.context() as guard:
+        guard.setattr("chess_coach.material_opportunity_current.verified_witness", forbidden)
+        guard.setattr("chess_coach.objective_capture_snapshot.judge", forbidden)
+        page = client.get(
+            "/plan?goal=capture",
+            base_url="https://coach.invalid",
+            headers=headers,
+        )
     assert page.status_code == 200
     assert f'name="key" value="{chosen["items"][0]["source_key"]}"'.encode() in page.data
     assert b"Comparable verified practice selected" in page.data
+    selected_form = form("goal=capture&minutes=1")
+
+    # A missing certificate refuses an already signed launch without creating learning.
+    from chess_coach.capture_certificate_store import publish as publish_certificates
+
+    retained = dict(load_certificates(db, root, LEARNER)["certificates"])
+    retained.pop(chosen["items"][0]["source_key"])
+    before_missing = tuple(
+        db.connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+        for table in ("unified_sessions", "unified_training_enrollments")
+    )
+    publish_certificates(db, root, LEARNER, retained)
+    missing = client.post(
+        "/unified/start",
+        data=selected_form,
+        base_url="https://coach.invalid",
+        headers=headers | {"Origin": "https://coach.invalid"},
+    )
+    assert missing.status_code == 400
+    assert before_missing == tuple(
+        db.connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+        for table in ("unified_sessions", "unified_training_enrollments")
+    )
+    certify(db, LEARNER, root)
+    chosen = plan()
+    assert chosen["items"][0]["source_key"] == options[1][0]["source_key"]
     selected_form = form("goal=capture&minutes=1")
     from chess_coach.curriculum_capture_offer import POLICY as NEW_OFFER_POLICY
     from chess_coach.curriculum_cursor import revision
@@ -2900,13 +3040,20 @@ def _capture_practice_priority_workflow(tmp_path, monkeypatch):
     )
     db.connection.commit()
     selected_form = form("goal=capture&minutes=1")
-    response = client.post(
-        "/unified/start",
-        data=selected_form,
-        base_url="https://coach.invalid",
-        headers=headers | {"Origin": "https://coach.invalid"},
-    )
-    assert response.status_code == 303
+    with monkeypatch.context() as guard:
+        guard.setattr("chess_coach.material_opportunity_current.verified_witness", forbidden)
+        guard.setattr("chess_coach.objective_capture_snapshot.judge", forbidden)
+        response = client.post(
+            "/unified/start",
+            data=selected_form,
+            base_url="https://coach.invalid",
+            headers=headers | {"Origin": "https://coach.invalid"},
+        )
+        assert response.status_code == 303
+        redirected = client.get(
+            response.headers["Location"], base_url="https://coach.invalid", headers=headers
+        )
+        assert redirected.status_code == 200
     assert (
         db.connection.execute("SELECT count(*) FROM unified_training_enrollments").fetchone()[0]
         == 1

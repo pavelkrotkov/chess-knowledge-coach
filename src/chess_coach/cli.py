@@ -93,7 +93,7 @@ COMMANDS = {
 COMMANDS.update(RELATED_COMMANDS)
 
 
-def main(*, compatibility: bool | None = None) -> None:
+def main(*, compatibility: bool | None = None, capture_root=None) -> None:
     args = build_parser().parse_args()
     if args.command == "capabilities":
         print(json.dumps(capability_report(), indent=2))
@@ -111,7 +111,8 @@ def main(*, compatibility: bool | None = None) -> None:
     # Only an omitted selection consults the configured private profile.
     if compatibility is None:
         compatibility = _configured_compatibility(args.db)
-    db = Database(args.db, compatibility=compatibility)
+    root = capture_root if capture_root is not None else getattr(args, "project_root", None)
+    db = Database(args.db, compatibility=compatibility, capture_root=root)
     db.initialize()
     if args.command == "seed-competencies":
         print(json.dumps({"skills": seed_competency_graph(db)}))

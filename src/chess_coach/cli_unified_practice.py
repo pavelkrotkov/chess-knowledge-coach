@@ -15,9 +15,11 @@ from .unified_own_game import list_candidates
 from .unified_session_events import hint, show, submit
 
 
+# Capture commands use only the explicitly selected project scope.
 def configure(sub):
     listing = sub.add_parser("list-own-game-practice")
     listing.add_argument("--subject", required=True)
+    listing.add_argument("--project-root")
     avoidance = sub.add_parser("list-fork-avoidance-practice")
     avoidance.add_argument("--subject", required=True)
     fork_defense = sub.add_parser("list-fork-defense-practice")
@@ -32,11 +34,13 @@ def configure(sub):
     verify = sub.add_parser("process-objective-verifications")
     verify.add_argument("--subject", required=True)
     verify.add_argument("--limit", type=int, default=4)
+    verify.add_argument("--project-root")
     for name in ("show-objective-verification", "cancel-objective-verification"):
         action = sub.add_parser(name)
         action.add_argument("--subject", required=True)
         action.add_argument("--attempt", required=True)
         action.add_argument("--event", required=True)
+        action.add_argument("--project-root")
     begin = sub.add_parser("start-unified")
     begin.add_argument("--attempt", required=True)
     begin.add_argument("--subject", required=True)
@@ -52,6 +56,7 @@ def configure(sub):
         parser = sub.add_parser(name)
         parser.add_argument("--attempt", required=True)
         parser.add_argument("--subject", required=True)
+        parser.add_argument("--project-root")
         if name != "show-unified":
             parser.add_argument("--event", required=True)
         if name == "move-unified":

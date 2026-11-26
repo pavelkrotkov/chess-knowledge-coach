@@ -23,7 +23,7 @@ def database_path() -> Path:
 def main() -> None:
     path = database_path()
     sys.argv = ["chess-coach", "--db", str(path), "process-pipeline"]
-    cli_main(compatibility=configured(path))
+    cli_main(compatibility=configured(path), capture_root=_release_root())
 
 
 def _release_root() -> Path:

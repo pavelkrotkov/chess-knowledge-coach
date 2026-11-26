@@ -2,6 +2,7 @@
 
 from itertools import chain, islice
 
+from .capture_certificate_store import location as certificate_location
 from .capture_game_trend_paths import location as trend_location
 from .curriculum_capture_practice_binding import practice
 from .fact_fingerprint import canonical, digest
@@ -29,7 +30,10 @@ def _paths(db, subject, root):
     incomplete = len(paths) > MAX_INTENTS
     if incomplete:
         paths = []
-    paths.extend([directory / "poc-study-336-intent.json", trend])
+    certificate = certificate_location(db, root, subject)
+    if certificate is None:
+        raise ValueError("capture certificate scope unavailable")
+    paths.extend([directory / "poc-study-336-intent.json", trend, certificate])
     return sorted(paths), incomplete
 
 

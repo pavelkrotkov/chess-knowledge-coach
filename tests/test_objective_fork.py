@@ -1228,13 +1228,12 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
     from chess_coach.pipeline_config import PipelineConfig
     from chess_coach.pipeline_inputs import engine_identity, game_input
     from chess_coach.pipeline_work import run_analysis
+    from tests.capture_certificate_fixture import certify
+    from tests.capture_certificate_fixture import project as capture_project
 
-    root = tmp_path / "plan-project"
+    root, path = capture_project(tmp_path, "plan-project")
     data = root / ".runtime" / "data"
-    data.mkdir(parents=True)
     planning = root / ".runtime" / "planning"
-    planning.mkdir(mode=0o700)
-    path = data / "fork-plan.sqlite"
     v6_new_state = curriculum.new_state
 
     def public_v5_state(*args):
@@ -1304,6 +1303,8 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
                 "SELECT id FROM positions WHERE game_id=? ORDER BY ply LIMIT 1", (game_id,)
             ).fetchone()[0]
             material_decision(db, position, owner)
+    for owner in (SUBJECT, "capture_learner"):
+        certify(db, owner, root)
     from chess_coach.training import create_training_item, review_item
 
     corpus = db.connection.execute(
@@ -1412,6 +1413,7 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
         review_evidence(db, evidence, decision="revoke", actor="fixture")
     for evidence in ids["hanging_piece"]:
         review_evidence(db, evidence, decision="accept", actor="fixture")
+    certify(db, SUBJECT, root)
     with pytest.raises(ValueError, match="sources changed"):
         daily_plan(
             db,
@@ -1553,12 +1555,15 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
             daily_plan(db, subject=SUBJECT, corpus_version="fixture", goal="unknown")
 
         # Both source-backed offers from one page should remain startable.
-        pair_path = tmp_path / "window-two-offers.sqlite"
+        pair_path = data / "window-two-offers.sqlite"
         target = sqlite3.connect(pair_path)
         db.connection.backup(target)
         target.close()
+        pair_db = Database(pair_path, capture_root=root)
+        certify(pair_db, SUBJECT, root)
         pair_app = create_app(
             db_path=pair_path,
+            project_root=root,
             subject=SUBJECT,
             actor="fixture",
             corpus="fixture",
@@ -1603,19 +1608,20 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
         )
         assert renewal is not None
         renewal_url = html.unescape(renewal.group(1))
-        pair_db = Database(pair_path)
         from chess_coach.evidence_review import review_evidence as review_pair
 
         # A visible scheduled source that can no longer be reconstructed must
         # prevent the absence proof instead of releasing the other offer.
-        unavailable_path = tmp_path / "window-unavailable.sqlite"
+        unavailable_path = data / "window-unavailable.sqlite"
         target = sqlite3.connect(unavailable_path)
         pair_db.connection.backup(target)
         target.close()
-        unavailable_db = Database(unavailable_path)
+        unavailable_db = Database(unavailable_path, capture_root=root)
+        certify(unavailable_db, SUBJECT, root)
         review_pair(unavailable_db, int(pair_fields[0]["key"]), decision="reject", actor="fixture")
         unavailable_app = create_app(
             db_path=unavailable_path,
+            project_root=root,
             subject=SUBJECT,
             actor="fixture",
             corpus="fixture",
@@ -1648,6 +1654,7 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
             == 400
         )
         review_pair(pair_db, int(pair_fields[1]["key"]), decision="accept", actor="fixture")
+        certify(pair_db, SUBJECT, root)
         rechecked = pair_client.get(
             renewal_url, base_url="https://coach.invalid", headers=pair_headers
         )
@@ -1677,13 +1684,15 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
         )
         pair_db.close()
 
-        copy_path = tmp_path / "window-plan.sqlite"
+        copy_path = data / "window-plan.sqlite"
         target = sqlite3.connect(copy_path)
         db.connection.backup(target)
         target.close()
-        copy_db = Database(copy_path)
+        copy_db = Database(copy_path, capture_root=root)
+        certify(copy_db, SUBJECT, root)
         app = create_app(
             db_path=copy_path,
+            project_root=root,
             subject=SUBJECT,
             actor="fixture",
             corpus="fixture",
@@ -2562,7 +2571,7 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
     _priority_completion_workflow(db, source, material_pgn, monkeypatch)
     db.close()
     monkeypatch.setattr(curriculum, "new_state", v6_new_state)
-    _v6_source_mix(v6_path, v6_planning, now, monkeypatch)
+    _v6_source_mix(v6_path, v6_root, v6_planning, now, monkeypatch)
     choices = _same_native_pair_fixture(tmp_path, v6_root, v6_path, monkeypatch, dual_roles=True)
 
     # Launch the actual freshly issued form only in this workflow; the setup
@@ -2827,6 +2836,7 @@ def _priority_completion_workflow(db, fork_pgn, capture_pgn, monkeypatch):
     from chess_coach.pipeline_work import run_analysis
     from chess_coach.unified_session_events import show, submit
     from chess_coach.unified_sessions import start
+    from tests.capture_certificate_fixture import certify
     from tests.objective_fork_support import ForkEngine
     from tests.test_material_pipeline import Engine as CaptureEngine
 
@@ -2876,6 +2886,9 @@ def _priority_completion_workflow(db, fork_pgn, capture_pgn, monkeypatch):
             if family == "capture":
                 capture_ids.append(evidence)
 
+    # Four sources need two ordinary worker turns under the existing proof quota.
+    certify(db, learner, db.capture_root)
+    certify(db, learner, db.capture_root)
     original = resume.new_state
 
     def capture_first(*args):
@@ -2919,7 +2932,7 @@ def _priority_completion_workflow(db, fork_pgn, capture_pgn, monkeypatch):
         assert "current reviewed weakness is supported" in after["items"][0]["reason"]
 
 
-def _v6_source_mix(path, planning, now, monkeypatch):
+def _v6_source_mix(path, project_root, planning, now, monkeypatch):
     import os
     from datetime import UTC, datetime, timedelta
 
@@ -2929,6 +2942,7 @@ def _v6_source_mix(path, planning, now, monkeypatch):
     import chess_coach.curriculum_canonical_scan as canonical_scan
     import chess_coach.curriculum_capture_conflict as conflict
     import chess_coach.curriculum_family_mix as family_mix
+    from chess_coach.capture_certificate_store import load as load_certificates
     from chess_coach.curriculum import daily_plan
     from chess_coach.curriculum_cursor_codec import decode_cursor
     from chess_coach.db import Database
@@ -2939,9 +2953,13 @@ def _v6_source_mix(path, planning, now, monkeypatch):
     from chess_coach.tactical_study_exposure import VERSION as EXPOSURE_VERSION
     from chess_coach.unified_sessions import start
     from chess_coach.unified_sources import resolve_source
+    from tests.capture_certificate_fixture import certify
     from tests.test_objective_promotion import CONTENT, MANIFEST, ROOT, VERSION
 
-    db = Database(path)
+    db = Database(path, capture_root=project_root)
+    # The copied database needs its own worker certificate and identity binding.
+    certify(db, SUBJECT, project_root)
+    assert load_certificates(db, project_root, SUBJECT)["certificates"]
     assert import_collection(db, CONTENT, CONTENT, MANIFEST, project_root=ROOT)["accepted"] == 8
     start(
         db,

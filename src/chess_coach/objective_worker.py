@@ -7,6 +7,7 @@ from .objective_fork_defense_reporting import work_limit
 from .objective_pin_prevent_reporting import work_limit as pin_work_limit
 from .objective_publication import publish
 from .objective_verify import SECONDS, compute
+from .objective_work_scope import require_capture_scope
 from .objective_work_scope import scope as work_scope
 
 
@@ -22,6 +23,8 @@ def process(db, subject, *, limit=4, clock=time.monotonic, seconds=SECONDS, veri
         WHERE q.subject=? AND r.attempt_id IS NULL ORDER BY q.rowid LIMIT ?""",
         (identity, limit + 1),
     ).fetchall()
+    # A missing project must not create an irreversible unavailable result.
+    require_capture_scope(db, rows[:limit], identity)
     outcomes = {}
     for row in rows[:limit]:
         result = _process_one(db, row, clock, seconds, verifier)

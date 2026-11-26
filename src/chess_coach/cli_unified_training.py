@@ -12,6 +12,7 @@ def configure(sub, begin):
     complete = sub.add_parser("complete-unified-learning")
     complete.add_argument("--attempt", required=True)
     complete.add_argument("--subject", required=True)
+    complete.add_argument("--project-root")
 
 
 def handle_complete_learning(db, args):

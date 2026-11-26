@@ -148,6 +148,8 @@ def check(payload):
     assert Path(chess_coach.__file__).resolve() == Path(payload["application"]).resolve()
     assert fingerprints(path) == payload["fingerprints"]
     db = Database(path)
+    if hasattr(db, "capture_root"):
+        db.capture_root = root.resolve()
     try:
         _records(db)
     finally:

@@ -26,6 +26,9 @@ def daily_plan(
     _due_recheck: bool = False,
     project_root=None,
 ) -> dict:
+    from .capture_certificate_store import scope
+
+    db.capture_root = scope(project_root, db.capture_root)
     budget = _budget(db, project_root)
     with plan_snapshot(db):
         from .curriculum_window_plan import build as build_window

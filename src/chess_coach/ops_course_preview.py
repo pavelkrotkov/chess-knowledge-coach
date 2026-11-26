@@ -13,7 +13,7 @@ def prepare(root, preview_path, output):
     database, _, preview_path, output = paths(root, preview_path, output, output=True)
     with preview_path.open(encoding="utf-8") as handle:
         envelope = json.load(handle)
-    result = build_readonly(database, envelope)
+    result = build_readonly(database, envelope, project_root=root)
     encoded = json.dumps(result, sort_keys=True, allow_nan=False).encode()
     descriptor = os.open(output, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
     with os.fdopen(descriptor, "wb") as handle:

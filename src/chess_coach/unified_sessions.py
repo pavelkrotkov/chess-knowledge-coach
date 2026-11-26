@@ -35,6 +35,9 @@ def start(
     opening_window_cursor=None,
     project_root=None,
 ):
+    from .capture_certificate_store import scope
+
+    db.capture_root = scope(project_root, db.capture_root)
     validate_goal(source_type, goal)
     if not all(
         isinstance(v, str) and 0 < len(v) <= 256

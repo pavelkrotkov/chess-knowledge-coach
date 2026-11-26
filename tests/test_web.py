@@ -663,8 +663,13 @@ def test_private_access_and_csrf(setup, tmp_path, monkeypatch):
 
     monkeypatch.setitem(cli.COMMANDS, "process-pipeline", worker_action)
     monkeypatch.setattr(ops_worker, "database_path", lambda: legacy)
-    monkeypatch.setattr(sys, "argv", [])
-    ops_worker.main()
+    release = tmp_path / ".runtime" / "releases" / ("a" * 40)
+    (release / "env").mkdir(parents=True, mode=0o700)
+    (release / "COMMIT").write_text(release.name)
+    with monkeypatch.context() as installed:
+        installed.setattr(sys, "prefix", str(release / "env"))
+        installed.setattr(sys, "argv", [])
+        ops_worker.main()
     monkeypatch.setenv("LICHESS_USERNAME", "learner")
     monkeypatch.setattr(ops_retry, "database_path", lambda: legacy)
     monkeypatch.setattr(ops_retry, "sync_result", lambda db, *_args, **_kw: None)
