@@ -10,14 +10,32 @@ from .related_transfer_admission import admit as admit_selection
 from .related_transfer_select import select
 
 
-def selection(db, subject, source, corpus, version, files, familiar_data, rating_bounds, score):
-    matching = {"feature": certified_features}
-    if rating_bounds is not None:
-        matching["rating_bounds"] = rating_bounds
-    if score is not None:
-        matching["score"] = score
-    selected = select(db, subject, source, corpus, version, familiar_data=familiar_data, **matching)
-    selected = bind_scope(db, subject, selected, files)
+def choose(db, subject, position, corpus, familiar_data, difficulty):
+    from .curriculum_capture_file_guard import current
+    from .related_capture import VERSION, _selection
+    from .related_capture_source import supported_source
+
+    if difficulty is None:
+        from .capture_finder_prepared import PreparationPending
+
+        selected = _selection(
+            db, subject, position, corpus, familiar_data=familiar_data, finder=True
+        )
+        if selected is None:
+            raise PreparationPending()
+        return selected
+    source = supported_source(db, subject, position)
+    selected = select(
+        db,
+        subject,
+        source,
+        corpus,
+        VERSION,
+        familiar_data=familiar_data,
+        feature=certified_features,
+        **options(difficulty),
+    )
+    selected = bind_scope(db, subject, selected, current(db, subject, db.capture_root))
     if selected is None:
         return None
     scope = digest(canonical(["verified-capture-finder-v1", selected[4]]))
@@ -25,11 +43,11 @@ def selection(db, subject, source, corpus, version, files, familiar_data, rating
 
 
 def admit(db, subject, position, corpus, reference, secret, assessment_requested, difficulty):
-    from .related_capture import VERSION, _selection
+    from .related_capture import VERSION
 
     if secret is None:
         raise ValueError("capture finder unavailable")
-    selected = _selection(db, subject, position, corpus, finder=True, **options(difficulty))
+    selected = choose(db, subject, position, corpus, None, difficulty)
     if selected is None:
         raise ValueError("capture selection unavailable")
     selected = difficulty_scope(selected, difficulty)

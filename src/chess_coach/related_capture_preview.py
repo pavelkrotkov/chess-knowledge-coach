@@ -1,8 +1,7 @@
 """Present a current prepared-corpus capture preview."""
 
-from .fact_fingerprint import canonical, digest
 from .related_capture_familiar import familiarity
-from .related_capture_pool import complete as prepared_window
+from .related_capture_pool import require as required_window
 from .related_capture_view import _assessment_options, present
 
 
@@ -34,11 +33,7 @@ def _options(db, subject, corpus_version, cursor, selection, result, games):
     if selection is None:
         return
     corpus = selection[2]
-    window = prepared_window(
-        db, db.capture_root, corpus_version, corpus["lower"], corpus["upper"], subject, games
-    )
-    if window is None or digest(canonical(window)) != corpus.get("capture_preparation"):
-        raise ValueError("capture preparation changed")
+    window = required_window(db, db.capture_root, corpus_version, corpus, subject, games)
     _assessment_options(
         db, result["items"], selection[3], cursor, result["scope"], subject, window=window
     )

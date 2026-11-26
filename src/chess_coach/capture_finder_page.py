@@ -4,6 +4,7 @@ import sqlite3
 
 from flask import current_app, render_template, request
 
+from .capture_finder_prepared import PreparationPending
 from .capture_finder_scope import option
 from .web_board import board_rows
 from .web_db import database
@@ -27,6 +28,13 @@ def page():
             current_app.config["CORPUS"],
             current_app.secret_key,
             **options,
+        )
+    except PreparationPending:
+        return render_template(
+            "capture_finder_empty.html",
+            matched=attempt is not None,
+            position=position,
+            pending=True,
         )
     except (sqlite3.Error, ValueError, TypeError, KeyError, IndexError):
         found = None

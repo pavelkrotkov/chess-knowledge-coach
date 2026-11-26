@@ -1,10 +1,11 @@
 """Search current ranked sources for a proved unfamiliar capture."""
 
-from .capture_difficulty_binding import difficulty_scope, options
+from .capture_difficulty_binding import difficulty_scope
 from .capture_finder_dispatch import accept_options, decorate
-from .capture_finder_proof import prove
+from .capture_finder_prepared import select as prove
 from .capture_plan_sources import witnesses
-from .related_capture import _selection, present
+from .related_capture import present
+from .related_capture_legacy import choose
 from .tactical_exposure_admission import filter_eligible
 
 MAX_PROOFS = 12
@@ -34,15 +35,7 @@ def search(
         if source is None:
             break
         try:
-            selection = _selection(
-                db,
-                subject,
-                source["position_id"],
-                corpus,
-                familiar_data=familiar,
-                finder=True,
-                **options(difficulty),
-            )
+            selection = choose(db, subject, source["position_id"], corpus, familiar, difficulty)
             selection = difficulty_scope(selection, difficulty)
         except (ValueError, TypeError, KeyError, IndexError):
             continue
@@ -57,6 +50,10 @@ def search(
             deadline,
             min(PER_SOURCE_PROOFS, MAX_PROOFS - checked),
             expired,
+            subject,
+            familiar[1],
+            corpus,
+            difficulty,
             **accept_options(db, selection, expected, subject, familiar[1], difficulty),
         )
         checked += used

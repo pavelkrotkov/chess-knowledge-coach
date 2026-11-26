@@ -33,12 +33,6 @@ def _selection(
 ):
     files = current(db, subject, db.capture_root)
     source = supported_source(db, subject, position)
-    if finder:
-        from .related_capture_legacy import selection as finder_selection
-
-        return finder_selection(
-            db, subject, source, corpus_version, VERSION, files, familiar_data, rating_bounds, score
-        )
     if score is not None or rating_bounds is not None:
         return None
     if familiar_data is None:
@@ -67,4 +61,4 @@ def _selection(
     if selected is not None:
         selected[2]["capture_preparation"] = fingerprint
         selected[5]["qualification_unavailable"] = unavailable(prepared)
-    return bind_scope(db, subject, selected, files, fingerprint)
+    return bind_scope(db, subject, selected, files, fingerprint, finder=finder)

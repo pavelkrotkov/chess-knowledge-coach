@@ -87,13 +87,15 @@ def _present(item, scope, secret=None):
     if secret is None:
         result["reference"] = digest(canonical(identity))
     else:
-        from .related_mate_search_token import fingerprint
-
         result["reference"] = fingerprint(secret, "capture-reference", identity)
     return result
 
 
-def _reference(selected, reference, secret):
+def _reference(selected, reference, secret, *, finder=False):
+    if secret is None:
+        if finder:
+            raise ValueError("capture finder unavailable")
+        return reference
     scope = selected[4]
     for item in selected[3]:
         identity = [scope, item["type"], item["version"], item["key"]]

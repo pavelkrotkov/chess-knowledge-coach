@@ -799,6 +799,15 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         "training_items",
         "mastery_events",
     )
+
+    def learning_rows():
+        with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True) as reader:
+            reader.execute("PRAGMA query_only=ON")
+            return tuple(
+                tuple(reader.execute(f"SELECT * FROM {table} ORDER BY rowid").fetchall())
+                for table in tables
+            )
+
     with sqlite3.connect(path) as reader:
         before_gets = tuple(
             reader.execute(f"SELECT count(*) FROM {table}").fetchone()[0] for table in tables
@@ -1173,27 +1182,22 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
             assert b"missed the target" in focus.data
             assert b"fresh verified assessment" in focus.data
     if mode == "correct":
-        import chess_coach.capture_finder_match as match_policy
         import chess_coach.capture_finder_proof as finder_proof
+        import chess_coach.related_capture_assessment_context as assessment_context
 
-        original_context = match_policy.capture
-        checked = []
-
-        def first_mismatch(*args):
-            context = original_context(*args)
-            checked.append(True)
-            if len(checked) == 1:
-                context["content_rating"] += 200
-            return context
-
-        with monkeypatch.context() as patch:
-            patch.setattr(match_policy, "capture", first_mismatch)
+        original_context = assessment_context.capture
+        before = learning_rows()
+        with monkeypatch.context() as guard:
+            guard.setattr(candidate_features, "capture_gain", forbidden_proof)
+            guard.setattr(candidate_assessment, "judge", forbidden_proof)
+            guard.setattr(finder_proof, "certificate", forbidden_proof)
+            guard.setattr("chess_coach.related_capture_match._prompt", forbidden_proof)
             matched_page = client.get(
                 f"/plan/captures/find-verified?attempt={attempt}&position=1",
                 base_url="https://coach.invalid",
                 headers=headers,
             )
-        assert len(checked) >= 2
+        assert learning_rows() == before
         assert matched_page.status_code == 200
         assert b"passed the bounded capture proof" in matched_page.data
         assert b"same comparison context" in matched_page.data
@@ -1211,23 +1215,64 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         reference_match = re.search(r'name="reference" value="([^"]+)"', form)
         assert reference_match
         matched_reference = reference_match.group(1)
-        admitted_again = _admit(
-            db, LEARNER, 1, "capture", matched_reference, app.secret_key, True, finder=True
-        )
+        with monkeypatch.context() as guard:
+            guard.setattr(candidate_features, "capture_gain", forbidden_proof)
+            guard.setattr(candidate_assessment, "judge", forbidden_proof)
+            guard.setattr(finder_proof, "certificate", forbidden_proof)
+            admitted_again = _admit(
+                db, LEARNER, 1, "capture", matched_reference, app.secret_key, True, finder=True
+            )
+        assert learning_rows() == before
         next_context = json.loads(canonical(admitted_again[3]["assessment"]["context"]))
         assert signature(next_context, "capture") == signature(context, "capture")
 
-        second_post = client.post(
-            "/decisions/1/related-captures/start",
-            base_url="https://coach.invalid",
-            headers=headers | {"Origin": "https://coach.invalid"},
-            data={
-                "csrf": token(matched_page, "csrf"),
-                "reference": matched_reference,
-                "assessment": "1",
-                "finder": token(matched_page, "finder"),
-            },
-        )
+        finder_form = {
+            "csrf": token(matched_page, "csrf"),
+            "reference": matched_reference,
+            "assessment": "1",
+            "finder": token(matched_page, "finder"),
+        }
+        current_pool = load_pool(db, root)
+        assert current_pool is not None and current_pool["complete"] is not None
+        changed_pool = deepcopy(current_pool)
+        changed_pool["complete"]["limited"] = not changed_pool["complete"]["limited"]
+        write_pool(pool_path, changed_pool)
+        with monkeypatch.context() as guard:
+            guard.setattr(candidate_features, "capture_gain", forbidden_proof)
+            guard.setattr(candidate_assessment, "judge", forbidden_proof)
+            guard.setattr(finder_proof, "certificate", forbidden_proof)
+            refused = client.post(
+                "/decisions/1/related-captures/start",
+                base_url="https://coach.invalid",
+                headers=headers | {"Origin": "https://coach.invalid"},
+                data=finder_form,
+            )
+        assert refused.status_code == 400 and learning_rows() == before
+        pending_pool = deepcopy(current_pool)
+        pending_pool["complete"] = None
+        write_pool(pool_path, pending_pool)
+        with monkeypatch.context() as guard:
+            guard.setattr(candidate_features, "capture_gain", forbidden_proof)
+            guard.setattr(candidate_assessment, "judge", forbidden_proof)
+            guard.setattr(finder_proof, "certificate", forbidden_proof)
+            pending_finder = client.get(
+                f"/plan/captures/find-verified?attempt={attempt}&position=1",
+                base_url="https://coach.invalid",
+                headers=headers,
+            )
+        assert b"Capture preparation is pending" in pending_finder.data
+        assert learning_rows() == before
+        write_pool(pool_path, current_pool)
+        with monkeypatch.context() as guard:
+            guard.setattr(candidate_features, "capture_gain", forbidden_proof)
+            guard.setattr(candidate_assessment, "judge", forbidden_proof)
+            guard.setattr(finder_proof, "certificate", forbidden_proof)
+            second_post = client.post(
+                "/decisions/1/related-captures/start",
+                base_url="https://coach.invalid",
+                headers=headers | {"Origin": "https://coach.invalid"},
+                data=finder_form,
+            )
         assert second_post.status_code == 303
         second_shown = client.get(
             second_post.headers["Location"], base_url="https://coach.invalid", headers=headers
@@ -1247,13 +1292,13 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         assert second_move.status_code == 303
         assert process(db, LEARNER)["outcomes"] == {"correct": 1}
 
-        def no_match(*args):
-            context = original_context(*args)
+        def no_match(*args, **kwargs):
+            context = original_context(*args, **kwargs)
             context["content_rating"] += 200
             return context
 
         with monkeypatch.context() as patch:
-            patch.setattr(match_policy, "capture", no_match)
+            patch.setattr(assessment_context, "capture", no_match)
             patch.setattr(
                 finder_proof,
                 "certificate",
@@ -1768,29 +1813,10 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
                 lambda *_args: (_ for _ in ()).throw(AssertionError("incomplete proof")),
             )
             assert comparison_report.report(db, LEARNER, "capture")["status"] == "incomplete"
-        # The opt-in finder skips a source whose candidate proofs do not pass,
-        # then displays a proved candidate from a second current owned source.
+        # The opt-in finder uses the already prepared candidates from current sources.
         import chess_coach.capture_finder as finder
         import chess_coach.capture_finder_proof as finder_proof
         import chess_coach.capture_finder_search as finder_search
-
-        original_select = finder_search._selection
-        original_certificate = finder_proof.certificate
-        original_familiarity = finder.familiarity
-        positions, familiarity_calls = [], []
-
-        def selected_source(*args, **kwargs):
-            positions.append(args[2])
-            return original_select(*args, **kwargs)
-
-        def proof_after_first(*args):
-            if len(positions) == 1:
-                raise ValueError("synthetic unresolved proof")
-            return original_certificate(*args)
-
-        def counted_familiarity(*args):
-            familiarity_calls.append(True)
-            return original_familiarity(*args)
 
         filtered = []
         with monkeypatch.context() as patch:
@@ -1815,16 +1841,17 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         assert filtered == [{("capture", "v"): [{"position_id": 2}]}]
 
         before_count = db.connection.execute("SELECT COUNT(*) FROM unified_sessions").fetchone()[0]
-        with monkeypatch.context() as patch:
-            patch.setattr(finder_search, "_selection", selected_source)
-            patch.setattr(finder_proof, "certificate", proof_after_first)
-            patch.setattr(finder, "familiarity", counted_familiarity)
+        before = learning_rows()
+        with monkeypatch.context() as guard:
+            guard.setattr(candidate_features, "capture_gain", forbidden_proof)
+            guard.setattr(candidate_assessment, "judge", forbidden_proof)
+            guard.setattr(finder_proof, "certificate", forbidden_proof)
+            guard.setattr("chess_coach.related_capture_match._prompt", forbidden_proof)
             found = client.get(
                 "/plan/captures/find-verified", base_url="https://coach.invalid", headers=headers
             )
-        assert len(positions) >= 2, (len(positions), len(familiarity_calls))
+        assert learning_rows() == before
         assert found.status_code == 200 and b"passed the bounded capture proof" in found.data
-        assert len(positions) >= 2 and positions[0] != positions[1] and len(familiarity_calls) == 1
         assert (
             db.connection.execute("SELECT COUNT(*) FROM unified_sessions").fetchone()[0]
             == before_count
@@ -1873,7 +1900,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         # Unsupported sources are skipped and scope uses the original subject.
         seen_subjects = []
 
-        def unsupported_then_empty(_db, subject, position, _corpus, **_kwargs):
+        def unsupported_then_empty(_db, subject, position, _corpus, *_args, **_kwargs):
             seen_subjects.append(subject)
             if position == 1:
                 raise ValueError("unsupported mechanism")
@@ -1885,7 +1912,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
                 "witnesses",
                 lambda *_args, **_kwargs: iter([{"position_id": 1}, {"position_id": 2}]),
             )
-            patch.setattr(finder_search, "_selection", unsupported_then_empty)
+            patch.setattr(finder_search, "choose", unsupported_then_empty)
             assert (
                 finder_search.search(
                     db,
@@ -1965,7 +1992,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
             "prompt_key": " ".join(chess.STARTING_FEN.split()[:4]),
         }
 
-        def per_source(_db, _selection, _deadline, remaining, _expired):
+        def per_source(_db, _selection, _deadline, remaining, _expired, *_args, **_kwargs):
             proof_quotas.append(remaining)
             return (None, remaining) if len(proof_quotas) == 1 else (fake_candidate, 1)
 
@@ -1977,13 +2004,21 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
             )
             patch.setattr(
                 finder_search,
-                "_selection",
+                "choose",
                 lambda *_args, **_kwargs: (None, None, None, [fake_candidate], None, None),
             )
             patch.setattr(finder_search, "prove", per_source)
             patch.setattr(finder_search, "present", lambda *_args, **_kwargs: {"items": [{}]})
             answer = finder_search.search(
-                db, LEARNER, LEARNER, "capture", app.secret_key, {}, None, 1, lambda _: False
+                db,
+                LEARNER,
+                LEARNER,
+                "capture",
+                app.secret_key,
+                {},
+                (set(), set(), None),
+                1,
+                lambda _: False,
             )
         assert answer[0] == 2 and proof_quotas == [4, 4]
     if mode == "correct":
@@ -2019,14 +2054,6 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
             assert latest(db, LEARNER, 1, "capture")["status"] == "not_held_out"
     if mode == "correct":
         from chess_coach.related_capture import preview as current_preview
-
-        def learning_rows():
-            with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True) as reader:
-                reader.execute("PRAGMA query_only=ON")
-                return tuple(
-                    tuple(reader.execute(f"SELECT * FROM {table} ORDER BY rowid").fetchall())
-                    for table in tables
-                )
 
         def public_offer(version):
             cursor = None

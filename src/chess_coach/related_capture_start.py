@@ -22,7 +22,7 @@ def _admit(
     difficulty=None,
     familiar_data=None,
 ):
-    if finder:
+    if difficulty is not None:
         from .related_capture_legacy import admit as finder_admit
 
         return finder_admit(
@@ -32,11 +32,12 @@ def _admit(
         from .related_capture_familiar import familiarity
 
         familiar_data = familiarity(db, subject)
-    selected = _selection(db, subject, position, corpus_version, familiar_data=familiar_data)
+    selected = _selection(
+        db, subject, position, corpus_version, familiar_data=familiar_data, finder=finder
+    )
     if selected is None:
         raise ValueError("capture selection unavailable")
-    if secret is not None:
-        reference = _reference(selected, reference, secret)
+    reference = _reference(selected, reference, secret, finder=finder)
     source_type, version, key, binding, lines = admit(
         selected, reference, VERSION, "material_capture"
     )
@@ -76,7 +77,7 @@ def start_related(
     prepared = None
     familiar_data = None
     games = None
-    if not finder:
+    if difficulty is None:
         from .related_capture_familiar import familiarity
 
         familiar_data = familiarity(db, subject)
@@ -125,7 +126,7 @@ def start_related(
         require_current(database, row)
         if files != current(database, subject, database.capture_root):
             raise ValueError("capture source changed")
-        if not finder and prepared != observation(
+        if difficulty is None and prepared != observation(
             database,
             database.capture_root,
             corpus_version,
