@@ -2046,6 +2046,26 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
                 if cursor is None:
                     raise AssertionError("prepared public example unavailable")
 
+        def public_form(version, reference):
+            from html import unescape
+
+            url = "/decisions/1/related-captures"
+            while True:
+                response = client.get(url, base_url="https://coach.invalid", headers=headers)
+                assert response.status_code == 200
+                html = response.get_data(as_text=True)
+                for section in re.findall(r"<section>.*?</section>", html, re.DOTALL):
+                    if f"Source: public · version {version}" not in section:
+                        continue
+                    for form in re.findall(r"<form\b.*?</form>", section, re.DOTALL):
+                        if f'name="reference" value="{reference}"' in form:
+                            csrf = re.search(r'name="csrf" value="([^"]+)"', form)
+                            assert csrf
+                            return {"csrf": csrf.group(1), "reference": reference}
+                link = re.search(r'href="([^"]*cursor=[^"]+)"', html)
+                assert link
+                url = unescape(link.group(1))
+
         def forbidden_prompt(*_args, **_kwargs):
             raise AssertionError("legacy candidate proof ran in ordinary practice")
 
@@ -2073,6 +2093,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
             guard.setattr(candidate_assessment, "judge", forbidden_proof)
             guard.setattr("chess_coach.related_capture_match._prompt", forbidden_prompt)
             old_public = public_offer("fixture-public-b")
+            old_form = public_form("fixture-public-b", old_public["reference"])
         assert learning_rows() == before
 
         # A newly ingested learner game changes the familiar collection mask.
@@ -2086,9 +2107,11 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
                 "/decisions/1/related-captures/start",
                 base_url="https://coach.invalid",
                 headers=headers | {"Origin": "https://coach.invalid"},
-                data={"csrf": token(page, "csrf"), "reference": old_public["reference"]},
+                data=old_form,
             )
-        assert refused.status_code == 400 and learning_rows() == before
+        assert refused.status_code == 400
+        assert b"This example changed or the capture could not be verified" in refused.data
+        assert learning_rows() == before
         assert current_preview(db, LEARNER, 1, "capture")["status"] == "capture preparation pending"
 
         familiar_games = familiarity(db, LEARNER)[1]
@@ -2106,12 +2129,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
             guard.setattr(candidate_assessment, "judge", forbidden_proof)
             guard.setattr("chess_coach.related_capture_match._prompt", forbidden_prompt)
             public = public_offer("fixture-public-c")
-            fresh_page = client.get(
-                "/decisions/1/related-captures",
-                base_url="https://coach.invalid",
-                headers=headers,
-            )
-            assert fresh_page.status_code == 200
+            fresh_form = public_form("fixture-public-c", public["reference"])
             cli_cursor = None
             while True:
                 extra = [f"--cursor={cli_cursor}"] if cli_cursor else []
@@ -2146,7 +2164,7 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
                 "/decisions/1/related-captures/start",
                 base_url="https://coach.invalid",
                 headers=headers | {"Origin": "https://coach.invalid"},
-                data={"csrf": token(fresh_page, "csrf"), "reference": public["reference"]},
+                data=fresh_form,
             )
         assert public_started.status_code == 303
         row = db.connection.execute(
