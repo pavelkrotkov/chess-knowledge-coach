@@ -42,6 +42,18 @@ def checked_renew(db, value, learner, version, scan_limit, now, minutes, budget)
         budget,
         capture_changed=capture_changed,
     )
-    if before_files is not None and before_files != current(db, learner, root):
-        raise ValueError("capture practice changed; restart the plan")
+    _carry_files(db, result, learner, root, before_files)
     return result
+
+
+def _carry_files(db, result, learner, root, before):
+    if before is None:
+        return
+    from .curriculum_capture_file_guard import current
+    from .curriculum_priority_cursor import CAPTURE_POLICY
+
+    if before != current(db, learner, root):
+        raise ValueError("capture practice changed; restart the plan")
+    if result["state"].get("priority_policy") == CAPTURE_POLICY:
+        # Carry the pre-history observation through window initialization.
+        result["state"]["capture_files"] = before

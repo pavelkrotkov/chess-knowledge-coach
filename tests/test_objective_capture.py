@@ -3599,6 +3599,33 @@ def _retained_capture_workflow(tmp_path, monkeypatch):
             break
     assert observe(db, root, LEARNER, old)
 
+    # Publication after history but before window initialization must not become the baseline.
+    import chess_coach.curriculum_window_plan as window_plan
+
+    renewal_page = daily_plan(db, **single_args)
+    real_state = window_plan.state
+    records, _ = bucket_entries(db, root, LEARNER, old)
+    records.pop(str(old))
+
+    def replace_after_renewal(*args, **kwargs):
+        value = real_state(*args, **kwargs)
+        publish_bucket(db, root, LEARNER, old, records)
+        return value
+
+    with monkeypatch.context() as changing:
+        changing.setattr(window_plan, "state", replace_after_renewal)
+        with pytest.raises(ValueError, match="capture practice changed"):
+            daily_plan(db, cursor=renewal_page["window_cursor"], renew=True, **single_args)
+    assert before_renew == tuple(
+        db.connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+        for table in ("unified_sessions", "unified_training_enrollments", "training_attempts")
+    )
+    for _ in range(15):
+        turn()
+        if observe(db, root, LEARNER, old):
+            break
+    assert observe(db, root, LEARNER, old)
+
     # A genuinely signed old-shape cursor cannot prove an earlier due observation.
     from chess_coach.curriculum_priority_cursor import CAPTURE_POLICY, LEGACY_CAPTURE_POLICY
     from chess_coach.curriculum_window_cursor import decode as decode_window
