@@ -30,6 +30,7 @@ def render(daily_plan):
             db,
             subject=current_app.config["SUBJECT"],
             corpus_version=current_app.config["CORPUS"],
+            limit=int(request.args.get("limit", "10")),
             cursor=request.args.get("cursor"),
             goal=request.args.get("goal") or None,
             duration_minutes=minutes(request.args.get("minutes")),

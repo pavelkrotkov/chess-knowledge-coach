@@ -27,9 +27,11 @@ def choice(db, subject, state, root, options, observations, check):
     if winner is None:
         return None
     chosen, other = profiles[winner]["newer"], profiles[1 - winner]["newer"]
-    tier = profiles[winner]["source"]["practice"]["result"]
+    source = profiles[winner]["source"]
+    tier = source["practice"]["result"]
     rationale = (
-        f"Comparable verified {tier} practice; "
+        f"Comparable verified {tier} practice for {source['root']['mover']} "
+        f"{source['root']['san']}; "
         f"matched capture opportunities appeared in {chosen['lower']} to {chosen['upper']} "
         f"of {chosen['denominator']} recent games versus {other['lower']} to {other['upper']} "
         f"of {other['denominator']} for the other context."

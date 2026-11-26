@@ -3669,7 +3669,7 @@ def _capture_practice_priority_workflow(tmp_path, monkeypatch):
     certify(db, LEARNER, root)
     chosen = plan()
     selected_form = form("goal=capture&minutes=1")
-    from chess_coach.curriculum_capture_offer import POLICY as NEW_OFFER_POLICY
+    from chess_coach.curriculum_capture_offer import CONTEXT_POLICY as NEW_OFFER_POLICY
     from chess_coach.curriculum_cursor import revision
     from chess_coach.curriculum_prerequisite_token import _decode
     from chess_coach.curriculum_window_scope import POLICY as OLD_OFFER_POLICY
@@ -3860,6 +3860,7 @@ def _capture_context_comparison_workflow(tmp_path, monkeypatch):
     from chess_coach.capture_game_trend_paths import binding, location
     from chess_coach.capture_game_trend_report import report as capture_report
     from chess_coach.capture_game_trend_validate import validate as capture_validate
+    from chess_coach.curriculum import daily_plan
     from chess_coach.curriculum_capture_witnesses import candidates
     from chess_coach.db import Database
     from chess_coach.ingest import ingest_pgn
@@ -3870,7 +3871,9 @@ def _capture_context_comparison_workflow(tmp_path, monkeypatch):
     from chess_coach.related_capture_start import start_related
     from chess_coach.short_mate_trend_store import read, write
     from chess_coach.web import create_app
+    from tests.capture_certificate_fixture import cli as fresh_cli
     from tests.capture_certificate_fixture import prepare_corpus
+    from tests.native_pair_probe import Forms
     from tests.test_material_pipeline import Engine
 
     root, path = capture_project(tmp_path, "context-comparison-project")
@@ -4076,6 +4079,32 @@ def _capture_context_comparison_workflow(tmp_path, monkeypatch):
     submit(db, pending, LEARNER, event_id="answer", move=json.loads(row["lines_json"])[0][0])
     assert process(db, LEARNER)["outcomes"] == {"correct": 1}
 
+    def plan(*, cursor=None, renew=False):
+        return daily_plan(
+            db,
+            subject=LEARNER,
+            corpus_version="context-priority",
+            limit=1,
+            goal="capture",
+            cursor=cursor,
+            renew=renew,
+            project_root=root,
+        )
+
+    def capture_form(query):
+        page = client.get("/plan?" + query, base_url="https://coach.invalid", headers=headers)
+        assert page.status_code == 200
+        parsed = Forms()
+        parsed.feed(page.get_data(as_text=True))
+        form = next(
+            value
+            for value in parsed.forms
+            if value.get("source_type") == "own-game"
+            and value.get("training") == "1"
+            and value.get("window_offer")
+        )
+        return page, form
+
     with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True) as observer:
         observer.execute("PRAGMA query_only=ON")
         before = {
@@ -4100,9 +4129,128 @@ def _capture_context_comparison_workflow(tmp_path, monkeypatch):
             assert b"at least 10 and at most 11 of 20 games" in page.data
             assert b"second linked context has strictly higher opportunity presence" in page.data
 
+            from copy import deepcopy
+            from datetime import UTC, datetime
+
+            from chess_coach.curriculum_capture_file_guard import initialize
+            from chess_coach.curriculum_capture_offer import CONTEXT_POLICY, POLICY
+            from chess_coach.curriculum_cursor import new_state
+            from chess_coach.curriculum_prerequisite_token import _decode
+            from chess_coach.curriculum_priority_cursor import CAPTURE_POLICY, upgrade
+            from chess_coach.curriculum_window_cursor import encode as encode_window
+            from chess_coach.curriculum_window_scope import create as create_window
+            from chess_coach.opening_queue_budget import BrowserBudget
+
             cache = location(db, root)
             state = read(cache, binding(db, LEARNER), validator=capture_validate)
             assert state is not None
+            original_state = deepcopy(state)
+
+            # An absent report is observed too; publication invalidates its plan and offer.
+            cache.unlink()
+            absent = plan()
+            assert absent["items"][0]["source_key"] == options[0][0]["source_key"]
+            absent_offer = absent["items"][0]["window_offer"]
+            write(cache, original_state)
+            with pytest.raises(ValueError, match="capture practice changed"):
+                plan(cursor=absent["window_cursor"])
+            with pytest.raises(ValueError, match="capture practice offer changed"):
+                start(
+                    db,
+                    attempt_id="absent-report-offer",
+                    subject=LEARNER,
+                    source_type="own-game",
+                    version=TARGET_VERSION,
+                    key=options[0][0]["source_key"],
+                    training=True,
+                    window_offer=absent_offer,
+                    project_root=root,
+                )
+
+            # A genuine old v3 plan retains its original source ordering.
+            old_state = upgrade(
+                new_state(db, LEARNER, "context-priority", 1, 200, datetime.now(UTC)),
+                capture=True,
+                policy=CAPTURE_POLICY,
+            )
+            old_window = create_window(old_state, "capture", None, 1)
+            initialize(db, old_state, LEARNER, BrowserBudget(db, project_root=root))
+            old_plan = plan(cursor=encode_window(db, old_window))
+            assert old_plan["items"][0]["source_key"] == options[0][0]["source_key"]
+            assert _decode(db, old_plan["items"][0]["window_offer"])[0] == POLICY
+
+            selected = plan()
+            chosen = options[1][0]["source_key"]
+            assert selected["items"][0]["source_key"] == chosen
+            assert _decode(db, selected["items"][0]["window_offer"])[0] == CONTEXT_POLICY
+            assert "verified correct practice for rook Rxd4" in selected["items"][0]["reason"]
+            assert (
+                "matched capture opportunities appeared in 10 to 11 of 20"
+                in selected["items"][0]["reason"]
+            )
+            assert "snapshot" not in selected["capture_focus"]
+            assert plan(cursor=selected["window_cursor"])["window"]["goal"] == "capture"
+
+            cli_plan = json.loads(
+                fresh_cli(
+                    path,
+                    "daily-plan",
+                    "context-priority",
+                    "--subject",
+                    LEARNER,
+                    "--limit",
+                    "1",
+                    "--goal",
+                    "capture",
+                    "--project-root",
+                    str(root),
+                    proof_free_candidates=True,
+                ).stdout
+            )
+            assert cli_plan["items"][0]["source_key"] == chosen
+            assert cli_plan["items"][0]["reason"] == selected["items"][0]["reason"]
+            private, old_form = capture_form("goal=capture&limit=1")
+            assert old_form["key"] == chosen
+            assert b"matched capture opportunities appeared in 10 to 11 of 20" in private.data
+            assert b"limit=1" in private.data
+            assert (
+                client.get(
+                    "/plan?goal=capture&limit=0", base_url="https://coach.invalid", headers=headers
+                ).status_code
+                == 400
+            )
+            assert (
+                capture_report(
+                    db,
+                    LEARNER,
+                    root,
+                    check=lambda: None,
+                    as_of=datetime(2026, 1, 10, 12, 0, 20, tzinfo=UTC).isoformat(),
+                )
+                is None
+            )
+
+            # A report publication after admission but before commit must roll back.
+            from chess_coach import unified_sessions
+
+            finish_offer = unified_sessions._window_time
+
+            def publish_before_commit(value, transaction_db, budget):
+                write(cache, original_state)
+                return finish_offer(value, transaction_db, budget)
+
+            with monkeypatch.context() as changing:
+                changing.setattr(unified_sessions, "_window_time", publish_before_commit)
+                refused = client.post(
+                    "/unified/start",
+                    data=old_form,
+                    base_url="https://coach.invalid",
+                    headers=headers | {"Origin": "https://coach.invalid"},
+                )
+            assert refused.status_code == 400
+            selected = plan()
+            _, old_form = capture_form("goal=capture&limit=1")
+
             source_ids = set(source_games[0] + source_games[1])
             unknown = 0
             for game in state["games"][:20]:
@@ -4114,6 +4262,19 @@ def _capture_context_comparison_workflow(tmp_path, monkeypatch):
                         break
             assert unknown == 6
             write(cache, state)
+            with pytest.raises(ValueError, match="capture practice changed"):
+                plan(cursor=selected["window_cursor"])
+            stale = client.post(
+                "/unified/start",
+                data=old_form,
+                base_url="https://coach.invalid",
+                headers=headers | {"Origin": "https://coach.invalid"},
+            )
+            assert stale.status_code == 400
+            refreshed = plan(cursor=selected["window_cursor"], renew=True)
+            assert refreshed["window"]["source_refreshed"]
+            assert refreshed["items"][0]["source_key"] == options[0][0]["source_key"]
+            assert "unknown or tied" in refreshed["items"][0]["reason"]
             page = client.get(
                 "/game-samples/captures", base_url="https://coach.invalid", headers=headers
             )
@@ -4146,10 +4307,59 @@ def _capture_context_comparison_workflow(tmp_path, monkeypatch):
                 "/game-samples/captures", base_url="https://coach.invalid", headers=headers
             )
             assert b"qualified capture-context profile is unavailable" in page.data
+            write(cache, original_state)
         assert before == {
             name: observer.execute(f"SELECT * FROM {name} ORDER BY rowid").fetchall()
             for name in tables
         }
+
+    # The new untimed offer launches the selected source; due work remains first.
+    with monkeypatch.context() as guard:
+        forbid_get_proofs(guard)
+        _, untimed_form = capture_form("goal=capture&limit=1")
+        assert untimed_form["key"] == options[1][0]["source_key"]
+        assert _decode(db, untimed_form["window_offer"])[0] == CONTEXT_POLICY
+        response = client.post(
+            "/unified/start",
+            data=untimed_form,
+            base_url="https://coach.invalid",
+            headers=headers | {"Origin": "https://coach.invalid"},
+        )
+        assert response.status_code == 303
+        resumed = client.get(
+            response.headers["Location"], base_url="https://coach.invalid", headers=headers
+        )
+        assert resumed.status_code == 200
+        due = plan()
+        assert due["items"][0]["kind"] == "due"
+        assert due["items"][0]["source_key"] == options[1][0]["source_key"]
+
+    attempt = response.headers["Location"].rstrip("/").rsplit("/", 1)[-1]
+    row = db.connection.execute(
+        "SELECT lines_json FROM unified_sessions WHERE attempt_id=?", (attempt,)
+    ).fetchone()
+    submit(db, attempt, LEARNER, event_id="answer", move=json.loads(row["lines_json"])[0][0])
+    assert process(db, LEARNER)["outcomes"] == {"correct": 1}
+
+    # Once the first review is scheduled later, a fresh timed offer starts normally.
+    with monkeypatch.context() as guard:
+        forbid_get_proofs(guard)
+        _, timed_form = capture_form("goal=capture&minutes=1&limit=1")
+        assert timed_form["key"] == options[0][0]["source_key"]
+        assert _decode(db, timed_form["window_offer"])[0] == CONTEXT_POLICY
+        timed = client.post(
+            "/unified/start",
+            data=timed_form,
+            base_url="https://coach.invalid",
+            headers=headers | {"Origin": "https://coach.invalid"},
+        )
+        assert timed.status_code == 303
+        assert (
+            client.get(
+                timed.headers["Location"], base_url="https://coach.invalid", headers=headers
+            ).status_code
+            == 200
+        )
 
     db.close()
 
