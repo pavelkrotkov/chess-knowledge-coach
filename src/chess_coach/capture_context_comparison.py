@@ -7,7 +7,7 @@ from .capture_context_source import bind
 from .capture_game_trend_report import report as capture_trend_report
 from .curriculum_capture_inputs import observe
 from .curriculum_capture_source_identity import require
-from .curriculum_capture_witnesses import candidates
+from .curriculum_capture_witnesses import descriptive
 
 
 def _profile(db, subject, corpus, as_of, report, option, check):
@@ -45,33 +45,23 @@ def _comparison(first, second):
     return {"other": second, "comparable": comparable, "winner": winner}
 
 
-def _options(db, subject, corpus, check):
-    try:
-        result = candidates(db, subject, corpus, check, include_snapshot=True, limit=2)
-        return result, 2
-    except (ValueError, TypeError, KeyError, IndexError):
-        # An unavailable second source must not hide the existing first profile.
-        result = candidates(db, subject, corpus, check, include_snapshot=True, limit=1)
-        return result, 1
-
-
 def profile(db, subject, corpus, as_of, report, check):
     # Unrelated unresolved turns widen bounds, not disqualify this context.
     # The boundary is the 41st independent game.
     if not report["comparable"] or not report["boundary"] or report["historical"]:
         return None
-    (options, _, identity, _), limit = _options(db, subject, corpus, check)
+    options, identity = descriptive(db, subject, corpus, check)
     profiles = []
     for option in options:
         current = _profile(db, subject, corpus, as_of, report, option, check)
         if current is not None:
             profiles.append(current)
+    require(db, subject, identity, check, limit=2)
     if not profiles:
         return None
     first = profiles[0]
     if len(profiles) == 2:
         first["comparison"] = _comparison(first, profiles[1])
-    require(db, subject, identity, check, limit=limit)
     return first
 
 

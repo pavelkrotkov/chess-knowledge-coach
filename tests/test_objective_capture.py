@@ -4016,6 +4016,39 @@ def _capture_context_comparison_workflow(tmp_path, monkeypatch):
         "tactical_exposure_coverage",
         "tactical_exposures",
     )
+
+    def forbid_get_proofs(guard):
+        def forbidden(*_args, **_kwargs):
+            raise AssertionError("capture proof ran during comparison GET")
+
+        guard.setattr(capture_game_proof, "inspect", forbidden)
+        guard.setattr(capture_game_roots, "capture_gain", forbidden)
+        guard.setattr(capture_game_roots, "inspect_checking", forbidden)
+        guard.setattr(capture_game_roots, "inspect_replies", forbidden)
+        guard.setattr("chess_coach.related_capture_features.capture_gain", forbidden)
+        guard.setattr("chess_coach.related_capture_assessment.judge", forbidden)
+        guard.setattr("chess_coach.objective_capture_snapshot.judge", forbidden)
+        guard.setattr("chess_coach.material_opportunity_current.verified_witness", forbidden)
+
+    # A newer real assessment can be in progress on the first source.
+    from chess_coach.capture_plan_history import latest
+
+    position = options[0][1]["source"]["position_id"]
+    prepare_corpus(db, LEARNER, root, "context-priority", position)
+    selected = preview(db, LEARNER, position, "context-priority", secret=secret)
+    item = next(value for value in selected["items"] if value.get("assessment_available"))
+    pending = "context-assessment-pending"
+    start_related(
+        db,
+        attempt_id=pending,
+        subject=LEARNER,
+        position=position,
+        corpus_version="context-priority",
+        reference=item["reference"],
+        assessment=True,
+        secret=secret,
+    )
+    assert latest(db, LEARNER, position, "context-priority")["status"] == "incomplete"
     with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True) as observer:
         observer.execute("PRAGMA query_only=ON")
         before = {
@@ -4023,18 +4056,34 @@ def _capture_context_comparison_workflow(tmp_path, monkeypatch):
             for name in tables
         }
         with monkeypatch.context() as guard:
+            forbid_get_proofs(guard)
+            started = time.monotonic()
+            page = client.get(
+                "/game-samples/captures", base_url="https://coach.invalid", headers=headers
+            )
+            assert page.status_code == 200 and time.monotonic() - started < 2.0
+            assert b"One qualified capture context" in page.data
+            assert b"White rook Rxd4 captures the queen on d4" in page.data
+            assert b"Second source-admitted capture context" not in page.data
+        assert before == {
+            name: observer.execute(f"SELECT * FROM {name} ORDER BY rowid").fetchall()
+            for name in tables
+        }
 
-            def forbidden(*_args, **_kwargs):
-                raise AssertionError("capture proof ran during comparison GET")
+    row = db.connection.execute(
+        "SELECT lines_json FROM unified_sessions WHERE attempt_id=?", (pending,)
+    ).fetchone()
+    submit(db, pending, LEARNER, event_id="answer", move=json.loads(row["lines_json"])[0][0])
+    assert process(db, LEARNER)["outcomes"] == {"correct": 1}
 
-            guard.setattr(capture_game_proof, "inspect", forbidden)
-            guard.setattr(capture_game_roots, "capture_gain", forbidden)
-            guard.setattr(capture_game_roots, "inspect_checking", forbidden)
-            guard.setattr(capture_game_roots, "inspect_replies", forbidden)
-            guard.setattr("chess_coach.related_capture_features.capture_gain", forbidden)
-            guard.setattr("chess_coach.related_capture_assessment.judge", forbidden)
-            guard.setattr("chess_coach.objective_capture_snapshot.judge", forbidden)
-            guard.setattr("chess_coach.material_opportunity_current.verified_witness", forbidden)
+    with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True) as observer:
+        observer.execute("PRAGMA query_only=ON")
+        before = {
+            name: observer.execute(f"SELECT * FROM {name} ORDER BY rowid").fetchall()
+            for name in tables
+        }
+        with monkeypatch.context() as guard:
+            forbid_get_proofs(guard)
             aggregate = capture_report(db, LEARNER, root)
             assert aggregate and aggregate["comparable"] and not aggregate["qualified"]
             started = time.monotonic()
