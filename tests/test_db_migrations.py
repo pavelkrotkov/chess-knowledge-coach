@@ -271,7 +271,7 @@ finally:
         result["fork_rows"],
         result["public_mate_rows"],
     ) == (1, 1, 1, 1, 1)
-    assert result["target_schema"] == 41
+    assert result["target_schema"] == CURRENT_VERSION
     assert result["source_index_rows"] == result["source_due_rows"] == 4
     assert result["source_type_max_bytes"] == len("unified_owned_capture")
     assert result["skill_max_bytes"] == len("hanging_piece")
@@ -461,7 +461,7 @@ def _fork_index_upgrade(monkeypatch):
     ] == before_schema
     db.initialize()
     db.initialize()
-    assert connection.execute("PRAGMA user_version").fetchone()[0] == 41
+    assert connection.execute("PRAGMA user_version").fetchone()[0] == CURRENT_VERSION
     assert [
         tuple(row)
         for row in connection.execute(
@@ -533,7 +533,7 @@ def _public_mate_index_upgrade(monkeypatch):
         "SELECT name FROM sqlite_master WHERE name IN ('idx_curriculum_source_due','idx_curriculum_source_scheduled')"
     ).fetchall()
     db.initialize()
-    assert connection.execute("PRAGMA user_version").fetchone()[0] == 41
+    assert connection.execute("PRAGMA user_version").fetchone()[0] == CURRENT_VERSION
     assert [
         tuple(row) for row in connection.execute("SELECT * FROM training_items ORDER BY id")
     ] == before
@@ -569,6 +569,50 @@ def _public_mate_index_upgrade(monkeypatch):
         assert not any("TEMP B-TREE" in detail for detail in plan)
     assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+
+    # A failed source-id index upgrade must leave the native-41 database intact.
+    connection.executemany(
+        "INSERT INTO games(source,source_id,pgn,white,black,result) VALUES(?,?,?,?,?,?)",
+        [
+            ("fixture-a", "same-source-id", "*", "learner", "other", "*"),
+            ("fixture-b", "same-source-id", "*", "other", "learner", "*"),
+        ],
+    )
+    connection.execute("DROP INDEX idx_games_source_id")
+    connection.execute("PRAGMA user_version=41")
+    connection.commit()
+    original_game_index = db_recent.add_game_source_index
+
+    def fail_after_game_index(conn):
+        original_game_index(conn)
+        raise RuntimeError("injected game index failure")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(db_recent, "add_game_source_index", fail_after_game_index)
+        with pytest.raises(RuntimeError, match="injected game index failure"):
+            db.initialize()
+    assert connection.execute("PRAGMA user_version").fetchone()[0] == 41
+    assert not connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_games_source_id'"
+    ).fetchone()
+    db.initialize()
+    query = (
+        "SELECT source FROM games INDEXED BY idx_games_source_id "
+        "WHERE source_id=? AND (lower(white)=? OR lower(black)=?) ORDER BY source"
+    )
+    assert [
+        row[0] for row in connection.execute(query, ("same-source-id", "learner", "learner"))
+    ] == [
+        "fixture-a",
+        "fixture-b",
+    ]
+    assert any(
+        "idx_games_source_id" in row[3]
+        for row in connection.execute(
+            "EXPLAIN QUERY PLAN " + query, ("same-source-id", "learner", "learner")
+        )
+    )
+    assert connection.execute("PRAGMA user_version").fetchone()[0] == CURRENT_VERSION
     db.close()
 
 

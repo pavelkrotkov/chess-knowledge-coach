@@ -80,6 +80,7 @@ def upgrade_recent(connection: sqlite3.Connection, version: int, *, through=None
         (39, add_capture_indexes),
         (40, add_fork_indexes),
         (41, add_public_mate_indexes),
+        (42, add_game_source_index),
     )
     for target, apply_upgrade in upgrades:
         if version < target and (through is None or target <= through):
@@ -98,3 +99,7 @@ def add_position_fen_index(connection: sqlite3.Connection) -> None:
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_positions_fen_game ON positions(fen, game_id)"
     )
+
+
+def add_game_source_index(connection: sqlite3.Connection) -> None:
+    connection.execute("CREATE INDEX IF NOT EXISTS idx_games_source_id ON games(source_id)")

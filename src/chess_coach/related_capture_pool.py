@@ -5,10 +5,11 @@ from .capture_corpus_coverage import identity as identity
 from .capture_corpus_storage import POLICY as POLICY
 from .capture_corpus_storage import load as load
 from .capture_corpus_storage import location as location
+from .capture_public_window import entries as public_entries
 from .fact_fingerprint import canonical, digest
 
 
-def complete(db, root, version, lower, upper):
+def complete(db, root, version, lower, upper, subject=None, games=None):
     data = load(db, root)
     window = data.get("complete") if data else None
     row = db.connection.execute(
@@ -19,16 +20,18 @@ def complete(db, root, version, lower, upper):
     if window.get("scope") != [version, row["checksum"], lower, upper]:
         return None
     selected = entries(db, row, version, lower, upper, window, data["entries"])
-    if selected is None:
+    public = public_entries(db, subject, window.get("public"), data["entries"], games)
+    if selected is None or public is None:
         return None
     return {
         "binding": data["policy"],
         "scope": window["scope"],
         "limited": window["limited"],
         "entries": selected,
+        "public": public,
     }
 
 
-def observation(db, root, version, lower, upper):
-    window = complete(db, root, version, lower, upper)
+def observation(db, root, version, lower, upper, subject=None, games=None):
+    window = complete(db, root, version, lower, upper, subject, games)
     return digest(canonical([POLICY, window]))

@@ -34,7 +34,7 @@ POLICY = (
     CORPUS_PLIES_LIMIT,
     digest(canonical(VALUES)),
 )
-LIMIT = 1000
+LIMIT = 2000
 
 
 def location(db, root):

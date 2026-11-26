@@ -1,6 +1,8 @@
 """Advance a finite corpus-version horizon for one nominated context."""
 
 from .capture_corpus_context import context as nominate_context
+from .capture_public_index import available
+from .capture_public_page import initial as public_initial
 
 
 def _version(db, context):
@@ -21,6 +23,8 @@ def _version(db, context):
 
 
 def build(db, subject, data, progress, check):
+    if not available(db):
+        return False
     context, visited = nominate_context(db, subject, progress, check)
     if context is None:
         return visited
@@ -31,8 +35,6 @@ def build(db, subject, data, progress, check):
     if corpus["version"] != context["preferred"]:
         context["last"] = corpus["version"]
     scope = [corpus["version"], corpus["checksum"], context["lower"], context["upper"]]
-    if (data.get("complete") or {}).get("scope") == scope:
-        return visited
     building = {
         "scope": scope,
         "corpus_id": corpus["id"],
@@ -42,6 +44,7 @@ def build(db, subject, data, progress, check):
         "keys": [],
         "limited": False,
         "pending": [],
+        "public": public_initial(subject),
     }
     data["prior"] = {"building": building, "entries": {}}
     return visited

@@ -5,6 +5,7 @@ from .fact_fingerprint import canonical, digest
 from .related_capture_context import bounds as bounds
 from .related_capture_cursor import PAGE as PAGE
 from .related_capture_cursor import bind_scope
+from .related_capture_familiar import familiarity
 from .related_capture_features import certified_features
 from .related_capture_pool import complete as prepared_window
 from .related_capture_preview import preview as preview
@@ -40,19 +41,27 @@ def _selection(
         )
     if score is not None or rating_bounds is not None:
         return None
-    options = {"feature": certified_features}
+    if familiar_data is None:
+        familiar_data = familiarity(db, subject)
+    games = familiar_data[1]
     lower, upper = bounds(baseline(db, source))
-    prepared = prepared_window(db, db.capture_root, corpus_version, lower, upper)
+    prepared = prepared_window(db, db.capture_root, corpus_version, lower, upper, subject, games)
     if prepared is None:
         return None
-    public_pending = [False]
-    options["score"] = prepared_score(prepared, public_pending)
     selected = select(
-        db, subject, source, corpus_version, VERSION, familiar_data=familiar_data, **options
+        db,
+        subject,
+        source,
+        corpus_version,
+        VERSION,
+        familiar_data=familiar_data,
+        feature=certified_features,
+        score=prepared_score(prepared),
     )
-    if public_pending[0]:
-        return None
-    if prepared_window(db, db.capture_root, corpus_version, lower, upper) != prepared:
+    if (
+        prepared_window(db, db.capture_root, corpus_version, lower, upper, subject, games)
+        != prepared
+    ):
         raise ValueError("capture preparation changed")
     fingerprint = digest(canonical(prepared))
     if selected is not None:

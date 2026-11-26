@@ -34,8 +34,16 @@ def discover(db, data, building, check):
         return overflow
     version, checksum, _, _ = building["scope"]
     key, candidate = bind(row, version, checksum)
-    building["keys"].append(key)
-    if key not in data["entries"]:
-        data["prior"]["entries"][key] = {"state": "feature", "candidate": candidate}
-        building["pending"].append(key)
+    stage(data, building, building["keys"], key, candidate)
     return True
+
+
+def stage(data, building, keys, key, candidate):
+    keys.append(key)
+    if key not in data["entries"]:
+        data["prior"]["entries"][key] = {
+            "identity": key,
+            "state": "feature",
+            "candidate": candidate,
+        }
+        building["pending"].append(key)

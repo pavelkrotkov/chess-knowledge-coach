@@ -28,14 +28,16 @@ def certify(db, subject, root):
 def prepare_corpus(db, subject, root, version, position):
     from chess_coach.capture_certificate_worker import run as worker
     from chess_coach.related_capture_context import baseline, bounds
+    from chess_coach.related_capture_familiar import familiarity
     from chess_coach.related_capture_pool import complete
     from chess_coach.related_capture_source import source_for_position
 
     lower, upper = bounds(baseline(db, source_for_position(db, subject, position)))
+    games = familiarity(db, subject)[1]
     for _ in range(80):
         with pipeline_lock(db.path):
             worker(db, subject, root, time.monotonic() + 5)
-        if complete(db, root, version, lower, upper) is not None:
+        if complete(db, root, version, lower, upper, subject, games) is not None:
             return
     raise AssertionError("the finite capture window did not finish preparation")
 
@@ -66,8 +68,10 @@ features.capture_gain = guarded_gain
         guard += """
 import chess_coach.related_capture_features as related_features
 import chess_coach.related_capture_assessment as assessment
+import chess_coach.related_capture_match as related_match
 related_features.capture_gain = forbidden
 assessment.judge = forbidden
+related_match._prompt = forbidden
 """
     guard += """
 from chess_coach.cli import main
