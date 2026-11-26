@@ -41,6 +41,9 @@
 {% set new_items = plan["items"] | selectattr("kind", "equalto", "new") | list %}
 {% if due_items %}<ul>{% for item in due_items %}{{ task(item) }}{% endfor %}</ul>{% endif %}
 {% if promotion_priority %}{% include "plan_promotion.html" %}{% endif %}
+{% if plan.capture_status == "history_unavailable" and plan.capture_focus %}
+{% set capture = plan.capture_focus %}{% set focus_bound = true %}{% set embedded = false %}{% include "plan_capture_action.html" %}
+{% endif %}
 {% if focus and focus.selected %}{% include "plan_recurring_action.html" %}{% endif %}
 {% if new_items %}<ul>{% for item in new_items %}{{ task(item) }}{% endfor %}</ul>{% endif %}
 {% if plan.capture_status == "learning_unavailable" %}<p>Capture learning and scheduling are unavailable in compatibility mode. Ordinary rehearsal remains available below.</p>{% elif plan.capture_status in ["unavailable", "deferred", "history_unavailable"] %}<p>A source-checked capture task could not be completed in this bounded check.</p>{% endif %}

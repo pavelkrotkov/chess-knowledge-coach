@@ -48,7 +48,9 @@ def _overrides(result, version):
     if result.get("capture_status") not in {None, "learning_unavailable"}:
         if version is None or version != result.get("capture_generation"):
             return None
-        options["capture_override"] = result["capture_focus"]
+        options["capture_override"] = (
+            None if result["capture_status"] == "history_unavailable" else result["capture_focus"]
+        )
     if not _fork_override(result, version, options):
         return None
     return options
