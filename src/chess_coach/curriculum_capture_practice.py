@@ -7,15 +7,14 @@ from .mastery_time import parse_utc
 
 
 def _complete(history):
-    if not isinstance(history, dict) or not isinstance(history.get("attempt_id"), str):
+    if not isinstance(history, dict):
         return False
-    status = tuple(
-        history.get(key) for key in ("status", "assistance", "hints", "reveals", "limited")
+    status = tuple(history.get(key) for key in ("status", "assistance", "hints", "reveals"))
+    return (
+        isinstance(history.get("attempt_id"), str)
+        and (history.get("limited"), history.get("latest_proven")) in {(False, None), (True, True)}
+        and status in {("correct", "unassisted", 0, 0), ("incorrect", "unassisted", 0, 0)}
     )
-    return status in {
-        ("correct", "unassisted", 0, 0, False),
-        ("incorrect", "unassisted", 0, 0, False),
-    }
 
 
 def _chronology(row, history, as_of):
@@ -38,9 +37,11 @@ def evidence(db, subject, corpus, position, history, as_of, check):
         return None
     matched = scope(row, corpus)
     check()
-    if matched is None or row["learner_color"] not in {"white", "black"}:
-        return None
-    if not _chronology(row, history, as_of):
+    if (
+        matched is None
+        or row["learner_color"] not in {"white", "black"}
+        or not _chronology(row, history, as_of)
+    ):
         return None
     return {
         "context": digest(matched["key"]),

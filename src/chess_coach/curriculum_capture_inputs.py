@@ -9,7 +9,7 @@ from .opening_queue_location import location
 from .opening_study_source import fingerprint
 from .tactical_study_intents import MAX_INTENTS
 
-POLICY = "capture-practice-inputs-v1"
+POLICY = "capture-practice-inputs-v2"
 
 
 def _paths(db, subject, root):

@@ -45,33 +45,54 @@ def _selected(rows, position, corpus, *, check=lambda: None):
     return chosen
 
 
-def latest(db, subject, position, corpus, *, check=None):
+def _latest_proven(rows, selected, check):
+    # Supported unified session creation writes canonical UTC via session_state.now.
+    # The complete 101-row observed window must obey that ordering contract.
+    previous = None
+    for row in rows:
+        check()
+        value = row["started_at"]
+        when = parse_utc(value)
+        if when is None or when.isoformat() != value or (previous and when > previous):
+            return False
+        previous = when
+    return selected["started_at"] > rows[-1]["started_at"]
+
+
+def _proof(rows, selected, limited, enabled, check):
+    if limited and enabled:
+        return {"latest_proven": _latest_proven(rows, selected, check)}
+    return {}
+
+
+def latest(db, subject, position, corpus, *, check=None, prove_latest=False):
+    related_check = check
+    check = check or (lambda: None)
     try:
         # Inspect only the newest bounded session window; an older result may exist.
         rows = _rows(db, subject)
-        if check is not None:
-            check()
+        check()
         limited = len(rows) > LIMIT
-        options = {"check": check} if check is not None else {}
-        row = _selected(rows[:LIMIT], position, corpus, **options)
+        row = _selected(rows[:LIMIT], position, corpus, check=check)
         if row is None:
             return {"status": "none", "limited": limited}
         if row["status"] == "active":
-            require_current(db, row, related_check=check)
+            require_current(db, row, related_check=related_check)
         observed = replay(db, row)
-        if check is not None:
-            check()
+        check()
         state = (
             {"status": "incomplete"}
             if row["status"] == "active"
-            else result(db, row, observed, related_check=check)
+            else result(db, row, observed, related_check=related_check)
         )
-        # Keep the recorded result while limiting first-encounter claims.
+        # Latest observation is narrower than a claim about complete history.
         state = apply_exposure(db, row, state)
+        proof = _proof(rows, row, limited, prove_latest, check)
         return {
             **state,
             "attempt_id": row["attempt_id"],
             "limited": limited,
+            **proof,
             "hints": observed["hints"],
             "reveals": observed["reveals"],
         }

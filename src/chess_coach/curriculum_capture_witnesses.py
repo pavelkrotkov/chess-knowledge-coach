@@ -10,7 +10,7 @@ from .unified_sources import resolve_source
 
 
 def _resolve(db, subject, corpus, source, limited, scanned, check):
-    history = latest(db, subject, source["position_id"], corpus, check=check)
+    history = latest(db, subject, source["position_id"], corpus, check=check, prove_latest=True)
     if history.get("status") in {"stale", "pending", "incomplete"}:
         return None
     report = {"source": source, "history": history, "limited": limited, "scanned": scanned}
