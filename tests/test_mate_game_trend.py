@@ -2093,9 +2093,12 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
     partial = deepcopy(full)
     game = next(game for game in partial["games"] if game["results"][0][1] == "awaiting")
     game["results"].pop()
+    game.pop("root_details", None)
     write(readiness_cache, partial)
+    assert read(readiness_cache, readiness_key, validator=fork_validate) is not None
     fork_miss_worker.run(matched, "fixture_a", root)
     retained = read(miss_cache, miss_key, validator=miss_validate)["rows"]
+    assert retained
     write(readiness_cache, full)
     fork_miss_worker.run(matched, "fixture_a", root)
     grown = read(miss_cache, miss_key, validator=miss_validate)["rows"]
@@ -2104,13 +2107,16 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
 
     # Unproved turns can change the order, so overlapping bounds withhold rates.
     uncertain_state = deepcopy(full)
-    unknown = next(
-        row
+    unknown_game = next(
+        game
         for game in uncertain_state["games"]
-        for row in game["results"]
-        if row[1:] == ["unknown", "unsupported_position"]
+        if any(row[1:] == ["unknown", "unsupported_position"] for row in game["results"])
+    )
+    unknown = next(
+        row for row in unknown_game["results"] if row[1:] == ["unknown", "unsupported_position"]
     )
     unknown[1:] = ["unresolved", "unresolved_roots"]
+    unknown_game.pop("root_details", None)
     write(readiness_cache, uncertain_state)
     fork_miss_worker.run(matched, "fixture_a", root)
     uncertain = fork_report(matched, "fixture_a", root)["comparison"]
@@ -2133,10 +2139,12 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
 
     # Other unproved roots on an already proved turn are not extra opportunities.
     proved_state = deepcopy(full)
-    played = next(
-        row for game in proved_state["games"] for row in game["results"] if row[1] == "played"
+    proved_game = next(
+        game for game in proved_state["games"] if any(row[1] == "played" for row in game["results"])
     )
+    played = next(row for row in proved_game["results"] if row[1] == "played")
     played[2] = "unresolved_roots"
+    proved_game.pop("root_details", None)
     write(readiness_cache, proved_state)
     fork_miss_worker.run(matched, "fixture_a", root)
     proved = fork_report(matched, "fixture_a", root)["comparison"]
@@ -2148,13 +2156,16 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
 
     # A readiness proof timeout blocks rates, unlike known unsupported coverage.
     timeout_state = deepcopy(full)
-    unknown = next(
-        row
+    timeout_game = next(
+        game
         for game in timeout_state["games"]
-        for row in game["results"]
-        if row[1:] == ["unknown", "unsupported_position"]
+        if any(row[1:] == ["unknown", "unsupported_position"] for row in game["results"])
+    )
+    unknown = next(
+        row for row in timeout_game["results"] if row[1:] == ["unknown", "unsupported_position"]
     )
     unknown[2] = "turn_deadline"
+    timeout_game.pop("root_details", None)
     write(readiness_cache, timeout_state)
     fork_miss_worker.run(matched, "fixture_a", root)
     assert not fork_report(matched, "fixture_a", root)["comparison"]["qualified"]
