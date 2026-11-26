@@ -40,7 +40,8 @@ def run(db, learner, root, *, seconds=CYCLE_SECONDS):
             inspector=partial(
                 inspect_roots, state=state, classifier=classify, seconds=TURN_SECONDS
             ),
-            retain_fields=("root_details",),
+            retain_fields=("root_details", "root_refresh"),
+            recheck_complete=True,
         )
     except (ValueError, TypeError, IndexError):
         state = initial(key, frontier, None)

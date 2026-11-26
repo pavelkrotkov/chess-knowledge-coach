@@ -1,9 +1,9 @@
 """Retain optional exact roots from the existing fork classifier pass."""
 
-from .capture_game_root_budget import record
-from .short_mate_trend_turns import inspect as inspect_turns
+from .capture_game_root_detail import inspect as inspect_roots
 
 POLICY = "knight-fork-game-roots-v1"
+REFRESH_VERSION = f"{POLICY}:refresh-v1"
 
 
 def start_details(details, board, played):
@@ -38,16 +38,16 @@ def finish_details(details):
 def inspect(db, learner, item, deadline, quota, *, state, classifier, seconds):
     from .fork_game_proof import VERSION
 
-    collected = []
-
-    def classify(board, played, until, clock):
-        detail = {}
-        result = classifier(board, played, until, clock, details=detail)
-        collected.append(detail)
-        return result
-
-    first = len(item["results"])
-    used = inspect_turns(db, learner, item, deadline, quota, classifier=classify, seconds=seconds)
-    for row, detail in zip(item["results"][first:], collected, strict=False):
-        record(state, item, row, detail, version=POLICY, proof=VERSION)
-    return used
+    return inspect_roots(
+        db,
+        learner,
+        item,
+        deadline,
+        quota,
+        state=state,
+        classifier=classifier,
+        seconds=seconds,
+        version=POLICY,
+        proof=VERSION,
+        refresh_version=REFRESH_VERSION,
+    )

@@ -1,6 +1,7 @@
 """Resume legacy root attribution without changing preserved outcomes."""
 
-from .capture_game_root_budget import record
+from .capture_game_root_budget import PROOF_VERSION, VERSION, record
+from .capture_game_root_checkpoint import VERSION as REFRESH_VERSION
 from .capture_game_root_checkpoint import admit, cursor, marker
 from .short_mate_game_source import prepare, recheck
 from .short_mate_trend_cohort import fingerprint
@@ -21,18 +22,31 @@ def _source_current(db, learner, item):
         return False
 
 
-def _attach(state, item, rows, details, original):
+def _attach(state, item, rows, details, original, version, proof):
     existing = {turn["position_id"] for turn in (item.get("root_details") or {}).get("turns", ())}
     for row, detail, expected in zip(rows, details, original, strict=False):
         if row == expected and detail and row[0] not in existing:
-            record(state, item, row, detail)
+            record(state, item, row, detail, version=version, proof=proof)
 
 
-def inspect(db, learner, item, deadline, quota, *, state, classifier, seconds):
-    offset = cursor(item)
+def inspect(
+    db,
+    learner,
+    item,
+    deadline,
+    quota,
+    *,
+    state,
+    classifier,
+    seconds,
+    version=VERSION,
+    proof=PROOF_VERSION,
+    refresh_version=REFRESH_VERSION,
+):
+    offset = cursor(item, version=refresh_version)
     if offset == len(item["results"]) or not _source_current(db, learner, item):
         return 0
-    if not admit(state, item, offset):
+    if not admit(state, item, offset, version=refresh_version):
         return 0
     original = item["results"]
     shadow = {**item, "results": original[:offset]}
@@ -47,9 +61,9 @@ def inspect(db, learner, item, deadline, quota, *, state, classifier, seconds):
     try:
         inspect_turns(db, learner, shadow, deadline, quota, classifier=classify, seconds=seconds)
     except (ValueError, TypeError, IndexError):
-        item["root_refresh"] = marker(item, offset)
+        item["root_refresh"] = marker(item, offset, version=refresh_version)
         return len(details)
-    _attach(state, item, shadow["results"][offset:], details, original[offset:])
+    _attach(state, item, shadow["results"][offset:], details, original[offset:], version, proof)
     # The source was rechecked by inspect_turns; even an expired attempt was charged.
-    item["root_refresh"] = marker(item, offset + len(details))
+    item["root_refresh"] = marker(item, len(shadow["results"]), version=refresh_version)
     return len(details)
