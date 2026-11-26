@@ -3848,7 +3848,7 @@ def _capture_practice_priority_workflow(tmp_path, monkeypatch):
 
 
 def _capture_context_comparison_workflow(tmp_path, monkeypatch):
-    """Profile real dated capture roots against one admitted practice source."""
+    """Compare two real dated capture contexts and their verified practice."""
     import sqlite3
     import sys
     import time
@@ -3908,29 +3908,35 @@ def _capture_context_comparison_workflow(tmp_path, monkeypatch):
             source_games.setdefault(kind, []).append(game_id)
 
     config = PipelineConfig(learner=LEARNER, engine_path=sys.executable, nodes=100)
-    for game_id in source_games[1][-2:]:
-        move = "d1d4"
-        with monkeypatch.context() as engine:
-            engine.setattr(
-                chess.engine.SimpleEngine, "popen_uci", lambda _, move=move: Engine(move, "e8f8")
-            )
-            assert (
-                run_analysis(
-                    db, game_id, game_input(db, game_id), config, engine_identity(sys.executable)
-                )["status"]
-                == "complete"
-            )
-        position = db.connection.execute(
-            "SELECT id FROM positions WHERE game_id=? ORDER BY ply LIMIT 1", (game_id,)
-        ).fetchone()[0]
-        evidence_id = process_decision(db, position, LEARNER)["evidence_ids"][0]
-        review_evidence(db, evidence_id, decision="accept", actor="fixture")
+    for kind, move in ((1, "d1d4"), (0, "f3d4")):
+        for game_id in source_games[kind][-2:]:
+            with monkeypatch.context() as engine:
+                engine.setattr(
+                    chess.engine.SimpleEngine,
+                    "popen_uci",
+                    lambda _, move=move: Engine(move, "e8f8"),
+                )
+                assert (
+                    run_analysis(
+                        db,
+                        game_id,
+                        game_input(db, game_id),
+                        config,
+                        engine_identity(sys.executable),
+                    )["status"]
+                    == "complete"
+                )
+            position = db.connection.execute(
+                "SELECT id FROM positions WHERE game_id=? ORDER BY ply LIMIT 1", (game_id,)
+            ).fetchone()[0]
+            evidence_id = process_decision(db, position, LEARNER)["evidence_ids"][0]
+            review_evidence(db, evidence_id, decision="accept", actor="fixture")
 
     corpus = db.connection.execute(
         "INSERT INTO puzzle_corpora(version,source,checksum,state) VALUES(?,?,?,?)",
         ("context-priority", "fixture", "checksum", "staging"),
     ).lastrowid
-    for kind, move in ((1, "d1d4"),):
+    for kind, move in ((0, "f3d4"), (1, "d1d4")):
         for pawn_file in ("a", "b"):
             board = chess.Board(boards[kind])
             board.turn = chess.BLACK
@@ -3952,30 +3958,34 @@ def _capture_context_comparison_workflow(tmp_path, monkeypatch):
 
     for _ in range(3):
         certify(db, LEARNER, root)
-    options, status, _, _ = candidates(db, LEARNER, "context-priority", lambda: None)
-    assert status == "available" and options
-    position = options[0][1]["source"]["position_id"]
-    prepare_corpus(db, LEARNER, root, "context-priority", position)
-    secret = b"context-comparison-fixture"
-    selected = preview(db, LEARNER, position, "context-priority", secret=secret)
-    item = next(value for value in selected["items"] if value.get("assessment_available"))
-    attempt_id = "context-assessment"
-    start_related(
-        db,
-        attempt_id=attempt_id,
-        subject=LEARNER,
-        position=position,
-        corpus_version="context-priority",
-        reference=item["reference"],
-        assessment=True,
-        secret=secret,
+    options, status, _, _ = candidates(
+        db, LEARNER, "context-priority", lambda: None, include_snapshot=True
     )
-    row = db.connection.execute(
-        "SELECT lines_json FROM unified_sessions WHERE attempt_id=?", (attempt_id,)
-    ).fetchone()
-    move = json.loads(row["lines_json"])[0][0]
-    submit(db, attempt_id, LEARNER, event_id="answer", move=move)
-    assert process(db, LEARNER)["outcomes"] == {"correct": 1}
+    assert status == "available" and len(options) == 2
+    assert [report["snapshot"]["lines"][0] for _, report in options] == ["f3d4", "d1d4"]
+    secret = b"context-comparison-fixture"
+    for index, (_, report) in enumerate(options):
+        position = report["source"]["position_id"]
+        prepare_corpus(db, LEARNER, root, "context-priority", position)
+        selected = preview(db, LEARNER, position, "context-priority", secret=secret)
+        item = next(value for value in selected["items"] if value.get("assessment_available"))
+        attempt_id = f"context-assessment-{index}"
+        start_related(
+            db,
+            attempt_id=attempt_id,
+            subject=LEARNER,
+            position=position,
+            corpus_version="context-priority",
+            reference=item["reference"],
+            assessment=True,
+            secret=secret,
+        )
+        row = db.connection.execute(
+            "SELECT lines_json FROM unified_sessions WHERE attempt_id=?", (attempt_id,)
+        ).fetchone()
+        move = json.loads(row["lines_json"])[0][0]
+        submit(db, attempt_id, LEARNER, event_id="answer", move=move)
+        assert process(db, LEARNER)["outcomes"] == {"correct": 1}
 
     app = create_app(
         db_path=path,
@@ -4006,6 +4016,39 @@ def _capture_context_comparison_workflow(tmp_path, monkeypatch):
         "tactical_exposure_coverage",
         "tactical_exposures",
     )
+
+    def forbid_get_proofs(guard):
+        def forbidden(*_args, **_kwargs):
+            raise AssertionError("capture proof ran during comparison GET")
+
+        guard.setattr(capture_game_proof, "inspect", forbidden)
+        guard.setattr(capture_game_roots, "capture_gain", forbidden)
+        guard.setattr(capture_game_roots, "inspect_checking", forbidden)
+        guard.setattr(capture_game_roots, "inspect_replies", forbidden)
+        guard.setattr("chess_coach.related_capture_features.capture_gain", forbidden)
+        guard.setattr("chess_coach.related_capture_assessment.judge", forbidden)
+        guard.setattr("chess_coach.objective_capture_snapshot.judge", forbidden)
+        guard.setattr("chess_coach.material_opportunity_current.verified_witness", forbidden)
+
+    # A newer real assessment can be in progress on the first source.
+    from chess_coach.capture_plan_history import latest
+
+    position = options[0][1]["source"]["position_id"]
+    prepare_corpus(db, LEARNER, root, "context-priority", position)
+    selected = preview(db, LEARNER, position, "context-priority", secret=secret)
+    item = next(value for value in selected["items"] if value.get("assessment_available"))
+    pending = "context-assessment-pending"
+    start_related(
+        db,
+        attempt_id=pending,
+        subject=LEARNER,
+        position=position,
+        corpus_version="context-priority",
+        reference=item["reference"],
+        assessment=True,
+        secret=secret,
+    )
+    assert latest(db, LEARNER, position, "context-priority")["status"] == "incomplete"
     with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True) as observer:
         observer.execute("PRAGMA query_only=ON")
         before = {
@@ -4013,18 +4056,34 @@ def _capture_context_comparison_workflow(tmp_path, monkeypatch):
             for name in tables
         }
         with monkeypatch.context() as guard:
+            forbid_get_proofs(guard)
+            started = time.monotonic()
+            page = client.get(
+                "/game-samples/captures", base_url="https://coach.invalid", headers=headers
+            )
+            assert page.status_code == 200 and time.monotonic() - started < 2.0
+            assert b"One qualified capture context" in page.data
+            assert b"White rook Rxd4 captures the queen on d4" in page.data
+            assert b"Second source-admitted capture context" not in page.data
+        assert before == {
+            name: observer.execute(f"SELECT * FROM {name} ORDER BY rowid").fetchall()
+            for name in tables
+        }
 
-            def forbidden(*_args, **_kwargs):
-                raise AssertionError("capture proof ran during comparison GET")
+    row = db.connection.execute(
+        "SELECT lines_json FROM unified_sessions WHERE attempt_id=?", (pending,)
+    ).fetchone()
+    submit(db, pending, LEARNER, event_id="answer", move=json.loads(row["lines_json"])[0][0])
+    assert process(db, LEARNER)["outcomes"] == {"correct": 1}
 
-            guard.setattr(capture_game_proof, "inspect", forbidden)
-            guard.setattr(capture_game_roots, "capture_gain", forbidden)
-            guard.setattr(capture_game_roots, "inspect_checking", forbidden)
-            guard.setattr(capture_game_roots, "inspect_replies", forbidden)
-            guard.setattr("chess_coach.related_capture_features.capture_gain", forbidden)
-            guard.setattr("chess_coach.related_capture_assessment.judge", forbidden)
-            guard.setattr("chess_coach.objective_capture_snapshot.judge", forbidden)
-            guard.setattr("chess_coach.material_opportunity_current.verified_witness", forbidden)
+    with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True) as observer:
+        observer.execute("PRAGMA query_only=ON")
+        before = {
+            name: observer.execute(f"SELECT * FROM {name} ORDER BY rowid").fetchall()
+            for name in tables
+        }
+        with monkeypatch.context() as guard:
+            forbid_get_proofs(guard)
             aggregate = capture_report(db, LEARNER, root)
             assert aggregate and aggregate["comparable"] and not aggregate["qualified"]
             started = time.monotonic()
@@ -4033,15 +4092,49 @@ def _capture_context_comparison_workflow(tmp_path, monkeypatch):
             )
             elapsed = time.monotonic() - started
             assert page.status_code == 200 and elapsed < 2.0
-            assert b"One capture context" in page.data
+            assert b"Two qualified capture contexts" in page.data
+            assert b"White knight Nxd4 captures the queen on d4" in page.data
             assert b"White rook Rxd4 captures the queen on d4" in page.data
+            assert b"5 proved matching decisions across 5 games" in page.data
             assert b"10 proved matching decisions across 10 games" in page.data
             assert b"at least 10 and at most 11 of 20 games" in page.data
+            assert b"second linked context has strictly higher opportunity presence" in page.data
 
             cache = location(db, root)
             state = read(cache, binding(db, LEARNER), validator=capture_validate)
             assert state is not None
+            source_ids = set(source_games[0] + source_games[1])
+            unknown = 0
+            for game in state["games"][:20]:
+                section = game.get("root_details")
+                if game["id"] not in source_ids and section and section["turns"]:
+                    section["turns"] = []
+                    unknown += 1
+                    if unknown == 6:
+                        break
+            assert unknown == 6
+            write(cache, state)
+            page = client.get(
+                "/game-samples/captures", base_url="https://coach.invalid", headers=headers
+            )
+            assert b"presence ranges overlap or touch" in page.data
+
             target = options[0][1]["source"]["position_id"]
+            for item in state["games"]:
+                section = item.get("root_details")
+                if section:
+                    section["turns"] = [
+                        turn for turn in section["turns"] if turn["position_id"] != target
+                    ]
+            write(cache, state)
+            page = client.get(
+                "/game-samples/captures", base_url="https://coach.invalid", headers=headers
+            )
+            assert b"One qualified capture context" in page.data
+            assert b"White rook Rxd4 captures the queen on d4" in page.data
+            assert b"Second source-admitted capture context" not in page.data
+
+            target = options[1][1]["source"]["position_id"]
             for item in state["games"]:
                 section = item.get("root_details")
                 if section:

@@ -14,11 +14,28 @@
 {% set turn = source.turn %}
 {% set root = source.root %}
 {% set controls = source.practice.controls %}
-<section><h3>One capture context</h3>
+<section><h3>{{ "Two qualified capture contexts" if profile.comparison else "One qualified capture context" }}</h3>
 <p><a href="{{ url_for("views.decision_detail", position_id=turn.position_id) }}">Recorded source</a>: {{ turn.side|capitalize }} {{ root.mover }} {{ root.san }} captures the {{ root.target }} on {{ root.target_square }}. This is a {{ root.mechanism }} capture in the {{ turn.phase }}, with file/rank distances {{ root.features.geometry|join(" and ") }} and time control {{ turn.time_control }}.</p>
 <p>Learner and opponent material (pawns, knights, bishops, rooks, queens): {{ turn.material[:5]|join(", ") }} / {{ turn.material[5:]|join(", ") }}. The linked unassisted first assessment was {{ source.practice.result }}.</p>
 <p>The assessment used corpus {{ controls.corpus }} and a rating band {{ controls.rating_band * 200 }}–{{ controls.rating_band * 200 + 199 }}, with deviation band {{ controls.deviation_band * 100 }}–{{ controls.deviation_band * 100 + 99 }}. Matching phase: {{ "yes" if controls.same_phase else "no" }}; geometry: {{ "yes" if controls.same_geometry else "no" }}; opening: {{ "yes" if controls.same_opening else "no" }}; material: {{ "yes" if controls.same_material else "no" }}.</p>
 <p>Recent games: {{ profile.newer.decisions }} proved matching decisions across {{ profile.newer.lower }} games; the opportunity appeared in at least {{ profile.newer.lower }} and at most {{ profile.newer.upper }} of {{ profile.newer.denominator }} games. Earlier games: {{ profile.earlier.decisions }} proved matching decisions across {{ profile.earlier.lower }} of {{ profile.earlier.denominator }} games.</p>
+{% if profile.comparison %}
+{% set comparison = profile.comparison %}
+{% set other = comparison.other %}
+{% set other_source = other.source %}
+{% set other_turn = other_source.turn %}
+{% set other_root = other_source.root %}
+{% set other_controls = other_source.practice.controls %}
+<h4>Second source-admitted capture context</h4>
+<p><a href="{{ url_for("views.decision_detail", position_id=other_turn.position_id) }}">Recorded source</a>: {{ other_turn.side|capitalize }} {{ other_root.mover }} {{ other_root.san }} captures the {{ other_root.target }} on {{ other_root.target_square }}. This is a {{ other_root.mechanism }} capture in the {{ other_turn.phase }}, with file/rank distances {{ other_root.features.geometry|join(" and ") }} and time control {{ other_turn.time_control }}.</p>
+<p>Learner and opponent material: {{ other_turn.material[:5]|join(", ") }} / {{ other_turn.material[5:]|join(", ") }}. The linked unassisted first assessment was {{ other_source.practice.result }}.</p>
+<p>The assessment used corpus {{ other_controls.corpus }} and a rating band {{ other_controls.rating_band * 200 }}–{{ other_controls.rating_band * 200 + 199 }}, with deviation band {{ other_controls.deviation_band * 100 }}–{{ other_controls.deviation_band * 100 + 99 }}. Matching phase: {{ "yes" if other_controls.same_phase else "no" }}; geometry: {{ "yes" if other_controls.same_geometry else "no" }}; opening: {{ "yes" if other_controls.same_opening else "no" }}; material: {{ "yes" if other_controls.same_material else "no" }}.</p>
+<p>Recent games: {{ other.newer.decisions }} proved matching decisions across {{ other.newer.lower }} games; the opportunity appeared in at least {{ other.newer.lower }} and at most {{ other.newer.upper }} of {{ other.newer.denominator }} games. Earlier games: {{ other.earlier.decisions }} proved matching decisions across {{ other.earlier.lower }} of {{ other.earlier.denominator }} games.</p>
+{% if not comparison.comparable %}<p>The two contexts are not comparable under their recorded controls or use the same pattern; no preference is shown.</p>
+{% elif comparison.winner is none %}<p>The recent-game presence ranges overlap or touch; the comparison is inconclusive.</p>
+{% elif comparison.winner == 0 %}<p>The first linked context has strictly higher opportunity presence across these bounds.</p>
+{% else %}<p>The second linked context has strictly higher opportunity presence across these bounds.</p>{% endif %}
+{% endif %}
 <p>This source-admitted profile is descriptive, not a scheduled offer, mistake rate, mastery score, or evidence that practice caused an outcome. Missing or unsearched details remain possible in the upper bound.</p>
 </section>
 {% else %}<p>A qualified capture-context profile is unavailable or incomplete.</p>

@@ -37,5 +37,27 @@ def candidates(db, subject, corpus, check, *, include_snapshot=False, limit=2):
     return found, "available" if found else "no_source", identity, None
 
 
+def descriptive(db, subject, corpus, check):
+    sources, limited, scanned, identity = collect(db, subject, check, limit=2)
+    found = []
+    for source in sources:
+        try:
+            value, report = _resolve(db, subject, corpus, source, limited, scanned, check, True)
+        except ValueError as error:
+            if str(error) not in {
+                "practice source unavailable",
+                "capture objective unavailable",
+                "capture history unavailable",
+                "capture source unavailable",
+                "capture target unavailable",
+            }:
+                raise
+            check()
+            continue
+        if value is not None:
+            found.append((value, report))
+    return found, identity
+
+
 def pending(identity, options):
     return digest(canonical([identity, [item["binding"] for item, _ in options]]))
