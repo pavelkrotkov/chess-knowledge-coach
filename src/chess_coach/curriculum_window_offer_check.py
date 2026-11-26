@@ -17,8 +17,18 @@ def valid_time(data):
         raise ValueError("practice window expired")
 
 
-def check(db, token, subject, source, version, key, mode):
+def check(
+    db, token, subject, source, version, key, mode, *, project_root=None, capture_budget=None
+):
     data = _decode(db, token)
+    from .curriculum_capture_offer import POLICY as CAPTURE_POLICY
+
+    if data[0] == CAPTURE_POLICY:
+        from .curriculum_capture_offer_check import check as check_capture
+
+        return check_capture(
+            db, data, subject, source, version, key, mode, project_root, capture_budget
+        )
     owner = normalize_identity(subject)
     if (
         owner is None

@@ -9,7 +9,10 @@ def state(db, value, learner, version, limit, scan_limit, now, goal, minutes, re
     if not value:
         from .curriculum_priority_cursor import upgrade
 
-        initial = upgrade(new_state(db, learner, version, limit, scan_limit, now))
+        initial = upgrade(
+            new_state(db, learner, version, limit, scan_limit, now),
+            capture=bool(budget and budget.project_root is not None),
+        )
         return create(initial, goal, minutes, limit)
     selected_minutes = _scope(value, goal, minutes, renew, limit)
     state = value["state"]

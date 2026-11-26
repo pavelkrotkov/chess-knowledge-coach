@@ -34,6 +34,7 @@ def render(daily_plan):
             goal=request.args.get("goal") or None,
             duration_minutes=minutes(request.args.get("minutes")),
             renew=request.args.get("renew") == "1",
+            project_root=current_app.config["PROJECT_ROOT"],
         )
         if current is not None:
             attach_context(

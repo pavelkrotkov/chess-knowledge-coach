@@ -57,6 +57,7 @@ def configure(sub):
     )
     plan.add_argument("--minutes", type=int)
     plan.add_argument("--renew", action="store_true")
+    plan.add_argument("--project-root")
     start = sub.add_parser("start-puzzle", help="Start or resume a versioned puzzle attempt")
     start.add_argument("version")
     start.add_argument("puzzle_id")

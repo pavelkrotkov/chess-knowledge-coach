@@ -14,8 +14,22 @@ def checked_renew(db, value, learner, version, scan_limit, now, minutes, budget)
     if state["corpus_version"] != version or state["scan_limit"] != scan_limit:
         raise ValueError("practice window scope changed")
     check_policy(state)
+    capture_changed = False
     if state["revision"] == revision(db):
         resume_state(
             db, state, learner, version, state["limit"], scan_limit, parse_utc(state["as_of"])
         )
-    return _renew(db, value, learner, version, scan_limit, now, minutes, budget)
+        from .curriculum_capture_guard import changed
+
+        capture_changed = changed(db, state, learner, getattr(budget, "project_root", None), budget)
+    return _renew(
+        db,
+        value,
+        learner,
+        version,
+        scan_limit,
+        now,
+        minutes,
+        budget,
+        capture_changed=capture_changed,
+    )

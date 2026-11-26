@@ -11,7 +11,9 @@ def offers(db, value, page):
         return
     for item in page["items"]:
         if item["kind"] == "new":
-            item["window_offer"] = issue(db, value, item)
+            from .curriculum_capture_offer_page import offer
+
+            item["window_offer"] = offer(db, value, item) or issue(db, value, item)
 
 
 def _continuation(page, expired_now, plan_state, cursor):

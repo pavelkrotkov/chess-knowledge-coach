@@ -6,9 +6,9 @@ from .curriculum_window_reoffer import history
 from .curriculum_window_scope import create
 
 
-def _renew(db, value, learner, version, scan_limit, now, minutes, budget):
+def _renew(db, value, learner, version, scan_limit, now, minutes, budget, *, capture_changed=False):
     old = value["state"]
-    changed, seen, new_seen = history(db, value, budget)
+    changed, seen, new_seen = history(db, value, budget, force_changed=capture_changed)
     limit = min(50, len(seen) + value["page_limit"])
     if len(seen) >= limit:
         raise ValueError("practice window plan limit reached; start a new plan")

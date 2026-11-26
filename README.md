@@ -345,7 +345,15 @@ Goals are `balanced`, `capture`, `fork`, `mate` (public-source mate), and
 `promotion`. Legacy corpus mate tasks retain their existing qualification and
 quotas. A goal
 changes the order of independently eligible new sources; due reviews remain
-first, and unavailable or unmeasured sources remain explicit. The window can
+first, and unavailable or unmeasured sources remain explicit. With a contained
+project root, two eligible capture choices can be ordered using their current,
+unassisted verified practice only when both share the same recorded context and
+have different outcomes. This favors an unmet named capture over a verified
+successful one; a tie or incomplete comparison keeps the existing source order.
+Source-specific dated opportunity importance remains unknown. These observations
+do not establish mastery, a practice effect, or rating gain. For CLI plans,
+pass `--project-root "$PWD"` to use this capture-practice policy.
+The window can
 be 1 to 180 minutes and is measured by the server, independent of the plan's
 fixed snapshot time. It is not an estimate of individual task duration or
 performance. New plan offers and their signed start links expire with the

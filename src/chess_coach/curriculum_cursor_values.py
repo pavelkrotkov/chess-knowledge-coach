@@ -7,3 +7,9 @@ def integer(value, minimum: int, maximum: int) -> bool:
 
 def text(value, maximum: int) -> bool:
     return isinstance(value, str) and 0 < len(value) <= maximum
+
+
+def hex_digest(value):
+    return (
+        isinstance(value, str) and len(value) == 64 and all(c in "0123456789abcdef" for c in value)
+    )

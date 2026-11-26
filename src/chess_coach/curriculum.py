@@ -2,9 +2,8 @@
 
 from datetime import datetime
 
-from .curriculum_cursor import new_state, resume_state
+from .curriculum_cursor import new_state as new_state
 from .curriculum_cursor_codec import decode_cursor
-from .curriculum_page import build_page
 from .curriculum_request import validate_plan_request
 from .curriculum_snapshot import plan_snapshot
 from .db import Database
@@ -25,10 +24,9 @@ def daily_plan(
     duration_minutes: int | None = None,
     renew: bool = False,
     _due_recheck: bool = False,
+    project_root=None,
 ) -> dict:
-    budget = None
-    if not db.compat32 and not db.connection.in_transaction:
-        budget = BrowserBudget(db)
+    budget = _budget(db, project_root)
     with plan_snapshot(db):
         from .curriculum_window_plan import build as build_window
         from .curriculum_window_request import requested
@@ -43,8 +41,13 @@ def daily_plan(
         learner, now = validate_plan_request(
             subject, corpus_version, limit, scan_limit, requested_time
         )
+        from .curriculum_capture_guard import check as check_capture
+        from .curriculum_capture_guard import window as finish_window
+
+        if not renew:
+            check_capture(db, prior, learner, project_root, budget)
         if window is not None:
-            return build_window(
+            page = build_window(
                 db,
                 window,
                 learner,
@@ -57,16 +60,30 @@ def daily_plan(
                 duration_minutes,
                 renew,
             )
-        if prior is None:
-            from .curriculum_priority_cursor import upgrade
+            return finish_window(db, page, learner, project_root, budget)
+        from .curriculum_plain_plan import build as build_plain
 
-            state = upgrade(new_state(db, learner, corpus_version, limit, scan_limit, now))
-        else:
-            state, now = resume_state(db, prior, learner, corpus_version, limit, scan_limit, now)
-        return build_page(db, state, learner, now, budget)
+        return build_plain(
+            db,
+            prior,
+            learner,
+            corpus_version,
+            limit,
+            scan_limit,
+            now,
+            budget,
+            project_root,
+            new_state,
+        )
 
 
 def _prior(db, cursor, window):
     if window:
         return window["state"]
     return decode_cursor(db, cursor) if cursor is not None else None
+
+
+def _budget(db, project_root):
+    if db.compat32 or db.connection.in_transaction:
+        return None
+    return BrowserBudget(db, project_root=project_root)
