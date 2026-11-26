@@ -2,7 +2,6 @@
 
 import json
 
-from .capture_compare_context import valid
 from .capture_compare_signature import signature
 from .related_capture import VERSION as RANK_VERSION
 from .related_capture_assessment import HISTORY, PROOF_VERSION, VERSION
@@ -40,10 +39,14 @@ def scope(row, corpus):
     if not _binding(binding, assessment):
         return None
     context = assessment.get("context")
-    if not valid(context):
+    try:
+        key = signature(context, corpus)
+    except ValueError:
         return None
     return {
-        "key": signature(context, corpus),
+        "key": key,
         "rating_start": context["content_rating"] // 200 * 200,
         "deviation_start": context["content_deviation"] // 100 * 100,
+        "context": context,
+        "binding": binding,
     }

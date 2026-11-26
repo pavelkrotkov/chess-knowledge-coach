@@ -9,7 +9,7 @@ from .objective_capture_source import resolve
 from .unified_sources import resolve_source
 
 
-def _resolve(db, subject, corpus, source, limited, scanned, check):
+def _resolve(db, subject, corpus, source, limited, scanned, check, include_snapshot):
     history = latest(db, subject, source["position_id"], corpus, check=check, prove_latest=True)
     report = {"source": source, "history": history, "limited": limited, "scanned": scanned}
     if history.get("status") in {"stale", "pending", "incomplete"}:
@@ -18,15 +18,19 @@ def _resolve(db, subject, corpus, source, limited, scanned, check):
     key = str(source["evidence_id"])
     value = resolve(db, TARGET_VERSION, key, subject, check=check)
     check()
+    if include_snapshot:
+        report["snapshot"] = value
     return _candidate(report, value, key), report
 
 
-def candidates(db, subject, corpus, check):
+def candidates(db, subject, corpus, check, *, include_snapshot=False, limit=2):
     """Resolve at most two source witnesses once under the caller's budget."""
-    sources, limited, scanned, identity = collect(db, subject, check)
+    sources, limited, scanned, identity = collect(db, subject, check, limit=limit)
     found = []
     for source in sources:
-        candidate, report = _resolve(db, subject, corpus, source, limited, scanned, check)
+        candidate, report = _resolve(
+            db, subject, corpus, source, limited, scanned, check, include_snapshot
+        )
         if candidate is None:
             return found, "available" if found else "history_unavailable", identity, report
         found.append((candidate, report))

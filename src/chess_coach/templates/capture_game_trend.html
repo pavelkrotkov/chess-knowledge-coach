@@ -8,17 +8,20 @@
 <p>The background game scan is pending or its sources have changed. This page will update after the worker checks the games.</p>
 {% else %}
 {% if report.comparable %}<p>The game samples and their boundaries are verified. Results are descriptive and can change as the scan progresses.</p>{% else %}<p>These game samples are not comparable yet. See the reason below.</p>{% endif %}
-{% if report.context_comparison %}
-<section><h3>Compared capture contexts</h3>
-<p>Both sources have the same verified unassisted practice result: {{ report.context_comparison.tier }}.</p>
-{% for source in report.context_comparison.sources %}
-{% set bounds = report.context_comparison.bounds[loop.index0].newer %}
-<p><a href="{{ url_for("views.decision_detail", position_id=source.position) }}">Source {{ loop.index }}</a>: a proved matching opportunity appeared in at least {{ bounds.lower }} and at most {{ bounds.upper }} of {{ bounds.denominator }} recent games.</p>
-{% endfor %}
-{% if report.context_comparison.preferred is none %}<p>The ranges overlap or tie; the comparison is inconclusive.</p>{% else %}<p>Source {{ report.context_comparison.preferred + 1 }} has the strictly higher bounded opportunity presence in these games.</p>{% endif %}
-<p>This is a descriptive comparison, not a mistake rate, mastery score, or evidence that practice caused an outcome.</p>
+{% if report.context_profile %}
+{% set profile = report.context_profile %}
+{% set source = profile.source %}
+{% set turn = source.turn %}
+{% set root = source.root %}
+{% set controls = source.practice.controls %}
+<section><h3>One capture context</h3>
+<p><a href="{{ url_for("views.decision_detail", position_id=turn.position_id) }}">Recorded source</a>: {{ turn.side|capitalize }} {{ root.mover }} {{ root.san }} captures the {{ root.target }} on {{ root.target_square }}. This is a {{ root.mechanism }} capture in the {{ turn.phase }}, with file/rank distances {{ root.features.geometry|join(" and ") }} and time control {{ turn.time_control }}.</p>
+<p>Learner and opponent material (pawns, knights, bishops, rooks, queens): {{ turn.material[:5]|join(", ") }} / {{ turn.material[5:]|join(", ") }}. The linked unassisted first assessment was {{ source.practice.result }}.</p>
+<p>The assessment used corpus {{ controls.corpus }} and a rating band {{ controls.rating_band * 200 }}–{{ controls.rating_band * 200 + 199 }}, with deviation band {{ controls.deviation_band * 100 }}–{{ controls.deviation_band * 100 + 99 }}. Matching phase: {{ "yes" if controls.same_phase else "no" }}; geometry: {{ "yes" if controls.same_geometry else "no" }}; opening: {{ "yes" if controls.same_opening else "no" }}; material: {{ "yes" if controls.same_material else "no" }}.</p>
+<p>Recent games: {{ profile.newer.decisions }} proved matching decisions across {{ profile.newer.lower }} games; the opportunity appeared in at least {{ profile.newer.lower }} and at most {{ profile.newer.upper }} of {{ profile.newer.denominator }} games. Earlier games: {{ profile.earlier.decisions }} proved matching decisions across {{ profile.earlier.lower }} of {{ profile.earlier.denominator }} games.</p>
+<p>This source-admitted profile is descriptive, not a scheduled offer, mistake rate, mastery score, or evidence that practice caused an outcome. Missing or unsearched details remain possible in the upper bound.</p>
 </section>
-{% else %}<p>A qualified comparison between capture contexts is unavailable or incomplete.</p>
+{% else %}<p>A qualified capture-context profile is unavailable or incomplete.</p>
 {% endif %}
 {% if report.historical %}<p>Historical sample through {{ report.through }}. Newer games are pending and are not included in these results.</p>{% endif %}
 {% for label, sample in (("More recent", report.newer), ("Earlier", report.earlier)) %}

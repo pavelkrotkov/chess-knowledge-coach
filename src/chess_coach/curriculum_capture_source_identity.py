@@ -6,7 +6,7 @@ from .objective_capture_current import current
 from .related_capture_position import prompt_key
 
 
-def collect(db, subject, check):
+def collect(db, subject, check, *, limit=2):
     groups, limited, scanned = _groups(db, subject, check=check)
     selected, identities, seen = [], [], set()
     for source in witnesses(db, subject, groups, check=check):
@@ -20,20 +20,20 @@ def collect(db, subject, check):
         seen.add(key)
         selected.append(source)
         identities.append(digest(canonical([source, view, review])))
-        if len(selected) == 2:
+        if len(selected) == limit:
             break
     check()
     return selected, limited, scanned, digest(canonical([limited, scanned, identities]))
 
 
-def snapshot(db, subject, check):
-    return collect(db, subject, check)[3]
+def snapshot(db, subject, check, *, limit=2):
+    return collect(db, subject, check, limit=limit)[3]
 
 
-def changed(db, subject, expected, check):
-    return expected is not None and snapshot(db, subject, check) != expected
+def changed(db, subject, expected, check, *, limit=2):
+    return expected is not None and snapshot(db, subject, check, limit=limit) != expected
 
 
-def require(db, subject, expected, check):
-    if changed(db, subject, expected, check):
+def require(db, subject, expected, check, *, limit=2):
+    if changed(db, subject, expected, check, limit=limit):
         raise ValueError("capture sources changed")

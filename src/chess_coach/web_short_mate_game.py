@@ -5,11 +5,9 @@ from datetime import UTC, datetime
 
 from flask import Blueprint, current_app, render_template
 
-from .capture_context_comparison import compare as capture_context_compare
+from .capture_context_comparison import read as capture_context_read
 from .capture_game_report import report as capture_report
-from .capture_game_trend_report import report as capture_trend_report
 from .created_exposure_game_report import report as exposure_trend_report
-from .curriculum_capture_inputs import observe as capture_inputs
 from .fork_game_trend_report import report as fork_trend_report
 from .learner_identity import normalize_identity
 from .opening_queue_budget import BrowserBudget
@@ -58,44 +56,18 @@ def captures(game_id):
 
 @short_mate_game_views.get("/game-samples/captures")
 def capture_samples():
-    subject = normalize_identity(current_app.config["SUBJECT"])
-    if subject is None:
-        return render_template("error.html", message="Learner identity is unavailable."), 400
-    db, root = database(), current_app.config["PROJECT_ROOT"]
-    try:
-        budget = BrowserBudget(db, project_root=root)
-        with budget.scope(snapshot=True):
-            as_of = datetime.now(UTC).isoformat()
-            try:
-                inputs = capture_inputs(db, subject, root, budget.check)
-            except (OSError, sqlite3.Error, ValueError, TypeError, KeyError, IndexError):
-                inputs = None
-            result = capture_trend_report(db, subject, root, check=budget.check, as_of=as_of)
-            if result and inputs is not None:
-                try:
-                    result["context_comparison"] = capture_context_compare(
-                        db,
-                        subject,
-                        current_app.config["CORPUS"],
-                        root,
-                        as_of,
-                        result,
-                        inputs,
-                        budget.check,
-                    )
-                except (OSError, sqlite3.Error, ValueError, TypeError, KeyError, IndexError):
-                    result["context_comparison"] = None
-    except (
-        OSError,
-        sqlite3.Error,
-        ValueError,
-        TypeError,
-        KeyError,
-        IndexError,
-        PreviewUnavailable,
-    ):
-        result = None
-    return render_template("capture_game_trend.html", report=result)
+    def read_profile(db, subject, root):
+        try:
+            budget = BrowserBudget(db, project_root=root)
+            with budget.scope(snapshot=True):
+                as_of = datetime.now(UTC).isoformat()
+                return capture_context_read(
+                    db, subject, current_app.config["CORPUS"], root, as_of, budget.check
+                )
+        except (sqlite3.Error, PreviewUnavailable):
+            return None
+
+    return _samples(read_profile, "capture_game_trend.html")
 
 
 @short_mate_game_views.get("/game-samples/knight-forks")

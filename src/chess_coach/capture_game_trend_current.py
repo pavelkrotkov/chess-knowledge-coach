@@ -1,7 +1,7 @@
 """Check cached dates and visible source links without replaying games."""
 
 from .capture_game_trend_validate import matches_frontier
-from .mastery_time import parse_utc
+from .opening_study_source import fingerprint
 
 
 def _dates(candidates, games):
@@ -33,17 +33,10 @@ def frontier_matches(state, candidates, frontier, signatures):
     )
 
 
-def current(db, state, candidates, samples, before):
+def current(db, state, candidates, samples, before, *, artifact=None):
     return (
         _dates(candidates, state["games"])
         and _examples(db, state["games"][:40], samples)
         and db.connection.execute("PRAGMA data_version").fetchone()[0] == before
+        and (artifact is None or fingerprint([artifact[0]]) == artifact[1])
     )
-
-
-def within_as_of(games, as_of):
-    cutoff = parse_utc(as_of)
-    if cutoff is None:
-        return False
-    dates = [parse_utc(item["date"]) for item in games]
-    return all(value is not None and value <= cutoff for value in dates)

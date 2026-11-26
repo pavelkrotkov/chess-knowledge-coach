@@ -19,14 +19,16 @@ def _root(board, root):
     ):
         raise ValueError("root source changed")
     square, target = _target(board, move)
+    mover = board.piece_at(move.from_square)
     return {
         "move": root[0],
         "san": board.san(move),
+        "mover": chess.piece_name(mover.piece_type),
         "target": chess.piece_name(target.piece_type),
         "target_square": chess.square_name(square),
         "state": root[2],
         "mechanism": root[3],
-        "features": _features(board, move, board.piece_at(move.from_square), target),
+        "features": _features(board, move, mover, target),
     }
 
 
@@ -78,7 +80,7 @@ def project(db, learner, games, samples, *, check=None):
             root_details=turns,
             root_unattributed=sample["eligible"] - sample["unchecked"] - len(turns),
             root_game_coverage=[
-                {"game_id": item["id"], "eligible": item["eligible"], "retained": len(values)}
+                {"game_id": item["id"], "eligible": item["eligible"], "turns": values}
                 for item, values in by_game
             ],
         )
