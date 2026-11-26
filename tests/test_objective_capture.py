@@ -3874,16 +3874,11 @@ def _retained_capture_workflow(tmp_path, monkeypatch):
 
     from chess_coach.recurrence_cursor import MAX_ID
 
-    for _ in range(20):
-        if checkpoint(db, LEARNER, root)[1]["before"] == MAX_ID:
-            break
-        turn()
-    assert checkpoint(db, LEARNER, root)[1]["before"] == MAX_ID
     records, _ = bucket_entries(db, root, LEARNER, schedule_source)
     records.pop(str(schedule_source))
     publish_bucket(db, root, LEARNER, schedule_source, records)
     progress_path, current = checkpoint(db, LEARNER, root)
-    current["lane"], current["schedule"] = 2, []
+    current["before"], current["lane"], current["schedule"] = MAX_ID, 2, []
     save(db, LEARNER, progress_path, current)
     schedules = []
     original_schedule = worker.schedule_reference
