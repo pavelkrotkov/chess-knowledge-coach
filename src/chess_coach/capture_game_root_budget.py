@@ -21,26 +21,29 @@ def _items(state):
     )
 
 
-def _limits(sections):
-    return (
-        sum(len(value["turns"]) for value in sections) <= DETAIL_TURNS
-        and sum(len(canonical({"root_details": value}).encode()) for value in sections)
-        <= DETAIL_BYTES
+def _limits(items):
+    items = list(items)
+    turns = sum(len(item["root_details"]["turns"]) for item in items if item.get("root_details"))
+    size = sum(
+        len(canonical({key: item[key]}).encode())
+        for item in items
+        for key in ("root_details", "root_refresh")
+        if item.get(key)
     )
+    return turns <= DETAIL_TURNS and size <= DETAIL_BYTES
 
 
 def fits(state):
-    return len(canonical({**state, "checksum": "0" * 64}).encode()) <= MAX_BYTES
+    return _limits(_items(state)) and (
+        len(canonical({**state, "checksum": "0" * 64}).encode()) <= MAX_BYTES
+    )
 
 
 def fit(state):
-    items = list(_items(state))
-    pending = [item for item in items if item.get("root_details")]
-    while pending and (
-        not _limits([item["root_details"] for item in items if item.get("root_details")])
-        or not fits(state)
-    ):
-        pending.pop().pop("root_details", None)
+    for item in reversed(list(_items(state))):
+        if fits(state):
+            break
+        item.pop("root_details", None)
 
 
 def record(state, item, row, detail):

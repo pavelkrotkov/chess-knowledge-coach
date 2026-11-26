@@ -38,7 +38,7 @@ def _section(item):
 def valid(games):
     if not all(map(_section, games)):
         return False
-    return _limits([item["root_details"] for item in games if item.get("root_details")])
+    return _limits(games)
 
 
 def discard_invalid(state):
