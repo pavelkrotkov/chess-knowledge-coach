@@ -1087,6 +1087,7 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
         patch.setattr(capture_paths, "PROOF_VERSION", "future-capture-policy")
         assert capture_report(db, "fixture_a", root) is None
     assert db.connection.total_changes == before
+    assert not (root / ".runtime" / "planning").exists()
 
     app = create_app(
         db_path=path,

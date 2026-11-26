@@ -33,6 +33,9 @@ def profile(db, subject, corpus, as_of, report, check):
 def read(db, subject, corpus, root, as_of, check):
     try:
         before = observe(db, subject, root, check)
+    except (OSError, sqlite3.Error, ValueError, TypeError, KeyError, IndexError):
+        return capture_trend_report(db, subject, root, check=check, as_of=as_of)
+    try:
         result = capture_trend_report(db, subject, root, check=check, as_of=as_of)
         if not result:
             return None

@@ -2730,6 +2730,7 @@ def test_capture_plan_uses_independent_current_sources_and_is_lazy(tmp_path, mon
     assert stale_replay.status_code == 400
     assert db.connection.execute("SELECT count(*) FROM unified_sessions").fetchone()[0] == 1
     db.close()
+    _capture_context_comparison_workflow(tmp_path, monkeypatch)
 
 
 def _daily_capture_workflow(tmp_path, monkeypatch):
@@ -3146,7 +3147,6 @@ def _scheduled_deadline_controls(db, tmp_path, monkeypatch, now):
     )
     assert not matched and not more and examined == 1 and unavailable is None
     fork_db.close()
-    _capture_context_comparison_workflow(tmp_path, monkeypatch)
 
 
 def _capture_practice_priority_workflow(tmp_path, monkeypatch):
@@ -3859,6 +3859,7 @@ def _capture_context_comparison_workflow(tmp_path, monkeypatch):
     from chess_coach import capture_game_proof, capture_game_roots
     from chess_coach.capture_game_trend_paths import binding, location
     from chess_coach.capture_game_trend_report import report as capture_report
+    from chess_coach.capture_game_trend_validate import validate as capture_validate
     from chess_coach.curriculum_capture_witnesses import candidates
     from chess_coach.db import Database
     from chess_coach.ingest import ingest_pgn
@@ -4038,7 +4039,8 @@ def _capture_context_comparison_workflow(tmp_path, monkeypatch):
             assert b"at least 10 and at most 11 of 20 games" in page.data
 
             cache = location(db, root)
-            state = read(cache, binding(db, LEARNER))
+            state = read(cache, binding(db, LEARNER), validator=capture_validate)
+            assert state is not None
             target = options[0][1]["source"]["position_id"]
             for item in state["games"]:
                 section = item.get("root_details")
