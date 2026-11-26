@@ -33,10 +33,14 @@ def save(db, subject, path, current):
 
 
 def next_evidence(db, subject, before):
-    row = db.connection.execute(
-        """SELECT id FROM evidence_mappings INDEXED BY idx_curriculum_evidence
-        WHERE subject=? AND skill='hanging_piece' AND operation='execute' AND id<?
-        ORDER BY id DESC LIMIT 1""",
-        (normalize_identity(subject), before),
-    ).fetchone()
-    return (row, row["id"]) if row else (None, MAX_ID)
+    frontiers = (before, MAX_ID) if before != MAX_ID else (before,)
+    for frontier in frontiers:
+        row = db.connection.execute(
+            """SELECT id FROM evidence_mappings INDEXED BY idx_curriculum_evidence
+            WHERE subject=? AND skill='hanging_piece' AND operation='execute' AND id<?
+            ORDER BY id DESC LIMIT 1""",
+            (normalize_identity(subject), frontier),
+        ).fetchone()
+        if row is not None:
+            return row, row["id"]
+    return None, MAX_ID
