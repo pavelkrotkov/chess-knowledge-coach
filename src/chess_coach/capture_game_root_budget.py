@@ -46,8 +46,8 @@ def fit(state):
         item.pop("root_details", None)
 
 
-def record(state, item, row, detail):
-    section = item.get("root_details") or {"version": VERSION, "proof": PROOF_VERSION, "turns": []}
+def record(state, item, row, detail, *, version=VERSION, proof=PROOF_VERSION):
+    section = item.get("root_details") or {"version": version, "proof": proof, "turns": []}
     value = {**detail, "position_id": row[0], "outcome": row[1], "reason": row[2]}
     item["root_details"] = {**section, "turns": [*section["turns"], value]}
     fit(state)

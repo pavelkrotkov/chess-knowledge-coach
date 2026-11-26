@@ -21,9 +21,21 @@ from .short_mate_trend_turns import inspect
 CYCLE_SECONDS = 10.0
 
 
-def _advance(db, learner, games, state, deadline, *, classifier=None, turn_seconds=TURN_SECONDS):
-    fields = ()
-    inspector = partial(inspect, classifier=classifier, seconds=turn_seconds)
+def _advance(
+    db,
+    learner,
+    games,
+    state,
+    deadline,
+    *,
+    classifier=None,
+    turn_seconds=TURN_SECONDS,
+    inspector=None,
+    retain_fields=(),
+):
+    fields = retain_fields
+    if inspector is None:
+        inspector = partial(inspect, classifier=classifier, seconds=turn_seconds)
     if classifier is None:
         discard_invalid(state)
         fields = ("root_details", "root_refresh")

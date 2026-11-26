@@ -3,10 +3,12 @@
 import os
 import sqlite3
 import time
+from functools import partial
 from contextlib import suppress
 
 from .capture_game_trend_scan import _advance, _resume
 from .fork_game_proof import classify
+from .fork_game_root_detail import inspect as inspect_roots
 from .fork_game_trend_paths import TURN_SECONDS, binding, location
 from .fork_game_trend_validate import validate
 from .short_mate_trend_cohort import snapshot
@@ -28,7 +30,17 @@ def run(db, learner, root, *, seconds=CYCLE_SECONDS):
     state["coverage"] = coverage
     try:
         _advance(
-            db, learner, games, state, deadline, classifier=classify, turn_seconds=TURN_SECONDS
+            db,
+            learner,
+            games,
+            state,
+            deadline,
+            classifier=classify,
+            turn_seconds=TURN_SECONDS,
+            inspector=partial(
+                inspect_roots, state=state, classifier=classify, seconds=TURN_SECONDS
+            ),
+            retain_fields=("root_details",),
         )
     except (ValueError, TypeError, IndexError):
         state = initial(key, frontier, None)

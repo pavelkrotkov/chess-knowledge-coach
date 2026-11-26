@@ -12,23 +12,27 @@ class Deadline(Exception):
     """The turn's cooperative proof budget expired."""
 
 
-def _scan(board, moves, check):
+def _scan(board, moves, check, details=None):
     proved, unresolved = set(), False
     for move in moves:
         check()
         shape = targets(board, move)
         check()
-        if shape is None:
-            continue
-        if _capture_refutation(shape[0], move.to_square):
+        proof = None
+        state = "outside"
+        if shape is not None and not _capture_refutation(shape[0], move.to_square):
+            proof = fork_proof(board, move, check=check)
             check()
-            continue
-        proof = fork_proof(board, move, check=check)
+            state = "proved" if proof else "unknown"
+            if proof:
+                proved.add(move.uci())
+            else:
+                unresolved = True
+        if details is not None:
+            details["attempted"] += 1
+            if len(details["roots"]) < 32:
+                details["roots"].append([move.uci(), proof["targets"] if proof else [], state])
         check()
-        if proof:
-            proved.add(move.uci())
-        else:
-            unresolved = True
     return proved, unresolved
 
 
@@ -42,21 +46,35 @@ def _capture_refutation(after, square):
     )
 
 
-def classify(board, played, deadline, clock):
+def classify(board, played, deadline, clock, *, details=None):
     def check():
         if clock() >= deadline:
             raise Deadline()
 
+    if details is not None:
+        details.update(
+            side="white" if board.turn else "black",
+            played=played,
+            total=None,
+            attempted=0,
+            roots=[],
+        )
     try:
         check()
         if not supported(board):
             return "unknown", "unsupported_position"
         moves = roots(board)
+        if details is not None:
+            details["total"] = len(moves)
         check()
-        proved, unresolved = _scan(board, moves, check)
+        proved, unresolved = _scan(board, moves, check, details)
         check()
     except Deadline:
         return "unknown", "deadline"
+    finally:
+        if details is not None:
+            total = details["total"]
+            details["unsearched"] = None if total is None else total - details["attempted"]
     if not proved:
         return ("unresolved", "unresolved_roots") if unresolved else ("no_candidate", None)
     return ("played" if played in proved else "awaiting"), (
