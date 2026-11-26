@@ -5,12 +5,14 @@ from .curriculum_priority_validate import validate_priority
 POLICY = "qualified-family-v1:mastery-v2-90d"
 LEGACY_CAPTURE_POLICY = "qualified-family-v2:capture-practice-v1"
 CAPTURE_POLICY = "qualified-family-v3:capture-files-v1"
-CAPTURE_POLICIES = {LEGACY_CAPTURE_POLICY, CAPTURE_POLICY}
+CONTEXT_CAPTURE_POLICY = "qualified-family-v4:capture-context-v1"
+CAPTURE_FILE_POLICIES = {CAPTURE_POLICY, CONTEXT_CAPTURE_POLICY}
+CAPTURE_POLICIES = {LEGACY_CAPTURE_POLICY, *CAPTURE_FILE_POLICIES}
 
 
-def upgrade(state, *, capture=False):
+def upgrade(state, *, capture=False, policy=None):
     if state["v"] == 6:
-        policy = CAPTURE_POLICY if capture else POLICY
+        policy = policy or (CONTEXT_CAPTURE_POLICY if capture else POLICY)
         state.update(v=8, priority_policy=policy, priority_goal="balanced", priority=None)
         if capture:
             state["capture_files"] = None
@@ -20,7 +22,13 @@ def upgrade(state, *, capture=False):
 
 def inherit(old, state):
     return (
-        upgrade(state, capture=old.get("priority_policy") in CAPTURE_POLICIES)
+        upgrade(
+            state,
+            capture=old.get("priority_policy") in CAPTURE_POLICIES,
+            policy=CAPTURE_POLICY
+            if old.get("priority_policy") in {LEGACY_CAPTURE_POLICY, CAPTURE_POLICY}
+            else None,
+        )
         if old["v"] == 8
         else state
     )
@@ -43,7 +51,7 @@ def validate(state):
         state["priority"], state["scan_limit"], capture=state["priority_policy"] in CAPTURE_POLICIES
     )
     # Only the new capture policy has a signed preselection file observation.
-    if state["priority_policy"] == CAPTURE_POLICY:
+    if state["priority_policy"] in CAPTURE_FILE_POLICIES:
         from .curriculum_priority_validate import _capture_input
 
         _capture_input(state["capture_files"])

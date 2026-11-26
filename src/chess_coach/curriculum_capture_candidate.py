@@ -4,13 +4,13 @@ from .curriculum_capture_conflict import check_conflicts
 from .curriculum_capture_source import read
 
 
-def check_candidate(db, state, subject, scan, check):
+def check_candidate(db, state, subject, scan, check, *, root=None):
     from .curriculum_priority_cursor import CAPTURE_POLICIES
 
     if state.get("priority_policy") in CAPTURE_POLICIES:
         from .curriculum_capture_choice import select
 
-        return select(db, state, subject, scan, check)
+        return select(db, state, subject, scan, check, root=root)
     candidate, status, report = read(db, subject, state["corpus_version"], check)
     pending = state["capture_pending"]
     if pending is not None and (candidate is None or candidate["binding"] != pending):

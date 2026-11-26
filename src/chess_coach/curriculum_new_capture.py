@@ -29,7 +29,9 @@ def scan(db, state, subject, scan, budget, *, shared_check=None):
     working, work_scan = _working(state, scan)
     try:
         with nullcontext() if shared_check else budget.scope(snapshot=False):
-            result = check_candidate(db, working, subject, work_scan, check)
+            result = check_candidate(
+                db, working, subject, work_scan, check, root=budget.project_root
+            )
         state.update(working)
         scan.update(work_scan)
         return result

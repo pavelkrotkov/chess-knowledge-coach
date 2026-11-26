@@ -30,12 +30,13 @@ def _match(snapshot, position, observation, turns):
     return (turn, root) if actual == expected else None
 
 
-def bind(db, subject, corpus, as_of, option, turns, check):
+def bind(db, subject, corpus, as_of, option, turns, check, *, observed=None):
     _, report = option
     position = report["source"]["position_id"]
     if report["limited"]:
         return None
-    observed = evidence(db, subject, corpus, position, report["history"], as_of, check)
+    if observed is None:
+        observed = evidence(db, subject, corpus, position, report["history"], as_of, check)
     if observed is None:
         return None
     observed["controls"], observed["pattern"] = projections(observed["practice_context"], corpus)

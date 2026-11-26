@@ -1,6 +1,7 @@
 """Choose only between comparable, verified capture observations."""
 
 from .curriculum_capture_practice import evidence
+from .curriculum_capture_source import practice_reason
 
 
 def preferred(first, second):
@@ -14,31 +15,34 @@ def preferred(first, second):
     return 0 if first["result"] == "incorrect" else 1
 
 
-def _practice(db, subject, corpus, state, option, check):
-    _, report = option
-    return evidence(
-        db,
-        subject,
-        corpus,
-        report["source"]["position_id"],
-        report["history"],
-        state["as_of"],
-        check,
-    )
-
-
-def choice(db, subject, state, options, matched, check):
+def choice(db, subject, state, options, matched, check, *, root=None):
     if len(options) < 2 or any(report["limited"] for _, report in options):
-        return 0, False
+        return 0, practice_reason(False)
     if not _eligible(options, matched, state["seen"]):
-        return 0, False
+        return 0, practice_reason(False)
     first, second = (
-        _practice(db, subject, state["corpus_version"], state, item, check) for item in options
+        evidence(
+            db,
+            subject,
+            state["corpus_version"],
+            report["source"]["position_id"],
+            report["history"],
+            state["as_of"],
+            check,
+        )
+        for _, report in options
     )
     selected = preferred(first, second)
-    return (0, False) if selected is None else (selected, True)
+    if selected is not None:
+        return selected, practice_reason(True)
+    from .curriculum_capture_context import choice as plan_choice
+
+    return plan_choice(db, subject, state, root, options, (first, second), check) or (
+        0,
+        practice_reason(False),
+    )
 
 
 def _eligible(options, matched, seen):
-    keys = [item["prompt_key"] for item, _ in options]
-    return len(set(keys)) == 2 and not any(key in matched or key in seen for key in keys)
+    keys = {item["prompt_key"] for item, _ in options}
+    return len(keys) == 2 and keys.isdisjoint(matched | set(seen))

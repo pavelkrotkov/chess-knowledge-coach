@@ -20,11 +20,11 @@ def build(db, prior, learner, corpus, limit, scan_limit, now, budget, project_ro
         state, now = resume_state(db, prior, learner, corpus, limit, scan_limit, now)
     from .curriculum_capture_file_guard import initialize
     from .curriculum_cursor_codec import encode_cursor
-    from .curriculum_priority_cursor import CAPTURE_POLICY
+    from .curriculum_priority_cursor import CAPTURE_FILE_POLICIES
 
     initialize(db, state, learner, budget)
     selection = None
-    if state.get("priority_policy") == CAPTURE_POLICY:
+    if state.get("priority_policy") in CAPTURE_FILE_POLICIES:
         selected = deepcopy(state)
         selected["capture_selection"] = True
         selection = encode_cursor(db, selected)

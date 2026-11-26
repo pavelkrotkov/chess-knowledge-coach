@@ -68,8 +68,8 @@ def _fields(state):
     if version == 8:
         fields.update({"priority_policy", "priority_goal", "priority"})
         # The new file-bound policy leaves the prior v8 cursor shape unchanged.
-        from .curriculum_priority_cursor import CAPTURE_POLICY
+        from .curriculum_priority_cursor import CAPTURE_FILE_POLICIES
 
-        if state.get("priority_policy") == CAPTURE_POLICY:
+        if state.get("priority_policy") in CAPTURE_FILE_POLICIES:
             fields.update({"capture_files", "capture_selection"})
     return fields
