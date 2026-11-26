@@ -3,7 +3,7 @@
 from .curriculum_capture_file_guard import current
 from .fact_fingerprint import canonical, digest
 from .related_capture_cursor import _cursor, _offset, bind_scope
-from .related_capture_features import capture_features
+from .related_capture_features import certified_features
 from .related_capture_source import source_for_position
 from .related_transfer_select import select
 
@@ -16,9 +16,11 @@ def _selection(
 ):
     files = current(db, subject, db.capture_root)
     source = source_for_position(db, subject, position)
-    if capture_features(source["prompt_fen"], source["lines"][0].split()) is None:
+    if certified_features(source["prompt_fen"], source["lines"][0].split()) is None:
         raise ValueError("unsupported capture source")
-    options = {"rating_bounds": rating_bounds} if rating_bounds is not None else {}
+    options = {"feature": certified_features}
+    if rating_bounds is not None:
+        options["rating_bounds"] = rating_bounds
     if score is not None:
         options["score"] = score
     selected = select(

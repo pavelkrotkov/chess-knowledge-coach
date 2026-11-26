@@ -3355,6 +3355,23 @@ def _retained_capture_workflow(tmp_path, monkeypatch):
 
     old_selection = select_transfer(db, LEARNER, original_source, "capture", transfer_version)
     old_preview = present_transfer(old_selection, None, secret=secret)
+
+    # All candidate gain checks stay real; only a proof of this already-certified
+    # owned source is forbidden during subsequent capture requests.
+    import chess_coach.related_capture_features as related_features
+
+    owned_prompt = original_source["prompt_fen"]
+    owned_move = original_source["lines"][0].split()[0]
+    actual_gain = related_features.capture_gain
+    candidate_checks = []
+
+    def guard_owned_gain(board, move, target, **kwargs):
+        if board.fen() == owned_prompt and move.uci() == owned_move:
+            raise AssertionError("owned source proof ran during related request")
+        candidate_checks.append(True)
+        return actual_gain(board, move, target, **kwargs)
+
+    monkeypatch.setattr(related_features, "capture_gain", guard_owned_gain)
     assert old_preview["next_cursor"] is not None
     with pytest.raises(ValueError):
         preview(db, LEARNER, related_position, "capture", old_preview["next_cursor"], secret=secret)
@@ -3673,14 +3690,51 @@ def _retained_capture_workflow(tmp_path, monkeypatch):
             login="fixture",
             origin="https://coach.invalid",
         )
-        page = app.test_client().get(
+        import hashlib
+        import sqlite3
+
+        def learning_fingerprint():
+            names = (
+                "unified_sessions",
+                "unified_session_events",
+                "objective_requests",
+                "objective_results",
+                "unified_training_enrollments",
+                "unified_training_completions",
+                "training_items",
+                "training_attempts",
+                "mastery_states",
+                "mastery_events",
+                "evidence_mappings",
+                "evidence_review_events",
+                "tactical_exposure_coverage",
+                "tactical_exposures",
+            )
+            with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True) as reader:
+                rows = tuple(
+                    (name, reader.execute(f"SELECT * FROM {name} ORDER BY rowid").fetchall())
+                    for name in names
+                )
+            return hashlib.sha256(repr(rows).encode()).hexdigest()
+
+        before_http = learning_fingerprint()
+        client = app.test_client()
+        page = client.get(
             "/plan/captures/history",
             base_url="https://coach.invalid",
             headers={"Tailscale-User-Login": "fixture"},
         )
         assert page.status_code == 200
         assert b"related-active" in page.data and b"related-completed" in page.data
+        related_page = client.get(
+            f"/decisions/{related_position}/related-captures",
+            base_url="https://coach.invalid",
+            headers={"Tailscale-User-Login": "fixture"},
+        )
+        assert related_page.status_code == 200 and b"Check my capture choice" in related_page.data
+        assert learning_fingerprint() == before_http
         assert db.connection.total_changes == before_read
+        assert candidate_checks
     cli_result = fresh_cli(
         path,
         "related-captures",
@@ -3692,6 +3746,7 @@ def _retained_capture_workflow(tmp_path, monkeypatch):
         "capture",
         "--project-root",
         str(root),
+        source_guard=(owned_prompt, owned_move),
     )
     assert json.loads(cli_result.stdout)["status"] == "available"
     for name, row in related_rows.items():
