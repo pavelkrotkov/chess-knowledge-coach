@@ -945,15 +945,15 @@ def test_unfamiliar_fork_browser_and_worker(tmp_path, monkeypatch, mode):
             patch.setattr(fork_history, "select", lambda *_args, **_kwargs: ([], True))
             assert b"bounded session window or source checks were incomplete" in history()
 
-        from chess_coach import fork_branch
+        from chess_coach import fork_evidence_verify
         from chess_coach.opening_queue_budget import BrowserBudget
         from chess_coach.tactical_course_budget import PreviewUnavailable
 
-        real_capture, real_check = fork_branch.capture, BrowserBudget.check
+        real_replay, real_check = fork_evidence_verify.replay, BrowserBudget.check
         calls = []
 
-        def expire_in_capture(*args, **kwargs):
-            value = real_capture(*args, **kwargs)
+        def expire_in_replay(*args, **kwargs):
+            value = real_replay(*args, **kwargs)
             calls.append(1)
             return value
 
@@ -963,7 +963,7 @@ def test_unfamiliar_fork_browser_and_worker(tmp_path, monkeypatch, mode):
             return real_check(budget)
 
         with monkeypatch.context() as patch:
-            patch.setattr(fork_branch, "capture", expire_in_capture)
+            patch.setattr(fork_evidence_verify, "replay", expire_in_replay)
             patch.setattr(BrowserBudget, "check", check_deadline)
             assert b"bounded session window or source checks were incomplete" in history()
         assert len(calls) == 1
