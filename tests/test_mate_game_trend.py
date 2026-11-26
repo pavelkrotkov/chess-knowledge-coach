@@ -1959,6 +1959,137 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
     assert b"One practiced fork context" not in unavailable.data
     write(cache, complete)
 
+    # Model a pre-upgrade completed report from the real worker's triples.
+    legacy = deepcopy(complete)
+    for game in legacy["games"]:
+        game.pop("root_details", None)
+        game.pop("root_refresh", None)
+    original_results = [deepcopy(game["results"]) for game in legacy["games"]]
+    write(cache, legacy)
+    import chess_coach.fork_observation as fork_observation
+
+    def no_fork_proof(*_args, **_kwargs):
+        pytest.fail("the private sample GET must not run fork proofs")
+
+    with monkeypatch.context() as guard:
+        guard.setattr(fork_observation, "fork_proof", no_fork_proof)
+        guard.setattr(fork_game_proof, "fork_proof", no_fork_proof)
+        guard.setattr(fork_miss_candidate, "fork_proof", no_fork_proof)
+        started = time.monotonic()
+        old_page = app.test_client().get(
+            "/game-samples/knight-forks",
+            base_url="https://coach.invalid",
+            headers={"Tailscale-User-Login": "fixture"},
+        )
+        assert time.monotonic() - started < 2
+    assert old_page.status_code == 200
+    assert b"One practiced fork context" not in old_page.data
+    assert b"source-linked fork context is unavailable or inconclusive" in old_page.data
+
+    # Interrupt only the outer rotation after an actual proof, then reopen.
+    import chess_coach.fork_game_trend_scan as fork_scan
+
+    real_classify = fork_scan.classify
+    rotation_time = [time.monotonic()]
+    attempts = []
+
+    def one_real_visit(*args, **kwargs):
+        result = real_classify(*args, **kwargs)
+        attempts.append(True)
+        rotation_time[0] += 10
+        return result
+
+    # A real regenerated result must match the whole preserved old triple.
+    mismatch = deepcopy(legacy)
+    mismatch_index = next(
+        i
+        for i, game in enumerate(mismatch["games"][:40])
+        if game["results"] and game["results"][0][1] in {"played", "awaiting"}
+    )
+    mismatch["rotation"] = mismatch_index
+    row = mismatch["games"][mismatch_index]["results"][0]
+    row[1] = "awaiting" if row[1] == "played" else "played"
+    row[2] = None
+    write(cache, mismatch)
+    with monkeypatch.context() as interrupted:
+        interrupted.setattr(scan, "time", SimpleNamespace(monotonic=lambda: rotation_time[0]))
+        interrupted.setattr(fork_scan, "classify", one_real_visit)
+        run_forks(matched, "fixture_a", root)
+    checked_mismatch = read(cache, key, validator=fork_validate)
+    wrong_game = checked_mismatch["games"][mismatch_index]
+    assert wrong_game["results"][0] == row
+    assert wrong_game["root_refresh"]["next"] > 0 and "root_details" not in wrong_game
+    write(cache, legacy)
+    attempts.clear()
+    rotation_time[0] = time.monotonic()
+    with monkeypatch.context() as interrupted:
+        interrupted.setattr(scan, "time", SimpleNamespace(monotonic=lambda: rotation_time[0]))
+        interrupted.setattr(fork_scan, "classify", one_real_visit)
+        run_forks(matched, "fixture_a", root)
+    partial = read(cache, key, validator=fork_validate)
+    assert attempts and partial
+    progress = [game["root_refresh"] for game in partial["games"] if game.get("root_refresh")]
+    assert len(progress) == 1 and progress[0]["next"] > 0
+    assert [game["results"] for game in partial["games"]] == original_results
+    matched.close()
+    matched = Database(matched_path)
+    resumed = read(cache, key, validator=fork_validate)
+    assert [
+        game["root_refresh"] for game in resumed["games"] if game.get("root_refresh")
+    ] == progress
+    for _ in range(30):
+        run_forks(matched, "fixture_a", root)
+        resumed = read(cache, key, validator=fork_validate)
+        if all(
+            not game["results"] or game.get("root_refresh", {}).get("next") == len(game["results"])
+            for game in resumed["games"][:40]
+        ):
+            break
+    else:
+        pytest.fail("legacy fork root refresh did not finish")
+    assert [game["results"] for game in resumed["games"]] == original_results
+    with monkeypatch.context() as guard:
+        guard.setattr(fork_observation, "fork_proof", no_fork_proof)
+        guard.setattr(fork_game_proof, "fork_proof", no_fork_proof)
+        guard.setattr(fork_miss_candidate, "fork_proof", no_fork_proof)
+        started = time.monotonic()
+        refreshed = app.test_client().get(
+            "/game-samples/knight-forks",
+            base_url="https://coach.invalid",
+            headers={"Tailscale-User-Login": "fixture"},
+        )
+        assert time.monotonic() - started < 2
+    assert refreshed.status_code == 200
+    assert (
+        b"One practiced fork context" in refreshed.data and b"proved knight fork" in refreshed.data
+    )
+    with sqlite3.connect(matched_path.resolve().as_uri() + "?mode=ro", uri=True) as observer:
+        observer.execute("PRAGMA query_only=ON")
+        assert before_reads == {
+            table: observer.execute(f"SELECT * FROM {table} ORDER BY rowid").fetchall()
+            for table in tables
+        }
+
+    # A changed real source cannot retain the reconstructed attribution.
+    source_id = source_game["id"]
+    source_result = matched.connection.execute(
+        "SELECT result FROM games WHERE id=?", (source_id,)
+    ).fetchone()[0]
+    matched.connection.execute("UPDATE games SET result=? WHERE id=?", ("0-1", source_id))
+    matched.connection.commit()
+    changed = app.test_client().get(
+        "/game-samples/knight-forks",
+        base_url="https://coach.invalid",
+        headers={"Tailscale-User-Login": "fixture"},
+    )
+    assert b"One practiced fork context" not in changed.data
+    matched.connection.execute("UPDATE games SET result=? WHERE id=?", (source_result, source_id))
+    matched.connection.commit()
+
+    with monkeypatch.context() as changed_policy:
+        changed_policy.setattr(fork_game_trend_paths, "PROOF_VERSION", "future-fork-policy")
+        assert fork_report(matched, "fixture_a", root) is None
+
     # A different known time control blocks comparison even for an unsupported turn.
     from chess_coach.fork_miss_time import _times
 

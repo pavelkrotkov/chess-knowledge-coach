@@ -30,9 +30,10 @@ def _advance(
     turn_seconds=TURN_SECONDS,
     inspector=None,
     retain_fields=(),
+    recheck_complete=False,
 ):
-    recheck_complete = inspector is None
     if inspector is None:
+        recheck_complete = True
         discard_invalid(state)
         retain_fields = ("root_details", "root_refresh")
         inspector = partial(inspect_roots, state=state, classifier=classify, seconds=turn_seconds)
