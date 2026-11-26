@@ -3,7 +3,8 @@
 import base64
 import json
 
-from .fact_fingerprint import canonical
+from .curriculum_capture_file_guard import current
+from .fact_fingerprint import canonical, digest
 
 PAGE = 4
 
@@ -24,3 +25,13 @@ def _offset(cursor, scope):
         return offset
     except (ValueError, TypeError, UnicodeError):
         raise ValueError("transfer cursor changed; restart") from None
+
+
+def bind_scope(db, subject, selected, files):
+    if files != current(db, subject, db.capture_root):
+        raise ValueError("capture source changed")
+    if selected is None:
+        return None
+    source, rating, corpus, ordered, scope, diagnostics = selected
+    scope = digest(canonical(["capture-certificate-files-v1", scope, files]))
+    return source, rating, corpus, ordered, scope, diagnostics

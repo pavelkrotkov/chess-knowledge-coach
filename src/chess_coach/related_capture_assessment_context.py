@@ -1,6 +1,6 @@
 """Freeze the content and matching context at capture assessment admission."""
 
-from .related_capture_features import capture_features, corpus_features
+from .related_capture_features import certified_features, corpus_features
 
 VERSION = "capture-assessment-context-v1"
 
@@ -27,7 +27,7 @@ def capture(db, version, key, source, baseline, corpus):
         raise ValueError("assessment context unavailable")
     rating, deviation = _ratings(row)
     _, content = corpus_features(row["fen"], row["solution"])
-    original = capture_features(source["prompt_fen"], source["lines"][0].split())
+    original = certified_features(source["prompt_fen"], source["lines"][0].split())
     if not content or not original:
         raise ValueError("assessment context unavailable")
     return {

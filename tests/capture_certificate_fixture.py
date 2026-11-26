@@ -1,5 +1,6 @@
 """Build a private capture project and run the real bounded certificate worker."""
 
+import json
 import subprocess
 import sys
 
@@ -23,7 +24,7 @@ def certify(db, subject, root):
         run(db, subject, root)
 
 
-def cli(path, *args, check=True):
+def cli(path, *args, check=True, source_guard=None):
     # Real fresh CLI: fail if an admission proof runs while reopening the source.
     guard = """
 import chess_coach.material_opportunity_current as material
@@ -32,6 +33,20 @@ def forbidden(*args, **kwargs):
     raise AssertionError("capture admission proof ran during CLI request")
 material.verified_witness = forbidden
 capture.judge = forbidden
+"""
+    if source_guard is not None:
+        guard += """
+import json, sys
+import chess_coach.related_capture_features as features
+owned_prompt, owned_move = json.load(sys.stdin)
+actual_gain = features.capture_gain
+def guarded_gain(board, move, target, **kwargs):
+    if board.fen() == owned_prompt and move.uci() == owned_move:
+        raise AssertionError("owned source proof ran during CLI request")
+    return actual_gain(board, move, target, **kwargs)
+features.capture_gain = guarded_gain
+"""
+    guard += """
 from chess_coach.cli import main
 main()
 """
@@ -39,6 +54,7 @@ main()
         [sys.executable, "-c", guard, "--db", str(path), *args],
         capture_output=True,
         text=True,
+        input=json.dumps(source_guard) if source_guard is not None else None,
         check=check,
         timeout=30,
     )

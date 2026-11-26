@@ -50,3 +50,15 @@ def similarity(source, candidate):
 
 def prompt_key(fen):
     return " ".join(chess.Board(fen).fen().split()[:4])
+
+
+def _supported_move(board, move, mover, target):
+    return bool(
+        mover
+        and target
+        and board.is_capture(move)
+        and not board.gives_check(move)
+        and not board.is_check()
+        and not move.promotion
+        and not board.is_en_passant(move)
+    )

@@ -22,8 +22,9 @@ def checkpoint(db, subject, root):
     lane = old.get("lane", 0)
     return path, {
         "before": old.get("before", MAX_ID),
-        "lane": lane if type(lane) is int and 0 <= lane < 3 else 0,
+        "lane": lane if type(lane) is int and 0 <= lane < 4 else 0,
         "session": session_marker(old.get("session")),
+        "related": session_marker(old.get("related")),
         "schedule": schedule_marker(old.get("schedule")),
     }
 
