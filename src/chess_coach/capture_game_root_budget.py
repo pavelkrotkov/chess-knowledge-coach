@@ -1,8 +1,9 @@
 """Bound optional root detail in the existing atomic report."""
 
-from .fact_fingerprint import canonical, digest
+from .fact_fingerprint import canonical
 from .short_mate_trend_store import MAX_BYTES
 
+VERSION = "capture-game-roots-v1"
 DETAIL_BYTES = 256 * 1024
 DETAIL_TURNS = 2048
 
@@ -16,13 +17,7 @@ def _items(state):
         yield from prior.get("retained", {}).values()
 
 
-def room(state, item, section):
-    sections = [
-        value["root_details"]
-        for value in _items(state)
-        if value is not item and value.get("root_details")
-    ]
-    sections.append(section)
+def _limits(sections):
     return (
         sum(len(value["turns"]) for value in sections) <= DETAIL_TURNS
         and sum(len(canonical({"root_details": value}).encode()) for value in sections)
@@ -30,10 +25,28 @@ def room(state, item, section):
     )
 
 
+def room(state, item, section):
+    sections = [section if value is item else value.get("root_details") for value in _items(state)]
+    return _limits([value for value in sections if value])
+
+
+def fits(state):
+    return len(canonical({**state, "checksum": "0" * 64}).encode()) <= MAX_BYTES
+
+
+def _trim(state, items):
+    pending = [item for item in items if item.get("root_details")]
+    while pending and (
+        not _limits([item["root_details"] for item in items if item.get("root_details")])
+        or not fits(state)
+    ):
+        item = pending.pop()
+        item["root_details"] = {**item["root_details"], "turns": []}
+
+
 def fit(state):
-    body = canonical(state)
-    encoded = canonical({**state, "checksum": digest(body)}).encode()
-    if len(encoded) <= MAX_BYTES:
-        return
-    for item in _items(state):
-        item.pop("root_details", None)
+    items = list(_items(state))
+    _trim(state, items)
+    if not fits(state):
+        for item in items:
+            item.pop("root_details", None)

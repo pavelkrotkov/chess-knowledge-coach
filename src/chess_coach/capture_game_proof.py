@@ -4,7 +4,7 @@ import chess
 
 from .capture_game_roots import inspect
 from .pawn_scope import history_known
-from .related_capture_position import _features
+from .related_capture_position import _material, _phase
 
 # Bump when qualification or played-choice semantics change.
 VERSION = "direct-capture-v3"
@@ -13,16 +13,23 @@ MAX_CANDIDATES = 32
 
 def _detail(board, move, state):
     target = board.piece_at(move.to_square)
-    mechanism = ("checking" if board.gives_check(move) else "direct") if state == "proved" else None
     mover = board.piece_at(move.from_square)
-    features = _features(board, move, mover, target) if state == "proved" else None
+    mechanism = ("checking" if board.gives_check(move) else "direct") if mover and target else None
+    geometry = (
+        [
+            abs(chess.square_file(move.to_square) - chess.square_file(move.from_square)),
+            abs(chess.square_rank(move.to_square) - chess.square_rank(move.from_square)),
+        ]
+        if mover and target
+        else None
+    )
     return [
         move.uci(),
-        chess.square_name(move.to_square),
         target.symbol() if target else None,
         state,
         mechanism,
-        features,
+        mover.piece_type if mover else None,
+        geometry,
     ]
 
 
@@ -83,7 +90,14 @@ def _outcome(proved, unknown, reason, played):
 def classify(board, played, deadline, clock, *, details=None):
     if details is None:
         return _outcome(*opportunities(board, deadline, clock), played)
-    details.update(side="white" if board.turn else "black", played=played, total=None, roots=[])
+    details.update(
+        side="white" if board.turn else "black",
+        played=played,
+        material=_material(board),
+        phase=_phase(board),
+        total=None,
+        roots=[],
+    )
     proved, unknown, reason = opportunities(board, deadline, clock, details=details)
     if reason:
         details["roots"] = []

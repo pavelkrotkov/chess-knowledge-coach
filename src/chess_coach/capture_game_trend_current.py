@@ -1,5 +1,6 @@
 """Check cached dates and visible source links without replaying games."""
 
+from .capture_game_root_current import matches as roots_match
 from .capture_game_trend_validate import matches_frontier
 
 
@@ -32,9 +33,10 @@ def frontier_matches(state, candidates, frontier, signatures):
     )
 
 
-def current(db, state, candidates, samples, before):
+def current(db, state, candidates, samples, before, *, learner=None):
     return (
         _dates(candidates, state["games"])
         and _examples(db, state["games"][:40], samples)
+        and (learner is None or roots_match(db, learner, state["games"]))
         and db.connection.execute("PRAGMA data_version").fetchone()[0] == before
     )

@@ -29,12 +29,21 @@ def _advance(db, learner, games, state, deadline, *, classifier=None, turn_secon
     }
     if state["selection_complete"]:
         if classifier is None:
+            fit(state)
             inspector = partial(
                 inspect_roots, state=state, classifier=classify, seconds=turn_seconds
             )
         else:
             inspector = partial(inspect, classifier=classifier, seconds=turn_seconds)
-        _inspect(db, learner, state, deadline, inspector=inspector, turn_seconds=turn_seconds)
+        _inspect(
+            db,
+            learner,
+            state,
+            deadline,
+            inspector=inspector,
+            turn_seconds=turn_seconds,
+            recheck_complete=classifier is None,
+        )
 
 
 def _resume(old, key, frontier, signatures, games):

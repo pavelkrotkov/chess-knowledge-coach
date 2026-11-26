@@ -1,25 +1,19 @@
 """Retain bounded exact-root detail from the existing capture scan."""
 
-from .capture_game_proof import VERSION as PROOF_VERSION
-from .capture_game_root_budget import room
+from .capture_game_root_validate import record, section
 from .short_mate_trend_turns import inspect as inspect_turns
 
-VERSION = "capture-game-roots-v1"
 
-
-def _record(state, item, row, detail):
-    section = item.get("root_details") or {"version": VERSION, "proof": PROOF_VERSION, "turns": []}
-    if (section.get("version"), section.get("proof")) != (VERSION, PROOF_VERSION):
-        return
-    value = {**detail, "position_id": row[0], "outcome": row[1]}
-    if value.get("reason") == "deadline":
-        value["reason"] = row[2]
-    section = {**section, "turns": [*section["turns"], value]}
-    if room(state, item, section):
-        item["root_details"] = section
+def _attach(state, item, rows, details, expected):
+    for row, detail, original in zip(rows, details, expected, strict=False):
+        if detail and row == original:
+            record(state, item, row, detail)
 
 
 def inspect(db, learner, item, deadline, quota, *, state, classifier, seconds):
+    current = section(state, item)
+    if current is None:
+        return 0
     collected = []
 
     def classify(board, played, until, clock):
@@ -29,8 +23,16 @@ def inspect(db, learner, item, deadline, quota, *, state, classifier, seconds):
         return result
 
     first = len(item["results"])
-    used = inspect_turns(db, learner, item, deadline, quota, classifier=classify, seconds=seconds)
-    for row, detail in zip(item["results"][first:], collected, strict=False):
-        if detail:
-            _record(state, item, row, detail)
+    cursor = current.get("next", 0)
+    shadow = first == item["eligible"] and cursor < first
+    if first == item["eligible"] and cursor == first:
+        return 0
+    target = {**item, "results": item["results"][:cursor]} if shadow else item
+    start = len(target["results"])
+    used = inspect_turns(db, learner, target, deadline, quota, classifier=classify, seconds=seconds)
+    rows = target["results"][start:]
+    expected = item["results"][start:] if shadow else rows
+    _attach(state, item, rows, collected, expected)
+    if shadow or cursor == first:
+        item["root_details"]["next"] = start + used
     return used

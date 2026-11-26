@@ -14,6 +14,8 @@
 <p>{{ sample.games }} games{% if sample.newest %}, from {{ sample.oldest }} to {{ sample.newest }} UTC{% endif %}.</p>
 <p>{{ sample.checked }} of {{ sample.eligible }} learner turns had the opportunity and played choice resolved; {{ sample.unchecked }} pending, {{ sample.unknown }} with unresolved opportunity status and {{ sample.opportunity_unresolved }} proved opportunities with the played choice unresolved.</p>
 <p>{{ sample.opportunities }} proved capture opportunities across {{ sample.opportunity_games }} games: {{ sample.played }} qualifying captures played and {{ sample.other }} other moves.</p>
+<p>{{ sample.root_details|length }} recorded decisions have root details; {{ sample.root_unattributed }} recorded decisions have no retained root details and remain root-unattributed.</p>
+<p>Retained roots: {% for turn in sample.root_details %}{% for root in turn.roots %}<a href="{{ url_for("views.decision_detail", position_id=turn.position_id) }}">{{ root[0] }} ({{ root[2] }})</a>{% if not loop.last %}; {% endif %}{% endfor %}{% else %}none{% endfor %}.</p>
 <p>Source decisions: {% for item in sample.examples %}<a href="{{ url_for('views.decision_detail', position_id=item.position_id) }}">{{ item.outcome | replace('_', ' ') | capitalize }}</a>{% if not loop.last %}; {% endif %}{% else %}none{% endfor %}.</p>
 </section>
 {% endfor %}
