@@ -37,6 +37,7 @@ def test_owned_session_immutable_retry_and_stale_review(tmp_path, monkeypatch, v
     if version == TARGET_VERSION:
         _daily_capture_workflow(tmp_path, monkeypatch)
         _capture_practice_priority_workflow(tmp_path, monkeypatch)
+        _retained_capture_workflow(tmp_path, monkeypatch)
     root, path = capture_project(tmp_path, "capture-project")
     db = make_game(path, monkeypatch)
     evidence = process_decision(db, 1, LEARNER)["evidence_ids"][0]
@@ -2586,7 +2587,7 @@ def _capture_practice_priority_workflow(tmp_path, monkeypatch):
         ((base - timedelta(days=1)).isoformat(),),
     )
     db.connection.commit()
-    from chess_coach.capture_certificate_store import load as load_certificates
+    from chess_coach.capture_certificate_buckets import observe as observe_certificate
     from chess_coach.opening_queue_location import scope as certificate_scope
 
     db.capture_root = certificate_scope(db, root)
@@ -2616,8 +2617,9 @@ def _capture_practice_priority_workflow(tmp_path, monkeypatch):
             cursor=before_worker["window_cursor"],
             project_root=root,
         )
-    certificates = load_certificates(db, root, LEARNER)
-    assert certificates and set(certificates["certificates"]) >= {str(first), str(second)}
+    for evidence_id in (first, second):
+        observed = observe_certificate(db, root, LEARNER, evidence_id)
+        assert observed and observed[2]
     options, status, _, _ = candidates(db, LEARNER, "priority", lambda: None)
     assert status == "available" and len(options) == 2
     assert options[0][0]["prompt_key"] != options[1][0]["prompt_key"]
@@ -2700,7 +2702,8 @@ def _capture_practice_priority_workflow(tmp_path, monkeypatch):
         "SELECT snapshot_hash FROM unified_sessions WHERE attempt_id=?",
         ("existing-certified-capture",),
     ).fetchone()[0]
-    assert existing_hash == snapshot_hash(certificates["certificates"][existing_key]["snapshot"])
+    observed = observe_certificate(db, root, LEARNER, int(existing_key))
+    assert observed and existing_hash == snapshot_hash(observed[2]["snapshot"])
 
     with monkeypatch.context() as guard:
         guard.setattr("chess_coach.material_opportunity_current.verified_witness", forbidden)
@@ -2971,15 +2974,17 @@ def _capture_practice_priority_workflow(tmp_path, monkeypatch):
     selected_form = form("goal=capture&minutes=1")
 
     # A missing certificate refuses an already signed launch without creating learning.
-    from chess_coach.capture_certificate_store import publish as publish_certificates
+    from chess_coach.capture_certificate_buckets import publish as publish_certificates
+    from chess_coach.capture_certificate_refresh import entries as certificate_entries
 
-    retained = dict(load_certificates(db, root, LEARNER)["certificates"])
-    retained.pop(chosen["items"][0]["source_key"])
+    chosen_id = int(chosen["items"][0]["source_key"])
+    retained, _ = certificate_entries(db, root, LEARNER, chosen_id)
+    retained.pop(str(chosen_id))
     before_missing = tuple(
         db.connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
         for table in ("unified_sessions", "unified_training_enrollments")
     )
-    publish_certificates(db, root, LEARNER, retained)
+    publish_certificates(db, root, LEARNER, chosen_id, retained)
     missing = client.post(
         "/unified/start",
         data=selected_form,
@@ -2994,6 +2999,37 @@ def _capture_practice_priority_workflow(tmp_path, monkeypatch):
     certify(db, LEARNER, root)
     chosen = plan()
     assert chosen["items"][0]["source_key"] == options[1][0]["source_key"]
+    selected_form = form("goal=capture&minutes=1")
+
+    # A different observed bucket can change after enrollment but before commit.
+    other_id = int(options[0][0]["source_key"])
+    other_records, _ = certificate_entries(db, root, LEARNER, other_id)
+    other_records.pop(str(other_id))
+    finish = unified_sessions._window_time
+
+    def replace_before_commit(value, transaction_db, budget):
+        publish_certificates(transaction_db, root, LEARNER, other_id, other_records)
+        return finish(value, transaction_db, budget)
+
+    before_finish = tuple(
+        db.connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+        for table in ("unified_sessions", "unified_training_enrollments", "training_items")
+    )
+    with monkeypatch.context() as interrupted:
+        interrupted.setattr(unified_sessions, "_window_time", replace_before_commit)
+        refused = client.post(
+            "/unified/start",
+            data=selected_form,
+            base_url="https://coach.invalid",
+            headers=headers | {"Origin": "https://coach.invalid"},
+        )
+    assert refused.status_code == 400
+    assert before_finish == tuple(
+        db.connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+        for table in ("unified_sessions", "unified_training_enrollments", "training_items")
+    )
+    certify(db, LEARNER, root)
+    chosen = plan()
     selected_form = form("goal=capture&minutes=1")
     from chess_coach.curriculum_capture_offer import POLICY as NEW_OFFER_POLICY
     from chess_coach.curriculum_cursor import revision
@@ -3171,3 +3207,482 @@ def _capture_practice_priority_workflow(tmp_path, monkeypatch):
     monkeypatch.setattr(unified_sessions, "now", original_start_clock)
     monkeypatch.setattr(unified_session_apply, "now", original_event_clock)
     db.close()
+
+
+def _retained_capture_workflow(tmp_path, monkeypatch):
+    """Backfill real older capture sessions without dropping newer certificates."""
+    import io
+    import sys
+    import time
+    from typing import Any
+
+    import chess.pgn
+
+    import chess_coach.capture_certificate_refresh as refresh
+    from chess_coach.capture_certificate_buckets import observe
+    from chess_coach.capture_certificate_progress import checkpoint
+    from chess_coach.capture_certificate_worker import PROOFS, SCAN, run
+    from chess_coach.curriculum import daily_plan
+    from chess_coach.ingest import ingest_pgn
+    from chess_coach.pipeline_config import PipelineConfig
+    from chess_coach.pipeline_inputs import engine_identity, game_input
+    from chess_coach.pipeline_lock import pipeline_lock
+    from chess_coach.pipeline_work import run_analysis
+    from chess_coach.unified_source_current import snapshot_hash
+    from chess_coach.web import create_app
+    from tests.capture_certificate_fixture import cli as fresh_cli
+
+    root, path = capture_project(tmp_path, "retained-capture-project")
+    db = make_game(path, monkeypatch)
+    old = process_decision(db, 1, LEARNER)["evidence_ids"][0]
+    review_evidence(db, old, decision="accept", actor="fixture")
+    certify(db, LEARNER, root)
+    start(
+        db,
+        attempt_id="retained-due",
+        subject=LEARNER,
+        source_type="own-game",
+        version=TARGET_VERSION,
+        key=str(old),
+        training=True,
+    )
+    assert (
+        submit(db, "retained-due", LEARNER, event_id="answer", move="e1f1")["status"]
+        == "needs_verification"
+    )
+    assert process(db, LEARNER)["outcomes"] == {"incorrect": 1}
+    learning = show(db, "retained-due", LEARNER)["learning"]
+    assert learning["outcome"] == "failure"
+    item_id = learning["item_id"]
+    db.connection.execute(
+        "UPDATE training_items SET due=? WHERE id=?", ("2000-01-01T00:00:00+00:00", item_id)
+    )
+    db.connection.commit()
+    item_before = tuple(
+        db.connection.execute("SELECT * FROM training_items WHERE id=?", (item_id,)).fetchone()
+    )
+    start(
+        db,
+        attempt_id="retained-active",
+        subject=LEARNER,
+        source_type="own-game",
+        version=TARGET_VERSION,
+        key=str(old),
+        training=True,
+    )
+    snapshot_before = db.connection.execute(
+        "SELECT snapshot_hash FROM unified_sessions WHERE attempt_id=?", ("retained-active",)
+    ).fetchone()[0]
+    assert snapshot_before == snapshot_hash(observe(db, root, LEARNER, old)[2]["snapshot"])
+
+    original_pgn = db.connection.execute("SELECT pgn FROM games WHERE id=1").fetchone()[0]
+    config = PipelineConfig(learner=LEARNER, engine_path=sys.executable, nodes=100)
+    engine = engine_identity(sys.executable)
+    newer = []
+    for day in range(2, 26):
+        game = chess.pgn.read_game(io.StringIO(original_pgn))
+        assert game is not None
+        game.headers["UTCDate"] = f"2026.01.{day:02d}"
+        assert ingest_pgn(db, str(game))["games"] == 1
+        game_id = db.connection.execute("SELECT max(id) FROM games").fetchone()[0]
+        assert (
+            run_analysis(db, game_id, game_input(db, game_id), config, engine)["status"]
+            == "complete"
+        )
+        position = db.connection.execute(
+            "SELECT id FROM positions WHERE game_id=? ORDER BY ply LIMIT 1", (game_id,)
+        ).fetchone()[0]
+        newer.append(process_decision(db, position, LEARNER)["evidence_ids"][0])
+    for evidence_id in newer[-3:]:
+        review_evidence(db, evidence_id, decision="reject", actor="fixture")
+    assert SCAN == 20 and PROOFS == 3
+    plan_args: dict[str, Any] = dict(
+        subject=LEARNER,
+        corpus_version="fixture",
+        limit=2,
+        goal="capture",
+        duration_minutes=1,
+        project_root=root,
+    )
+    single_args: dict[str, Any] = {**plan_args, "limit": 1}
+    before = daily_plan(db, **plan_args)
+    cursor = before["window_cursor"]
+    counts = tuple(
+        db.connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+        for table in ("unified_sessions", "unified_training_enrollments", "training_attempts")
+    )
+
+    def turn():
+        with pipeline_lock(db.path):
+            run(db, LEARNER, root, time.monotonic() + 5)
+
+    turn()
+    assert checkpoint(db, LEARNER, root)[1] == newer[-3]
+    with pytest.raises(ValueError, match="capture practice changed"):
+        daily_plan(db, cursor=cursor, **plan_args)
+    assert counts == tuple(
+        db.connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+        for table in ("unified_sessions", "unified_training_enrollments", "training_attempts")
+    )
+
+    real_prove = refresh.prove
+
+    def expire_proof(database, subject, evidence_id, check):
+        def expired():
+            raise TimeoutError("fixture deadline")
+
+        return real_prove(database, subject, evidence_id, expired)
+
+    with monkeypatch.context() as deadline:
+        deadline.setattr(refresh, "prove", expire_proof)
+        turn()
+    timed_out = newer[-4]
+    assert checkpoint(db, LEARNER, root)[1] == timed_out
+    assert observe(db, root, LEARNER, timed_out) is None
+    valid = [old, *newer[:-3]]
+    for _ in range(15):
+        turn()
+        if all(observe(db, root, LEARNER, evidence_id) for evidence_id in valid):
+            break
+    assert len(valid) > 20 and all(observe(db, root, LEARNER, evidence_id) for evidence_id in valid)
+
+    # The old due source is outside the latest raw page. Its bucket becoming
+    # available after the scan must invalidate the saved continuation.
+    from chess_coach.capture_certificate_buckets import publish as publish_bucket
+    from chess_coach.capture_certificate_refresh import entries as bucket_entries
+
+    records, _ = bucket_entries(db, root, LEARNER, old)
+    records.pop(str(old))
+    import chess_coach.curriculum_page as curriculum_page
+
+    original_due = curriculum_page.due
+
+    def publish_before_due(*args, **kwargs):
+        publish_bucket(db, root, LEARNER, old, records)
+        return original_due(*args, **kwargs)
+
+    # A fresh due-only page watches files before the first due observation.
+    with monkeypatch.context() as changing:
+        changing.setattr(curriculum_page, "due", publish_before_due)
+        with pytest.raises(ValueError, match="capture practice changed"):
+            daily_plan(db, **single_args)
+    assert counts == tuple(
+        db.connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+        for table in ("unified_sessions", "unified_training_enrollments", "training_attempts")
+    )
+    assert observe(db, root, LEARNER, old) is None
+    unavailable = daily_plan(db, **plan_args)
+    assert all(item.get("item_id") != item_id for item in unavailable["items"])
+    before_backfill = tuple(
+        db.connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+        for table in ("unified_sessions", "unified_training_enrollments", "training_attempts")
+    )
+    for _ in range(15):
+        turn()
+        if observe(db, root, LEARNER, old):
+            break
+    assert observe(db, root, LEARNER, old)
+    with pytest.raises(ValueError, match="capture practice changed"):
+        daily_plan(db, cursor=unavailable["window_cursor"], **plan_args)
+    assert before_backfill == tuple(
+        db.connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+        for table in ("unified_sessions", "unified_training_enrollments", "training_attempts")
+    )
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("capture source proof ran during a request")
+
+    with monkeypatch.context() as guard:
+        guard.setattr("chess_coach.material_opportunity_current.verified_witness", forbidden)
+        guard.setattr("chess_coach.objective_capture_snapshot.judge", forbidden)
+        from chess_coach.objective_capture_source import resolve
+
+        for evidence_id in valid:
+            assert (
+                resolve(db, TARGET_VERSION, str(evidence_id), LEARNER)["objective"]
+                == "capture_named_target"
+            )
+        due = daily_plan(db, subject=LEARNER, corpus_version="fixture", limit=1, project_root=root)
+        assert due["items"][0]["kind"] == "due" and due["items"][0]["item_id"] == item_id
+        app = create_app(
+            db_path=path,
+            project_root=root,
+            subject=LEARNER,
+            actor="fixture",
+            corpus="fixture",
+            login="fixture",
+            origin="https://coach.invalid",
+        )
+        response = app.test_client().get(
+            "/plan", base_url="https://coach.invalid", headers={"Tailscale-User-Login": "fixture"}
+        )
+        assert (
+            response.status_code == 200
+            and f'name="item_id" value="{item_id}"'.encode() in response.data
+        )
+        assert show(db, "retained-active", LEARNER)["objective"] == "capture_named_target"
+        hint(db, "retained-active", LEARNER, event_id="hint")
+        assert (
+            submit(db, "retained-active", LEARNER, event_id="answer", move="e1f1")["status"]
+            == "needs_verification"
+        )
+    # A due selection rechecks the same file scope inside the start transaction.
+    from chess_coach import curriculum_capture_due_scope
+    from tests.native_pair_probe import Forms
+
+    client = app.test_client()
+    headers = {"Tailscale-User-Login": "fixture"}
+    page = client.get(
+        "/plan?goal=capture&minutes=1", base_url="https://coach.invalid", headers=headers
+    )
+    parsed = Forms()
+    parsed.feed(page.get_data(as_text=True))
+    selected = next(form for form in parsed.forms if form.get("item_id") == str(item_id))
+    real_finish = curriculum_capture_due_scope.finish
+    records, _ = bucket_entries(db, root, LEARNER, old)
+    records.pop(str(old))
+
+    def replace_before_due_commit(database, scope):
+        if database.connection.in_transaction and scope is not None:
+            publish_bucket(database, root, LEARNER, old, records)
+        return real_finish(database, scope)
+
+    before_start = tuple(
+        db.connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+        for table in ("unified_sessions", "unified_training_enrollments", "training_attempts")
+    )
+    with monkeypatch.context() as changing:
+        changing.setattr(curriculum_capture_due_scope, "finish", replace_before_due_commit)
+        refused = client.post(
+            "/unified/start",
+            data=selected,
+            base_url="https://coach.invalid",
+            headers=headers | {"Origin": "https://coach.invalid"},
+        )
+    assert refused.status_code == 400
+    assert before_start == tuple(
+        db.connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+        for table in ("unified_sessions", "unified_training_enrollments", "training_attempts")
+    )
+    for _ in range(15):
+        turn()
+        if observe(db, root, LEARNER, old):
+            break
+    assert observe(db, root, LEARNER, old)
+    page = client.get(
+        "/plan?goal=capture&minutes=1", base_url="https://coach.invalid", headers=headers
+    )
+    parsed = Forms()
+    parsed.feed(page.get_data(as_text=True))
+    selected = next(form for form in parsed.forms if form.get("item_id") == str(item_id))
+    accepted = client.post(
+        "/unified/start",
+        data=selected,
+        base_url="https://coach.invalid",
+        headers=headers | {"Origin": "https://coach.invalid"},
+    )
+    assert accepted.status_code == 303
+
+    cli_plan = json.loads(
+        fresh_cli(
+            path,
+            "daily-plan",
+            "fixture",
+            "--subject",
+            LEARNER,
+            "--limit",
+            "1",
+            "--project-root",
+            str(root),
+        ).stdout
+    )
+    assert cli_plan["items"][0]["kind"] == "due" and cli_plan["items"][0]["item_id"] == item_id
+    from chess_coach.curriculum_cursor_codec import decode_cursor
+
+    assert decode_cursor(db, cli_plan["plan_selection_cursor"])["capture_selection"] is True
+    with pytest.raises(ValueError, match="for due selection only"):
+        daily_plan(
+            db,
+            subject=LEARNER,
+            corpus_version="fixture",
+            limit=1,
+            cursor=cli_plan["plan_selection_cursor"],
+            project_root=root,
+        )
+    before_wrong_scope = tuple(
+        db.connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+        for table in ("unified_sessions", "unified_training_enrollments")
+    )
+    wrong_scope = fresh_cli(
+        path,
+        "start-unified",
+        "--attempt",
+        "wrong-scope",
+        "--subject",
+        LEARNER,
+        "--source",
+        "own-game",
+        "--version",
+        TARGET_VERSION,
+        "--key",
+        str(old),
+        "--training",
+        "--training-item-id",
+        str(item_id),
+        "--project-root",
+        str(root),
+        "--plan-cursor",
+        cli_plan["plan_selection_cursor"],
+        "--plan-corpus",
+        "other",
+        check=False,
+    )
+    assert wrong_scope.returncode != 0
+    assert before_wrong_scope == tuple(
+        db.connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+        for table in ("unified_sessions", "unified_training_enrollments")
+    )
+    cli_start = json.loads(
+        fresh_cli(
+            path,
+            "start-unified",
+            "--attempt",
+            "retained-cli",
+            "--subject",
+            LEARNER,
+            "--source",
+            "own-game",
+            "--version",
+            TARGET_VERSION,
+            "--key",
+            str(old),
+            "--training",
+            "--training-item-id",
+            str(item_id),
+            "--project-root",
+            str(root),
+            "--plan-cursor",
+            cli_plan["plan_selection_cursor"],
+            "--plan-corpus",
+            "fixture",
+        ).stdout
+    )
+    assert cli_start["objective"] == "capture_named_target"
+
+    # Renewal must bind files before its reoffer scan, even with no priority yet.
+    import chess_coach.curriculum_window_renew as renewal
+
+    renewal_page = daily_plan(db, **single_args)
+    renewal_history = renewal.history
+    records, _ = bucket_entries(db, root, LEARNER, old)
+    records.pop(str(old))
+
+    def replace_during_reoffer(*args, **kwargs):
+        publish_bucket(db, root, LEARNER, old, records)
+        return renewal_history(*args, **kwargs)
+
+    before_renew = tuple(
+        db.connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+        for table in ("unified_sessions", "unified_training_enrollments", "training_attempts")
+    )
+    with monkeypatch.context() as changing:
+        changing.setattr(renewal, "history", replace_during_reoffer)
+        with pytest.raises(ValueError, match="capture practice changed"):
+            daily_plan(db, cursor=renewal_page["window_cursor"], renew=True, **single_args)
+    assert before_renew == tuple(
+        db.connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+        for table in ("unified_sessions", "unified_training_enrollments", "training_attempts")
+    )
+    for _ in range(15):
+        turn()
+        if observe(db, root, LEARNER, old):
+            break
+    assert observe(db, root, LEARNER, old)
+
+    # Publication after history but before window initialization must not become the baseline.
+    import chess_coach.curriculum_window_plan as window_plan
+
+    renewal_page = daily_plan(db, **single_args)
+    real_state = window_plan.state
+    records, _ = bucket_entries(db, root, LEARNER, old)
+    records.pop(str(old))
+
+    def replace_after_renewal(*args, **kwargs):
+        value = real_state(*args, **kwargs)
+        publish_bucket(db, root, LEARNER, old, records)
+        return value
+
+    with monkeypatch.context() as changing:
+        changing.setattr(window_plan, "state", replace_after_renewal)
+        with pytest.raises(ValueError, match="capture practice changed"):
+            daily_plan(db, cursor=renewal_page["window_cursor"], renew=True, **single_args)
+    assert before_renew == tuple(
+        db.connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+        for table in ("unified_sessions", "unified_training_enrollments", "training_attempts")
+    )
+    for _ in range(15):
+        turn()
+        if observe(db, root, LEARNER, old):
+            break
+    assert observe(db, root, LEARNER, old)
+
+    # A genuinely signed old-shape cursor cannot prove an earlier due observation.
+    from chess_coach.curriculum_priority_cursor import CAPTURE_POLICY, LEGACY_CAPTURE_POLICY
+    from chess_coach.curriculum_window_cursor import decode as decode_window
+    from chess_coach.curriculum_window_cursor import encode as encode_window
+
+    legacy_page = daily_plan(db, **single_args)
+    legacy = decode_window(db, legacy_page["window_cursor"])
+    assert legacy["state"]["priority"] is None
+    legacy["state"]["priority_policy"] = LEGACY_CAPTURE_POLICY
+    legacy["state"].pop("capture_files")
+    legacy["state"].pop("capture_selection")
+    legacy_token = encode_window(db, legacy)
+    legacy_args: dict[str, Any] = {**plan_args, "limit": 1, "cursor": legacy_token}
+    with pytest.raises(ValueError, match="capture practice changed"):
+        daily_plan(db, **legacy_args)
+    renewed = daily_plan(db, renew=True, **legacy_args)
+    assert decode_window(db, renewed["window_cursor"])["state"]["priority_policy"] == CAPTURE_POLICY
+    assert process(db, LEARNER)["outcomes"] == {"incorrect": 1}
+    active = show(db, "retained-active", LEARNER)
+    assert active["verification"]["status"] == "incorrect"
+    assert active["learning"]["assistance"] == "assisted"
+    assert (
+        db.connection.execute(
+            "SELECT snapshot_hash FROM unified_sessions WHERE attempt_id=?", ("retained-active",)
+        ).fetchone()[0]
+        == snapshot_before
+    )
+    assert (
+        tuple(
+            db.connection.execute("SELECT * FROM training_items WHERE id=?", (item_id,)).fetchone()
+        )
+        == item_before
+    )
+    db.close()
+
+    # An unrelated project database outside the private data directory still plans normally.
+    from chess_coach.db import Database
+
+    outside = tmp_path / "outside-capture-project"
+    outside.mkdir()
+    other = outside / "coach.sqlite"
+    other_db = Database(other)
+    other_db.initialize()
+    other_db.close()
+    unrelated = create_app(
+        db_path=other,
+        project_root=outside,
+        subject=LEARNER,
+        actor="fixture",
+        corpus="fixture",
+        login="fixture",
+        origin="https://coach.invalid",
+    )
+    unrelated_page = unrelated.test_client().get(
+        "/plan?goal=capture&minutes=1",
+        base_url="https://coach.invalid",
+        headers={"Tailscale-User-Login": "fixture"},
+    )
+    assert unrelated_page.status_code == 200
+    assert not (outside / ".runtime" / "data").exists()

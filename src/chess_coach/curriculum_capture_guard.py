@@ -1,18 +1,34 @@
 """Recheck the signed capture-practice snapshot under the plan's budget."""
 
+from .curriculum_capture_file_guard import changed as files_changed
 from .curriculum_capture_inputs import current
-from .curriculum_priority_cursor import CAPTURE_POLICY
+from .curriculum_priority_cursor import CAPTURE_POLICIES, LEGACY_CAPTURE_POLICY
+
+
+def _require_scope(db, root, budget):
+    if budget is None and db.connection.in_transaction:
+        raise ValueError("capture practice unavailable during caller transaction")
+    if budget is None or root is None:
+        raise ValueError("capture practice scope unavailable")
 
 
 def _reason(db, state, subject, root, budget):
-    if (
-        state is None
-        or state.get("priority_policy") != CAPTURE_POLICY
-        or state.get("priority") is None
-    ):
+    if state is None or state.get("priority_policy") not in CAPTURE_POLICIES:
         return None
-    if budget is None or root is None:
-        raise ValueError("capture practice scope unavailable")
+    _require_scope(db, root, budget)
+    if files_changed(db, state, subject, root):
+        return "capture practice changed"
+    # A legacy cursor with no priority contains no proof of the earlier due scan.
+    if state["priority"] is None:
+        return (
+            "capture practice changed"
+            if state["priority_policy"] == LEGACY_CAPTURE_POLICY
+            else None
+        )
+    return _priority_reason(db, state, subject, root, budget)
+
+
+def _priority_reason(db, state, subject, root, budget):
     with budget.scope(snapshot=False):
         actual = current(db, subject, root, budget.check)
         if actual != state["priority"]["capture_input"]:

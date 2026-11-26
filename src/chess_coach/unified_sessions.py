@@ -34,10 +34,11 @@ def start(
     opening_token=None,
     opening_window_cursor=None,
     project_root=None,
+    plan_cursor=None,
+    plan_corpus=None,
 ):
-    from .capture_certificate_store import scope
+    from .curriculum_capture_due_scope import prepare as prepare_due
 
-    db.capture_root = scope(project_root, db.capture_root)
     validate_goal(source_type, goal)
     if not all(
         isinstance(v, str) and 0 < len(v) <= 256
@@ -46,6 +47,18 @@ def start(
         raise ValueError("practice identity is invalid")
     if db.connection.in_transaction:
         raise RuntimeError("cannot start during an existing transaction")
+    due_scope = prepare_due(
+        db,
+        project_root,
+        plan_cursor,
+        plan_corpus,
+        subject,
+        source_type,
+        version,
+        key,
+        item_id,
+        training,
+    )
     opening = _opening_prepare(
         db,
         project_root,
@@ -77,6 +90,9 @@ def start(
             capture_budget=capture,
         )
         _diagnostic_check(db, subject, source_type, version, key, diagnostic, budget)
+        from .curriculum_capture_due_scope import validate as validate_due
+
+        validate_due(db, due_scope)
         old = db.connection.execute(
             "SELECT * FROM unified_sessions WHERE attempt_id=?", (attempt_id,)
         ).fetchone()
@@ -99,6 +115,10 @@ def start(
         enroll_if_requested(db, row, training=training, item_id=item_id, created=not old, goal=goal)
         result = view(row)
         _opening_check(opening, db, project_root, subject)
+        from .curriculum_capture_due_scope import finish as finish_due
+
+        # A worker can publish a certificate while this enrollment is in progress.
+        finish_due(db, due_scope)
         _window_time(window, db, capture)
         db.connection.commit()
         return result

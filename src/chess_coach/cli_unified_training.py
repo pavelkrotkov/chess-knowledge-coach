@@ -7,6 +7,8 @@ from .unified_sessions import start
 
 def configure(sub, begin):
     begin.add_argument("--project-root")
+    begin.add_argument("--plan-cursor")
+    begin.add_argument("--plan-corpus")
     begin.add_argument("--training", action="store_true")
     begin.add_argument("--training-item-id", type=int)
     complete = sub.add_parser("complete-unified-learning")
@@ -41,6 +43,8 @@ def handle_start(db, args):
                 goal=getattr(args, "goal", None),
                 window_offer=getattr(args, "window_offer", None),
                 project_root=getattr(args, "project_root", None),
+                plan_cursor=getattr(args, "plan_cursor", None),
+                plan_corpus=getattr(args, "plan_corpus", None),
                 **options(args),
             ),
             indent=2,

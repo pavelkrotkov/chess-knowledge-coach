@@ -30,6 +30,9 @@ def build_page(
     due_only=False,
     window=None,
 ) -> dict:
+    from .curriculum_capture_file_guard import initialize
+
+    initialize(db, state, learner, budget)
     summary = evidence_summary(db, learner, now, state["scan_limit"])
     status, invalid_ratings = corpus_status(db, state["corpus_version"])
     scan = initial_scan(invalid_ratings)

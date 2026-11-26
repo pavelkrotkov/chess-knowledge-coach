@@ -12,6 +12,9 @@ from .curriculum_window_scope import expired
 def build(db, value, learner, version, limit, scan_limit, now, budget, goal, minutes, renew):
     value = state(db, value, learner, version, limit, scan_limit, now, goal, minutes, renew, budget)
     plan_state = value["state"]
+    from .curriculum_capture_file_guard import initialize
+
+    initialize(db, plan_state, learner, budget)
     before = deepcopy(value)
     selection = deepcopy(before)
     selection["selection_only"] = True
