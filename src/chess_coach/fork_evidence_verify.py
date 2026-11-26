@@ -1,6 +1,7 @@
 """Reconstruct and recheck a fork observation against its exact source."""
 
 from .fork_observation import observe
+from .fork_stored_proof import replay
 from .material_opportunity_source import load_source
 from .material_replay import source_inputs
 from .material_source import prepare
@@ -17,7 +18,7 @@ def verified_fen(db, evidence, fact, *, observer=observe, _history=None, _check=
         if {k: v for k, v in source.items() if k != "reactivation"} != source_inputs(prepared):
             return None
         tick()
-        fresh = _observe(observer, prepared, _check)
+        fresh = _observe(observer, prepared, _check, db=db, fact=fact)
         tick()
         if fresh != fact["payload"]:
             return None
@@ -31,7 +32,9 @@ def verified_fen(db, evidence, fact, *, observer=observe, _history=None, _check=
     return prepared["context"]["pre_move_fen"]
 
 
-def _observe(observer, prepared, check):
+def _observe(observer, prepared, check, *, db, fact):
+    if observer is observe:
+        return replay(db, prepared, fact)
     options = {} if check is None else {"check": check}
     return observer(
         prepared["board"],

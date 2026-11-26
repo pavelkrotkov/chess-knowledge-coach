@@ -3006,7 +3006,7 @@ def _scheduled_deadline_controls(db, tmp_path, monkeypatch, now):
     import chess_coach.curriculum_family_mix as family_mix
     import chess_coach.curriculum_new_capture as new_capture
     import chess_coach.curriculum_unified_owned as owned
-    import chess_coach.fork_proof as fork_proof
+    import chess_coach.fork_evidence_verify as fork_verify
     from chess_coach.curriculum import daily_plan
     from chess_coach.curriculum_conflicts import scheduled_page
     from chess_coach.curriculum_cursor_codec import decode_cursor
@@ -3125,23 +3125,23 @@ def _scheduled_deadline_controls(db, tmp_path, monkeypatch, now):
         key=str(evidence),
         training=True,
     )
-    branches = []
-    original_branch = fork_proof.defense_witness
+    visited_fork = []
+    original_replay = fork_verify.replay
 
-    def branch(*args, **kwargs):
-        value = original_branch(*args, **kwargs)
-        branches.append(True)
+    def fork_replay(*args, **kwargs):
+        value = original_replay(*args, **kwargs)
+        visited_fork.append(True)
         return value
 
     def deadline():
-        if branches:
+        if visited_fork:
             raise PreviewUnavailable("fixture deadline")
 
     with monkeypatch.context() as patch:
-        patch.setattr(fork_proof, "defense_witness", branch)
+        patch.setattr(fork_verify, "replay", fork_replay)
         with pytest.raises(PreviewUnavailable):
             scheduled_page(fork_db, "not-a-match", 0, 1, digest(LEARNER), check=deadline)
-    assert branches
+    assert visited_fork
     matched, _, more, examined, unavailable = scheduled_page(
         fork_db, "not-a-match", 0, 1, digest(LEARNER), check=lambda: None
     )

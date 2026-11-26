@@ -945,15 +945,15 @@ def test_unfamiliar_fork_browser_and_worker(tmp_path, monkeypatch, mode):
             patch.setattr(fork_history, "select", lambda *_args, **_kwargs: ([], True))
             assert b"bounded session window or source checks were incomplete" in history()
 
-        from chess_coach import fork_branch
+        from chess_coach import fork_evidence_verify
         from chess_coach.opening_queue_budget import BrowserBudget
         from chess_coach.tactical_course_budget import PreviewUnavailable
 
-        real_capture, real_check = fork_branch.capture, BrowserBudget.check
+        real_replay, real_check = fork_evidence_verify.replay, BrowserBudget.check
         calls = []
 
-        def expire_in_capture(*args, **kwargs):
-            value = real_capture(*args, **kwargs)
+        def expire_in_replay(*args, **kwargs):
+            value = real_replay(*args, **kwargs)
             calls.append(1)
             return value
 
@@ -963,7 +963,7 @@ def test_unfamiliar_fork_browser_and_worker(tmp_path, monkeypatch, mode):
             return real_check(budget)
 
         with monkeypatch.context() as patch:
-            patch.setattr(fork_branch, "capture", expire_in_capture)
+            patch.setattr(fork_evidence_verify, "replay", expire_in_replay)
             patch.setattr(BrowserBudget, "check", check_deadline)
             assert b"bounded session window or source checks were incomplete" in history()
         assert len(calls) == 1
@@ -1273,6 +1273,67 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
     )
     assert len(two_item_plan["items"]) == 1 and two_item_plan["items"][0]["skill"] == "fork"
     two_item_cursor = two_item_plan["window_cursor"]
+
+    # A retained producer proof is the exact source for both released objective versions.
+    from chess_coach.decision_history import decision_board
+    from chess_coach.fact_fingerprint import canonical
+    from chess_coach.mate_inspection_source import position_row
+    from chess_coach.objective_fork_contract import MISS_OBJECTIVE, OBJECTIVE
+    from chess_coach.objective_fork_current import current as current_fork
+    from chess_coach.objective_fork_source import resolve as resolve_fork
+    from chess_coach.related_fork_source import source_for_evidence
+    from tests import native_pair_probe
+    from tests.capture_certificate_fixture import cli as fresh_cli
+    from tests.objective_fork_support import previous_snapshot
+
+    source_id = int(two_item_plan["items"][0]["source_evidence_id"])
+    evidence, fact = current_fork(db, source_id, SUBJECT)
+    board = decision_board(db, position_row(db, evidence["position_id"]))
+    original = fact["payload"]["proof"]
+    snapshots = {
+        version: resolve_fork(db, version, str(source_id), SUBJECT)
+        for version in (VERSION, MISS_VERSION)
+    }
+    for version, objective in ((VERSION, OBJECTIVE), (MISS_VERSION, MISS_OBJECTIVE)):
+        previous = previous_snapshot(db, board, evidence, fact, objective=objective)
+        assert canonical(snapshots[version]) == canonical(previous)
+    related = source_for_evidence(db, SUBJECT, source_id)
+    assert all(value["provenance"]["fork_certificate"] == original for value in snapshots.values())
+    import sqlite3
+
+    def learning_state(database_path):
+        with sqlite3.connect(database_path.resolve().as_uri() + "?mode=ro", uri=True) as reader:
+            reader.execute("PRAGMA query_only=ON")
+            rows = tuple(
+                (table, reader.execute(f"SELECT * FROM {table} ORDER BY rowid").fetchall())
+                for table in (
+                    "evidence_mappings",
+                    "evidence_review_events",
+                    "mastery_states",
+                    "mastery_events",
+                )
+            )
+        return native_pair_probe.fingerprints(database_path), rows
+
+    before_reads = learning_state(path)
+    import chess_coach.fork_observation as fork_observation
+    import chess_coach.objective_fork_judge as fork_judge
+
+    def forbidden_fork_proof(*_args, **_kwargs):
+        raise AssertionError("fork source admission reran the proof")
+
+    with monkeypatch.context() as guard:
+        guard.setattr(fork_observation, "fork_proof", forbidden_fork_proof)
+        guard.setattr(fork_judge, "fork_proof", forbidden_fork_proof)
+        assert {
+            version: resolve_fork(db, version, str(source_id), SUBJECT) for version in snapshots
+        } == snapshots
+        assert source_for_evidence(db, SUBJECT, source_id) == related
+        guarded_plan = daily_plan(
+            db, subject=SUBJECT, corpus_version="fixture", goal="fork", duration_minutes=1, limit=2
+        )
+        assert any(item["skill"] == "fork" for item in guarded_plan["items"])
+    assert learning_state(path) == before_reads
     # A second synthetic learner has a distinct qualified capture need; the
     # fork learner also has capture evidence so one plan can exercise the mix.
     from chess_coach.material_detector import process_decision as material_decision
@@ -1461,7 +1522,6 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
 
     # Goal choice reorders only already qualified new sources; the signed
     # window uses server time independently of the plan's fixed as_of.
-    import sqlite3
 
     import chess_coach.curriculum_window_scope as window_scope
     from chess_coach.curriculum_window_cursor import decode as decode_window
@@ -1572,10 +1632,32 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
         )
         pair_client = pair_app.test_client()
         pair_headers = {"Tailscale-User-Login": "fixture-login", "Origin": "https://coach.invalid"}
-        pair_page = pair_client.get(
-            "/plan?goal=fork&minutes=1", base_url="https://coach.invalid", headers=pair_headers
-        )
+        before_page = learning_state(pair_path)
+        with monkeypatch.context() as guard:
+            guard.setattr(fork_observation, "fork_proof", forbidden_fork_proof)
+            guard.setattr(fork_judge, "fork_proof", forbidden_fork_proof)
+            pair_page = pair_client.get(
+                "/plan?goal=fork&minutes=1", base_url="https://coach.invalid", headers=pair_headers
+            )
+            cli_plan = json.loads(
+                fresh_cli(
+                    pair_path,
+                    "daily-plan",
+                    "fixture",
+                    "--subject",
+                    SUBJECT,
+                    "--goal",
+                    "fork",
+                    "--minutes",
+                    "1",
+                    "--project-root",
+                    str(root),
+                    proof_free_forks=True,
+                ).stdout
+            )
+            assert any(item["skill"] == "fork" for item in cli_plan["items"])
         assert pair_page.status_code == 200
+        assert learning_state(pair_path) == before_page
         pair_forms = [
             part.split("</form>", 1)[0]
             for part in pair_page.get_data(as_text=True).split('<form method="post"')
@@ -1589,12 +1671,15 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
             )
             for form in pair_forms
         ]
-        first = pair_client.post(
-            "/unified/start",
-            base_url="https://coach.invalid",
-            headers=pair_headers,
-            data=pair_fields[0],
-        )
+        with monkeypatch.context() as guard:
+            guard.setattr(fork_observation, "fork_proof", forbidden_fork_proof)
+            guard.setattr(fork_judge, "fork_proof", forbidden_fork_proof)
+            first = pair_client.post(
+                "/unified/start",
+                base_url="https://coach.invalid",
+                headers=pair_headers,
+                data=pair_fields[0],
+            )
         assert first.status_code == 303
         stale = pair_client.post(
             "/unified/start",
@@ -1941,15 +2026,17 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
     clock = [0.0]
     visited = []
 
-    def expire(observer, prepared, check):
-        assert check is not None
+    replay = fork_verify.replay
+
+    def expire(db, prepared, fact):
+        result = replay(db, prepared, fact)
         visited.append(True)
         clock[0] = 3.0
-        check()
+        return result
 
     with monkeypatch.context() as patch:
         patch.setattr(family_mix, "time", SimpleNamespace(monotonic=lambda: clock[0]))
-        patch.setattr(fork_verify, "_observe", expire)
+        patch.setattr(fork_verify, "replay", expire)
         interrupted = bounded(pending_page["next_cursor"])
     after = decode_cursor(db, interrupted["next_cursor"])
     assert visited and interrupted["continuation_reason"] == "fork_scan_incomplete"
@@ -1983,7 +2070,7 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
     clock[0] = 0.0
     with monkeypatch.context() as patch:
         patch.setattr(family_mix, "time", SimpleNamespace(monotonic=lambda: clock[0]))
-        patch.setattr(fork_verify, "_observe", expire)
+        patch.setattr(fork_verify, "replay", expire)
         deferred = bounded()
     assert deferred["fork_status"] == "deferred"
     assert deferred["continuation_reason"] == "family_scan_incomplete"
