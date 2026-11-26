@@ -7,13 +7,13 @@ from .curriculum_capture_witnesses import candidates, pending
 
 
 def select(db, state, subject, scan, check):
-    options, status, identity = candidates(db, subject, state["corpus_version"], check)
+    options, status, identity, advisory = candidates(db, subject, state["corpus_version"], check)
     state["priority"]["capture_sources"] = identity
     if not options:
         if state["capture_pending"] is not None:
             raise ValueError("capture source changed")
         state["phase"] = "new"
-        return [], status, None, None
+        return [], status, None, advisory
     binding = pending(identity, options)
     if state["capture_pending"] not in {None, binding}:
         raise ValueError("capture source changed")

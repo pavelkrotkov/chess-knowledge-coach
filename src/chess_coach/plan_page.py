@@ -7,7 +7,7 @@ from flask import current_app, render_template, request
 from .opening_context_launch_input import before as selected_context
 from .opening_context_launch_page import attach as attach_context
 from .plan_page_focus import focus as next_focus
-from .plan_page_options import minutes, priority
+from .plan_page_options import minutes, priority, validate_advisory
 from .plan_promotion import recommendation as promotion_recommendation
 from .tactical_course_budget import PreviewUnavailable
 from .tactical_course_deadline import PreviewDeadline
@@ -51,6 +51,7 @@ def render(daily_plan):
             error="The plan changed or the chosen goal or window is unavailable. Restart planning.",
             plan=None,
         ), 400
+    validate_advisory(db, result)
     focus = promotion = generation = None
     if not request.args.get("cursor") and "window" not in result:
         focus, generation = next_focus(db, result, current_focus)

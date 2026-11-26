@@ -2517,7 +2517,7 @@ def _capture_practice_priority_workflow(tmp_path, monkeypatch):
     corpus = db.connection.execute(
         "INSERT INTO puzzle_corpora(version,source,checksum,state) VALUES('priority','fixture','checksum','staging')"
     ).lastrowid
-    for file in ("a", "b", "c", "f", "g"):
+    for file in ("a", "b", "c", "d", "f", "g", "h"):
         puzzle = chess.Board("4k3/8/8/8/3q4/8/8/3RK3 b - - 0 1")
         puzzle.set_piece_at(chess.parse_square(file + "7"), chess.Piece(chess.PAWN, chess.BLACK))
         key = "priority-fixture-" + file
@@ -2537,7 +2537,7 @@ def _capture_practice_priority_workflow(tmp_path, monkeypatch):
         ((base - timedelta(days=1)).isoformat(),),
     )
     db.connection.commit()
-    options, status, _ = candidates(db, LEARNER, "priority", lambda: None)
+    options, status, _, _ = candidates(db, LEARNER, "priority", lambda: None)
     assert status == "available" and len(options) == 2
     assert options[0][0]["prompt_key"] != options[1][0]["prompt_key"]
     positions = [report["source"]["position_id"] for _, report in options]
@@ -2700,6 +2700,65 @@ def _capture_practice_priority_workflow(tmp_path, monkeypatch):
     )
     client = app.test_client()
     headers = {"Tailscale-User-Login": "fixture"}
+
+    def learning_counts():
+        tables = (
+            "unified_sessions",
+            "unified_session_events",
+            "objective_requests",
+            "objective_results",
+            "unified_training_enrollments",
+            "training_items",
+            "training_attempts",
+            "mastery_events",
+        )
+        return tuple(
+            db.connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0] for table in tables
+        )
+
+    def guidance(expected, text, link):
+        before = learning_counts()
+        for query in ("", "?goal=capture&minutes=1"):
+            response = client.get(
+                "/plan" + query, base_url="https://coach.invalid", headers=headers
+            )
+            assert response.status_code == 200 and text in response.data
+            assert link in response.data
+            assert f'name="key" value="{options[0][0]["source_key"]}"'.encode() not in response.data
+        ordinary = daily_plan(
+            db, subject=LEARNER, corpus_version="priority", limit=1, project_root=root
+        )
+        window = plan(duration_minutes=1)
+        for page in (ordinary, window):
+            assert page["capture_status"] == "history_unavailable"
+            assert page["capture_focus"]["source"]["position_id"] == positions[0]
+            assert page["capture_focus"]["history"]["status"] == expected
+            assert all(
+                item.get("source_key") != options[0][0]["source_key"] for item in page["items"]
+            )
+        assert learning_counts() == before
+
+    active = attempt(positions[0], "correct", "guidance", pause=True)
+    guidance("incomplete", b"Continue your capture assessment", f"/unified/{active}".encode())
+    before_changed = learning_counts()
+    with monkeypatch.context() as changed:
+        changed.setattr("chess_coach.plan_page_options.current_generation", lambda *_: -1)
+        page = client.get(
+            "/plan?goal=capture&minutes=1", base_url="https://coach.invalid", headers=headers
+        )
+    assert page.status_code == 200 and b"Continue your capture assessment" not in page.data
+    assert learning_counts() == before_changed
+    submit(db, active, LEARNER, event_id="answer", move="d1d4")
+    guidance("pending", b"Check your capture assessment status", f"/unified/{active}".encode())
+    assert process(db, LEARNER)["outcomes"] == {"correct": 1}
+    restored = plan()
+    assert restored["items"][0]["source_key"] == options[0][0]["source_key"]
+
+    # A new review leaves the evidence usable but invalidates its old assessment binding.
+    review_evidence(db, options[0][1]["source"]["evidence_id"], decision="accept", actor="fixture")
+    guidance("stale", b"The latest assessment could not be checked", b"/plan/captures")
+    attempt(positions[0], "correct", "guidance-refreshed")
+    assert plan()["items"][0]["source_key"] == options[0][0]["source_key"]
 
     def form(query):
         response = client.get("/plan?" + query, base_url="https://coach.invalid", headers=headers)

@@ -11,9 +11,9 @@ from .unified_sources import resolve_source
 
 def _resolve(db, subject, corpus, source, limited, scanned, check):
     history = latest(db, subject, source["position_id"], corpus, check=check, prove_latest=True)
-    if history.get("status") in {"stale", "pending", "incomplete"}:
-        return None
     report = {"source": source, "history": history, "limited": limited, "scanned": scanned}
+    if history.get("status") in {"stale", "pending", "incomplete"}:
+        return None, report
     resolve_source(db, "own-game", source["version"], source["key"], subject=subject, check=check)
     key = str(source["evidence_id"])
     value = resolve(db, TARGET_VERSION, key, subject, check=check)
@@ -26,11 +26,11 @@ def candidates(db, subject, corpus, check):
     sources, limited, scanned, identity = collect(db, subject, check)
     found = []
     for source in sources:
-        candidate = _resolve(db, subject, corpus, source, limited, scanned, check)
+        candidate, report = _resolve(db, subject, corpus, source, limited, scanned, check)
         if candidate is None:
-            return found, "available" if found else "history_unavailable", identity
-        found.append(candidate)
-    return found, "available" if found else "no_source", identity
+            return found, "available" if found else "history_unavailable", identity, report
+        found.append((candidate, report))
+    return found, "available" if found else "no_source", identity, None
 
 
 def pending(identity, options):

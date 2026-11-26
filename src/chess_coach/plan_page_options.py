@@ -20,3 +20,11 @@ def priority(db, promotion, focus, generation):
         and generation is not None
         and current_generation(db) == generation
     )
+
+
+def validate_advisory(db, result):
+    if result.get("capture_status") != "history_unavailable" or not result.get("capture_focus"):
+        return
+    version = current_generation(db)
+    if version is None or version != result.get("capture_generation"):
+        result["capture_focus"] = None
