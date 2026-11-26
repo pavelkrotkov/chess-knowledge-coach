@@ -57,7 +57,7 @@ def search(
             deadline,
             min(PER_SOURCE_PROOFS, MAX_PROOFS - checked),
             expired,
-            **accept_options(db, selection, expected),
+            **accept_options(db, selection, expected, subject, familiar[1], difficulty),
         )
         checked += used
         if candidate is not None:

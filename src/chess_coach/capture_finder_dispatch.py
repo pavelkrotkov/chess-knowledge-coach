@@ -2,14 +2,20 @@
 
 from functools import partial
 
-from .capture_finder_match import matches
+from .capture_finder_match import matches, prepared_matches
 from .capture_finder_prior import prepare
 
 
-def accept_options(db, selection, expected):
+def accept_options(db, selection, expected, subject, games, difficulty):
     if expected is None:
         return {}
-    return {"accept": partial(matches, db, selection, expected=expected)}
+    if difficulty:
+        return {"accept": partial(matches, db, selection, expected=expected)}
+    return {
+        "accept": partial(
+            prepared_matches, db, selection, expected=expected, subject=subject, games=games
+        )
+    }
 
 
 def prepared(db, subject, corpus, attempt, position, deadline, expired, harder):
