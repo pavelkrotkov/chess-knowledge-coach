@@ -65,9 +65,10 @@ class Forms(HTMLParser):
 
 
 def _records(db):
+    from chess_coach.db_versioning import CURRENT_VERSION
     from chess_coach.unified_session_events import show
 
-    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == 41
+    assert db.connection.execute("PRAGMA user_version").fetchone()[0] == CURRENT_VERSION
     assert db.connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     assert not db.connection.execute("PRAGMA foreign_key_check").fetchall()
     for attempt, expected in ATTEMPTS.items():

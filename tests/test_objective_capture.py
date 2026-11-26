@@ -588,6 +588,37 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         )
     db.connection.execute("UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus,))
     db.connection.commit()
+    if mode == "correct":
+        import hashlib
+        import io
+
+        from chess_coach.public_training import import_collection
+        from tests.test_public_training import file_set
+
+        known_game = db.connection.execute("SELECT source_id FROM games WHERE id=1").fetchone()[0]
+        future = chess.pgn.read_game(io.StringIO(pgn))
+        assert future is not None
+        future.headers["UTCDate"] = "2026.01.03"
+        future_pgn = str(future)
+        future_id = hashlib.sha256(future_pgn.encode()).hexdigest()
+        public_board = chess.Board("4k3/8/8/7p/3q4/8/8/3RK3 w - - 0 1")
+        alternate = chess.Board("4k3/8/7p/8/3q4/8/8/3RK3 w - - 0 1")
+        for version, source_url, board in (
+            ("fixture-public-a", "https://lichess.org/" + known_game, public_board),
+            ("fixture-public-b", "https://lichess.org/" + future_id, public_board),
+            ("fixture-public-c", "https://example.invalid/public", alternate),
+        ):
+            folder = root / version
+            folder.mkdir()
+            content, manifest, metadata = file_set(
+                folder, rows=[("private-fixture-a", board.fen(), "legal_line", ["d1d4"])]
+            )
+            metadata.update(version=version, source_url=source_url)
+            manifest.write_text(json.dumps(metadata))
+            assert (
+                import_collection(db, content, content, manifest, project_root=root)["accepted"]
+                == 1
+            )
     # The real worker builds this finite window over several bounded turns.
     import time
 
@@ -598,12 +629,14 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
     from chess_coach.pipeline_lock import pipeline_lock
     from chess_coach.related_capture import preview as prepared_preview
     from chess_coach.related_capture_context import baseline, bounds
+    from chess_coach.related_capture_familiar import familiarity
     from chess_coach.related_capture_pool import complete as prepared_window
     from chess_coach.related_capture_pool import load as load_pool
     from chess_coach.related_capture_source import source_for_position
 
     assert prepared_preview(db, LEARNER, 1, "capture")["status"] == "capture preparation pending"
     lower, upper = bounds(baseline(db, source_for_position(db, LEARNER, 1)))
+    familiar_games = familiarity(db, LEARNER)[1]
     original_visit = certificate_worker._visit
     original_owned_proof = certificate_refresh.prove
     original_gain = candidate_features.capture_gain
@@ -649,14 +682,17 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
             pool = load_pool(db, root)
             if pool and pool.get("pending_scope") == ["capture", "checksum", lower, upper]:
                 pending_passes.append(True)
-            if prepared_window(db, root, "capture", lower, upper) is not None:
+            if (
+                prepared_window(db, root, "capture", lower, upper, LEARNER, familiar_games)
+                is not None
+            ):
                 break
         else:
             pytest.fail("the finite capture window did not finish preparation")
 
     if mode == "correct":
         assert interruptions and pending_passes
-        window = prepared_window(db, root, "capture", lower, upper)
+        window = prepared_window(db, root, "capture", lower, upper, LEARNER, familiar_games)
         assert window is not None
         unavailable = [
             entry
@@ -1946,6 +1982,143 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         with monkeypatch.context() as patch:
             patch.setattr("chess_coach.capture_plan_history._selected", lambda *_a, **_k: row)
             assert latest(db, LEARNER, 1, "capture")["status"] == "not_held_out"
+    if mode == "correct":
+        from chess_coach.related_capture import preview as current_preview
+
+        def learning_rows():
+            with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True) as reader:
+                reader.execute("PRAGMA query_only=ON")
+                return tuple(
+                    tuple(reader.execute(f"SELECT * FROM {table} ORDER BY rowid").fetchall())
+                    for table in tables
+                )
+
+        def public_offer(version):
+            cursor = None
+            while True:
+                result = current_preview(db, LEARNER, 1, "capture", cursor, secret=app.secret_key)
+                found = next(
+                    (
+                        item
+                        for item in result["items"]
+                        if item["type"] == "public" and item["version"] == version
+                    ),
+                    None,
+                )
+                if found is not None:
+                    return found
+                cursor = result["next_cursor"]
+                if cursor is None:
+                    raise AssertionError("prepared public example unavailable")
+
+        def forbidden_prompt(*_args, **_kwargs):
+            raise AssertionError("legacy candidate proof ran in ordinary practice")
+
+        from chess_coach import related_capture_preview as preview_module
+
+        actual_familiarity = preview_module.familiarity
+
+        def changed_after_familiarity(*args):
+            result = actual_familiarity(*args)
+            with sqlite3.connect(path) as other:
+                other.execute("UPDATE games SET event=event WHERE id=1")
+            return result
+
+        before = learning_rows()
+        with monkeypatch.context() as guard:
+            guard.setattr(preview_module, "familiarity", changed_after_familiarity)
+            guard.setattr(candidate_features, "capture_gain", forbidden_proof)
+            guard.setattr(candidate_assessment, "judge", forbidden_proof)
+            with pytest.raises(ValueError, match="capture selection changed"):
+                current_preview(db, LEARNER, 1, "capture", secret=app.secret_key)
+        assert learning_rows() == before
+
+        with monkeypatch.context() as guard:
+            guard.setattr(candidate_features, "capture_gain", forbidden_proof)
+            guard.setattr(candidate_assessment, "judge", forbidden_proof)
+            guard.setattr("chess_coach.related_capture_match._prompt", forbidden_prompt)
+            old_public = public_offer("fixture-public-b")
+        assert learning_rows() == before
+
+        # A newly ingested learner game changes the familiar collection mask.
+        ingest_pgn(db, future_pgn)
+        before = learning_rows()
+        with monkeypatch.context() as guard:
+            guard.setattr(candidate_features, "capture_gain", forbidden_proof)
+            guard.setattr(candidate_assessment, "judge", forbidden_proof)
+            guard.setattr("chess_coach.related_capture_match._prompt", forbidden_prompt)
+            refused = client.post(
+                "/decisions/1/related-captures/start",
+                base_url="https://coach.invalid",
+                headers=headers | {"Origin": "https://coach.invalid"},
+                data={"csrf": token(page, "csrf"), "reference": old_public["reference"]},
+            )
+        assert refused.status_code == 400 and learning_rows() == before
+        assert current_preview(db, LEARNER, 1, "capture")["status"] == "capture preparation pending"
+
+        familiar_games = familiarity(db, LEARNER)[1]
+        for _ in range(80):
+            with pipeline_lock(db.path):
+                certificate_worker.run(db, LEARNER, root, time.monotonic() + 5)
+            if prepared_window(db, root, "capture", lower, upper, LEARNER, familiar_games):
+                break
+        else:
+            pytest.fail("the shifted public window did not finish preparation")
+
+        before = learning_rows()
+        with monkeypatch.context() as guard:
+            guard.setattr(candidate_features, "capture_gain", forbidden_proof)
+            guard.setattr(candidate_assessment, "judge", forbidden_proof)
+            guard.setattr("chess_coach.related_capture_match._prompt", forbidden_prompt)
+            public = public_offer("fixture-public-c")
+            fresh_page = client.get(
+                "/decisions/1/related-captures",
+                base_url="https://coach.invalid",
+                headers=headers,
+            )
+            assert fresh_page.status_code == 200
+            cli_cursor = None
+            while True:
+                extra = [f"--cursor={cli_cursor}"] if cli_cursor else []
+                command = fresh_cli(
+                    path,
+                    "related-captures",
+                    "--subject",
+                    LEARNER,
+                    "--position",
+                    "1",
+                    "--corpus",
+                    "capture",
+                    "--project-root",
+                    str(root),
+                    *extra,
+                    proof_free_candidates=True,
+                )
+                cli_page = json.loads(command.stdout)
+                if any(
+                    item["type"] == "public" and item["version"] == "fixture-public-c"
+                    for item in cli_page["items"]
+                ):
+                    break
+                cli_cursor = cli_page["next_cursor"]
+                assert cli_cursor is not None
+        assert learning_rows() == before and not public.get("assessment_available")
+        with monkeypatch.context() as guard:
+            guard.setattr(candidate_features, "capture_gain", forbidden_proof)
+            guard.setattr(candidate_assessment, "judge", forbidden_proof)
+            guard.setattr("chess_coach.related_capture_match._prompt", forbidden_prompt)
+            public_started = client.post(
+                "/decisions/1/related-captures/start",
+                base_url="https://coach.invalid",
+                headers=headers | {"Origin": "https://coach.invalid"},
+                data={"csrf": token(fresh_page, "csrf"), "reference": public["reference"]},
+            )
+        assert public_started.status_code == 303
+        row = db.connection.execute(
+            "SELECT source_type,source_version,objective FROM unified_sessions ORDER BY rowid DESC LIMIT 1"
+        ).fetchone()
+        assert tuple(row) == ("public", "fixture-public-c", "legal_line")
+
     review_evidence(db, evidence, decision="reject", actor="reviewer")
     with pytest.raises(ValueError):
         show(db, attempt, LEARNER)

@@ -7,7 +7,8 @@ from .related_mate_search_token import fingerprint
 
 
 def unavailable(window):
-    return sum(entry.get("reason") == "exchange_unresolved" for entry in window["entries"].values())
+    entries = (*window["entries"].values(), *window["public"]["entries"].values())
+    return sum(entry.get("reason") == "exchange_unresolved" for entry in entries)
 
 
 def _assessment_options(db, visible, ordered, cursor, scope, subject, *, window=None):

@@ -1,5 +1,6 @@
 """Qualify one indexed corpus candidate with the existing bounded verifiers."""
 
+from .capture_public_proof import qualify as public_qualify
 from .puzzle_session_validate import validate_line
 from .related_capture_assessment import certificate
 from .related_capture_features import _shape, inspect_shape
@@ -8,8 +9,7 @@ from .related_capture_features import _shape, inspect_shape
 def _features(candidate, check):
     try:
         prompt = validate_line(candidate["fen"], candidate["solution"])
-        line = candidate["solution"].split()[1:]
-        shape = _shape(prompt, line)
+        shape = _shape(prompt, candidate["solution"].split()[1:])
         if shape is None:
             return None, "unsupported", 0
         feature, reason = inspect_shape(shape, check=check)
@@ -23,17 +23,19 @@ def _qualify(db, entry, check):
     if entry["state"] == "feature":
         feature, reason, used = _features(candidate, check)
         known = {
+            None,
             "unsupported",
             "recapture_or_sacrifice",
             "special_capture",
             "pawn_capture_outside_coverage",
+            "exchange_unresolved",
         }
-        if reason == "exchange_unresolved":
-            entry.update(feature=None, state="complete", reason=reason)
-        elif reason is not None and reason not in known:
+        if reason not in known:
             entry.update(state="unresolved", reason=reason)
         else:
-            entry.update(feature=feature, state="assessment" if feature else "complete")
+            entry.update(
+                feature=feature, state="assessment" if feature else "complete", reason=reason
+            )
         return used
     try:
         entry["assessment"] = certificate(db, candidate["version"], candidate["key"], check=check)
@@ -44,7 +46,11 @@ def _qualify(db, entry, check):
 
 
 def prepare(db, entry, check):
+    if entry["state"] == "interrupted":
+        return 0
     try:
+        if entry["candidate"]["type"] == "public":
+            return public_qualify(db, entry, check)
         return _qualify(db, entry, check)
     except TimeoutError:
         entry["state"] = "interrupted"

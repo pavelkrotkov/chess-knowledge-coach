@@ -32,14 +32,17 @@ def entries(db, row, version, lower, upper, window, records):
     keys = [bind(item, version, row["checksum"])[0] for item in rows]
     if window.get("keys") != keys or window.get("limited") != limited:
         return None
-    selected = {key: records.get(key) for key in keys}
-    if any(not entry or entry.get("state") != "complete" for entry in selected.values()):
+    return select_entries(keys, records)
+
+
+def select_entries(keys, records):
+    if any(records.get(key, {}).get("state") != "complete" for key in keys):
         return None
-    return selected
+    return {key: records[key] for key in keys}
 
 
 def finalize(db, data, building, prior):
-    keys = building["keys"]
+    keys = building["keys"] + building["public"]["keys"]
     version, checksum, _, _ = building["scope"]
     current = db.connection.execute(
         "SELECT 1 FROM puzzle_corpora WHERE id=? AND version=? AND checksum=? AND state='ready'",
@@ -48,7 +51,12 @@ def finalize(db, data, building, prior):
     if current is None:
         data["prior"] = None
         return False, 0
-    data["complete"] = {key: building[key] for key in ("scope", "keys", "limited")}
+    data["complete"] = {
+        "scope": building["scope"],
+        "keys": building["keys"],
+        "limited": building["limited"],
+        "public": {"owner": building["public"]["owner"], "keys": building["public"]["keys"]},
+    }
     entries = {**data["entries"], **prior["entries"]}
     data["entries"] = {key: entries[key] for key in keys}
     data["prior"] = None

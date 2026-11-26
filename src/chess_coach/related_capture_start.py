@@ -20,6 +20,7 @@ def _admit(
     *,
     finder=False,
     difficulty=None,
+    familiar_data=None,
 ):
     if finder:
         from .related_capture_legacy import admit as finder_admit
@@ -27,11 +28,11 @@ def _admit(
         return finder_admit(
             db, subject, position, corpus_version, reference, secret, assessment, difficulty
         )
-    if secret is None and not assessment:
-        from .related_capture_admission import admit as legacy_admit
+    if familiar_data is None:
+        from .related_capture_familiar import familiarity
 
-        return legacy_admit(db, subject, position, corpus_version, reference)
-    selected = _selection(db, subject, position, corpus_version)
+        familiar_data = familiarity(db, subject)
+    selected = _selection(db, subject, position, corpus_version, familiar_data=familiar_data)
     if selected is None:
         raise ValueError("capture selection unavailable")
     if secret is not None:
@@ -40,7 +41,7 @@ def _admit(
         selected, reference, VERSION, "material_capture"
     )
     if assessment:
-        attach(db, source_type, version, key, binding, selected, secret)
+        attach(db, source_type, version, key, binding, selected, secret, subject, familiar_data[1])
     return source_type, version, key, binding, lines
 
 
@@ -73,10 +74,16 @@ def start_related(
     from .related_capture_source import baseline, source_for_position
 
     prepared = None
+    familiar_data = None
+    games = None
     if not finder:
+        from .related_capture_familiar import familiarity
+
+        familiar_data = familiarity(db, subject)
+        games = familiar_data[1]
         source = source_for_position(db, subject, position)
         lower, upper = bounds(baseline(db, source))
-        prepared = observation(db, db.capture_root, corpus_version, lower, upper)
+        prepared = observation(db, db.capture_root, corpus_version, lower, upper, subject, games)
     # Selection and certification stay outside the writer transaction.
     selected = (
         _admit(
@@ -89,6 +96,7 @@ def start_related(
             True,
             finder=finder,
             difficulty=difficulty,
+            familiar_data=familiar_data,
         )
         if assessment
         else None
@@ -96,9 +104,9 @@ def start_related(
 
     def resolve():
         # Any intervening commit forces a fresh selection before admission.
+        if db.connection.execute("PRAGMA data_version").fetchone()[0] != version:
+            raise ValueError("capture selection changed")
         if selected is not None:
-            if db.connection.execute("PRAGMA data_version").fetchone()[0] != version:
-                raise ValueError("capture selection changed")
             return selected
         return _admit(
             db,
@@ -110,6 +118,7 @@ def start_related(
             False,
             finder=finder,
             difficulty=difficulty,
+            familiar_data=familiar_data,
         )
 
     def currentness(database, row):
@@ -117,7 +126,13 @@ def start_related(
         if files != current(database, subject, database.capture_root):
             raise ValueError("capture source changed")
         if not finder and prepared != observation(
-            database, database.capture_root, corpus_version, lower, upper
+            database,
+            database.capture_root,
+            corpus_version,
+            lower,
+            upper,
+            subject,
+            games,
         ):
             raise ValueError("capture preparation changed")
 

@@ -4,11 +4,13 @@ from .related_capture_pool import complete
 from .related_capture_ready import _features, entries
 
 
-def assessment(db, version, key, source, baseline, corpus):
+def assessment(db, version, key, source, baseline, corpus, subject, games):
     from .related_capture_assessment import setup
     from .related_capture_assessment_context import capture
 
-    window = complete(db, db.capture_root, version, corpus["lower"], corpus["upper"])
+    window = complete(
+        db, db.capture_root, version, corpus["lower"], corpus["upper"], subject, games
+    )
     if window is None:
         raise ValueError("capture preparation pending")
     entry = entries(window).get(key)
@@ -39,7 +41,7 @@ def legacy_assessment(db, version, key, selected):
     return result
 
 
-def attach(db, source_type, version, key, binding, selected, secret):
+def attach(db, source_type, version, key, binding, selected, secret, subject, games):
     if secret is None or source_type != "corpus":
         raise ValueError("capture assessment unavailable")
-    binding["assessment"] = assessment(db, version, key, *selected[:3])
+    binding["assessment"] = assessment(db, version, key, *selected[:3], subject, games)

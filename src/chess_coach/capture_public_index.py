@@ -2,6 +2,7 @@
 
 from .capture_corpus_storage import POLICY
 from .fact_fingerprint import canonical, digest
+from .learner_identity import normalize_identity
 from .public_training_line import PUBLIC_LINE_PLIES_LIMIT
 from .public_training_query import task as read_task
 from .public_training_query import tasks
@@ -58,3 +59,27 @@ def bind(db, version, key, check):
         "history": "standalone",
     }
     return digest(canonical(["public", POLICY, PUBLIC_LINE_PLIES_LIMIT, candidate])), candidate
+
+
+def available(db):
+    return (
+        db.connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_games_source_id'"
+        ).fetchone()
+        is not None
+    )
+
+
+def game(db, subject, source_id, after, check):
+    learner = normalize_identity(subject)
+    if not learner:
+        raise ValueError("practice subject unavailable")
+    check()
+    row = db.connection.execute(
+        """SELECT id,(lower(white)=? OR lower(black)=?) AS familiar
+        FROM games INDEXED BY idx_games_source_id
+        WHERE source_id=? AND id>? ORDER BY id LIMIT 1""",
+        (learner, learner, source_id, after),
+    ).fetchone()
+    check()
+    return row
