@@ -47,6 +47,9 @@ def start(
     if source_type != "corpus":
         raise ValueError("fork assessment unavailable")
     binding["assessment"] = certificate(db, version, key)
+    from .fork_common_control import record
+
+    binding["assessment"]["common_controls"] = record(db, selected, version, key, difficulty)
     attach(db, resolved, expected)
 
     def resolve():

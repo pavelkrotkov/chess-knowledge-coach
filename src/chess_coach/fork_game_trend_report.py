@@ -4,7 +4,7 @@ import sqlite3
 
 from .capture_game_trend_current import current
 from .capture_game_trend_report import _comparison
-from .dated_game_trend import choose
+from .dated_game_trend import boundary_id, choose
 from .fork_game_root_current import samples
 from .fork_game_trend_paths import binding, location
 from .fork_game_trend_validate import validate
@@ -44,6 +44,7 @@ def report(db, learner, root, *, check=None, as_of=None):
         return {
             "historical": historical,
             "boundary": len(games) > 40,
+            "boundary_id": boundary_id(games),
             "comparable": reason is None,
             "through": games[0]["date"] if historical else None,
             "newer": newer,
