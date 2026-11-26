@@ -2548,6 +2548,17 @@ def _capture_practice_priority_workflow(tmp_path, monkeypatch):
     monkeypatch.setattr(unified_session_apply, "now", lambda: clock[0].isoformat())
     secret = b"capture-priority-fixture"
 
+    # More than the bounded history window predates both qualified observations.
+    for index in range(101):
+        start(
+            db,
+            attempt_id=f"zz-older-unrelated-{index:03d}",
+            subject=LEARNER,
+            source_type="corpus",
+            version="priority",
+            key="priority-fixture-a",
+        )
+
     def attempt(source_position, outcome, number, *, pause=False):
         selected = preview(db, LEARNER, source_position, "priority", secret=secret)
         entry = next(item for item in selected["items"] if item.get("assessment_available"))
@@ -2610,18 +2621,66 @@ def _capture_practice_priority_workflow(tmp_path, monkeypatch):
     assert db.connection.in_transaction
     db.connection.rollback()
 
+    # A matching assessment at the 101st timestamp cannot prove latest.
+    clock[0] -= timedelta(seconds=1)
+    attempt(positions[0], "correct", "boundary")
+    boundary = latest(db, LEARNER, positions[0], "priority", prove_latest=True)
+    assert boundary["limited"] is True and boundary["latest_proven"] is False
+    at_boundary = plan()
+    assert at_boundary["items"][0]["source_key"] == options[0][0]["source_key"]
+    assert "unknown or tied" in at_boundary["items"][0]["reason"]
+
     attempt(positions[0], "correct", 1)
     pending = attempt(positions[1], "correct", 2, pause=True)
     partial = plan()
     assert partial["items"][0]["source_key"] == options[0][0]["source_key"]
     assert "unknown or tied" in partial["items"][0]["reason"]
     answer(pending, positions[1], "correct")
+    for source_position in positions:
+        history = latest(db, LEARNER, source_position, "priority", prove_latest=True)
+        assert history["limited"] is True and history["latest_proven"] is True
+
+    boundary_time = db.connection.execute(
+        "SELECT started_at FROM unified_sessions WHERE attempt_id='priority-attempt-boundary'"
+    ).fetchone()[0]
+    first_time = db.connection.execute(
+        "SELECT started_at FROM unified_sessions WHERE attempt_id='priority-attempt-1'"
+    ).fetchone()[0]
+    db.connection.execute(
+        "UPDATE unified_sessions SET started_at=? WHERE attempt_id='priority-attempt-boundary'",
+        (first_time,),
+    )
+    db.connection.commit()
+    assert latest(db, LEARNER, positions[0], "priority", prove_latest=True)["status"] == "stale"
+    db.connection.execute(
+        "UPDATE unified_sessions SET started_at=? WHERE attempt_id='priority-attempt-boundary'",
+        (boundary_time,),
+    )
+    db.connection.execute(
+        "UPDATE unified_sessions SET started_at='not-a-time' WHERE attempt_id='zz-older-unrelated-000'"
+    )
+    db.connection.commit()
+    malformed = plan()
+    assert malformed["items"][0]["source_key"] == options[0][0]["source_key"]
+    assert "unknown or tied" in malformed["items"][0]["reason"]
+    db.connection.execute(
+        "UPDATE unified_sessions SET started_at=? WHERE attempt_id='zz-older-unrelated-000'",
+        (base.isoformat(),),
+    )
+    db.connection.commit()
     before = db.connection.total_changes
     tied = plan()
     assert db.connection.total_changes == before
     assert tied["items"][0]["source_key"] == options[0][0]["source_key"]
     assert "unknown or tied" in tied["items"][0]["reason"]
     assert "importance is unknown" in tied["items"][0]["reason"]
+    with monkeypatch.context() as old_policy:
+        old_policy.setattr(
+            "chess_coach.curriculum_capture_inputs.POLICY", "capture-practice-inputs-v1"
+        )
+        old_window = plan()["window_cursor"]
+    with pytest.raises(ValueError, match="capture practice changed"):
+        plan(cursor=old_window)
     unchanged = plan(cursor=tied["window_cursor"])
     assert unchanged["window"]["goal"] == "capture"
     renewed = plan(cursor=tied["window_cursor"], renew=True)
