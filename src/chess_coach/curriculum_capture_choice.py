@@ -2,29 +2,34 @@
 
 from .curriculum_capture_conflicts import scheduled
 from .curriculum_capture_rank import choice
-from .curriculum_capture_witnesses import candidates
+from .curriculum_capture_source import practice_reason
+from .curriculum_capture_witnesses import candidates, pending
 
 
 def select(db, state, subject, scan, check):
     options, status, identity = candidates(db, subject, state["corpus_version"], check)
     state["priority"]["capture_sources"] = identity
     if not options:
+        if state["capture_pending"] is not None:
+            raise ValueError("capture source changed")
         state["phase"] = "new"
         return [], status, None, None
-    matched = scheduled(db, state, scan, check)
-    if matched is None:
-        return [], "unavailable", "scheduled_prompt_unavailable", options[0][1]
+    binding = pending(identity, options)
+    if state["capture_pending"] not in {None, binding}:
+        raise ValueError("capture source changed")
+    state["capture_pending"] = binding
+    matched, incomplete, reason = scheduled(db, state, scan, options, check)
+    if incomplete is not None:
+        return [], incomplete, reason, options[0][1]
+    state["capture_pending"] = None
+    state["scheduled_after"] = 0
+    state["priority"]["capture_matches"] = 0
     chosen, qualified = choice(db, subject, state, options, matched, check)
     candidate, report = options[chosen]
-    if candidate["prompt_key"] in matched or candidate["prompt_key"] in state["seen"]:
+    if candidate["prompt_key"] in matched | set(state["seen"]):
         state["phase"] = "new"
         return [], "already_scheduled", None, report
-    note = "Dated capture opportunity importance is unknown."
-    if qualified:
-        note += " Comparable verified practice selected the previously unmet capture."
-    else:
-        note += " Comparable practice priority is unknown or tied; source order is retained."
-    candidate["reason"] += " " + note
+    candidate["reason"] += " " + practice_reason(qualified)
     state["seen"] = sorted([*state["seen"], candidate["prompt_key"]])
     state["phase"] = "new"
     return (

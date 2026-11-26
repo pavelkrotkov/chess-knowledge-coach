@@ -4,27 +4,34 @@ from .curriculum_capture_inputs import current
 from .curriculum_priority_cursor import CAPTURE_POLICY
 
 
-def check(db, state, subject, root, budget):
+def _reason(db, state, subject, root, budget):
     if (
         state is None
         or state.get("priority_policy") != CAPTURE_POLICY
         or state.get("priority") is None
     ):
-        return
+        return None
     if budget is None or root is None:
         raise ValueError("capture practice scope unavailable")
     with budget.scope(snapshot=False):
         actual = current(db, subject, root, budget.check)
         if actual != state["priority"]["capture_input"]:
-            raise ValueError("capture practice changed; restart the plan")
-        _sources(db, state["priority"]["capture_sources"], subject, budget.check)
+            return "capture practice changed"
+        from .curriculum_capture_source_identity import changed
+
+        if changed(db, subject, state["priority"]["capture_sources"], budget.check):
+            return "capture sources changed"
+    return None
 
 
-def _sources(db, value, subject, check):
-    if value is not None:
-        from .curriculum_capture_source_identity import require
+def check(db, state, subject, root, budget):
+    reason = _reason(db, state, subject, root, budget)
+    if reason is not None:
+        raise ValueError(reason + "; restart the plan")
 
-        require(db, subject, value, check)
+
+def changed(db, state, subject, root, budget):
+    return _reason(db, state, subject, root, budget) is not None
 
 
 def window(db, page, subject, root, budget):

@@ -60,3 +60,11 @@ def _candidate(report, snapshot, key):
         "unified_training": True,
         "binding": digest(canonical([key, snapshot_hash(snapshot), report["history"]])),
     }
+
+
+def practice_reason(qualified):
+    return "Dated capture opportunity importance is unknown. " + (
+        "Comparable verified practice selected the previously unmet capture."
+        if qualified
+        else "Comparable practice priority is unknown or tied; source order is retained."
+    )

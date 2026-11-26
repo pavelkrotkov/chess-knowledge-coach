@@ -30,6 +30,10 @@ def snapshot(db, subject, check):
     return collect(db, subject, check)[3]
 
 
+def changed(db, subject, expected, check):
+    return expected is not None and snapshot(db, subject, check) != expected
+
+
 def require(db, subject, expected, check):
-    if snapshot(db, subject, check) != expected:
+    if changed(db, subject, expected, check):
         raise ValueError("capture sources changed")

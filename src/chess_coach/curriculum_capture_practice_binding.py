@@ -16,10 +16,9 @@ def _counter(db, table, attempts):
 
 def practice(db, subject, check):
     rows = _rows(db, subject)
-    if len(rows) > LIMIT:
-        raise ValueError("capture practice scope incomplete")
+    limited = len(rows) > LIMIT
     attempts = [row["attempt_id"] for row in rows]
-    values = [tuple(row) for row in rows]
+    values = [limited, *[tuple(row) for row in rows]]
     for table in ("unified_session_events", "objective_requests", "objective_results"):
         check()
         values.append(_counter(db, table, attempts))

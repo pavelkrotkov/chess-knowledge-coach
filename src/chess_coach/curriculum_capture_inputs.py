@@ -26,15 +26,18 @@ def _paths(db, subject, root):
             MAX_INTENTS + 1,
         )
     )
-    if len(paths) > MAX_INTENTS:
-        raise ValueError("capture exposure scope incomplete")
+    incomplete = len(paths) > MAX_INTENTS
+    if incomplete:
+        paths = []
     paths.extend([directory / "poc-study-336-intent.json", trend])
-    return sorted(paths)
+    return sorted(paths), incomplete
 
 
 def _files(db, subject, root):
-    paths = _paths(db, subject, root)
-    return [[path.name, item] for path, item in zip(paths, fingerprint(paths), strict=True)]
+    paths, incomplete = _paths(db, subject, root)
+    return [["intent_coverage", "incomplete" if incomplete else "complete"]] + [
+        [path.name, item] for path, item in zip(paths, fingerprint(paths), strict=True)
+    ]
 
 
 def file_identity(db, subject, root):

@@ -37,3 +37,7 @@ def validate(state):
     validate_priority(
         state["priority"], state["scan_limit"], capture=state["priority_policy"] == CAPTURE_POLICY
     )
+    if state["priority_policy"] == CAPTURE_POLICY and state["priority"] is not None:
+        matches = state["priority"]["capture_matches"]
+        if matches and (state["phase"] != "capture" or state["capture_pending"] is None):
+            raise ValueError("invalid capture schedule progress")

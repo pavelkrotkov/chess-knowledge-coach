@@ -2548,7 +2548,7 @@ def _capture_practice_priority_workflow(tmp_path, monkeypatch):
     monkeypatch.setattr(unified_session_apply, "now", lambda: clock[0].isoformat())
     secret = b"capture-priority-fixture"
 
-    def attempt(source_position, outcome, number):
+    def attempt(source_position, outcome, number, *, pause=False):
         selected = preview(db, LEARNER, source_position, "priority", secret=secret)
         entry = next(item for item in selected["items"] if item.get("assessment_available"))
         clock[0] += timedelta(seconds=1)
@@ -2563,6 +2563,12 @@ def _capture_practice_priority_workflow(tmp_path, monkeypatch):
             assessment=True,
             secret=secret,
         )
+        if pause:
+            return attempt_id
+        answer(attempt_id, source_position, outcome)
+        return attempt_id
+
+    def answer(attempt_id, source_position, outcome):
         clock[0] += timedelta(seconds=1)
         submit(
             db,
@@ -2588,8 +2594,28 @@ def _capture_practice_priority_workflow(tmp_path, monkeypatch):
     unknown = plan()
     assert unknown["items"][0]["source_key"] == options[0][0]["source_key"]
     assert "unknown or tied" in unknown["items"][0]["reason"]
+
+    from chess_coach.tactical_course_budget import PreviewUnavailable
+
+    with monkeypatch.context() as interrupted:
+        interrupted.setattr(
+            "chess_coach.curriculum_priority_prepare.snapshot",
+            lambda *_: (_ for _ in ()).throw(PreviewUnavailable("fixture deadline")),
+        )
+        deferred = plan()
+    assert deferred["continuation_reason"] == "priority_scan_incomplete"
+    db.connection.execute("BEGIN")
+    with pytest.raises(ValueError, match="capture practice unavailable during caller transaction"):
+        plan(cursor=deferred["window_cursor"])
+    assert db.connection.in_transaction
+    db.connection.rollback()
+
     attempt(positions[0], "correct", 1)
-    attempt(positions[1], "correct", 2)
+    pending = attempt(positions[1], "correct", 2, pause=True)
+    partial = plan()
+    assert partial["items"][0]["source_key"] == options[0][0]["source_key"]
+    assert "unknown or tied" in partial["items"][0]["reason"]
+    answer(pending, positions[1], "correct")
     before = db.connection.total_changes
     tied = plan()
     assert db.connection.total_changes == before
@@ -2636,6 +2662,9 @@ def _capture_practice_priority_workflow(tmp_path, monkeypatch):
     trend.write_text("{}")
     with pytest.raises(ValueError, match="capture practice changed"):
         plan(cursor=tied["window_cursor"])
+    refreshed = plan(cursor=tied["window_cursor"], renew=True)
+    assert refreshed["window"]["source_refreshed"]
+    assert refreshed["items"][0]["source_key"] == options[0][0]["source_key"]
     for old_form in (timed_form, untimed_form):
         response = client.post(
             "/unified/start",
@@ -2656,6 +2685,9 @@ def _capture_practice_priority_workflow(tmp_path, monkeypatch):
     attempt(positions[1], "incorrect", 3)
     with pytest.raises(ValueError, match="capture practice changed"):
         plan(cursor=old_cursor)
+    refreshed = plan(cursor=old_cursor, renew=True)
+    assert refreshed["window"]["source_refreshed"]
+    assert refreshed["items"][0]["source_key"] == options[1][0]["source_key"]
     with pytest.raises(ValueError, match="capture practice offer changed"):
         start(
             db,
@@ -2761,6 +2793,116 @@ def _capture_practice_priority_workflow(tmp_path, monkeypatch):
         db.connection.execute("SELECT count(*) FROM unified_training_enrollments").fetchone()[0]
         == 1
     )
+    resumed = plan(cursor=chosen["window_cursor"], renew=True)
+    assert resumed["window"]["source_refreshed"]
+    assert resumed["items"][0]["kind"] == "due"
+    assert resumed["items"][0]["source_key"] == chosen["items"][0]["source_key"]
+
+    from chess_coach.curriculum_window_cursor import decode as decode_window
+    from chess_coach.training import create_training_item
+
+    for file in ("a", "b", "c"):
+        create_training_item(
+            db,
+            source_type="puzzle",
+            source_ref=json.dumps(["priority", "priority-fixture-" + file]),
+            skill="mate_in_one",
+            operation="execute",
+        )
+    historical = base + timedelta(minutes=1)
+    scanned = daily_plan(
+        db,
+        subject=LEARNER,
+        corpus_version="priority",
+        limit=1,
+        scan_limit=1,
+        goal="capture",
+        as_of=historical,
+        project_root=root,
+    )
+    positions_seen, matches_seen = [], []
+    for _ in range(6):
+        state = decode_window(db, scanned["window_cursor"])["state"]
+        if state["capture_pending"] is not None:
+            positions_seen.append(state["scheduled_after"])
+            matches_seen.append(state["priority"]["capture_matches"])
+        if scanned["next_cursor"] is None:
+            break
+        scanned = daily_plan(
+            db,
+            subject=LEARNER,
+            corpus_version="priority",
+            limit=1,
+            scan_limit=1,
+            goal="capture",
+            as_of=historical,
+            cursor=scanned["next_cursor"],
+            project_root=root,
+        )
+    assert positions_seen == sorted(set(positions_seen)) and len(positions_seen) >= 3
+    assert any(mask & 2 for mask in matches_seen)
+    assert scanned["items"][0]["source_key"] == options[0][0]["source_key"]
+    assert "unknown or tied" in scanned["items"][0]["reason"]
+
+    for index in range(101):
+        start(
+            db,
+            attempt_id=f"unrelated-{index:03d}",
+            subject=LEARNER,
+            source_type="corpus",
+            version="priority",
+            key="priority-fixture-a",
+        )
+    from chess_coach.curriculum_capture_practice_binding import practice
+
+    assert practice(db, LEARNER, lambda: None)[0] is True
+    due = daily_plan(
+        db,
+        subject=LEARNER,
+        corpus_version="priority",
+        limit=2,
+        goal="fork",
+        project_root=root,
+    )
+    assert due["items"] and due["items"][0]["kind"] == "due"
+    unknown = daily_plan(
+        db,
+        subject=LEARNER,
+        corpus_version="priority",
+        limit=1,
+        goal="capture",
+        as_of=historical,
+        project_root=root,
+    )
+    assert unknown["items"][0]["source_key"] == options[0][0]["source_key"]
+    assert "unknown or tied" in unknown["items"][0]["reason"]
+
+    planning = root / ".runtime" / "planning"
+    for index in range(101):
+        (planning / f"tactical-study-{index:064x}-intent.json").write_text("{}")
+    from chess_coach.tactical_exposure_check import check as exposure_check
+
+    assert exposure_check(db, LEARNER, options[0][0]["prompt_key"]) == "coverage_unavailable"
+    due = daily_plan(
+        db,
+        subject=LEARNER,
+        corpus_version="priority",
+        limit=2,
+        goal="fork",
+        project_root=root,
+    )
+    assert due["items"] and due["items"][0]["kind"] == "due"
+    unknown = daily_plan(
+        db,
+        subject=LEARNER,
+        corpus_version="priority",
+        limit=1,
+        goal="capture",
+        as_of=historical,
+        project_root=root,
+    )
+    assert unknown["items"][0]["source_key"] == options[0][0]["source_key"]
+    assert "unknown or tied" in unknown["items"][0]["reason"]
     monkeypatch.setattr(unified_sessions, "now", original_start_clock)
     monkeypatch.setattr(unified_session_apply, "now", original_event_clock)
     db.close()

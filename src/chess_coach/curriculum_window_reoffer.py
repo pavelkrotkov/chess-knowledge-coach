@@ -30,9 +30,9 @@ def unstarted(db, value, budget):
         raise ValueError("previous offers could not be rechecked") from None
 
 
-def history(db, value, budget):
+def history(db, value, budget, *, force_changed=False):
     old = value["state"]
-    changed = old["revision"] != revision(db)
+    changed = force_changed or old["revision"] != revision(db)
     released = unstarted(db, value, budget) if changed else set()
     seen = [key for key in old["seen"] if key not in released]
     new_seen = [key for key in value["new_seen"] if key not in released]

@@ -44,7 +44,8 @@ def daily_plan(
         from .curriculum_capture_guard import check as check_capture
         from .curriculum_capture_guard import window as finish_window
 
-        check_capture(db, prior, learner, project_root, budget)
+        if not renew:
+            check_capture(db, prior, learner, project_root, budget)
         if window is not None:
             page = build_window(
                 db,

@@ -1,6 +1,6 @@
 """Validate signed qualified-family evidence summaries."""
 
-from .curriculum_cursor_values import hex_digest
+from .curriculum_cursor_values import hex_digest, integer
 from .curriculum_priority_value import bounds
 
 
@@ -8,7 +8,7 @@ def validate_priority(value, limit, *, capture=False):
     if value is None:
         return
     fields = {"winner", "capture", "fork"} | (
-        {"capture_input", "capture_sources"} if capture else set()
+        {"capture_input", "capture_sources", "capture_matches"} if capture else set()
     )
     if not isinstance(value, dict) or set(value) != fields:
         raise ValueError("invalid qualified priority")
@@ -34,6 +34,8 @@ def _capture_input(value):
 
 
 def _capture(value):
+    if not integer(value["capture_matches"], 0, 3):
+        raise ValueError("invalid capture schedule progress")
     _capture_input(value["capture_input"])
     if value["capture_sources"] is not None:
         _capture_input(value["capture_sources"])
