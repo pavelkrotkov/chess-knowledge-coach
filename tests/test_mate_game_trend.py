@@ -1859,6 +1859,7 @@ def test_short_mate_background_samples_resume_and_detect_changes(tmp_path, monke
     )
     matched.connection.execute("UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus_id,))
     matched.connection.commit()
+    (root / ".runtime" / "planning").mkdir(mode=0o700)
     selected = find_fork(matched, "fixture_a", chosen, "test", b"synthetic-secret")
     assert selected and selected["items"]
     start_fork(
