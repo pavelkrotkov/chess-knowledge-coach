@@ -3219,8 +3219,11 @@ def _retained_capture_workflow(tmp_path, monkeypatch):
     import chess.pgn
 
     import chess_coach.capture_certificate_refresh as refresh
+    import chess_coach.capture_certificate_worker as worker
     from chess_coach.capture_certificate_buckets import observe
-    from chess_coach.capture_certificate_progress import checkpoint
+    from chess_coach.capture_certificate_buckets import publish as publish_bucket
+    from chess_coach.capture_certificate_progress import checkpoint, save
+    from chess_coach.capture_certificate_refresh import entries as bucket_entries
     from chess_coach.capture_certificate_worker import PROOFS, SCAN, run
     from chess_coach.curriculum import daily_plan
     from chess_coach.ingest import ingest_pgn
@@ -3278,8 +3281,8 @@ def _retained_capture_workflow(tmp_path, monkeypatch):
     original_pgn = db.connection.execute("SELECT pgn FROM games WHERE id=1").fetchone()[0]
     config = PipelineConfig(learner=LEARNER, engine_path=sys.executable, nodes=100)
     engine = engine_identity(sys.executable)
-    newer = []
-    for day in range(2, 26):
+
+    def add_source(day):
         game = chess.pgn.read_game(io.StringIO(original_pgn))
         assert game is not None
         game.headers["UTCDate"] = f"2026.01.{day:02d}"
@@ -3292,7 +3295,32 @@ def _retained_capture_workflow(tmp_path, monkeypatch):
         position = db.connection.execute(
             "SELECT id FROM positions WHERE game_id=? ORDER BY ply LIMIT 1", (game_id,)
         ).fetchone()[0]
-        newer.append(process_decision(db, position, LEARNER)["evidence_ids"][0])
+        return process_decision(db, position, LEARNER)["evidence_ids"][0]
+
+    newer = [add_source(2)]
+    certify(db, LEARNER, root)
+    start(
+        db,
+        attempt_id="retained-gain",
+        subject=LEARNER,
+        source_type="own-game",
+        version=GAIN_VERSION,
+        key=str(newer[0]),
+    )
+    assert (
+        db.connection.execute(
+            "SELECT 1 FROM unified_training_enrollments WHERE attempt_id=?", ("retained-gain",)
+        ).fetchone()
+        is None
+    )
+    # A pre-upgrade checkpoint with only the original global cursor survives.
+    from chess_coach.capture_certificate_store import binding
+    from chess_coach.short_mate_trend_store import write
+
+    progress_path, prior = checkpoint(db, LEARNER, root)
+    write(progress_path, {"binding": binding(db, LEARNER), "before": prior["before"]})
+    assert checkpoint(db, LEARNER, root)[1]["before"] == prior["before"]
+    newer.extend(add_source(day) for day in range(3, 26))
     for evidence_id in newer[-3:]:
         review_evidence(db, evidence_id, decision="reject", actor="fixture")
     assert SCAN == 20 and PROOFS == 3
@@ -3313,11 +3341,29 @@ def _retained_capture_workflow(tmp_path, monkeypatch):
     )
 
     def turn():
-        with pipeline_lock(db.path):
-            run(db, LEARNER, root, time.monotonic() + 5)
+        visits = proofs = 0
+        original_visit, original_prove = worker._visit, refresh.prove
+
+        def visit(*args):
+            nonlocal visits
+            result = original_visit(*args)
+            visits += int(result[0])
+            return result
+
+        def prove(*args):
+            nonlocal proofs
+            proofs += 1
+            return original_prove(*args)
+
+        with monkeypatch.context() as budget:
+            budget.setattr(worker, "_visit", visit)
+            budget.setattr(refresh, "prove", prove)
+            with pipeline_lock(db.path):
+                run(db, LEARNER, root, time.monotonic() + 5)
+        assert visits <= SCAN and proofs <= PROOFS
 
     turn()
-    assert checkpoint(db, LEARNER, root)[1] == newer[-3]
+    assert checkpoint(db, LEARNER, root)[1]["before"] == newer[-3]
     with pytest.raises(ValueError, match="capture practice changed"):
         daily_plan(db, cursor=cursor, **plan_args)
     assert counts == tuple(
@@ -3337,8 +3383,46 @@ def _retained_capture_workflow(tmp_path, monkeypatch):
         deadline.setattr(refresh, "prove", expire_proof)
         turn()
     timed_out = newer[-4]
-    assert checkpoint(db, LEARNER, root)[1] == timed_out
+    assert checkpoint(db, LEARNER, root)[1]["before"] == timed_out
     assert observe(db, root, LEARNER, timed_out) is None
+
+    # Both direct references predate the unfinished evidence scan. Remove their
+    # certificates and keep appending newer sources while the worker resumes.
+    for evidence_id in (old, newer[0]):
+        records, _ = bucket_entries(db, root, LEARNER, evidence_id)
+        records.pop(str(evidence_id))
+        publish_bucket(db, root, LEARNER, evidence_id, records)
+
+    # A timed-out direct reference advances only its own visited frontier and
+    # is retried after that finite pass, so it cannot starve the other lanes.
+    progress_path, current = checkpoint(db, LEARNER, root)
+    current["lane"], current["session"] = 1, []
+    save(db, LEARNER, progress_path, current)
+    session_key = db.connection.execute(
+        "SELECT started_at,attempt_id FROM unified_sessions WHERE attempt_id=?",
+        ("retained-gain",),
+    ).fetchone()
+
+    def expire_gain(database, subject, evidence_id, check):
+        if evidence_id == newer[0]:
+            raise TimeoutError("fixture direct deadline")
+        return real_prove(database, subject, evidence_id, check)
+
+    with monkeypatch.context() as deadline:
+        deadline.setattr(refresh, "prove", expire_gain)
+        turn()
+    assert checkpoint(db, LEARNER, root)[1]["session"][:2] == list(session_key)
+    assert observe(db, root, LEARNER, newer[0]) is None
+
+    for day in range(26, 30):
+        add_source(day)
+        turn()
+        if all(observe(db, root, LEARNER, evidence_id) for evidence_id in (old, newer[0])):
+            break
+    assert all(observe(db, root, LEARNER, evidence_id) for evidence_id in (old, newer[0]))
+    assert checkpoint(db, LEARNER, root)[1]["before"] > newer[0]
+    assert show(db, "retained-gain", LEARNER)["objective"] == "bounded_material_gain"
+
     valid = [old, *newer[:-3]]
     for _ in range(15):
         turn()
@@ -3348,9 +3432,6 @@ def _retained_capture_workflow(tmp_path, monkeypatch):
 
     # The old due source is outside the latest raw page. Its bucket becoming
     # available after the scan must invalidate the saved continuation.
-    from chess_coach.capture_certificate_buckets import publish as publish_bucket
-    from chess_coach.capture_certificate_refresh import entries as bucket_entries
-
     records, _ = bucket_entries(db, root, LEARNER, old)
     records.pop(str(old))
     import chess_coach.curriculum_page as curriculum_page
@@ -3659,6 +3740,84 @@ def _retained_capture_workflow(tmp_path, monkeypatch):
         )
         == item_before
     )
+
+    # A same-time insertion after the pass began is outside its rowid horizon.
+    import chess_coach.unified_sessions as sessions
+    from chess_coach.capture_certificate_reference_page import session as session_page
+
+    with monkeypatch.context() as clock:
+        clock.setattr(sessions, "now", lambda: "2099-01-01T00:00:00+00:00")
+        for attempt in ("frontier-first", "frontier-later"):
+            start(
+                db,
+                attempt_id=attempt,
+                subject=LEARNER,
+                source_type="own-game",
+                version=TARGET_VERSION,
+                key=str(old),
+            )
+            if attempt == "frontier-first":
+                first, frontier = session_page(db, LEARNER, [])
+                assert first["attempt_id"] == attempt
+        following, _ = session_page(db, LEARNER, frontier)
+        assert following is None or following["attempt_id"] != "frontier-later"
+
+    # A real revoked direct reference must remain unavailable without blocking
+    # another already-admitted due source from being restored.
+    revoked = newer[1]
+    start(
+        db,
+        attempt_id="retained-revoked",
+        subject=LEARNER,
+        source_type="own-game",
+        version=TARGET_VERSION,
+        key=str(revoked),
+    )
+    review_evidence(db, revoked, decision="reject", actor="fixture")
+    with pytest.raises(ValueError, match="practice source unavailable or stale"):
+        show(db, "retained-revoked", LEARNER)
+    records, _ = bucket_entries(db, root, LEARNER, old)
+    records.pop(str(old))
+    publish_bucket(db, root, LEARNER, old, records)
+    visited = []
+    original_reference = worker.session_reference
+
+    def record_reference(row, subject):
+        reference = original_reference(row, subject)
+        if row["attempt_id"] == "retained-revoked":
+            visited.append(reference)
+        return reference
+
+    with monkeypatch.context() as references:
+        references.setattr(worker, "session_reference", record_reference)
+        for _ in range(8):
+            turn()
+            if visited and observe(db, root, LEARNER, old):
+                break
+    assert visited and visited[0]["id"] == revoked
+    assert observe(db, root, LEARNER, old)
+    assert observe(db, root, LEARNER, revoked) is None
+    with pytest.raises(ValueError, match="practice source unavailable or stale"):
+        show(db, "retained-revoked", LEARNER)
+
+    # A later valid review creates a new source identity; it does not rewrite
+    # the original session or make its old snapshot current again.
+    review_evidence(db, revoked, decision="accept", actor="fixture")
+    for _ in range(15):
+        turn()
+        if observe(db, root, LEARNER, revoked):
+            break
+    assert observe(db, root, LEARNER, revoked)
+    start(
+        db,
+        attempt_id="retained-refreshed",
+        subject=LEARNER,
+        source_type="own-game",
+        version=TARGET_VERSION,
+        key=str(revoked),
+    )
+    with pytest.raises(ValueError, match="practice source unavailable or stale"):
+        show(db, "retained-revoked", LEARNER)
     db.close()
 
     # An unrelated project database outside the private data directory still plans normally.

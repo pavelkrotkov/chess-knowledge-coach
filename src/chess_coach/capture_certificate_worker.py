@@ -1,24 +1,19 @@
 """Produce bounded owned-capture certificates within the existing worker turn."""
 
-from .capture_certificate_progress import next_before, page, save, state
-from .capture_certificate_reference import schedule, schedule_reference, session, session_reference
+from .capture_certificate_progress import checkpoint, next_evidence, save
+from .capture_certificate_reference_page import session, session_reference
 from .capture_certificate_refresh import check, refresh
+from .capture_certificate_schedule import schedule, schedule_reference
 
 SCAN = 20
 PROOFS = 3
 
 
-def _evidence(db, subject, current):
-    rows, more = page(db, subject, current["before"], 1)
-    if not rows:
-        return None, current["before"]
-    return rows[0], next_before(rows, more, rows[0]["id"])
-
-
 def _visit(db, subject, root, current, lane, deadline):
     if lane == 0:
-        row, marker = _evidence(db, subject, current)
+        row, marker = next_evidence(db, subject, current["before"])
         if row is None:
+            current["before"] = marker
             return False, 0
         # Preserve the existing retry-on-next-pass policy for timed-out evidence.
         current["before"] = marker
@@ -28,14 +23,14 @@ def _visit(db, subject, root, current, lane, deadline):
     if row is None:
         current[name] = marker
         return False, 0
+    current[name] = marker
     reference = session_reference(row, subject) if lane == 1 else schedule_reference(row, subject)
     count = refresh(db, subject, root, reference, deadline, reference=reference) if reference else 0
-    current[name] = marker
     return True, count
 
 
 def run(db, subject, root, deadline):
-    path, current = state(db, subject, root)
+    path, current = checkpoint(db, subject, root)
     if path is None:
         return
     visited = checked = 0

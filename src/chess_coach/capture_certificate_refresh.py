@@ -50,14 +50,18 @@ def refresh(db, subject, root, row, deadline, *, reference=None):
     except (ValueError, TypeError, KeyError, IndexError):
         records.pop(key, None)
     check(deadline)
-    if reference is not None and key in records:
-        from .capture_certificate_reference import matches
-
-        if not matches(records[key], reference):
-            if key in previous:
-                records[key] = previous[key]
-            else:
-                records.pop(key)
+    if reference is not None:
+        _retain_matching(records, previous, key, reference)
     if records != previous or not published:
         publish(db, root, subject, evidence_id, records)
     return changed
+
+
+def _retain_matching(records, previous, key, reference):
+    from .capture_certificate_reference import matches
+
+    if key in records and not matches(records[key], reference):
+        if key in previous:
+            records[key] = previous[key]
+        else:
+            records.pop(key)
