@@ -32,6 +32,13 @@ def complete(db, root, version, lower, upper, subject=None, games=None):
     }
 
 
+def require(db, root, version, corpus, subject, games):
+    window = complete(db, root, version, corpus["lower"], corpus["upper"], subject, games)
+    if window is None or digest(canonical(window)) != corpus.get("capture_preparation"):
+        raise ValueError("capture preparation changed")
+    return window
+
+
 def observation(db, root, version, lower, upper, subject=None, games=None):
     window = complete(db, root, version, lower, upper, subject, games)
     return digest(canonical([POLICY, window]))
