@@ -24,6 +24,7 @@ def choose(db, subject, position, corpus, familiar_data, difficulty):
         if selected is None:
             raise PreparationPending()
         return selected
+    files = current(db, subject, db.capture_root)
     source = supported_source(db, subject, position)
     selected = select(
         db,
@@ -35,7 +36,7 @@ def choose(db, subject, position, corpus, familiar_data, difficulty):
         feature=certified_features,
         **options(difficulty),
     )
-    selected = bind_scope(db, subject, selected, current(db, subject, db.capture_root))
+    selected = bind_scope(db, subject, selected, files)
     if selected is None:
         return None
     scope = digest(canonical(["verified-capture-finder-v1", selected[4]]))

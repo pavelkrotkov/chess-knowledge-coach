@@ -1583,9 +1583,36 @@ def test_unfamiliar_capture_assessment_browser_and_currentness(tmp_path, monkeyp
         ]
         with monkeypatch.context() as patch:
             patch.setattr(difficulty_history, "_rows", lambda *_: pair)
-            assert eligible(db, LEARNER, "capture", 1, second_attempt)["band"] == 1400
+            difficulty = eligible(db, LEARNER, "capture", 1, second_attempt)
+            assert difficulty["band"] == 1400
             with pytest.raises(ValueError):
                 eligible(db, LEARNER, "capture", 1, attempt)
+
+            import chess_coach.related_capture_legacy as legacy_capture
+            from chess_coach.capture_certificate_buckets import _load, publish
+            from chess_coach.capture_certificate_paths import paths
+            from chess_coach.curriculum_capture_file_guard import current
+
+            bucket_path = paths(db, root, LEARNER, evidence)[0]
+            bucket = _load(db, LEARNER, bucket_path, evidence)
+            assert bucket is not None and str(evidence) in bucket["certificates"]
+            files_before = current(db, LEARNER, root)
+            learning_before = learning_rows()
+            original_select = legacy_capture.select
+            published = []
+
+            def publish_during_selection(*args, **kwargs):
+                selected = original_select(*args, **kwargs)
+                publish(db, root, LEARNER, evidence, bucket["certificates"])
+                published.append(True)
+                return selected
+
+            with monkeypatch.context() as race:
+                race.setattr(legacy_capture, "select", publish_during_selection)
+                with pytest.raises(ValueError, match="capture source changed"):
+                    legacy_capture.choose(db, LEARNER, 1, "capture", None, difficulty)
+            assert published and current(db, LEARNER, root) != files_before
+            assert learning_rows() == learning_before
             patch.setattr(
                 difficulty_finder,
                 "_groups",
