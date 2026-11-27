@@ -76,7 +76,7 @@ def _related(
                 db, subject, corpus, selected, familiar_data=familiar_data, **options
             )
     with budget.scope(snapshot=False):
-        compare(saved, related, gamebook=named, roles=roles)
+        compare(saved, related, gamebook=named, roles=roles, kind=selected["kind"])
 
 
 def _selected(db, subject, pattern, lesson, chapter, budget, modern):

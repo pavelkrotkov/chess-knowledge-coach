@@ -4004,13 +4004,136 @@ def test_protection_lesson_offers_only_a_current_bounded_line_replay(tmp_path, m
     old_default["preview_sha256"] = preview_hash(old_default["preview"])
     old_default_export = tactical_export(db, LEARNER, "test", old_default, CourseBudget(db))
     assert study_preview(old_default_export, old_default_export["export_sha256"]) == old_default
-    old_selected = tactical_preview(
+    selected_strict = tactical_preview(
         db,
         LEARNER,
         "test",
         selected=["hanging_piece:prevent"],
         budget=CourseBudget(db, slice_seconds=SELECTED_SECONDS),
     )
+    assert selected_strict["kind"] == "local-tactical-course-v14"
+    selected_chapters = selected_strict["preview"]["chapters"]
+    assert [item["role"] for item in selected_chapters] == ["explanation", "worked", "practice"]
+    assert (
+        selected_chapters[0]["source"]["type"]
+        == selected_chapters[1]["source"]["type"]
+        == "own-game"
+    )
+    assert selected_chapters[2]["source"]["type"] == "corpus"
+    assert "no profitable immediate capture" in selected_chapters[0]["pgn"]
+    assert "Ungraded rehearsal" in selected_chapters[2]["pgn"]
+    assert "profitable immediate capture" in selected_chapters[2]["pgn"]
+    selected_strict_export = tactical_export(
+        db, LEARNER, "test", selected_strict, CourseBudget(db, slice_seconds=SELECTED_SECONDS)
+    )
+    assert (
+        study_preview(selected_strict_export, selected_strict_export["export_sha256"])
+        == selected_strict
+    )
+
+    # Recheck actual changed review and corpus inputs without persisting fixture mutations.
+    evidence_id = selected_strict["preview"]["patterns"][0]["supporting_sources"][0]["evidence_id"]
+    for changed in ("review", "corpus"):
+        check_budget = CourseBudget(db, slice_seconds=SELECTED_SECONDS)
+        db.connection.execute("SAVEPOINT protection_course_change")
+        try:
+            if changed == "review":
+                review_evidence(db, evidence_id, decision="reject", actor="fixture")
+            else:
+                db.connection.execute(
+                    "UPDATE puzzles SET solution=solution || ' a1a1' WHERE corpus_id=? AND puzzle_id=?",
+                    (corpus_id, selected_chapters[2]["source"]["key"]),
+                )
+            with pytest.raises(ValueError):
+                tactical_export(db, LEARNER, "test", selected_strict, check_budget)
+        finally:
+            db.connection.execute("ROLLBACK TO SAVEPOINT protection_course_change")
+            db.connection.execute("RELEASE SAVEPOINT protection_course_change")
+
+    from chess_coach import (
+        objective_protection_snapshot,
+        related_protection_features,
+        tactical_course,
+    )
+    from chess_coach.tactical_course_offer import offer as offer_selected
+    from chess_coach.tactical_course_publish import publish as publish_selected
+    from chess_coach.tactical_study_current import revalidate as current_study
+
+    selected_hash = selected_strict_export["export_sha256"]
+    with current_study(
+        path,
+        selected_strict_export,
+        selected_hash,
+        project_root=tmp_path,
+        subject=LEARNER,
+        corpus="test",
+    ) as check:
+        check()
+    selected_path = planning / "selected-protection-v14.json"
+    publish_selected(selected_path, selected_strict_export, CourseBudget(db), readonly=True)
+    offer_selected(
+        tmp_path,
+        path,
+        LEARNER,
+        selected_path,
+        selected_strict_export,
+        CourseBudget(db),
+        enabled=True,
+    )
+    selected_app = create_app(
+        db_path=path,
+        subject=LEARNER,
+        actor="fixture",
+        corpus="test",
+        login="login",
+        origin="https://coach.invalid",
+        project_root=tmp_path,
+    )
+    selected_client = selected_app.test_client()
+    selected_headers = {"Tailscale-User-Login": "login"}
+
+    def no_course_proof(*_args, **_kwargs):
+        raise AssertionError("protection proof ran on course read")
+
+    with monkeypatch.context() as reading:
+        for module in (objective_protection_snapshot, related_protection_features):
+            reading.setattr(module, "probe", no_course_proof)
+            reading.setattr(module, "judge", no_course_proof)
+        selected_page = selected_client.get(
+            f"/coaching/tactical-course?version={selected_hash}",
+            base_url="https://coach.invalid",
+            headers=selected_headers,
+        )
+    assert selected_page.status_code == 200
+    assert b"Understand the threatened piece" in selected_page.data
+    assert b"no profitable immediate capture" in selected_page.data
+
+    original_policy = tactical_course._policy
+
+    def released_protection(selection):
+        if selection == ["hanging_piece:prevent"]:
+            return (
+                tactical_course.THEMATIC_SELECTED_VERSION,
+                tactical_course.THEMATIC_SELECTED_POLICY,
+                [("hanging_piece", "prevent")],
+                SELECTED_SECONDS,
+            )
+        return original_policy(selection)
+
+    with monkeypatch.context() as historical:
+        historical.setattr(tactical_course, "_policy", released_protection)
+        old_selected = tactical_preview(
+            db,
+            LEARNER,
+            "test",
+            selected=["hanging_piece:prevent"],
+            budget=CourseBudget(db, slice_seconds=SELECTED_SECONDS),
+        )
+    assert old_selected["kind"] == "local-tactical-course-v7"
+    old_v7_export = tactical_export(
+        db, LEARNER, "test", old_selected, CourseBudget(db, slice_seconds=SELECTED_SECONDS)
+    )
+    assert study_preview(old_v7_export, old_v7_export["export_sha256"]) == old_selected
     old_selected["kind"] = old_selected["preview"]["kind"] = "local-tactical-course-v5"
     old_selected["preview"]["policy"] = "provisional-recurring-tactics-v5"
     old_selected["preview_sha256"] = preview_hash(old_selected["preview"])
@@ -4051,8 +4174,13 @@ def test_protection_lesson_offers_only_a_current_bounded_line_replay(tmp_path, m
         )
         assert (default["kind"], selected["kind"]) == (
             "local-tactical-course-v13",
-            "local-tactical-course-v7",
+            "local-tactical-course-v14",
         )
+        assert [item["role"] for item in selected["preview"]["chapters"]] == [
+            "explanation",
+            "worked",
+            "practice",
+        ]
         from chess_coach.tactical_course_protection import ContextUnavailable
 
         def unavailable_context(*_args):
@@ -4091,6 +4219,22 @@ def test_protection_lesson_offers_only_a_current_bounded_line_replay(tmp_path, m
         db.connection.commit()
         unlicensed = tactical_preview(db, LEARNER, "unlicensed")
         assert not any(ch["source"]["type"] == "corpus" for ch in unlicensed["preview"]["chapters"])
+        partial = tactical_preview(
+            db,
+            LEARNER,
+            "unlicensed",
+            selected=["hanging_piece:prevent"],
+            budget=CourseBudget(db, slice_seconds=SELECTED_SECONDS),
+        )
+        assert [item["role"] for item in partial["preview"]["chapters"]] == [
+            "explanation",
+            "worked",
+        ]
+        assert partial["preview"]["selection"]["unavailable"]
+        partial_export = tactical_export(
+            db, LEARNER, "unlicensed", partial, CourseBudget(db, slice_seconds=SELECTED_SECONDS)
+        )
+        assert study_preview(partial_export, partial_export["export_sha256"]) == partial
         for prepared, budget in (
             (default, CourseBudget(db)),
             (selected, CourseBudget(db, slice_seconds=SELECTED_SECONDS)),
@@ -4100,7 +4244,11 @@ def test_protection_lesson_offers_only_a_current_bounded_line_replay(tmp_path, m
             )
             assert worked["mode"] == "conceal"
             assert "Thematic defensive practice, not a matched test" in worked["pgn"]
-            assert "Worked example, ungraded. You follow White" in worked["pgn"]
+            assert (
+                "Worked example, ungraded. You follow White"
+                if prepared is default
+                else "Ungraded rehearsal. White to move"
+            ) in worked["pgn"]
             assert "other legal moves and later risks are ungraded" in worked["pgn"]
             assert "CC0" in worked["pgn"]
             candidate = tactical_export(db, LEARNER, "test", prepared, budget)
@@ -4232,6 +4380,34 @@ def test_protection_lesson_offers_only_a_current_bounded_line_replay(tmp_path, m
         with pytest.raises(ValueError):
             tactical_export(db, LEARNER, "test", course, CourseBudget(db))
     assert db.connection.total_changes == before_course
+    learning_tables = (
+        "evidence_mappings",
+        "evidence_review_events",
+        "training_attempts",
+        "training_completions",
+    )
+    before_read = tuple(
+        db.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        for table in learning_tables
+    )
+    with monkeypatch.context() as reading:
+        for module in (objective_protection_snapshot, related_protection_features):
+            reading.setattr(module, "probe", no_course_proof)
+            reading.setattr(module, "judge", no_course_proof)
+        download = selected_client.get(
+            f"/coaching/tactical-course?version={selected_hash}&download=1",
+            base_url="https://coach.invalid",
+            headers=selected_headers,
+        )
+    assert download.status_code == 200
+    assert (
+        b"Understand the threatened piece" in download.data
+        and b"Practice a defense" in download.data
+    )
+    assert before_read == tuple(
+        db.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        for table in learning_tables
+    )
     db.close()
     app = create_app(
         db_path=path,
