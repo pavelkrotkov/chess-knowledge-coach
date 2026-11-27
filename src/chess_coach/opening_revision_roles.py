@@ -19,7 +19,8 @@ def explanation(decision, choice, experiment):
         f"the played line scored {experiment['played']['score']} cp and the alternative "
         f"{experiment['alternative']['score']} cp from your perspective. "
         "These are bounded estimates for two moves, not proof of overall soundness. "
-        "Continue to your worked comparison, then try the recorded public continuation."
+        "Continue to your worked comparison. If a public continuation is provided, "
+        "use it as ungraded rehearsal."
     )
     snapshot = {
         "prompt_fen": decision["fen"],

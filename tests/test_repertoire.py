@@ -686,8 +686,16 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         and "no-store" in partial_download.headers["Cache-Control"]
     )
     partial_stream = io.StringIO(partial_download.get_data(as_text=True))
-    assert chess.pgn.read_game(partial_stream) is not None
+    partial_explanation = chess.pgn.read_game(partial_stream)
+    partial_owned = chess.pgn.read_game(partial_stream)
+    assert partial_explanation is not None and partial_owned is not None
     assert chess.pgn.read_game(partial_stream) is None
+    assert "Opening revision explanation" in partial_explanation.headers["Event"]
+    assert "If a public continuation is provided" in partial_explanation.comment
+    assert "Opening experiment" in partial_owned.headers["Event"]
+    assert partial_explanation.board().fen() == partial_owned.board().fen()
+    assert not partial_explanation.errors and not partial_owned.errors
+    assert {node.move.uci() for node in partial_owned.variations} == {"d2d4", "g1f3"}
 
     import copy
 
