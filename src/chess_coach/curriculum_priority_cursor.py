@@ -31,6 +31,8 @@ def inherit(old, state):
             capture=old.get("priority_policy") in CAPTURE_POLICIES,
             policy=CAPTURE_POLICY
             if old.get("priority_policy") in {LEGACY_CAPTURE_POLICY, CAPTURE_POLICY}
+            else COMMON_POLICY
+            if old.get("priority_policy") == COMMON_POLICY
             else None,
         )
         if old["v"] == 8

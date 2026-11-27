@@ -4631,10 +4631,15 @@ def _conditional_fit_workflow(
         launch_headers = {"Tailscale-User-Login": "login", "Origin": "https://coach.invalid"}
         choice = token(next(item for item in parent["items"] if item["uci"] == "e2e3")["selection"])
 
-        def opening_form(url=None, *, require_offer=True):
-            response = launch_client.get(
+        def opening_form(url=None, *, require_offer=True, client=launch_client, balanced=False):
+            query = (
+                {"opening": choice, "goal": "balanced", "limit": "1"}
+                if balanced
+                else {"opening": choice, "goal": "fork", "minutes": "5"}
+            )
+            response = client.get(
                 url or "/plan",
-                query_string=None if url else {"opening": choice, "goal": "fork", "minutes": "5"},
+                query_string=None if url else query,
                 base_url="https://coach.invalid",
                 headers=launch_headers,
             )
@@ -4672,6 +4677,170 @@ def _conditional_fit_workflow(
                 assert match is not None
                 result[name] = html.unescape(match.group(1))
             return result, renewal_url
+
+        # A separate real database keeps this goal-window start independent of the timed checks.
+        goal_path = data / "opening-balanced-launch-fixture.sqlite"
+        goal_target = sqlite3.connect(goal_path)
+        launch_db.connection.backup(goal_target)
+        goal_target.close()
+        goal_db = Database(goal_path)
+        goal_app = create_app(
+            db_path=goal_path,
+            project_root=root,
+            subject="learner",
+            actor="fixture",
+            corpus="test",
+            login="login",
+            origin="https://coach.invalid",
+        )
+        goal_client = goal_app.test_client()
+        goal_tables = (
+            "unified_sessions",
+            "unified_session_events",
+            "objective_requests",
+            "objective_results",
+            "unified_training_enrollments",
+            "unified_training_completions",
+            "training_items",
+            "training_attempts",
+            "mastery_states",
+            "mastery_events",
+            "evidence_mappings",
+            "evidence_review_events",
+            "tactical_exposure_coverage",
+            "tactical_exposures",
+        )
+        goal_observer = sqlite3.connect(goal_path.resolve().as_uri() + "?mode=ro", uri=True)
+        goal_observer.execute("PRAGMA query_only=ON")
+        goal_before = {
+            name: goal_observer.execute(f"SELECT * FROM {name} ORDER BY rowid").fetchall()
+            for name in goal_tables
+        }
+
+        def no_goal_solver(*_args, **_kwargs):
+            pytest.fail("opening-bound common request ran a proof or engine")
+
+        with patch.context() as goal_guard:
+            goal_guard.setattr(opening_engine, "start_engine", no_goal_solver)
+            goal_guard.setattr(opening_search, "retained_search", no_goal_solver)
+            goal_guard.setattr(public_fork_candidate, "fork_proof", no_goal_solver)
+            goal_guard.setattr("chess_coach.fork_observation.fork_proof", no_goal_solver)
+            goal_guard.setattr("chess_coach.objective_fork_judge.fork_proof", no_goal_solver)
+            goal_guard.setattr("chess_coach.objective_capture_snapshot.judge", no_goal_solver)
+            goal_guard.setattr(chess.engine.SimpleEngine, "popen_uci", no_goal_solver)
+            goal_form, _ = opening_form(client=goal_client, balanced=True)
+            other_form, _ = opening_form(client=goal_client, balanced=True)
+            from chess_coach.curriculum_capture_offer import COMMON_WINDOW_POLICY
+            from chess_coach.curriculum_prerequisite_token import _decode
+            from chess_coach.curriculum_window_cursor import decode as decode_window
+
+            assert _decode(goal_db, goal_form["window_offer"])[0] == COMMON_WINDOW_POLICY
+            first_window = decode_window(goal_db, goal_form["opening_window_cursor"])
+            second_window = decode_window(goal_db, other_form["opening_window_cursor"])
+            assert (
+                first_window["expires_at"] is None
+                and first_window["issued_at"] != second_window["issued_at"]
+            )
+            mismatched = {**goal_form, "window_offer": other_form["window_offer"]}
+            refused = goal_client.post(
+                "/unified/start",
+                base_url="https://coach.invalid",
+                headers=launch_headers,
+                data=mismatched,
+            )
+            assert refused.status_code == 400
+            assert (
+                goal_db.connection.execute("SELECT count(*) FROM unified_sessions").fetchone()[0]
+                == 0
+            )
+
+            # Publish a real changed sidecar after enrollment; both checks must share one task budget.
+            from chess_coach import (
+                opening_context_launch_prepare,
+                unified_sessions,
+                unified_training_enroll,
+            )
+            from chess_coach.fork_game_trend_paths import location as fork_trend_path
+
+            trend = fork_trend_path(goal_db, root)
+            assert trend is not None
+            original_trend = trend.read_bytes() if trend.exists() else None
+            original_enroll = unified_training_enroll.enroll_if_requested
+            original_budget = unified_sessions._capture_budget
+            original_begin = opening_context_launch_prepare.begin
+            shared, starts = [], []
+
+            def observe_begin(context):
+                original_begin(context)
+                starts.append((context["budget"], context["budget"].expires))
+
+            def observe_budget(*args, opening=None):
+                result = original_budget(*args, opening=opening)
+                assert opening is not None and result is opening["budget"]
+                shared.append((result, result.expires))
+                return result
+
+            def change_after_enroll(*args, **kwargs):
+                result = original_enroll(*args, **kwargs)
+                trend.write_bytes(b"{}")
+                return result
+
+            try:
+                with patch.context() as race:
+                    race.setattr(unified_sessions, "_capture_budget", observe_budget)
+                    race.setattr(opening_context_launch_prepare, "begin", observe_begin)
+                    race.setattr(
+                        unified_training_enroll, "enroll_if_requested", change_after_enroll
+                    )
+                    changed_goal = goal_client.post(
+                        "/unified/start",
+                        base_url="https://coach.invalid",
+                        headers=launch_headers,
+                        data=goal_form,
+                    )
+                assert changed_goal.status_code == 400 and len(starts) == 2
+                assert starts[0] == starts[1] == shared[0]
+                assert (
+                    goal_db.connection.execute("SELECT count(*) FROM unified_sessions").fetchone()[
+                        0
+                    ]
+                    == 0
+                )
+                assert (
+                    goal_db.connection.execute(
+                        "SELECT count(*) FROM unified_training_enrollments"
+                    ).fetchone()[0]
+                    == 0
+                )
+            finally:
+                if original_trend is None:
+                    trend.unlink(missing_ok=True)
+                else:
+                    trend.write_bytes(original_trend)
+            assert goal_before == {
+                name: goal_observer.execute(f"SELECT * FROM {name} ORDER BY rowid").fetchall()
+                for name in goal_tables
+            }
+            goal_observer.close()
+            goal_form, _ = opening_form(client=goal_client, balanced=True)
+            shared.clear()
+            starts.clear()
+            with patch.context() as guard:
+                guard.setattr(unified_sessions, "_capture_budget", observe_budget)
+                guard.setattr(opening_context_launch_prepare, "begin", observe_begin)
+                goal_started = goal_client.post(
+                    "/unified/start",
+                    base_url="https://coach.invalid",
+                    headers=launch_headers,
+                    data=goal_form,
+                )
+            assert goal_started.status_code == 303 and len(starts) == 2
+            assert starts[0] == starts[1] == shared[0]
+            assert (
+                goal_db.connection.execute("SELECT count(*) FROM unified_sessions").fetchone()[0]
+                == 1
+            )
+            goal_db.close()
 
         launch_form, _ = opening_form()
         assert (

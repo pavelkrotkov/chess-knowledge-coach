@@ -2,8 +2,13 @@
 
 import time
 
-from .curriculum_capture_offer import COMMON_POLICY, CONTEXT_POLICY, POLICY
-from .curriculum_prerequisite_token import _decode
+from .curriculum_capture_offer import (
+    COMMON_POLICY,
+    COMMON_WINDOW_POLICY,
+    CONTEXT_POLICY,
+    POLICY,
+    token_policy,
+)
 from .opening_queue_budget import BrowserBudget
 from .tactical_course_budget import SLICE_SECONDS
 
@@ -51,11 +56,14 @@ def finish(value, db, capture_budget):
         valid_time(value)
 
 
-def prepare(db, token, root):
-    if token is None or _decode(db, token)[0] not in {POLICY, CONTEXT_POLICY, COMMON_POLICY}:
+def prepare(db, token, root, *, opening=None):
+    policy = token_policy(db, token)
+    if policy not in {POLICY, CONTEXT_POLICY, COMMON_POLICY, COMMON_WINDOW_POLICY}:
         return None
     if root is None:
         raise ValueError("capture practice offer changed")
+    if policy == COMMON_WINDOW_POLICY and opening is not None:
+        return opening["budget"]
     budget = BrowserBudget(db)
     budget.expires = min(budget.expires, time.monotonic() + SLICE_SECONDS)
     return budget

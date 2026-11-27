@@ -5871,6 +5871,104 @@ def _fork_capture_common_workflow(tmp_path, monkeypatch):
                 assert partial["next_cursor"]
             assert partial["items"][0]["source_key"] == str(fork_id)
             assert "first unassisted assessment" in partial["items"][0]["reason"]
+
+            from chess_coach.curriculum_capture_offer import COMMON_WINDOW_POLICY
+            from chess_coach.curriculum_prerequisite_token import _decode
+
+            goal_plan = daily_plan(
+                db,
+                subject=LEARNER,
+                corpus_version="common",
+                limit=1,
+                as_of=as_of,
+                goal="balanced",
+                project_root=root,
+            )
+            assert goal_plan["window"]["goal"] == "balanced"
+            assert goal_plan["window"]["expires_at"] is None
+            assert goal_plan["items"][0]["source_key"] == item["source_key"]
+            assert goal_plan["items"][0]["reason"] == item["reason"]
+            assert _decode(db, goal_plan["items"][0]["window_offer"])[0] == COMMON_WINDOW_POLICY
+            goal_partial = daily_plan(
+                db,
+                subject=LEARNER,
+                corpus_version="common",
+                limit=1,
+                scan_limit=1,
+                as_of=as_of,
+                goal="balanced",
+                project_root=root,
+            )
+            assert not goal_partial["items"] and goal_partial["window_cursor"]
+            continued = daily_plan(
+                db,
+                subject=LEARNER,
+                corpus_version="common",
+                limit=1,
+                scan_limit=1,
+                as_of=as_of,
+                goal="balanced",
+                cursor=goal_partial["window_cursor"],
+                project_root=root,
+            )
+            assert continued["items"][0]["source_key"] == str(fork_id)
+            renewed = daily_plan(
+                db,
+                subject=LEARNER,
+                corpus_version="common",
+                limit=1,
+                scan_limit=1,
+                as_of=as_of,
+                goal="balanced",
+                renew=True,
+                cursor=goal_partial["window_cursor"],
+                project_root=root,
+            )
+            assert renewed["items"][0]["source_key"] == str(fork_id)
+            assert not renewed["window"]["source_refreshed"]
+            with pytest.raises(ValueError, match="start a new timed plan"):
+                daily_plan(
+                    db,
+                    subject=LEARNER,
+                    corpus_version="common",
+                    limit=1,
+                    scan_limit=1,
+                    as_of=as_of,
+                    goal="balanced",
+                    duration_minutes=1,
+                    renew=True,
+                    cursor=goal_partial["window_cursor"],
+                    project_root=root,
+                )
+            try:
+                artifact.write_bytes(b"{}")
+                with pytest.raises(ValueError, match="common practice changed"):
+                    daily_plan(
+                        db,
+                        subject=LEARNER,
+                        corpus_version="common",
+                        limit=1,
+                        scan_limit=1,
+                        as_of=as_of,
+                        goal="balanced",
+                        cursor=goal_partial["window_cursor"],
+                        project_root=root,
+                    )
+                refreshed = daily_plan(
+                    db,
+                    subject=LEARNER,
+                    corpus_version="common",
+                    limit=1,
+                    scan_limit=1,
+                    as_of=as_of,
+                    goal="balanced",
+                    renew=True,
+                    cursor=goal_partial["window_cursor"],
+                    project_root=root,
+                )
+                assert refreshed["window"]["source_refreshed"]
+            finally:
+                artifact.write_bytes(artifact_bytes)
             command = fresh_cli(
                 path,
                 "daily-plan",
@@ -5892,8 +5990,58 @@ def _fork_capture_common_workflow(tmp_path, monkeypatch):
             cli_item = json.loads(command.stdout)["items"][0]
             assert cli_item["skill"] == "fork" and cli_item["source_key"] == str(fork_id)
             assert "first unassisted assessment" in cli_item["reason"]
+            goal_cli = fresh_cli(
+                path,
+                "daily-plan",
+                "common",
+                "--subject",
+                LEARNER,
+                "--limit",
+                "1",
+                "--goal",
+                "balanced",
+                "--project-root",
+                str(root),
+                proof_free_candidates=True,
+                proof_free_forks=True,
+                check=False,
+            )
+            assert goal_cli.returncode == 0, (
+                f"CLI exit={goal_cli.returncode}; parent transaction={db.connection.in_transaction}; "
+                f"stderr={goal_cli.stderr!r}; stdout={goal_cli.stdout!r}"
+            )
+            assert json.loads(goal_cli.stdout)["items"][0]["source_key"] == str(fork_id)
             started = time.monotonic()
             client = app.test_client()
+            goal_page = client.get(
+                "/plan?goal=balanced&limit=1",
+                base_url="https://coach.invalid",
+                headers={"Tailscale-User-Login": "fixture"},
+            )
+            assert goal_page.status_code == 200 and time.monotonic() - started < 2.0
+            assert b"first unassisted assessment" in goal_page.data
+            goal_forms = Forms()
+            goal_forms.feed(goal_page.get_data(as_text=True))
+            goal_form = next(
+                value
+                for value in goal_forms.forms
+                if value.get("key") == str(fork_id)
+                and value.get("window_offer")
+                and value.get("training") == "1"
+            )
+            assert _decode(db, goal_form["window_offer"])[0] == COMMON_WINDOW_POLICY
+            from chess_coach.curriculum_window_legacy import start as start_legacy
+
+            with pytest.raises(ValueError):
+                start_legacy(
+                    db,
+                    LEARNER,
+                    "common",
+                    "common-scheduled-a",
+                    "legacy-goal-refusal",
+                    goal_form["window_offer"],
+                )
+            started = time.monotonic()
             plan_page = client.get(
                 "/plan?limit=1",
                 base_url="https://coach.invalid",
@@ -5910,8 +6058,6 @@ def _fork_capture_common_workflow(tmp_path, monkeypatch):
                 and value.get("window_offer")
                 and value.get("training") == "1"
             )
-            from chess_coach.curriculum_window_legacy import start as start_legacy
-
             with pytest.raises(ValueError):
                 start_legacy(
                     db,

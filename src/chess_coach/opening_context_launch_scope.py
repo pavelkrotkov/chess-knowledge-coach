@@ -24,3 +24,27 @@ def cursor(db, value, owner):
     if window["selection_only"] or window["state"]["subject_hash"] != owner:
         raise ValueError("practice window scope changed")
     return _scope(window)
+
+
+def common_offer(data, window, owner):
+    from .curriculum_priority_cursor import COMMON_POLICY
+    from .curriculum_window_policy import check_window
+
+    check_window(window)
+    state = window["state"]
+    if (
+        window["selection_only"]
+        or state["subject_hash"] != owner
+        or state.get("priority_policy") != COMMON_POLICY
+        or data[1:4] != [owner, window["goal"], window["expires_at"]]
+    ):
+        raise ValueError("practice window changed")
+    expected = {
+        "revision": state["revision"],
+        "common_input": state["common_input"],
+        "corpus_version": state["corpus_version"],
+        "as_of": state["as_of"],
+        "window_scope": _scope(window),
+    }
+    if data[7] != expected:
+        raise ValueError("practice window changed")

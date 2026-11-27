@@ -7,11 +7,18 @@ from .curriculum_window_scope import create, options
 
 def state(db, value, learner, version, limit, scan_limit, now, goal, minutes, renew, budget):
     if not value:
-        from .curriculum_priority_cursor import available, upgrade
+        from .curriculum_priority_cursor import COMMON_POLICY, available, upgrade
 
+        capture = available(db, learner, budget)
+        policy = (
+            COMMON_POLICY
+            if capture and limit == 1 and goal == "balanced" and minutes is None
+            else None
+        )
         initial = upgrade(
             new_state(db, learner, version, limit, scan_limit, now),
-            capture=available(db, learner, budget),
+            capture=capture,
+            policy=policy,
         )
         return create(initial, goal, minutes, limit)
     selected_minutes = _scope(value, goal, minutes, renew, limit)
@@ -23,6 +30,9 @@ def state(db, value, learner, version, limit, scan_limit, now, goal, minutes, re
 
 
 def _scope(value, goal, minutes, renew, limit):
+    from .curriculum_window_policy import check_window
+
+    check_window(value)
     selected_goal, selected_minutes = options(
         value["goal"] if goal is None else goal,
         value["minutes"] if minutes is None else minutes,

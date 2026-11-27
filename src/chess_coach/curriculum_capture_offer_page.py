@@ -18,7 +18,8 @@ def offer(db, value, item):
         or item.get("kind") != "new"
     ):
         return None
-    return issue(db, state, item, value["goal"], value["expires_at"])
+    window = value if "issued_at" in value else None
+    return issue(db, state, item, value["goal"], value["expires_at"], window=window)
 
 
 def untimed(db, state, page):
