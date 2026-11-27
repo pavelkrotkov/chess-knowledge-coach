@@ -46,23 +46,23 @@ def verify(
 
 
 def _is_thematic(chapter, enabled):
-    if not enabled:
-        return False
     from .tactical_course_thematic import VERSION as THEMATIC_BINDING
 
-    return chapter["source"].get("binding", {}).get("version") == THEMATIC_BINDING
+    return enabled and chapter["source"].get("binding", {}).get("version") == THEMATIC_BINDING
 
 
 def _related(
     db, subject, corpus, selected, saved, budget, modern, thematic, artifact, named, roles
 ):
-    if named:
-        related, _ = current_related(
-            db, subject, corpus, selected, budget, thematic=True, artifact=artifact, named=True
+    if named and selected["kind"] == "fork":
+        from .tactical_course_fork_practice import related as fork_related
+
+        related, _ = fork_related(
+            db, subject, corpus, selected, budget, artifact=artifact, saved=saved["source"]
         )
-    elif _is_thematic(saved, thematic):
+    elif named or _is_thematic(saved, thematic):
         related, _ = current_related(
-            db, subject, corpus, selected, budget, thematic=True, artifact=artifact
+            db, subject, corpus, selected, budget, thematic=True, artifact=artifact, named=named
         )
     else:
         source = None
@@ -75,12 +75,8 @@ def _related(
             related = unfamiliar(
                 db, subject, corpus, selected, familiar_data=familiar_data, **options
             )
-    if related is None:
-        raise ValueError("related source unavailable")
-    if roles:
-        related = {**related, "role": "practice"}
     with budget.scope(snapshot=False):
-        compare(saved, related, gamebook=named)
+        compare(saved, related, gamebook=named, roles=roles)
 
 
 def _selected(db, subject, pattern, lesson, chapter, budget, modern):

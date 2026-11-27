@@ -44,6 +44,9 @@ def _prepare(db, learner, corpus, root, directory, database, requested, old_offe
     if not candidate["preview"]["chapters"]:
         record_empty(directory, database, learner, corpus, requested, old_offer, budget, candidate)
         return
+    from .tactical_course_fork_provenance import retain
+
+    retain(db, root, learner, candidate, budget)
     result = build_export(db, learner, corpus, candidate, budget)
     require_chapters(result)
     path, needed = output(root, directory, result, budget)

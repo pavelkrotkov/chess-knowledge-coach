@@ -11,6 +11,7 @@ from .schema_compat import readonly
 from .tactical_course import (
     DEFAULT_ROLES_VERSION,
     NAMED_VERSION,
+    SELECTED_FORK_VERSION,
     SELECTED_ROLES_VERSION,
     SELECTED_VERSION,
     THEMATIC_SELECTED_VERSION,
@@ -23,7 +24,9 @@ from .tactical_study_preview import preview
 
 
 @contextmanager
-def revalidate(path, envelope, expected, *, with_budget=False, project_root=None):
+def revalidate(
+    path, envelope, expected, *, with_budget=False, project_root=None, subject=None, corpus=None
+):
     saved_preview = preview(envelope, expected)
     connection = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=1)
     connection.row_factory = sqlite3.Row
@@ -36,7 +39,13 @@ def revalidate(path, envelope, expected, *, with_budget=False, project_root=None
             db,
             slice_seconds=SELECTED_SECONDS
             if saved_preview["kind"]
-            in {SELECTED_VERSION, THEMATIC_SELECTED_VERSION, NAMED_VERSION, SELECTED_ROLES_VERSION}
+            in {
+                SELECTED_VERSION,
+                THEMATIC_SELECTED_VERSION,
+                NAMED_VERSION,
+                SELECTED_ROLES_VERSION,
+                SELECTED_FORK_VERSION,
+            }
             else None,
         )
         options = (
@@ -48,13 +57,14 @@ def revalidate(path, envelope, expected, *, with_budget=False, project_root=None
                 NAMED_VERSION,
                 DEFAULT_ROLES_VERSION,
                 SELECTED_ROLES_VERSION,
+                SELECTED_FORK_VERSION,
             }
             else {}
         )
         current = build(
             db,
-            os.environ["CHESS_SUBJECT"],
-            os.environ["CHESS_CORPUS"],
+            subject if subject is not None else os.environ["CHESS_SUBJECT"],
+            corpus if corpus is not None else os.environ["CHESS_CORPUS"],
             saved_preview,
             budget,
             **options,

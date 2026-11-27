@@ -9,8 +9,8 @@ from .opening_queue_write import staged, sync
 ATTEMPTS = 3
 
 
-def _path(directory, key, attempt):
-    return directory / f"opening-public-proof-{key}-{attempt}.json"
+def _path(directory, key, attempt, *, prefix="opening-public-proof"):
+    return directory / f"{prefix}-{key}-{attempt}.json"
 
 
 def _checked(value, key):
@@ -25,11 +25,11 @@ def _checked(value, key):
 
 
 # An existing prepared result is immutable and hash-checked before it is used.
-def latest(directory, key):
+def latest(directory, key, *, prefix="opening-public-proof"):
     for attempt in reversed(range(ATTEMPTS)):
-        value = read(_path(directory, key, attempt))
+        value = read(_path(directory, key, attempt, prefix=prefix))
         if value is not None:
-            path = _path(directory, key, attempt)
+            path = _path(directory, key, attempt, prefix=prefix)
             if path.stat().st_mode & 0o777 != 0o400:
                 raise ValueError("public preparation is not immutable")
             return _checked(value, key)
@@ -37,14 +37,14 @@ def latest(directory, key):
 
 
 # Recheck source and deadline after fsync, immediately before the no-replace link.
-def publish(directory, key, payload, confirm):
-    previous = latest(directory, key)
+def publish(directory, key, payload, confirm, *, prefix="opening-public-proof"):
+    previous = latest(directory, key, prefix=prefix)
     if previous == payload:
         confirm()
         return
     value = {"binding": key, "payload": payload, "sha256": digest(canonical(payload))}
     for attempt in range(ATTEMPTS):
-        path = _path(directory, key, attempt)
+        path = _path(directory, key, attempt, prefix=prefix)
         if path.exists() or path.is_symlink():
             continue
         with staged(path, value) as temporary:

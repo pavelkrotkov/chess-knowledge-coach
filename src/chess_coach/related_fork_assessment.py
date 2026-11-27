@@ -14,16 +14,18 @@ VERSION = "related-fork-assessment-v1"
 SECONDS = 5.0
 
 
-def certificate(db, version, key):
+def certificate(db, version, key, *, check=None):
     board, moves, fingerprint = setup(db, version, key)
-    return certify(board, moves, fingerprint)
+    return certify(board, moves, fingerprint, check=check)
 
 
-def certify(board, moves, fingerprint):
+def certify(board, moves, fingerprint, *, check=None):
     move = board.parse_uci(moves[1])
-    started = time.monotonic()
-    proof = fork_proof(board, move)
-    if time.monotonic() - started > SECONDS or proof is None:
+    started = time.monotonic() if check is None else None
+    proof = fork_proof(board, move) if check is None else fork_proof(board, move, check=check)
+    if check is not None:
+        check()
+    if proof is None or (started is not None and time.monotonic() - started > SECONDS):
         raise ValueError("fork assessment proof unavailable")
     return {
         "version": VERSION,
