@@ -1,5 +1,6 @@
 """Reconstruct FSRS cards while rejecting invalid legacy values."""
 
+import math
 from datetime import datetime
 
 from fsrs import Card, State
@@ -26,3 +27,14 @@ def card_for(row) -> Card:
         due=due,
         last_review=last,
     )
+
+
+def reviewed_card(row, as_of):
+    card = card_for(row)
+    if card.last_review is None or card.last_review > as_of:
+        return None
+    if card.stability is None or not 0 < card.stability < math.inf:
+        return None
+    if card.difficulty is None or not 1 <= card.difficulty <= 10:
+        return None
+    return card

@@ -335,6 +335,23 @@ Selecting a plan changes no schedule or evidence; create an item and complete it
 using the verified practice flow below. Existing ontology edges describe
 containment, not prerequisites.
 
+For a selected due item, the plan reports an estimated recall probability at the
+plan's own as-of time only when that item's last review, scheduler state,
+installed scheduler version and full configuration are compatible. Missing,
+invalid, future or incompatible state makes the estimate unavailable; the item
+remains due. New, unscheduled practice has no item-level recall estimate.
+This is a scheduler prediction, not observed improvement or proof of mastery.
+
+Planning inputs have different coverage. Reviewed, independent evidence can
+support the existing weakness heuristic; unreviewed or sparse evidence cannot.
+Qualified capture and fork contexts can use independent-game opportunity
+coverage and verified, unassisted practice, with incomplete coverage left
+unknown. Corpus and public mate and canonical promotion tasks have their own
+source and completion checks; their availability does not establish comparable
+personal recurrence or expected learning gain. A prerequisite diagnostic is a
+practice suggestion, not a diagnosis. These inputs do not change the priority of
+an already due item.
+
 The private plan also accepts a goal and optional wall-clock practice window:
 
 ```bash

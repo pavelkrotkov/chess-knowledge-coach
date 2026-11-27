@@ -25,7 +25,7 @@ def select(
 
 def _reason(candidate: dict, summary: dict) -> str:
     if candidate["kind"] == "due":
-        return "Scheduled review is due."
+        return _due_reason(candidate)
     if summary["state"] == "supported_weakness":
         return "Verified practice targets a supported mate-in-one weakness."
     if summary["state"] == "cold_start":
@@ -35,3 +35,13 @@ def _reason(candidate: dict, summary: dict) -> str:
     if summary["state"] == "evidence_scan_incomplete":
         return "Verified practice; the bounded evidence scan is incomplete."
     return "Verified practice; no supported weakness is inferred."
+
+
+def _due_reason(candidate):
+    value = candidate["recall"]["probability"]
+    estimate = "unavailable" if value is None else f"{value:.1%}"
+    source = {"own-game": "your game", "public": "a public source"}.get(
+        candidate.get("source_type"), "the puzzle corpus"
+    )
+    objective = candidate["objective"]
+    return f"Scheduled review is due. {objective} Estimated recall for {source}: {estimate}."

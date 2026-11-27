@@ -2938,28 +2938,136 @@ def _daily_capture_workflow(tmp_path, monkeypatch):
     form = page.data.split(b"Capture the queen on d4.", 1)[1].split(b"</form>", 1)[0]
     assert b'name="training" value="1"' in form and b'name="item_id"' not in form
     csrf = token(page, "csrf")
-    response = client.post(
-        "/unified/start",
-        base_url="https://coach.invalid",
-        headers={"Tailscale-User-Login": "login", "Origin": "https://coach.invalid"},
-        data={
-            "csrf": csrf,
-            "source_type": "own-game",
-            "version": capture["source_version"],
-            "key": capture["source_key"],
-            "training": "1",
-        },
+    # Use the real completion writer with a coherent earlier clock, so the item
+    # becomes due again at the normal CLI and private-page clock.
+    from chess_coach import training as training_module
+    from chess_coach import unified_session_state
+    from tests.capture_certificate_fixture import cli as fresh_cli
+
+    reviewed_at = datetime.now(UTC) - timedelta(days=2, minutes=5)
+    fixed_as_of = reviewed_at + timedelta(minutes=5)
+
+    class ReviewClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return reviewed_at.astimezone(tz) if tz else reviewed_at.replace(tzinfo=None)
+
+    with monkeypatch.context() as clock:
+        clock.setattr(training_module, "datetime", ReviewClock)
+        clock.setattr(unified_session_state, "datetime", ReviewClock)
+        response = client.post(
+            "/unified/start",
+            base_url="https://coach.invalid",
+            headers={"Tailscale-User-Login": "login", "Origin": "https://coach.invalid"},
+            data={
+                "csrf": csrf,
+                "source_type": "own-game",
+                "version": capture["source_version"],
+                "key": capture["source_key"],
+                "training": "1",
+            },
+        )
+        assert response.status_code == 303
+        attempt = response.headers["Location"].rstrip("/").rsplit("/", 1)[-1]
+        state = show(db, attempt, LEARNER)
+        item_id = state["learning"]["item_id"]
+        before_review = daily_plan(
+            db,
+            subject=LEARNER,
+            corpus_version="plan-fixture",
+            as_of=fixed_as_of,
+            project_root=root,
+        )
+        initial_item = next(
+            item for item in before_review["items"] if item.get("item_id") == item_id
+        )
+        assert initial_item["kind"] == "due"
+        assert initial_item["recall"]["status"] == "unknown"
+        assert initial_item["recall"]["probability"] is None
+        exemplar = db.connection.execute(
+            "SELECT lines_json FROM unified_sessions WHERE attempt_id=?", (attempt,)
+        ).fetchone()[0]
+        submit(db, attempt, LEARNER, event_id="answer", move=json.loads(exemplar)[0][0])
+        process(db, LEARNER)
+        assert show(db, attempt, LEARNER)["learning"]["item_id"] == item_id
+    completion = db.connection.execute(
+        "SELECT outcome,assistance,response_json FROM unified_training_completions WHERE attempt_id=?",
+        (attempt,),
+    ).fetchone()
+    assert (completion["outcome"], completion["assistance"]) == ("success", "unassisted")
+    assert json.loads(completion["response_json"])["rating"] == "good"
+    after_review = daily_plan(
+        db,
+        subject=LEARNER,
+        corpus_version="plan-fixture",
+        as_of=fixed_as_of,
+        project_root=root,
     )
-    assert response.status_code == 303
-    attempt = response.headers["Location"].rstrip("/").rsplit("/", 1)[-1]
-    state = show(db, attempt, LEARNER)
-    item_id = state["learning"]["item_id"]
-    exemplar = db.connection.execute(
-        "SELECT lines_json FROM unified_sessions WHERE attempt_id=?", (attempt,)
-    ).fetchone()[0]
-    submit(db, attempt, LEARNER, event_id="answer", move=json.loads(exemplar)[0][0])
-    process(db, LEARNER)
-    assert show(db, attempt, LEARNER)["learning"]["item_id"] == item_id
+    assert not any(item.get("item_id") == item_id for item in after_review["items"])
+
+    # The normal interfaces see the same actual due item without changing learning state.
+    tables = (
+        "training_items",
+        "training_attempts",
+        "unified_training_completions",
+        "unified_training_enrollments",
+        "unified_sessions",
+        "evidence_mappings",
+        "mastery_events",
+    )
+    before_read = {
+        name: [tuple(row) for row in db.connection.execute(f"SELECT * FROM {name} ORDER BY rowid")]
+        for name in tables
+    }
+    current = daily_plan(db, subject=LEARNER, corpus_version="plan-fixture", project_root=root)
+    current_item = next(item for item in current["items"] if item.get("item_id") == item_id)
+    assert current_item["kind"] == "due" and current_item["source_type"] == "own-game"
+    assert current_item["recall"]["status"] == "estimated"
+    assert 0 < current_item["recall"]["probability"] <= 1
+    assert current_item["recall"]["as_of"] == current["as_of"]
+    from fsrs import Scheduler
+
+    from chess_coach.training_card import card_for
+
+    saved_card = card_for(
+        db.connection.execute("SELECT * FROM training_items WHERE id=?", (item_id,)).fetchone()
+    )
+    expected = Scheduler(enable_fuzzing=False).get_card_retrievability(
+        saved_card, current_datetime=datetime.fromisoformat(current["as_of"])
+    )
+    assert current_item["recall"]["probability"] == expected
+    output = fresh_cli(
+        path, "daily-plan", "plan-fixture", "--subject", LEARNER, "--project-root", str(root)
+    )
+    cli_plan = json.loads(output.stdout)
+    cli_item = next(item for item in cli_plan["items"] if item.get("item_id") == item_id)
+    assert cli_item["reason"] == current_item["reason"]
+    assert cli_item["recall"]["status"] == "estimated"
+    assert 0 < cli_item["recall"]["probability"] <= 1
+    current_page = client.get(
+        "/plan", base_url="https://coach.invalid", headers={"Tailscale-User-Login": "login"}
+    )
+    assert current_page.status_code == 200
+    assert html.escape(current_item["reason"]).encode() in current_page.data
+    assert before_read == {
+        name: [tuple(row) for row in db.connection.execute(f"SELECT * FROM {name} ORDER BY rowid")]
+        for name in tables
+    }
+
+    # Incompatible saved state changes only the estimate, not due eligibility.
+    db.connection.execute("BEGIN")
+    try:
+        db.connection.execute(
+            "UPDATE training_items SET scheduler_version=? WHERE id=?", ("incompatible", item_id)
+        )
+        incompatible = daily_plan(
+            db, subject=LEARNER, corpus_version="plan-fixture", project_root=root
+        )
+        unknown = next(item for item in incompatible["items"] if item.get("item_id") == item_id)
+        assert unknown["kind"] == "due" and unknown["recall"]["status"] == "unknown"
+        assert unknown["recall"]["probability"] is None
+    finally:
+        db.connection.rollback()
     already = daily_plan(db, subject=LEARNER, corpus_version="plan-fixture")
     assert already["capture_status"] == "already_scheduled"
     assert not any(
