@@ -57,9 +57,14 @@ def checked(db, subject, corpus, check, *, as_of=None):
     from .coaching_quick_pair import build
     from .coaching_quick_practice import choose
     from .fork_plan_history import checked as checked_history
+    from .preview_snapshot import preview_history
 
-    groups, limited, _ = build(db, subject, ("fork", "execute"), check)
-    actions = [choose(db, subject, group, check, source_check=True) for group in groups]
+    with preview_history(db, subject) as history_scope:
+        groups, limited, _ = build(db, subject, ("fork", "execute"), check, _history=history_scope)
+        actions = [
+            choose(db, subject, group, check, source_check=True, _history=history_scope)
+            for group in groups
+        ]
     selected = _source({"groups": groups}, actions)
     if selected is None:
         return None

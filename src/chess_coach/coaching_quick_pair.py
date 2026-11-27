@@ -1,6 +1,7 @@
 """Build one bounded source-checked coaching pattern."""
 
 from collections import Counter, defaultdict
+from contextlib import nullcontext
 
 from .coaching_failures_page import collect_page
 from .coaching_rank import rank
@@ -11,12 +12,12 @@ from .recurrence_sources import evidence
 ROW_LIMIT = 5
 
 
-def build(db, learner, pair, check):
+def build(db, learner, pair, check, *, _history=None):
     check()
     rows, truncated = evidence(db, learner, *pair, MAX_ID, failure_only=True, limit=ROW_LIMIT)
     check()
     groups, excluded, seen = defaultdict(list), Counter(), set()
-    with preview_history(db, learner) as history:
+    with preview_history(db, learner) if _history is None else nullcontext(_history) as history:
         history.targets(row["position_id"] for row in rows)
         collect_page(db, learner, history, rows, groups, excluded, seen, check=check)
         lessons = rank(db, learner, groups, history, check=check)
