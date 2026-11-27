@@ -12,19 +12,22 @@ from .opening_study_source import fingerprint
 from .opening_unfamiliar_guard import check, start
 
 
-def preflight(db, root, subject, choice):
+def preflight(db, root, subject, choice, *, budget=None):
     subject = normalize_identity(subject)
     if subject is None or db.connection.in_transaction:
         raise ValueError("opening launch unavailable")
-    budget = BrowserBudget(db)
+    if budget is None:
+        budget = BrowserBudget(db)
+    elif budget.db is not db:
+        raise ValueError("opening budget belongs to another connection")
     budget.expires = min(budget.expires, time.monotonic() + SECONDS)
     guard = start(db, root, subject)
-    base = inventory(db, root, subject, deadline=budget.expires, annotation=False)
+    base = inventory(db, root, subject, deadline=budget.expires, annotation=False, budget=budget)
     parent, _, _ = selected(base, choice, provisional=False)
     watched = sorted(paths(root, subject, parent))
     before = fingerprint(watched)
     budget.check()
-    report = inventory(db, root, subject, deadline=budget.expires)
+    report = inventory(db, root, subject, deadline=budget.expires, budget=budget)
     current, item, admission = selected(report, choice, provisional=True)
     check(db, root, subject, guard, budget)
     if sorted(paths(root, subject, current)) != watched or fingerprint(watched) != before:
@@ -54,4 +57,5 @@ def preflight(db, root, subject, choice):
         "item": item,
         "choice": choice,
         "admission": admission,
+        "report": report,
     }

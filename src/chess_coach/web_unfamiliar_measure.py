@@ -9,6 +9,10 @@ from .web_db import database
 
 
 def show():
+    if request.args.get("ranked") == "1":
+        from .web_opening_ranked import show as show_ranked
+
+        return show_ranked()
     if request.args.get("contexts") == "1":
         from .web_opening_context import show as show_context
 

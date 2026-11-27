@@ -5168,6 +5168,72 @@ def _conditional_fit_workflow(
         assert cli_parent["fit"] == parent["fit"]
         assert cli_parent["development"] == parent["development"]
         assert b"Provisional learning experiment: e2e3" in page.data
+        original_start_engine = opening_engine.start_engine
+        patch.setattr(
+            opening_engine, "start_engine", lambda *_a, **_k: pytest.fail("engine on course GET")
+        )
+        ranked_client = app.test_client()
+        ranked_headers = {"Tailscale-User-Login": "login"}
+        choices = (
+            ("development", next(item for item in parent["items"] if item["uci"] == "e2e3")),
+            ("fit", next(item for item in parent["items"] if item["uci"] == "g1f3")),
+        )
+        for admission, selected_item in choices:
+            selected_choice = token(selected_item["selection"])
+            patch.setattr(
+                sys,
+                "argv",
+                [
+                    "chess-coach",
+                    "--db",
+                    str(path),
+                    "repertoire",
+                    "--learner",
+                    "learner",
+                    "--context-course",
+                    selected_choice,
+                    "--project-root",
+                    str(root),
+                ],
+            )
+            with redirect_stdout(io.StringIO()) as out:
+                cli.main()
+            course = json.loads(out.getvalue())
+            assert course["schema"] == "unfamiliar-opening-course-v4"
+            assert course["admission"] == admission
+            assert course["selection"] == selected_item["selection"]
+            assert course["parent"]["fit"]["winner"] == "g1f3"
+            assert course["parent"]["development"]["choice"] == "e2e3"
+            assert len(course["parent"]["items"]) == 2
+            assert "Recorded public branches:" in course["explanation"]
+            assert "Rehearsal: replay" in course["explanation"]
+            assert "outside the checked sample remains unknown" in course["explanation"]
+            query = {"ranked": "1", "choice": selected_choice}
+            ranked_page = ranked_client.get(
+                "/repertoire/unfamiliar",
+                query_string=query,
+                base_url="https://coach.invalid",
+                headers=ranked_headers,
+            )
+            assert ranked_page.status_code == 200
+            assert course["version"].encode() in ranked_page.data
+            assert b"ungraded rehearsal" in ranked_page.data
+            exported = ranked_client.get(
+                "/repertoire/unfamiliar",
+                query_string={**query, "download": "1", "version": course["version"]},
+                base_url="https://coach.invalid",
+                headers=ranked_headers,
+            )
+            assert exported.status_code == 200
+            assert exported.get_data(as_text=True) == course["chapters"][0]["pgn"] + "\n"
+            stream = io.StringIO(exported.get_data(as_text=True))
+            game_value = chess.pgn.read_game(stream)
+            assert game_value is not None and not game_value.errors
+            assert game_value.headers["White"] == "White" and game_value.headers["Black"] == "Black"
+            assert len(list(game_value.mainline_moves())) == 4
+            assert "ungraded" in game_value.comment
+            assert chess.pgn.read_game(stream) is None
+        patch.setattr(opening_engine, "start_engine", original_start_engine)
         assert hashlib.sha256(path.read_bytes()).hexdigest() == database_hash
         patch.setattr(public_fork_candidate, "fork_proof", proof_impl)
         high_item = next(item for item in parent["items"] if item["uci"] == "g1f3")
@@ -5178,11 +5244,49 @@ def _conditional_fit_workflow(
         assert tied_parent["development"]["status"] == "tie"
         assert set(tied_parent["development"]["tied"]) == {"e2e3", "g1f3"}
         assert tied_parent["fit"]["winner"] == "g1f3"
+        with patch.context() as no_proof:
+            no_proof.setattr(
+                public_fork_candidate, "fork_proof", lambda *_a, **_k: pytest.fail("proof on GET")
+            )
+            tie_page = ranked_client.get(
+                "/repertoire/unfamiliar",
+                query_string={"ranked": "1", "choice": token(high_item["selection"])},
+                base_url="https://coach.invalid",
+                headers=ranked_headers,
+            )
+        assert tie_page.status_code == 200
+        assert b"developmental examples do not distinguish" in tie_page.data
         review_evidence(db, evidence_ids[0], decision="revoke", actor="anonymous reviewer")
         revoked = inventory(db, root, "learner")
         revoked_parent = next(p for p in revoked["contexts"]["white"]["parents"] if not p["path"])
         assert revoked_parent["development"]["reason"] == "fewer_than_two_reviewed_miss_games"
         assert revoked_parent["development"]["owned"]["excluded"]["review_revoked"] == 1
+        stale_course = ranked_client.get(
+            "/repertoire/unfamiliar",
+            query_string={"ranked": "1", "choice": choice},
+            base_url="https://coach.invalid",
+            headers=ranked_headers,
+        )
+        assert stale_course.status_code == 409
+        patch.setattr(
+            sys,
+            "argv",
+            [
+                "chess-coach",
+                "--db",
+                str(path),
+                "repertoire",
+                "--learner",
+                "learner",
+                "--context-course",
+                choice,
+                "--project-root",
+                str(root),
+            ],
+        )
+        with redirect_stdout(io.StringIO()) as out:
+            cli.main()
+        assert json.loads(out.getvalue())["status"] == "unavailable"
         review_evidence(db, evidence_ids[0], decision="accept", actor="anonymous reviewer")
         scores["e2e3"] = 99
         low_item = next(item for item in parent["items"] if item["uci"] == "e2e3")
@@ -5195,6 +5299,13 @@ def _conditional_fit_workflow(
         assert parent["fit"]["reason"] == "fewer_than_two_admitted"
         assert parent["fit"]["choices"]["e2e3"] == "materially_worse"
         assert "e2e3" in parent["development"]["rejected"]
+        changed_course = ranked_client.get(
+            "/repertoire/unfamiliar",
+            query_string={"ranked": "1", "choice": choice},
+            base_url="https://coach.invalid",
+            headers=ranked_headers,
+        )
+        assert changed_course.status_code == 409
         fake_engine.write_text("#!/bin/sh\nexit 1\n")
         stale = inventory(db, root, "learner")
         parent = next(p for p in stale["contexts"]["white"]["parents"] if not p["path"])

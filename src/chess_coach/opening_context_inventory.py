@@ -17,9 +17,10 @@ from .style_schedule_budget import LIMIT as HISTORY_LIMIT
 SECONDS = 25
 
 
-def inventory(db, root, learner, *, deadline=None, annotation=None):
-    budget = BrowserBudget(db)
-    budget.expires = min(budget.expires, time.monotonic() + SECONDS)
+def inventory(db, root, learner, *, deadline=None, annotation=None, budget=None):
+    if budget is None:
+        budget = BrowserBudget(db)
+        budget.expires = min(budget.expires, time.monotonic() + SECONDS)
     if deadline is not None:
         budget.expires = min(budget.expires, deadline)
     subject = normalize_identity(learner)

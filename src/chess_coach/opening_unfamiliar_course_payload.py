@@ -22,7 +22,7 @@ def payload(report, selection, measurement):
     return payload, legacy_version
 
 
-def result(payload, selection, legacy_version):
+def result(payload, selection, legacy_version, decision=None):
     value = {
         "version": digest(canonical(payload)),
         "report": payload["report"],
@@ -32,4 +32,16 @@ def result(payload, selection, legacy_version):
         value["selection"] = selection
     if "measurement" in payload:
         value.update(measurement=payload["measurement"], legacy_version=legacy_version)
+    if decision is not None:
+        value["_decision"] = decision
     return value
+
+
+def legacy_from(value):
+    selection = value["selection"]
+    old_payload, old_version = payload(value["report"], selection, None)
+    if old_version != value.get("legacy_version"):
+        raise ValueError("previous opening version differs")
+    old = result(old_payload, selection, old_version)
+    old["_measurement_source"] = value["measurement"]["source_identity"]
+    return old
