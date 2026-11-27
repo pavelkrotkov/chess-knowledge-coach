@@ -5652,9 +5652,9 @@ def _fork_capture_common_workflow(tmp_path, monkeypatch):
     from chess_coach.curriculum_window_offer_check import check as check_offer
     from chess_coach.opening_queue_budget import BrowserBudget
 
-    first_cutoff = datetime(2026, 1, 10, 12, 0, 0, 500000, tzinfo=UTC)
-    one_family_cutoff = datetime(2026, 1, 10, 12, 0, 2, 500000, tzinfo=UTC)
-    both_cutoff = datetime(2026, 1, 10, 12, 0, 4, 500000, tzinfo=UTC)
+    first_cutoff = datetime(2026, 1, 10, 12, 0, 36, 500000, tzinfo=UTC)
+    one_family_cutoff = datetime(2026, 1, 10, 12, 0, 39, 500000, tzinfo=UTC)
+    both_cutoff = datetime(2026, 1, 10, 12, 0, 40, 500000, tzinfo=UTC)
     before_cutoff_reads = db.connection.total_changes
     early = daily_plan(
         db,
@@ -5673,10 +5673,8 @@ def _fork_capture_common_workflow(tmp_path, monkeypatch):
     _, one_family = observe_common(
         db, LEARNER, "common", root, one_family_cutoff.isoformat(), lambda: None
     )
-    assert one_family["options"] and one_family["fork"] is None
-    assert all(
-        item["source_evidence_id"] in evidence["capture"][:2] for item, _ in one_family["options"]
-    )
+    assert not one_family["options"] and one_family["fork"] is not None
+    assert one_family["fork"]["source_evidence_id"] in evidence["fork"]
     single = daily_plan(
         db,
         subject=LEARNER,
@@ -5687,13 +5685,13 @@ def _fork_capture_common_workflow(tmp_path, monkeypatch):
     )
     for candidate in single["items"]:
         if candidate.get("source_type") == "own-game":
-            assert candidate["skill"] == "hanging_piece"
-            assert int(candidate["source_key"]) in evidence["capture"][:2]
+            assert candidate["skill"] == "fork"
+            assert int(candidate["source_key"]) in evidence["fork"]
 
     _, both = observe_common(db, LEARNER, "common", root, both_cutoff.isoformat(), lambda: None)
     assert both["options"] and both["fork"] is not None
-    assert all(item["source_evidence_id"] in evidence["capture"][:3] for item, _ in both["options"])
-    assert both["fork"]["source_evidence_id"] in evidence["fork"][:2]
+    assert all(item["source_evidence_id"] in evidence["capture"] for item, _ in both["options"])
+    assert both["fork"]["source_evidence_id"] in evidence["fork"]
     past_page = daily_plan(
         db,
         subject=LEARNER,
@@ -5719,7 +5717,7 @@ def _fork_capture_common_workflow(tmp_path, monkeypatch):
             break
         assert past_page["next_cursor"]
     past_item = past_page["items"][0]
-    eligible = {"hanging_piece": evidence["capture"][:3], "fork": evidence["fork"][:2]}
+    eligible = {"hanging_piece": evidence["capture"], "fork": evidence["fork"]}
     assert past_item["source_type"] == "own-game"
     assert int(past_item["source_key"]) in eligible[past_item["skill"]]
     offer = past_item["window_offer"]
