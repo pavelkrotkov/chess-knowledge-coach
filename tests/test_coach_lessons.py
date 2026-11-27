@@ -1105,6 +1105,14 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
                 tactical_course.CURRENT_PAIRS,
                 None,
             )
+        chosen = tactical_course.pairs(selected)
+        if chosen == [("hanging_piece", "execute")]:
+            return (
+                tactical_course.NAMED_VERSION,
+                tactical_course.NAMED_POLICY,
+                chosen,
+                tactical_course.SELECTED_SECONDS,
+            )
         return current_policy(selected)
 
     monkeypatch.setattr(tactical_course, "_policy", legacy_policy)
@@ -2136,6 +2144,103 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
         finally:
             offer_slot.write_bytes(old_offer)
             request_file.write_bytes(old_request)
+    # The real selected contract uses the same roles before related practice is served.
+    with monkeypatch.context() as current_selected:
+        current_selected.setattr(tactical_course, "_policy", current_policy)
+        selected_roles = build_course(
+            db,
+            LEARNER,
+            "test",
+            selected=["hanging_piece:execute"],
+            budget=Budget(db, slice_seconds=SELECTED_SECONDS),
+        )
+        assert selected_roles["kind"] == "local-tactical-course-v10"
+        assert canonical(selected_roles["preview"]["chapters"]) == canonical(
+            default_course["preview"]["chapters"]
+        )
+        assert selected_roles["preview"]["selection"]["pairs"] == [["hanging_piece", "execute"]]
+        assert selected_roles["preview"]["selection"]["related_match_seconds"] == SELECTED_SECONDS
+        selected_roles_export = build_export(
+            db, LEARNER, "test", selected_roles, Budget(db, slice_seconds=SELECTED_SECONDS)
+        )
+        assert selected_roles_export["kind"] == "local-tactical-course-export-v10"
+        assert (
+            study_preview(selected_roles_export, selected_roles_export["export_sha256"])
+            == selected_roles
+        )
+        with study_revalidate(
+            path,
+            selected_roles_export,
+            selected_roles_export["export_sha256"],
+            project_root=project,
+        ) as check:
+            check()
+        with pytest.raises(ValueError, match="selected course work policy differs"):
+            build_export(db, LEARNER, "test", selected_roles, Budget(db))
+        selected_tampered = json.loads(json.dumps(selected_roles))
+        selected_tampered["preview"]["chapters"][0]["source"]["evidence_id"] += 1
+        selected_tampered["preview_sha256"] = preview_hash(selected_tampered["preview"])
+        with pytest.raises(ValueError, match="course chapter differs"):
+            build_export(
+                db, LEARNER, "test", selected_tampered, Budget(db, slice_seconds=SELECTED_SECONDS)
+            )
+        selected_mixed = json.loads(json.dumps(selected_roles))
+        selected_mixed["preview"]["selection"]["pairs"].append(["fork", "execute"])
+        selected_mixed["preview_sha256"] = preview_hash(selected_mixed["preview"])
+        with pytest.raises(ValueError, match="named capture selection differs"):
+            build_export(
+                db, LEARNER, "test", selected_mixed, Budget(db, slice_seconds=SELECTED_SECONDS)
+            )
+        selected_missing = build_course(
+            db,
+            LEARNER,
+            "not-configured",
+            selected=["hanging_piece:execute"],
+            budget=Budget(db, slice_seconds=SELECTED_SECONDS),
+        )
+        assert [part["role"] for part in selected_missing["preview"]["chapters"]] == [
+            "explanation",
+            "worked",
+        ]
+        assert selected_missing["preview"]["selection"]["unavailable"][0]["reason"] == (
+            "related corpus or compatible unfamiliar example unavailable"
+        )
+        assert build_export(
+            db,
+            LEARNER,
+            "not-configured",
+            selected_missing,
+            Budget(db, slice_seconds=SELECTED_SECONDS),
+        )
+        selected_preview_path = planning / "selected-roles-preview.json"
+        selected_preview_path.write_text(json.dumps(selected_roles))
+        selected_preview_path.chmod(0o600)
+        selected_output_path = planning / "selected-roles-export.json"
+        export_candidate(
+            project, selected_preview_path, selected_roles["preview_sha256"], selected_output_path
+        )
+        assert canonical(json.loads(selected_output_path.read_text())) == canonical(
+            selected_roles_export
+        )
+        old_offer, old_request = offer_slot.read_bytes(), request_file.read_bytes()
+        try:
+            response = course_client.post(
+                local_url,
+                data={"csrf": course_csrf, "mode": "selected", "pair": "hanging_piece:execute"},
+                base_url="https://coach.invalid",
+                headers=post_headers,
+            )
+            assert response.status_code == 303
+            tactical_course_worker.run(db, LEARNER, project)
+            roles_offer_bytes = offer_slot.read_bytes()
+            roles_offer = json.loads(roles_offer_bytes)
+            roles_worker = json.loads((planning / roles_offer["file"]).read_text())
+            assert canonical(roles_worker) == canonical(selected_roles_export)
+        finally:
+            offer_slot.write_bytes(old_offer)
+            request_file.write_bytes(old_request)
+
+    # Reconstruct the released v8 contract through its actual two-role builder.
     named = build_course(
         db,
         LEARNER,
@@ -2371,6 +2476,36 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
                 (default_offer["hash"],),
             ).fetchone()
             is not None
+        )
+    finally:
+        offer_slot.write_bytes(prior_offer)
+    # The actual selected v10 view and download record their own exposure.
+    try:
+        offer_slot.write_bytes(roles_offer_bytes)
+        selected_page = course_client.get(
+            course_url + "?version=" + roles_offer["hash"] + "&chapter=2",
+            base_url="https://coach.invalid",
+            headers=course_headers,
+        )
+        assert selected_page.status_code == 200
+        assert b"Open related capture practice in the coach" in selected_page.data
+        assert (
+            db.connection.execute(
+                "SELECT 1 FROM tactical_exposures WHERE artifact_hash=? AND chapter_index=2 AND kind='served'",
+                (roles_offer["hash"],),
+            ).fetchone()
+            is not None
+        )
+        selected_download = course_client.get(
+            course_url + "?download=1&version=" + roles_offer["hash"],
+            base_url="https://coach.invalid",
+            headers=course_headers,
+        )
+        assert selected_download.status_code == 200
+        assert (
+            selected_download.get_data(as_text=True)
+            == "\n\n".join(part["pgn"] for part in selected_roles_export["export"]["chapters"])
+            + "\n"
         )
     finally:
         offer_slot.write_bytes(prior_offer)
