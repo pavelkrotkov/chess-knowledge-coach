@@ -2975,6 +2975,18 @@ def _daily_capture_workflow(tmp_path, monkeypatch):
     )
     assert due_plan["items"] and due_plan["items"][0]["kind"] == "due"
     assert all(item["kind"] != "new" for item in due_plan["items"])
+    timed_due = daily_plan(
+        db,
+        subject=LEARNER,
+        corpus_version="plan-fixture",
+        limit=1,
+        as_of=datetime.now(UTC) + timedelta(days=2),
+        goal="balanced",
+        duration_minutes=5,
+        project_root=root,
+    )
+    assert timed_due["items"] and timed_due["items"][0]["kind"] == "due"
+    assert all(item["kind"] != "new" for item in timed_due["items"])
     again = daily_plan(
         db,
         subject=LEARNER,
@@ -5739,6 +5751,19 @@ def _fork_capture_common_workflow(tmp_path, monkeypatch):
         db, subject=LEARNER, corpus_version="common", limit=1, as_of=as_of, project_root=root
     )
     assert baseline["items"][0]["skill"] == "hanging_piece"
+    timed_baseline = daily_plan(
+        db,
+        subject=LEARNER,
+        corpus_version="common",
+        limit=1,
+        as_of=as_of,
+        duration_minutes=5,
+        project_root=root,
+    )
+    assert timed_baseline["window"]["goal"] == "balanced"
+    assert timed_baseline["window"]["expires_at"] is not None
+    assert timed_baseline["items"][0]["source_key"] == baseline["items"][0]["source_key"]
+    assert timed_baseline["items"][0]["reason"] == baseline["items"][0]["reason"]
     from chess_coach.curriculum_cursor_codec import decode_cursor
     from chess_coach.curriculum_priority_cursor import COMMON_POLICY
 
@@ -5979,6 +6004,72 @@ def _fork_capture_common_workflow(tmp_path, monkeypatch):
             assert goal_plan["items"][0]["source_key"] == item["source_key"]
             assert goal_plan["items"][0]["reason"] == item["reason"]
             assert _decode(db, goal_plan["items"][0]["window_offer"])[0] == COMMON_WINDOW_POLICY
+            timed_started = time.monotonic()
+            timed_plan = daily_plan(
+                db,
+                subject=LEARNER,
+                corpus_version="common",
+                limit=1,
+                as_of=as_of,
+                goal="balanced",
+                duration_minutes=5,
+                project_root=root,
+            )
+            assert time.monotonic() - timed_started < 2.0
+            assert timed_plan["window"]["expires_at"] is not None
+            assert timed_plan["items"][0]["source_key"] == item["source_key"]
+            assert timed_plan["items"][0]["reason"] == item["reason"]
+            timed_binding = _decode(db, timed_plan["items"][0]["window_offer"])
+            assert timed_binding[0] == COMMON_WINDOW_POLICY
+            assert timed_binding[7]["as_of"] == as_of.isoformat()
+            timed_partial = daily_plan(
+                db,
+                subject=LEARNER,
+                corpus_version="common",
+                limit=1,
+                scan_limit=1,
+                as_of=as_of,
+                goal="balanced",
+                duration_minutes=5,
+                project_root=root,
+            )
+            assert not timed_partial["items"] and timed_partial["window_cursor"]
+            timed_continued = daily_plan(
+                db,
+                subject=LEARNER,
+                corpus_version="common",
+                limit=1,
+                scan_limit=1,
+                as_of=as_of,
+                goal="balanced",
+                duration_minutes=5,
+                cursor=timed_partial["window_cursor"],
+                project_root=root,
+            )
+            assert timed_continued["items"][0]["source_key"] == str(fork_id)
+            assert timed_continued["items"][0]["reason"] == timed_plan["items"][0]["reason"]
+            timed_renewed = daily_plan(
+                db,
+                subject=LEARNER,
+                corpus_version="common",
+                limit=1,
+                scan_limit=1,
+                as_of=as_of,
+                goal="balanced",
+                duration_minutes=7,
+                renew=True,
+                cursor=timed_partial["window_cursor"],
+                project_root=root,
+            )
+            assert timed_renewed["items"][0]["source_key"] == str(fork_id)
+            assert timed_renewed["items"][0]["reason"] == timed_plan["items"][0]["reason"]
+            assert not timed_renewed["window"]["source_refreshed"]
+            assert timed_renewed["window"]["minutes"] == 7
+            assert timed_renewed["window"]["expires_at"] != timed_partial["window"]["expires_at"]
+            assert (
+                _decode(db, timed_renewed["items"][0]["window_offer"])[7]["as_of"]
+                == as_of.isoformat()
+            )
             goal_partial = daily_plan(
                 db,
                 subject=LEARNER,
@@ -6057,6 +6148,53 @@ def _fork_capture_common_workflow(tmp_path, monkeypatch):
                     project_root=root,
                 )
                 assert refreshed["window"]["source_refreshed"]
+                with pytest.raises(ValueError, match="common practice changed"):
+                    daily_plan(
+                        db,
+                        subject=LEARNER,
+                        corpus_version="common",
+                        limit=1,
+                        scan_limit=1,
+                        as_of=as_of,
+                        goal="balanced",
+                        duration_minutes=5,
+                        cursor=timed_partial["window_cursor"],
+                        project_root=root,
+                    )
+                timed_refreshed = daily_plan(
+                    db,
+                    subject=LEARNER,
+                    corpus_version="common",
+                    limit=1,
+                    scan_limit=1,
+                    as_of=as_of,
+                    goal="balanced",
+                    duration_minutes=5,
+                    renew=True,
+                    cursor=timed_partial["window_cursor"],
+                    project_root=root,
+                )
+                assert timed_refreshed["window"]["source_refreshed"]
+                for _ in range(4):
+                    if timed_refreshed["items"]:
+                        break
+                    assert timed_refreshed["window_cursor"]
+                    timed_refreshed = daily_plan(
+                        db,
+                        subject=LEARNER,
+                        corpus_version="common",
+                        limit=1,
+                        scan_limit=1,
+                        as_of=as_of,
+                        goal="balanced",
+                        duration_minutes=5,
+                        cursor=timed_refreshed["window_cursor"],
+                        project_root=root,
+                    )
+                assert timed_refreshed["items"], timed_refreshed
+                new_offer = timed_refreshed["items"][0]["window_offer"]
+                assert _decode(db, new_offer)[0] == COMMON_WINDOW_POLICY
+                assert new_offer != timed_plan["items"][0]["window_offer"]
             finally:
                 artifact.write_bytes(artifact_bytes)
             command = fresh_cli(
@@ -6103,6 +6241,31 @@ def _fork_capture_common_workflow(tmp_path, monkeypatch):
             goal_cli_item = json.loads(goal_cli.stdout)["items"][0]
             assert goal_cli_item["source_key"] == str(fork_id)
             assert goal_cli_item["reason"] == goal_plan["items"][0]["reason"]
+            timed_cli = fresh_cli(
+                path,
+                "daily-plan",
+                "common",
+                "--subject",
+                LEARNER,
+                "--limit",
+                "1",
+                "--goal",
+                "balanced",
+                "--minutes",
+                "5",
+                "--project-root",
+                str(root),
+                proof_free_candidates=True,
+                proof_free_forks=True,
+                check=False,
+            )
+            assert timed_cli.returncode == 0, (
+                f"CLI exit={timed_cli.returncode}; parent transaction={db.connection.in_transaction}; "
+                f"stderr={timed_cli.stderr!r}; stdout={timed_cli.stdout!r}"
+            )
+            timed_cli_item = json.loads(timed_cli.stdout)["items"][0]
+            assert timed_cli_item["source_key"] == timed_plan["items"][0]["source_key"]
+            assert timed_cli_item["reason"] == timed_plan["items"][0]["reason"]
             started = time.monotonic()
             client = app.test_client()
             goal_page = client.get(
@@ -6123,6 +6286,25 @@ def _fork_capture_common_workflow(tmp_path, monkeypatch):
                 and value.get("training") == "1"
             )
             assert _decode(db, goal_form["window_offer"])[0] == COMMON_WINDOW_POLICY
+            started = time.monotonic()
+            timed_page = client.get(
+                "/plan?goal=balanced&minutes=5&limit=1",
+                base_url="https://coach.invalid",
+                headers={"Tailscale-User-Login": "fixture"},
+            )
+            assert timed_page.status_code == 200 and time.monotonic() - started < 2.0
+            assert html.escape(timed_plan["items"][0]["reason"]).encode() in timed_page.data
+            timed_forms = Forms()
+            timed_forms.feed(timed_page.get_data(as_text=True))
+            timed_form = next(
+                value
+                for value in timed_forms.forms
+                if value.get("key") == str(fork_id)
+                and value.get("window_offer")
+                and value.get("training") == "1"
+            )
+            timed_token = _decode(db, timed_form["window_offer"])
+            assert timed_token[0] == COMMON_WINDOW_POLICY and timed_token[3] is not None
             from chess_coach.curriculum_window_legacy import start as start_legacy
 
             with pytest.raises(ValueError):
@@ -6134,6 +6316,72 @@ def _fork_capture_common_workflow(tmp_path, monkeypatch):
                     "legacy-goal-refusal",
                     goal_form["window_offer"],
                 )
+            with pytest.raises(ValueError):
+                start_legacy(
+                    db,
+                    LEARNER,
+                    "common",
+                    "common-scheduled-a",
+                    "legacy-timed-refusal",
+                    timed_form["window_offer"],
+                )
+
+            # Expiry after the real enrollment must roll back the timed start.
+            from chess_coach import curriculum_window_scope, unified_training_enroll
+            from chess_coach.mastery_time import parse_utc
+
+            deadline = parse_utc(timed_token[3])
+            assert deadline is not None
+            wall = [deadline - timedelta(seconds=1)]
+            real_enroll = unified_training_enroll.enroll_if_requested
+
+            def expire_after_enroll(*args, **kwargs):
+                result = real_enroll(*args, **kwargs)
+                wall[0] = deadline
+                return result
+
+            with monkeypatch.context() as expiry:
+                expiry.setattr(curriculum_window_scope, "clock", lambda: wall[0])
+                expiry.setattr(unified_training_enroll, "enroll_if_requested", expire_after_enroll)
+                expired = client.post(
+                    "/unified/start",
+                    data=timed_form,
+                    base_url="https://coach.invalid",
+                    headers={"Tailscale-User-Login": "fixture", "Origin": "https://coach.invalid"},
+                )
+            assert expired.status_code == 400 and wall[0] == deadline
+            assert before == {
+                name: observer.execute(f"SELECT * FROM {name} ORDER BY rowid").fetchall()
+                for name in tables
+            }
+
+            def publish_timed_after_enroll(*args, **kwargs):
+                result = real_enroll(*args, **kwargs)
+                artifact.write_bytes(b"{}")
+                return result
+
+            try:
+                with monkeypatch.context() as race:
+                    race.setattr(
+                        unified_training_enroll, "enroll_if_requested", publish_timed_after_enroll
+                    )
+                    refused = client.post(
+                        "/unified/start",
+                        data=timed_form,
+                        base_url="https://coach.invalid",
+                        headers={
+                            "Tailscale-User-Login": "fixture",
+                            "Origin": "https://coach.invalid",
+                        },
+                    )
+                assert refused.status_code == 400 and artifact.read_bytes() == b"{}"
+                assert before == {
+                    name: observer.execute(f"SELECT * FROM {name} ORDER BY rowid").fetchall()
+                    for name in tables
+                }
+            finally:
+                artifact.write_bytes(artifact_bytes)
+
             started = time.monotonic()
             plan_page = client.get(
                 "/plan?limit=1",

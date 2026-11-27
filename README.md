@@ -350,8 +350,12 @@ project root, two eligible capture choices can be ordered using their current,
 unassisted verified practice only when both share the same recorded context and
 have different outcomes. This favors an unmet named capture over a verified
 successful one; a tie or incomplete comparison keeps the existing source order.
-Source-specific dated opportunity importance remains unknown. These observations
-do not establish mastery, a practice effect, or rating gain. For CLI plans,
+Source-specific dated opportunity importance remains unknown for that capture
+comparison. Balanced plans with a limit of one, with or without a timed window,
+can also prioritize an independently qualified capture or fork source when
+compatible recorded first unassisted assessments support a met-versus-unmet
+comparison. Unknown, stale or tied inputs retain the existing order. These
+observations do not establish mastery, a practice effect, or rating gain. For CLI plans,
 pass `--project-root "$PWD"` to use this capture-practice policy.
 Owned capture sources require a current certificate produced by the bounded
 worker; missing certificates remain unavailable while backfill is pending.
@@ -370,8 +374,10 @@ the plan and renew. A complete bounded schedule check retains started work and
 can offer a still-eligible, unstarted task again with a fresh token. If that
 check is incomplete, renewal refuses rather than assuming it was unstarted.
 Previously started work can return as due review. A single continuation retains at most 50 prompt
-identities; start a fresh plan after that limit. Omitting goal and minutes
-keeps the existing plan and older cursor behavior.
+identities; start a fresh plan after that limit. Existing signed cursors retain
+their original policies. To change a no-duration common window to a timed
+window, start a fresh plan; a timed window can be renewed with a timed duration.
+Omitting goal and minutes keeps the existing plan and older cursor behavior.
 
 ## Verified puzzle practice
 

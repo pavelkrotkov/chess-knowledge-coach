@@ -1,4 +1,4 @@
-"""Recheck a signed untimed common-choice offer at the learning boundary."""
+"""Recheck a signed common-choice offer at the learning boundary."""
 
 from .curriculum_capture_offer_check import _bounded
 from .curriculum_capture_offer_scope import require_revision, scope

@@ -17,7 +17,7 @@ def checked_renew(db, value, learner, version, scan_limit, now, minutes, budget)
     from .curriculum_priority_cursor import CAPTURE_POLICIES
 
     policy = state.get("priority_policy")
-    common_renewal(policy, minutes, budget)
+    common_renewal(policy, value["minutes"], minutes, budget)
     root = getattr(budget, "project_root", None)
     if policy in CAPTURE_POLICIES:
         from .curriculum_capture_file_guard import for_policy

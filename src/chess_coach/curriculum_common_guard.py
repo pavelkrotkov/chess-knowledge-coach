@@ -1,4 +1,4 @@
-"""Bind an untimed comparison before due observation and on continuation."""
+"""Bind a common comparison before due observation and on continuation."""
 
 from .curriculum_capture_inputs import current as capture_inputs
 from .curriculum_common_cursor import bind_input
