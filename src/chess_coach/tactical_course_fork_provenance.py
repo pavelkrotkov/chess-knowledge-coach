@@ -1,5 +1,7 @@
 """Retain a worker's fork assessment independently from course envelopes."""
 
+from pathlib import Path
+
 from .deep_selection_source import learner_key
 from .fact_fingerprint import canonical, digest
 from .opening_public_proof import PUBLICATION_WORKING
@@ -45,7 +47,12 @@ def current(root, database, subject, corpus, envelope, version, kind):
 
     try:
         with revalidate(
-            database, envelope, version, project_root=root, subject=subject, corpus=corpus
+            Path(database).resolve(strict=True),
+            envelope,
+            version,
+            project_root=root,
+            subject=subject,
+            corpus=corpus,
         ):
             pass
     except PreviewDeadline:
