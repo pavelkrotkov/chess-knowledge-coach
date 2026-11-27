@@ -8,6 +8,7 @@ from .opening_public_proof_files import publish
 from .opening_public_proof_read import view
 from .opening_public_proof_source import PROOF_SECONDS, SECONDS, binding
 from .opening_public_proof_window import evaluate, select
+from .opening_public_protection_policy import protection as protection_policy
 from .opening_queue_files import MAX_BYTES
 from .opening_recent_capacity import check as capacity
 from .style_schedule_budget import history_budget
@@ -27,6 +28,7 @@ def prepare(
     forks=False,
     fork_window="initial",
     prevent=False,
+    protection=False,
 ):
     start = time.monotonic()
     deadline = start + SECONDS
@@ -40,7 +42,15 @@ def prepare(
                 db, root, subject, game_id, position_id, alternative, deadline
             )
         base = identity
-        identity, full = select(base, root, subject, deadline, forks, fork_window, prevent=prevent)
+        if protection:
+            identity, full = (
+                protection_policy(base, forks=forks, prevent=prevent, window=fork_window),
+                None,
+            )
+        else:
+            identity, full = select(
+                base, root, subject, deadline, forks, fork_window, prevent=prevent
+            )
         result, sample, later_sample = evaluate(
             index, base, identity, full, start, start + PROOF_SECONDS
         )

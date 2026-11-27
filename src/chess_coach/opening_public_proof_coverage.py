@@ -31,7 +31,14 @@ def unavailable():
 def _inspect(connection, row, binding, move, start, deadline, result, fork_budget):
     try:
         result["censored"] += int(_end(binding["ply"], row[1])[1] != "ended")
-        observed = replay(connection, row, binding, move, start, deadline, fork_budget=fork_budget)
+        if "protection" in binding["policy"]:
+            from .opening_public_protection_replay import replay as protection_replay
+
+            observed = protection_replay(connection, row, binding, move, start, deadline)
+        else:
+            observed = replay(
+                connection, row, binding, move, start, deadline, fork_budget=fork_budget
+            )
     except TimeoutError:
         return False
     except sqlite3.OperationalError:

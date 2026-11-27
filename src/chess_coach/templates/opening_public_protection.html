@@ -1,0 +1,17 @@
+<h3>Prepared public piece protection</h3>
+<p>These recorded defenses use a bounded immediate-threat check. They do not establish mistakes, preferences, overall safety, compensation, or learner progress. Other positions and later play remain unknown.</p>
+{% if prepared and prepared.protection_policy is defined %}
+<p>The checked source retained {{ prepared.sample.accepted }} independently deduplicated games from {{ prepared.sample.examined }} examined{% if prepared.sample.truncated %}; the source prefix was truncated{% endif %}.</p>
+{% for label, branch in (("Played", prepared.branches.played), ("Alternative", prepared.branches.alternative)) %}
+<section><h4>{{ label }} branch</h4>
+{% if branch.eligible is none %}<p>Matching context or preparation is unavailable; counts are unknown.</p>{% else %}
+<p>Eligible: {{ branch.eligible }}; selected: {{ branch.selected }}; analyzed: {{ branch.analyzed }}; with a supported defense: {{ branch.supported }}; unsupported: {{ branch.unsupported }}; censored by a window or source frontier: {{ branch.censored }}; preparation incomplete: {{ branch.preparation_incomplete }}{% if branch.interrupted %}; the shared deadline interrupted preparation{% endif %}. These counts can overlap. {% if branch.more_eligible %}Additional eligible games were outside the ten-game cap.{% endif %}</p>
+{% if branch.example %}<p><a href="{{ branch.example.source }}">Public defense example</a>, record {{ branch.example.record }}, ply {{ branch.example.ply }}: the recorded move {{ branch.example.recorded_san }} defended the {{ branch.example.target_piece }} originally on {{ branch.example.target }} from the checked immediate profitable capture. Other threats, longer replies and compensation remain unknown.</p>{% else %}<p>No supported defense example is available in the completed checks; unchecked positions remain unknown.</p>{% endif %}
+{% endif %}</section>
+{% endfor %}
+<details><summary>Source and analysis details</summary>
+<p><a href="{{ prepared.reference.source_archive }}">Rated-game source</a> · <a href="{{ prepared.reference.license_url }}">{{ prepared.reference.license }}</a>. Prefix SHA-256: <code>{{ prepared.reference.source_sha256 }}</code>. The retained prefix does not verify the whole archive. {{ prepared.reference.filters }}.</p>
+<p>Verifier {{ prepared.protection_policy.verifier }}; objective {{ prepared.protection_policy.objective }}. At most {{ prepared.protection_policy.capture_limit }} named captures, {{ prepared.protection_policy.reply_limit }} replies, {{ prepared.protection_policy.exchange_nodes }} exchange nodes and {{ prepared.protection_policy.exchange_plies }} exchange plies. The shared proof and operation limits are {{ prepared.protection_policy.proof_seconds }} and {{ prepared.protection_policy.shared_seconds }} seconds.</p>
+{% for label, branch in (("Played", prepared.branches.played), ("Alternative", prepared.branches.alternative)) %}{% if branch.example %}<p>{{ label }}: original history SHA-256 <code>{{ branch.example.history_sha256 }}</code>; source/context SHA-256 <code>{{ branch.example.record_hash }}</code>.</p>{% endif %}{% endfor %}
+</details>
+{% else %}<p>No current protection preparation is available for this exact pair. Its coverage is unknown; preparation is an offline action.</p>{% endif %}

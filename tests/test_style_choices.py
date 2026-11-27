@@ -3411,6 +3411,264 @@ def _opening_fit_route(monkeypatch, tmp_path):
                     hashlib.sha256(prevention_db_path.read_bytes()).hexdigest()
                     == prevention_db_hash
                 )
+
+                # Qualify real recorded defenses from separate standard-start public games.
+                protection_root = tmp_path / "public-protection"
+                protection_planning = protection_root / ".runtime" / "planning"
+                protection_data = protection_root / ".runtime" / "data"
+                protection_planning.mkdir(parents=True, mode=0o700)
+                protection_data.mkdir(mode=0o700)
+                protection_db_path = protection_data / "synthetic.sqlite"
+                source_connection = real_connect(db_path)
+                destination_connection = real_connect(protection_db_path)
+                source_connection.backup(destination_connection)
+                destination_connection.close()
+                source_connection.close()
+                with cli.context() as setup:
+                    setup.setattr(sqlite3, "connect", real_connect)
+                    protection_db = Database(protection_db_path)
+                    black_pgn = (
+                        '[Event "Protection fixture"]\n[White "synthetic opponent"]\n'
+                        '[Black "learner"]\n[UTCDate "2026.01.02"]\n'
+                        '[UTCTime "12:05:00"]\n[TimeControl "600+0"]\n[Result "*"]\n\n'
+                        "1. e4 e5 2. Nc3 Nf6 3. d3 Bb4 4. a3 Ba5 *\n"
+                    )
+                    ingest_pgn(protection_db, black_pgn)
+                    black_game = protection_db.connection.execute(
+                        "SELECT max(id) FROM games"
+                    ).fetchone()[0]
+                    black_position = protection_db.connection.execute(
+                        "SELECT id FROM positions WHERE game_id=? AND ply=2", (black_game,)
+                    ).fetchone()[0]
+                    classify_game(protection_db, black_game, version=VERSION, source_url=SOURCE)
+                    protection_db.close()
+                protection_hash = hashlib.sha256(protection_db_path.read_bytes()).hexdigest()
+                histories = (
+                    "e4 e5 Nf3 Nc6 Bb5 a6 Ba4",
+                    "e4 e5 Bc4 Nc6 Bb5 a6 Ba4",
+                    "e4 e5 Nc3 Nf6 d3 Bb4 a3 Ba5",
+                    "e4 Nf6 Nc3 e5 d3 Bb4 a3 Ba5",
+                )
+                protection_text = "\n\n".join(
+                    rated_game(index, 700 + index, "600+0", moves=moves)
+                    for index, moves in enumerate(histories)
+                )
+                protection_zstd = subprocess.run(
+                    ["/usr/bin/zstd", "-q", "-c"],
+                    input=(protection_text + "\n\n{" + noise).encode(),
+                    stdout=subprocess.PIPE,
+                    check=True,
+                ).stdout
+                assert len(protection_zstd) > PREFIX_BYTES
+                protection_prefix = protection_zstd[:PREFIX_BYTES]
+
+                def protection_response(request):
+                    return httpx.Response(
+                        206,
+                        headers={
+                            "Content-Range": f"bytes 0-{PREFIX_BYTES - 1}/{PREFIX_BYTES * 2}",
+                            "Content-Length": str(PREFIX_BYTES),
+                            "ETag": '"synthetic-piece-protection"',
+                        },
+                        content=protection_prefix,
+                        request=request,
+                    )
+
+                with httpx.Client(transport=httpx.MockTransport(protection_response)) as fake:
+                    acquire(protection_root, "learner", client=fake)
+                assert build_recent(protection_root, "learner")["accepted"] == 4
+                cli.setenv("CHESS_DB", str(protection_db_path))
+                decisions = (
+                    (later_games[0], "f1c4", "white"),
+                    ((black_game, black_position), "g8f6", "black"),
+                )
+                for (game_id, position_id), alternative, color in decisions:
+                    absent = cli_profile(
+                        protection_root,
+                        "learner",
+                        game_id,
+                        position_id,
+                        alternative,
+                        "recent",
+                        proof_kind="protection",
+                    )
+                    assert absent["public_preparation"] is None
+                    cli.setattr(
+                        public_prep_sys,
+                        "argv",
+                        [
+                            "opening-profile",
+                            "--project-root",
+                            str(protection_root),
+                            "--game-id",
+                            str(game_id),
+                            "--position-id",
+                            str(position_id),
+                            "--alternative",
+                            alternative,
+                            "--reference",
+                            "recent",
+                            "--prepare-public-protection",
+                        ],
+                    )
+                    output = io.StringIO()
+                    with contextlib.redirect_stdout(output):
+                        profile_cli.main()
+                    public_protection = json.loads(output.getvalue())
+                    assert public_protection["version"] == "public-opening-piece-protection-v1"
+                    assert (
+                        public_protection["protection_policy"]["verifier"]
+                        == "threatened-piece-verifier-v1"
+                    )
+                    played = public_protection["branches"]["played"]
+                    other = public_protection["branches"]["alternative"]
+                    assert played["selected"] and other["selected"]
+                    assert played["analyzed"] and other["analyzed"]
+                    assert played["supported"] and other["supported"]
+                    example = played["example"]
+                    assert example["proof"]["status"] == "correct"
+                    assert example["target"] == ("b5" if color == "white" else "b4")
+                    assert example["recorded_san"] == ("Ba4" if color == "white" else "Ba5")
+                    assert example["record_hash"]
+                    from chess_coach.objective_short_history import history_hash
+                    from chess_coach.opening_recent_source import INDEX_NAME as RECENT_INDEX
+
+                    indexed = real_connect(
+                        (protection_planning / RECENT_INDEX).as_uri() + "?mode=ro&immutable=1",
+                        uri=True,
+                    )
+                    rows = indexed.execute(
+                        "SELECT ply,parent,uci,san FROM moves WHERE game_id=? AND ply<? ORDER BY ply",
+                        (example["record"], example["ply"]),
+                    ).fetchall()
+                    indexed.close()
+                    assert example["history_sha256"] == digest(canonical(rows))
+                    source_board = chess.Board()
+                    for san in histories[0 if color == "white" else 2].split()[:-1]:
+                        source_board.push_san(san)
+                    assert example["proof"]["history_hash"] == history_hash(source_board)
+                    assert (
+                        public_protection["reference"]["source_sha256"]
+                        == hashlib.sha256(protection_prefix).hexdigest()
+                    )
+                    shown_protection = cli_profile(
+                        protection_root,
+                        "learner",
+                        game_id,
+                        position_id,
+                        alternative,
+                        "recent",
+                        proof_kind="protection",
+                    )["public_preparation"]
+                    assert shown_protection["branches"] == public_protection["branches"]
+                    assert shown_protection["reference"]["license"] == "CC0-1.0"
+
+                # An expired caller deadline interrupts the real verifier rather than judging a move.
+                from chess_coach.objective_protection_before import probe as protection_probe
+                from chess_coach.objective_protection_judge import judge as protection_judge
+
+                white_board = chess.Board()
+                for san in histories[0].split()[:-1]:
+                    white_board.push_san(san)
+                import chess_coach.material_exchange as material_exchange
+
+                real_recaptures = material_exchange.recaptures
+                entered, completed = [], []
+
+                def tracked_recaptures(*args, **kwargs):
+                    entered.append(True)
+                    value = real_recaptures(*args, **kwargs)
+                    completed.append(True)
+                    return value
+
+                def expire_protection():
+                    if entered:
+                        raise TimeoutError("synthetic protection deadline")
+
+                with cli.context() as interruption:
+                    interruption.setattr(material_exchange, "recaptures", tracked_recaptures)
+                    with pytest.raises(TimeoutError, match="synthetic protection deadline"):
+                        protection_judge(
+                            white_board,
+                            white_board.parse_san("Ba4"),
+                            chess.B5,
+                            time.monotonic,
+                            time.monotonic(),
+                            5,
+                            {},
+                            check=expire_protection,
+                        )
+                assert entered and not completed
+                assert protection_probe(white_board)["targets"]
+                import chess_coach.opening_public_protection_replay as public_protection_replay
+
+                with cli.context() as no_proof:
+                    no_proof.setattr(
+                        public_protection_replay,
+                        "probe",
+                        lambda *_a, **_k: pytest.fail("proof on GET"),
+                    )
+                    no_proof.setattr(
+                        public_protection_replay,
+                        "judge",
+                        lambda *_a, **_k: pytest.fail("proof on GET"),
+                    )
+                    app_protection = create_app(
+                        db_path=protection_db_path,
+                        project_root=protection_root,
+                        subject="learner",
+                        actor="reviewer",
+                        corpus="test",
+                        login="fixture",
+                        origin="https://coach.invalid",
+                    )
+                    for (game_id, position_id), alternative, _color in decisions:
+                        read_only = cli_profile(
+                            protection_root,
+                            "learner",
+                            game_id,
+                            position_id,
+                            alternative,
+                            "recent",
+                            proof_kind="protection",
+                        )
+                        assert read_only["public_preparation"]["protection_status"] == "prepared"
+                        page = app_protection.test_client().get(
+                            f"/repertoire/games/{game_id}/openings/{position_id}/profile",
+                            query_string={
+                                "reference": "recent",
+                                "alternative": alternative,
+                                "proof_kind": "protection",
+                            },
+                            base_url="https://coach.invalid",
+                            headers=headers,
+                        )
+                        assert page.status_code == 200
+                        assert b"Public defense example" in page.data
+                        assert b"do not establish mistakes" in page.data
+                assert (
+                    hashlib.sha256(protection_db_path.read_bytes()).hexdigest() == protection_hash
+                )
+                protection_file = protection_planning / PREFIX_NAME
+                original = protection_file.read_bytes()
+                protection_file.chmod(0o600)
+                try:
+                    with protection_file.open("r+b") as stream:
+                        stream.write(bytes([original[0] ^ 1]))
+                    stale = cli_profile(
+                        protection_root,
+                        "learner",
+                        *later_games[0],
+                        "f1c4",
+                        "recent",
+                        proof_kind="protection",
+                    )
+                    assert stale["public_preparation"] is None
+                finally:
+                    with protection_file.open("r+b") as stream:
+                        stream.write(original[:1])
+                    protection_file.chmod(0o400)
+                assert protection_file.read_bytes() == original
                 cli.setenv("CHESS_DB", str(db_path))
                 profile_app = create_app(
                     db_path=db_path,

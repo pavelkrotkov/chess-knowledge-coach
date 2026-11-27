@@ -1,24 +1,26 @@
 """Check the specified piece against bounded legal immediate captures."""
 
 from .material_defense_safety import new_other_threat
-from .material_threats import threats
+from .material_threats import check_options, threats
 from .objective_protection_other import reason as other_reason
 from .objective_protection_result import result
 
 
-def assess(board, target, before, clock, start, seconds, base):
+def assess(board, target, before, clock, start, seconds, base, *, check=None):
+    if check is not None:
+        check()
     if clock() - start > seconds:
         return unknown(base, "timeout")
     replies = list(board.legal_moves)
-    reason = other_reason(board, replies, target)
+    reason = other_reason(board, replies, target, check=check)
     if reason:
         return unknown(base, reason)
-    following = threats(board, hypothetical=False)
+    following = threats(board, hypothetical=False, **check_options(check))
     if following is None or following["uncertain"]:
         return unknown(base, "unresolved_attack")
     if new_other_threat(before, following, target):
         return unknown(base, "other_material_threat")
-    return result(board, target, following, replies, clock, start, seconds, base)
+    return result(board, target, following, replies, clock, start, seconds, base, check=check)
 
 
 def unknown(base, reason):

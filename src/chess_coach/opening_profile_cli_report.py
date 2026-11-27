@@ -80,6 +80,7 @@ def prepare_public(
     forks=False,
     fork_window="initial",
     prevent=False,
+    protection=False,
 ):
     from .opening_public_proof import prepare
 
@@ -94,4 +95,5 @@ def prepare_public(
             forks=forks,
             fork_window=fork_window,
             prevent=prevent,
+            protection=protection,
         )
