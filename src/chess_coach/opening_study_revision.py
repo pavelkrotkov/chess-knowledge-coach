@@ -1,6 +1,7 @@
 """Resolve old and recommendation-bound opening courses without changing old versions."""
 
 from .opening_revision_course import preview as legacy
+from .opening_revision_roles import three_roles
 from .opening_study_source import inputs
 
 
@@ -10,6 +11,9 @@ def current(db, root, learner, game, position, move, version, *, deadline, with_
     )
     if value["version"] == version:
         return value
+    updated = three_roles(value)
+    if updated["version"] == version:
+        return updated
     from .opening_recommendation_preview import preview
 
     try:

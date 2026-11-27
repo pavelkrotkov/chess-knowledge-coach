@@ -686,8 +686,16 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         and "no-store" in partial_download.headers["Cache-Control"]
     )
     partial_stream = io.StringIO(partial_download.get_data(as_text=True))
-    assert chess.pgn.read_game(partial_stream) is not None
+    partial_explanation = chess.pgn.read_game(partial_stream)
+    partial_owned = chess.pgn.read_game(partial_stream)
+    assert partial_explanation is not None and partial_owned is not None
     assert chess.pgn.read_game(partial_stream) is None
+    assert "Opening revision explanation" in partial_explanation.headers["Event"]
+    assert "If a public continuation is provided" in partial_explanation.comment
+    assert "Opening experiment" in partial_owned.headers["Event"]
+    assert partial_explanation.board().fen() == partial_owned.board().fen()
+    assert not partial_explanation.errors and not partial_owned.errors
+    assert {node.move.uci() for node in partial_owned.variations} == {"d2d4", "g1f3"}
 
     import copy
 
@@ -3132,7 +3140,10 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         if item.is_file()
     }
     assert after_files == before_files
-    assert course.status_code == 200 and b"2. Public continuation" in course.data
+    assert course.status_code == 200
+    assert b"1. Why study this position" in course.data
+    assert b"2. Your worked comparison" in course.data
+    assert b"3. Public continuation" in course.data and b"ungraded" in course.data
     assert b"CC BY-SA 4.0" in course.data and b"same position" in course.data
     version_match = re.search(
         r"Preview version: <code>([0-9a-f]{64})</code>", course.get_data(as_text=True)
@@ -3157,14 +3168,19 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     )
     assert exported.status_code == 200 and "no-store" in exported.headers["Cache-Control"]
     stream = io.StringIO(exported.get_data(as_text=True))
+    explanation_chapter = chess.pgn.read_game(stream)
     owned_chapter = chess.pgn.read_game(stream)
     public_chapter = chess.pgn.read_game(stream)
-    assert owned_chapter is not None and public_chapter is not None
+    assert (
+        explanation_chapter is not None and owned_chapter is not None and public_chapter is not None
+    )
     assert chess.pgn.read_game(stream) is None
-    assert not owned_chapter.errors and not public_chapter.errors
+    assert not explanation_chapter.errors and not owned_chapter.errors and not public_chapter.errors
+    assert "bounded estimates for two moves" in explanation_chapter.comment
+    assert "ungraded" in public_chapter.comment
     assert all(
         game_value.headers["White"] == "White" and game_value.headers["Black"] == "Black"
-        for game_value in (owned_chapter, public_chapter)
+        for game_value in (explanation_chapter, owned_chapter, public_chapter)
     )
     public_moves = [move.uci() for move in public_chapter.mainline_moves()]
     assert len(public_moves) == 4 and public_moves[0] == "g1f3"
@@ -3179,6 +3195,37 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         and b"no distinct continuation" in duplicate_only.data
     )
     assert position_key(public_chapter.board()) == position_key(owned_chapter.board())
+    assert explanation_chapter.board().fen() == owned_chapter.board().fen()
+    from chess_coach.opening_revision_course import preview as legacy_preview
+    from chess_coach.opening_revision_roles import three_roles
+    from chess_coach.opening_study_course import build as build_opening_study
+    from chess_coach.opening_study_revision import current as current_opening_study
+
+    legacy = legacy_preview(db, tmp_path, "learner", 1, first_move, "g1f3")
+    modern = three_roles(legacy)
+    assert legacy["schema"] == "opening-revision-course-v1"
+    assert [item["kind"] for item in legacy["chapters"]] == ["owned", "public"]
+    assert modern["version"] == course_version
+    legacy_study = build_opening_study(legacy, legacy["version"], 1, first_move, "g1f3")
+    assert legacy_study["course"]["kind"] == "opening-study-course-v1"
+    restored = current_opening_study(
+        db, tmp_path, "learner", 1, first_move, "g1f3", legacy["version"], deadline=None
+    )
+    assert restored["version"] == legacy["version"] and restored["chapters"] == legacy["chapters"]
+    assert build_opening_study(restored, legacy["version"], 1, first_move, "g1f3") == legacy_study
+    with pytest.raises(ValueError, match="complete opening preview"):
+        build_opening_study(
+            {**modern, "schema": legacy["schema"]}, course_version, 1, first_move, "g1f3"
+        )
+    changed = {
+        **modern,
+        "chapters": [
+            *modern["chapters"][:-1],
+            {**modern["chapters"][-1], "pgn": modern["chapters"][-1]["pgn"] + "\n"},
+        ],
+    }
+    with pytest.raises(ValueError, match="version differs"):
+        build_opening_study(changed, course_version, 1, first_move, "g1f3")
     assert "CC BY-SA 4.0" in public_chapter.comment
     assert "https://database.lichess.org/" in public_chapter.comment
     assert len(engine_calls) == before_profile
@@ -3399,20 +3446,21 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         result = opening_study_session.publish_locked(
             tmp_path, 1, first_move, "g1f3", course_version
         )
-        assert result and provider.created == 1 and len(provider.uploaded) == 2
+        assert result and provider.created == 1 and len(provider.uploaded) == 3
         assert all(
             item["mode"] == "conceal" and item["orientation"] == "white"
             for item in provider.uploaded
         )
         assert all("White" in item["name"] for item in provider.uploaded)
-        assert provider.uploaded[0]["pgn"] == str(owned_chapter)
-        assert provider.uploaded[1]["pgn"] == str(public_chapter)
+        assert provider.uploaded[0]["pgn"] == str(explanation_chapter)
+        assert provider.uploaded[1]["pgn"] == str(owned_chapter)
+        assert provider.uploaded[2]["pgn"] == str(public_chapter)
         receipt = json.loads(intent.read_text())
         assert all(
             receipt[flag]
             for flag in ("complete", "privacy_verified", "anonymous_verified", "ordered_verified")
         )
-        assert receipt["chapters"] == ["done", "done"] and len(receipt["chapter_ids"]) == 2
+        assert receipt["chapters"] == ["done", "done", "done"] and len(receipt["chapter_ids"]) == 3
         assert receipt["empty_chapter"] == provider.empty_id
         assert len(engine_calls) == before_profile
         opening_study_worker.run(db, "learner", tmp_path)
@@ -3425,26 +3473,26 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         assert provider.created == 1
 
         # Strict readback must retain both branches and the public attribution.
-        original_owned = provider.uploaded[0]["pgn"]
+        original_owned = provider.uploaded[1]["pgn"]
         altered = chess.pgn.read_game(io.StringIO(original_owned))
         altered.variations.pop()
-        provider.uploaded[0]["pgn"] = str(altered)
-        with pytest.raises(StudyError, match="different content"):
-            opening_study_session.publish_locked(tmp_path, 1, first_move, "g1f3", course_version)
-        provider.uploaded[0]["pgn"] = original_owned
-        original_public = provider.uploaded[1]["pgn"]
-        altered = chess.pgn.read_game(io.StringIO(original_public))
-        altered.comment = "Attribution removed."
         provider.uploaded[1]["pgn"] = str(altered)
         with pytest.raises(StudyError, match="different content"):
             opening_study_session.publish_locked(tmp_path, 1, first_move, "g1f3", course_version)
-        provider.uploaded[1]["pgn"] = original_public
-        unrelated = {**provider.uploaded[1], "name": "Unrelated chapter"}
+        provider.uploaded[1]["pgn"] = original_owned
+        original_public = provider.uploaded[2]["pgn"]
+        altered = chess.pgn.read_game(io.StringIO(original_public))
+        altered.comment = "Attribution removed."
+        provider.uploaded[2]["pgn"] = str(altered)
+        with pytest.raises(StudyError, match="different content"):
+            opening_study_session.publish_locked(tmp_path, 1, first_move, "g1f3", course_version)
+        provider.uploaded[2]["pgn"] = original_public
+        unrelated = {**provider.uploaded[2], "name": "Unrelated chapter"}
         provider.uploaded.append(unrelated)
         with pytest.raises(StudyError):
             opening_study_session.publish_locked(tmp_path, 1, first_move, "g1f3", course_version)
         assert provider.uploaded[-1] == unrelated and provider.empty_id == receipt["empty_chapter"]
-        assert provider.created == 1 and len(provider.uploaded) == 3
+        assert provider.created == 1 and len(provider.uploaded) == 4
         provider.uploaded.pop()
 
     matching = reference_matches(tmp_path, "learner", branch_first["catalog"]["parent"])

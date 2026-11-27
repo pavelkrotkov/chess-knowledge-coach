@@ -53,7 +53,8 @@ def reconcile_locked(root, version):
         course = _read(frozen)
         _stamp(frozen, course)
         if (
-            course["course"].get("kind") not in {"opening-study-course-v1", UNFAMILIAR_KIND}
+            course["course"].get("kind")
+            not in {"opening-study-course-v1", "opening-study-course-v2", UNFAMILIAR_KIND}
             or course["course"].get("preview_version") != version
         ):
             raise StudyError("opening course version differs")
