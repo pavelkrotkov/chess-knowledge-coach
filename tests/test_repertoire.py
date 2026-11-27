@@ -5233,6 +5233,85 @@ def _conditional_fit_workflow(
             assert len(list(game_value.mainline_moves())) == 4
             assert "ungraded" in game_value.comment
             assert chess.pgn.read_game(stream) is None
+            if admission == "development":
+                patch.setattr(sys, "argv", [*sys.argv, "--context-teaching"])
+                with redirect_stdout(io.StringIO()) as out:
+                    cli.main()
+                teaching = json.loads(out.getvalue())
+                teaching_choice = selected_choice
+                assert teaching["schema"] == "unfamiliar-opening-course-v5"
+                assert teaching["source_version"] == course["version"]
+                assert teaching["public_status"] == "available"
+                assert [chapter["kind"] for chapter in teaching["chapters"]] == [
+                    "explanation",
+                    "example",
+                    "practice",
+                ]
+                example, practice = teaching["chapters"][1:]
+                assert example["source"]["record"] != practice["source"]["record"]
+                assert example["source_snapshot"]["lines"] != practice["source_snapshot"]["lines"]
+                assert example["source"]["history"]["prefix_sha256"]
+                assert practice["source"]["history"]["prefix_sha256"]
+                assert (
+                    practice["source"]["index_sha256"]
+                    == teaching["scope"]["reference_index_sha256"]
+                )
+                teaching_query = {**query, "teaching": "1"}
+                teaching_page = ranked_client.get(
+                    "/repertoire/unfamiliar",
+                    query_string=teaching_query,
+                    base_url="https://coach.invalid",
+                    headers=ranked_headers,
+                )
+                assert teaching_page.status_code == 200
+                assert teaching["version"].encode() in teaching_page.data
+                assert b"Practice another recorded line" in teaching_page.data
+                assert b"Reveal the recorded line" in teaching_page.data
+                assert b"Request private Study" not in teaching_page.data
+                teaching_download = ranked_client.get(
+                    "/repertoire/unfamiliar",
+                    query_string={
+                        **teaching_query,
+                        "download": "1",
+                        "version": teaching["version"],
+                    },
+                    base_url="https://coach.invalid",
+                    headers=ranked_headers,
+                )
+                assert teaching_download.status_code == 200
+                assert teaching_download.get_data(as_text=True) == (
+                    "\n\n".join(chapter["pgn"] for chapter in teaching["chapters"]) + "\n"
+                )
+                stream = io.StringIO(teaching_download.get_data(as_text=True))
+                for value in teaching["chapters"]:
+                    parsed = chess.pgn.read_game(stream)
+                    assert parsed is not None and not parsed.errors
+                    assert parsed.headers["White"] == "White" and parsed.headers["Black"] == "Black"
+                    assert [move.uci() for move in parsed.mainline_moves()] == (
+                        value["source_snapshot"]["lines"][0].split()
+                    )
+                    assert parsed.board().fen() == value["source_snapshot"]["prompt_fen"]
+                assert chess.pgn.read_game(stream) is None
+                assert "ungraded" in practice["pgn"]
+                import chess_coach.opening_ranked_teaching_source as ranked_teaching
+
+                with patch.context() as limited:
+                    limited.setattr(ranked_teaching, "MAX_GAMES", 1)
+                    partial = ranked_client.get(
+                        "/repertoire/unfamiliar",
+                        query_string=teaching_query,
+                        base_url="https://coach.invalid",
+                        headers=ranked_headers,
+                    )
+                assert partial.status_code == 200
+                assert b"course is incomplete" in partial.data
+                partial_version = (
+                    partial.get_data(as_text=True)
+                    .split("Version: <code>", 1)[1]
+                    .split("</code>", 1)[0]
+                )
+                assert len(partial_version) == 64
+                assert b"Request private Study" not in partial.data
 
         from contextlib import contextmanager
 
@@ -5266,6 +5345,13 @@ def _conditional_fit_workflow(
             csrf = session["csrf"]
         form = {"csrf": csrf, "context_choice": selected_choice, "version": course["version"]}
         submit_headers = {**ranked_headers, "Origin": "https://coach.invalid"}
+        refused_teaching = ranked_client.post(
+            "/repertoire/unfamiliar/course/study",
+            data={"csrf": csrf, "context_choice": teaching_choice, "version": partial_version},
+            base_url="https://coach.invalid",
+            headers=submit_headers,
+        )
+        assert refused_teaching.status_code == 409 and provider.created == 0
         staged = opening_study_request.staged
         appeared = planning / ("opening-study-" + "f" * 64 + "-intent.json")
 
@@ -5359,6 +5445,13 @@ def _conditional_fit_workflow(
             headers=ranked_headers,
         )
         assert stale_course.status_code == 409
+        stale_teaching = ranked_client.get(
+            "/repertoire/unfamiliar",
+            query_string={"ranked": "1", "choice": choice, "teaching": "1"},
+            base_url="https://coach.invalid",
+            headers=ranked_headers,
+        )
+        assert stale_teaching.status_code == 409
         patch.setattr(
             sys,
             "argv",

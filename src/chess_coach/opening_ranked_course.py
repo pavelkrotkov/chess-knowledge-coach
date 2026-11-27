@@ -18,6 +18,7 @@ def preview(
     with_context=False,
     selection=None,
     legacy=False,
+    teaching=False,
 ):
     if selection is not None or legacy:
         raise ValueError("opening selection differs")
@@ -25,6 +26,12 @@ def preview(
         budget = BrowserBudget(db) if budget is None else budget
         budget.expires = min(budget.expires, deadline)
     context = preflight(db, root, learner, choice, budget=budget)
-    course = build_from_context(context)
+    if teaching:
+        from .opening_ranked_teaching import assemble
+        from .opening_ranked_teaching_source import qualify
+
+        course = assemble(context, qualify(context))
+    else:
+        course = build_from_context(context)
     validate(context, db, root, learner)
     return (course, context) if with_context else course
