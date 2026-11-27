@@ -338,12 +338,15 @@ def test_real_stockfish_deep_smoke(tmp_path, monkeypatch):
         tmp_path / "public-defense-pv", monkeypatch, black=True, defense=True
     )
 
+    from chess_coach import opening_public_proof
     from chess_coach.material_defense import defense_observation
 
     white_board = chess.Board()
     for san in ("e4", "e5", "Nf3", "Nc6", "Bb5", "a6"):
         white_board.push_san(san)
-    _, white_result = analyze(white_board, "b5a4", "/usr/games/stockfish", time.monotonic() + 20)
+    _, white_result = analyze(
+        white_board, "b5a4", opening_public_proof.ENGINE, time.monotonic() + 20
+    )
     assert public_reference(white_result, "b5a4", white_board)
     white_line = next(line for line in white_result["lines"] if line["root_move"] == "b5a4")
     white_defense = defense_observation(white_board, "b5a4", white_result["lines"][0], white_line)
