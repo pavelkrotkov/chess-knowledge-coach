@@ -17,7 +17,10 @@
 {% if course.rationale is defined %}<section><h3>Why this line is available</h3>
 {% for item in course.rationale.judgments.alternatives if item.choice.uci == course.choice.uci %}<p>You chose {{ item.choice.san }}. Conditional fit: {{ item.fit.status|replace("_", " ") }}; developmental evidence: {{ item.development.status }}. {% if item.preparation.history is defined %}Checked preparation: {{ item.preparation.history.status }}; unseen edges in that sample: {{ item.preparation.history.not_seen_edges if item.preparation.history.not_seen_edges is not none else "unknown" }}.{% else %}Preparation remains unknown.{% endif %}</p>{% if item.development.source is defined %}<p>Public example after the selected alternative: <a href="{{ item.development.source.example.source }}">source</a>, <a href="{{ item.development.source.reference.license_url }}">{{ item.development.source.reference.license }}</a>. This bounded example is not a diagnosis.</p>{% endif %}{% endfor %}
 <p>Alternatives considered: {% for item in course.rationale.judgments.alternatives %}{{ item.choice.san }} ({{ item.admission.status }}){% if not loop.last %}, {% endif %}{% endfor %}. Unchecked evidence remains unknown; provisional developmental evidence is a learning experiment, not a diagnosis.</p></section>{% endif %}
-<section><h3>1. Your worked comparison</h3>
+{% set three_roles = course.schema == "opening-revision-course-v3" %}
+{% if three_roles %}<section><h3>1. Why study this position</h3>
+<p>You played {{ course.decision.played }}; this revision compares {{ course.choice.san }}. The two-root estimates below describe the checked lines, not overall opening soundness.</p></section>{% endif %}
+<section><h3>{{ 2 if three_roles else 1 }}. Your worked comparison</h3>
 <p>You play {{ course.decision.color|title }}.</p>
 {% set board_label = "Starting opening position; learner plays " + course.decision.color %}{% include "board.html" %}
 <p>Replay the played branch, then choose {{ course.choice.san }}. After {{ course.experiment.alternative.san[1] }}, find your continuation before revealing the worked line.</p>
@@ -25,14 +28,14 @@
 <p>Played: {{ course.experiment.played.san|join(" ") }}.</p>
 <details><summary>Reveal your alternative continuation</summary><p>{{ course.experiment.alternative.san[2:]|join(" ") }}</p></details>
 </section>
-{% if course.chapters|length > 1 %}{% set public = course.chapters[1] %}
-<section><h3>2. Public continuation</h3>
-<p>From the same position, play {{ public.san[0] }}. After {{ public.san[1] }}, find your continuation, then compare it with this recorded line.</p>
+{% if course.public_status == "available" %}{% set public = course.chapters[-1] %}
+<section><h3>{{ 3 if three_roles else 2 }}. Public continuation</h3>
+<p>This recorded continuation is ungraded. From the same position, play {{ public.san[0] }}. After {{ public.san[1] }}, find your continuation, then compare it with this recorded line.</p>
 <details><summary>Reveal the public continuation</summary><p>{{ public.san[2:]|join(" ") }}</p></details>
 <p>Source: <a href="{{ public.source }}">{% if public.direct %}Broadcast source{% else %}Public broadcast archive{% endif %}</a>, <a href="{{ public.license_url }}">{{ public.license }}</a>. Archive SHA-256: <code>{{ public.archive_sha256 }}</code>.</p>
 </section>
 {% else %}
 <p>Partial preview: no distinct verified four-ply public continuation is available in the bounded source checks ({{ course.public_status }}).</p>
 {% endif %}
-{% if course.chapters|length > 1 %}<p>The public continuation uses the same board identity. Its earlier game history and move counters are not represented by this short excerpt.</p>{% endif %}
+{% if course.public_status == "available" %}<p>The public continuation uses the same board identity. Its earlier game history and move counters are not represented by this short excerpt.</p>{% endif %}
 {% endblock %}
