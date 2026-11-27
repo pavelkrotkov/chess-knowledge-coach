@@ -4,14 +4,17 @@ from datetime import UTC, datetime
 
 from .lesson_mechanisms import describe
 from .lesson_source import source
+from .mastery_time import source_cutoff
 from .recurrence_selection import consider
 
 
-def collect_page(db, learner, history, rows, groups, excluded, seen, *, check=lambda: None):
+def collect_page(
+    db, learner, history, rows, groups, excluded, seen, *, check=lambda: None, as_of=None
+):
     cache, parts = {}, {}
     previous = datetime(1, 1, 1, tzinfo=UTC)
     begin = datetime(2, 1, 1, tzinfo=UTC)
-    finish = datetime.now(UTC)
+    finish = source_cutoff(as_of)
     for row in rows:
         check()
         item = consider(

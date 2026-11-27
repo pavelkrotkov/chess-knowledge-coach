@@ -26,7 +26,7 @@ def observe(db, subject, corpus, root, as_of, check):
     before = file_identity(db, subject, root)
     capture = capture_inputs(db, subject, root, check)
     options, status, identity, advisory = candidates(
-        db, subject, corpus, check, include_snapshot=True
+        db, subject, corpus, check, include_snapshot=True, as_of=as_of
     )
     fork, fork_status, focus = fork_source(
         db, subject, corpus, check, include_snapshot=True, as_of=as_of

@@ -5646,6 +5646,97 @@ def _fork_capture_common_workflow(tmp_path, monkeypatch):
             "SELECT due FROM training_items WHERE id=?", (item_id,)
         ).fetchone()[0]
         assert datetime.fromisoformat(due) > as_of
+    # A historical plan cannot qualify its owned sources using later decisions.
+    from chess_coach.curriculum_common_inputs import observe as observe_common
+    from chess_coach.curriculum_prerequisite_token import _decode
+    from chess_coach.curriculum_window_offer_check import check as check_offer
+    from chess_coach.opening_queue_budget import BrowserBudget
+
+    first_cutoff = datetime(2026, 1, 10, 12, 0, 0, 500000, tzinfo=UTC)
+    one_family_cutoff = datetime(2026, 1, 10, 12, 0, 2, 500000, tzinfo=UTC)
+    both_cutoff = datetime(2026, 1, 10, 12, 0, 4, 500000, tzinfo=UTC)
+    before_cutoff_reads = db.connection.total_changes
+    early = daily_plan(
+        db,
+        subject=LEARNER,
+        corpus_version="common",
+        limit=1,
+        as_of=first_cutoff,
+        project_root=root,
+    )
+    all_evidence = {str(value) for family in evidence.values() for value in family}
+    assert not any(
+        item.get("source_type") == "own-game" and item.get("source_key") in all_evidence
+        for item in early["items"]
+    )
+
+    _, one_family = observe_common(
+        db, LEARNER, "common", root, one_family_cutoff.isoformat(), lambda: None
+    )
+    assert one_family["options"] and one_family["fork"] is None
+    assert all(
+        item["source_evidence_id"] in evidence["capture"][:2] for item, _ in one_family["options"]
+    )
+    single = daily_plan(
+        db,
+        subject=LEARNER,
+        corpus_version="common",
+        limit=1,
+        as_of=one_family_cutoff,
+        project_root=root,
+    )
+    for candidate in single["items"]:
+        if candidate.get("source_type") == "own-game":
+            assert candidate["skill"] == "hanging_piece"
+            assert int(candidate["source_key"]) in evidence["capture"][:2]
+
+    _, both = observe_common(db, LEARNER, "common", root, both_cutoff.isoformat(), lambda: None)
+    assert both["options"] and both["fork"] is not None
+    assert all(item["source_evidence_id"] in evidence["capture"][:3] for item, _ in both["options"])
+    assert both["fork"]["source_evidence_id"] in evidence["fork"][:2]
+    past_page = daily_plan(
+        db,
+        subject=LEARNER,
+        corpus_version="common",
+        limit=1,
+        scan_limit=1,
+        as_of=both_cutoff,
+        project_root=root,
+    )
+    assert not past_page["items"] and past_page["next_cursor"]
+    for _ in range(4):
+        past_page = daily_plan(
+            db,
+            subject=LEARNER,
+            corpus_version="common",
+            limit=1,
+            scan_limit=1,
+            as_of=both_cutoff,
+            cursor=past_page["next_cursor"],
+            project_root=root,
+        )
+        if past_page["items"]:
+            break
+        assert past_page["next_cursor"]
+    past_item = past_page["items"][0]
+    eligible = {"hanging_piece": evidence["capture"][:3], "fork": evidence["fork"][:2]}
+    assert past_item["source_type"] == "own-game"
+    assert int(past_item["source_key"]) in eligible[past_item["skill"]]
+    offer = past_item["window_offer"]
+    assert _decode(db, offer)[7]["as_of"] == both_cutoff.isoformat()
+    check_offer(
+        db,
+        offer,
+        LEARNER,
+        past_item["source_type"],
+        past_item["source_version"],
+        past_item["source_key"],
+        "unified",
+        project_root=root,
+        capture_budget=BrowserBudget(db, project_root=root),
+    )
+    assert db.connection.total_changes == before_cutoff_reads
+
     baseline = daily_plan(
         db, subject=LEARNER, corpus_version="common", limit=1, as_of=as_of, project_root=root
     )

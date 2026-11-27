@@ -6,8 +6,8 @@ from .objective_capture_current import current
 from .related_capture_position import prompt_key
 
 
-def collect(db, subject, check, *, limit=2):
-    groups, limited, scanned = _groups(db, subject, check=check)
+def collect(db, subject, check, *, limit=2, as_of=None):
+    groups, limited, scanned = _groups(db, subject, check=check, as_of=as_of)
     selected, identities, seen = [], [], set()
     for source in witnesses(db, subject, groups, check=check):
         check()

@@ -22,3 +22,12 @@ def parse_utc(value: object) -> datetime | None:
         return parsed.astimezone(UTC)
     except (ValueError, OverflowError):
         return None
+
+
+def source_cutoff(value):
+    if value is None:
+        return datetime.now(UTC)
+    cutoff = parse_utc(value)
+    if cutoff is None:
+        raise ValueError("source cutoff unavailable")
+    return cutoff
