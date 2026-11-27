@@ -10,13 +10,16 @@ from .purpose_deadline import CLEANUP_RESERVE
 from .purpose_iteration import Iterations
 
 
-async def _consume(protocol, board, position, limit, roots, bounds, reference):
+async def _consume(protocol, board, position, limit, roots, bounds, reference, game):
     state = (ReferenceIterations if reference else Iterations)(board, position, roots, bounds)
+    # Fresh tokens reset engine state; legacy callers omit the argument.
+    options = {"game": game} if game is not None else {}
     stream = await protocol.analysis(
         board,
         limit,
         multipv=len(roots) if reference else 2,
         root_moves=None if reference else roots,
+        **options,
     )
     with stream:
         async for info in stream:
@@ -24,13 +27,15 @@ async def _consume(protocol, board, position, limit, roots, bounds, reference):
     return state
 
 
-async def _timed(protocol, board, position, limit, roots, bounds, timeout, reference):
+async def _timed(protocol, board, position, limit, roots, bounds, timeout, reference, game):
     return await asyncio.wait_for(
-        _consume(protocol, board, position, limit, roots, bounds, reference), timeout
+        _consume(protocol, board, position, limit, roots, bounds, reference, game), timeout
     )
 
 
-def search(engine, board, position, limit, roots, deadline, *, bounds=None, reference=False):
+def search(
+    engine, board, position, limit, roots, deadline, *, bounds=None, reference=False, game=None
+):
     remaining = deadline - time.monotonic() - CLEANUP_RESERVE
     if remaining <= 0:
         return None, "worker_deadline"
@@ -38,7 +43,9 @@ def search(engine, board, position, limit, roots, deadline, *, bounds=None, refe
     coroutine = None
     try:
         protocol = engine.protocol
-        coroutine = _timed(protocol, board, position, limit, roots, bounds, timeout, reference)
+        coroutine = _timed(
+            protocol, board, position, limit, roots, bounds, timeout, reference, game
+        )
         future = asyncio.run_coroutine_threadsafe(coroutine, protocol.loop)
     except Exception:
         if coroutine is not None:

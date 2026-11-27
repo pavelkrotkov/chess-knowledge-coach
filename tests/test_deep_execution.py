@@ -332,6 +332,344 @@ def test_real_stockfish_deep_smoke(tmp_path, monkeypatch):
         key: defense_result.get(key) for key in ("status", "reason", "work")
     }
     assert public_reference(defense_result, defense, defense_board)
+    _public_capture_pv_workflow(tmp_path / "public-capture-pv", monkeypatch)
+    _public_capture_pv_workflow(tmp_path / "public-capture-pv-black", monkeypatch, black=True)
+
+
+def _public_capture_pv_workflow(root, monkeypatch, *, black=False):
+    """Exercise actual public indexing, bounded native preparation and private reads."""
+    import base64
+    import contextlib
+    import hashlib
+    import io
+    import json
+    import random
+    import sqlite3
+    import subprocess
+    import time
+
+    import chess.pgn
+    import httpx
+
+    from chess_coach import (
+        opening_decision_budget,
+        opening_public_capture_pv_position,
+        opening_public_capture_pv_session,
+    )
+    from chess_coach.classification_inputs import opening_graph
+    from chess_coach.db import Database
+    from chess_coach.fact_fingerprint import canonical, digest
+    from chess_coach.ingest import ingest_pgn
+    from chess_coach.opening_recent_acquire import acquire
+    from chess_coach.opening_recent_index import build
+    from chess_coach.opening_recent_source import INDEX_NAME, PREFIX_BYTES
+    from chess_coach.openings import import_openings
+    from chess_coach.ops_opening_profile import main as opening_profile
+    from chess_coach.pipeline_config import PipelineConfig
+    from chess_coach.pipeline_inputs import game_input
+    from chess_coach.pipeline_opening import run_opening
+    from chess_coach.tactical_study_path import planning
+    from chess_coach.web import create_app
+
+    data = root / ".runtime" / "data"
+    data.mkdir(parents=True, mode=0o700)
+    (root / ".runtime" / "planning").mkdir(mode=0o700)
+    db_path = data / "synthetic.sqlite"
+    db = Database(db_path)
+    db.initialize()
+    if black:
+        players = '[White "opponent"]\n[Black "learner"]\n'
+        histories = (
+            "e4 e5 Nc3 Nf6 Qh5 Be7 a3 Nxh5",
+            "e4 e5 Nc3 Nf6 Qh5 Be7 a3 a6",
+            "e4 Nf6 Nc3 e5 Qh5 Be7 a3 Nxh5",
+            "e4 Nf6 Nc3 e5 Qh5 Be7 a3 a6",
+        )
+        owned_moves = "1. e4 e5 2. Nc3 Nf6 3. Qh5 Be7 4. a3 Nxh5 1-0"
+        decision_ply, alternative, color = 2, "g8f6", "Black"
+    else:
+        players = '[White "learner"]\n[Black "opponent"]\n'
+        histories = (
+            "e4 e5 Nf3 a6 Be2 Qh4 Nxh4",
+            "e4 e5 Nf3 a6 Be2 Qh4 a3",
+            "e4 e5 Be2 a6 Nf3 Qh4 Nxh4",
+            "e4 e5 Be2 a6 Nf3 Qh4 a3",
+        )
+        owned_moves = "1. e4 e5 2. Nf3 a6 3. Be2 Qh4 4. Nxh4 1-0"
+        decision_ply, alternative, color = 3, "f1e2", "White"
+    owned = (
+        '[Event "Synthetic"]\n'
+        + players
+        + '[UTCDate "2026.01.02"]\n[UTCTime "12:00:00"]\n'
+        + '[TimeControl "600+0"]\n[Result "1-0"]\n\n'
+        + owned_moves
+        + "\n"
+    )
+    ingest_pgn(db, owned)
+    openings = root / "synthetic-openings.tsv"
+    openings.write_text(
+        f"eco\tname\tmoves\nC20\tPlayed\t{histories[0]}\nC20\tAlternative\t{histories[2]}\n"
+    )
+    import_openings(db, openings, version="fixture", source_url="cc0://fixture")
+    config = PipelineConfig(
+        learner="learner",
+        opening_version="fixture",
+        opening_source="cc0://fixture",
+        classifier_version="1.1.0",
+    )
+    assert run_opening(db, 1, game_input(db, 1), config)["status"] == "complete"
+    dataset = db.connection.execute(
+        "SELECT id FROM opening_datasets WHERE version=?", ("fixture",)
+    ).fetchone()[0]
+    monkeypatch.setattr(opening_decision_budget, "VERSION", "fixture")
+    monkeypatch.setattr(opening_decision_budget, "SOURCE", "cc0://fixture")
+    monkeypatch.setattr(
+        opening_decision_budget, "GRAPH_SHA256", digest(canonical(opening_graph(db, dataset)))
+    )
+    position = db.connection.execute(
+        "SELECT id FROM positions WHERE game_id=1 AND ply=?", (decision_ply,)
+    ).fetchone()[0]
+    db.connection.commit()
+
+    texts = []
+    for number, moves in enumerate(histories):
+        game = chess.pgn.Game()
+        game.headers.update(
+            Event="Rated Blitz game",
+            White=f"Synthetic {number}",
+            Black=f"Peer {number}",
+            Result="1-0",
+            Date="2026.10.01",
+            TimeControl="600+0",
+            WhiteElo="1700",
+            BlackElo="1650",
+        )
+        board, node = game.board(), game
+        for san in moves.split():
+            move = board.parse_san(san)
+            node = node.add_variation(move)
+            board.push(move)
+        texts.append(str(game))
+    noise = base64.b64encode(random.Random(1034).randbytes(1_400_000)).decode()
+    compressed = subprocess.run(
+        ["/usr/bin/zstd", "-q", "-c"],
+        input=("\n\n".join(texts) + "\n\n{" + noise).encode(),
+        stdout=subprocess.PIPE,
+        check=True,
+    ).stdout
+    assert len(compressed) > PREFIX_BYTES
+    prefix = compressed[:PREFIX_BYTES]
+
+    def response(request):
+        return httpx.Response(
+            206,
+            headers={
+                "Content-Range": f"bytes 0-{PREFIX_BYTES - 1}/{PREFIX_BYTES * 2}",
+                "Content-Length": str(PREFIX_BYTES),
+                "ETag": '"synthetic-capture-pv"',
+            },
+            content=prefix,
+            request=request,
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(response)) as client:
+        acquire(root, "learner", client=client)
+    assert build(root, "learner")["accepted"] == 4
+    monkeypatch.setenv("CHESS_DB", str(db_path))
+    monkeypatch.setenv("CHESS_SUBJECT", "learner")
+    monkeypatch.delenv("CHESS_SCHEMA_COMPAT", raising=False)
+    args = [
+        "opening-profile",
+        "--project-root",
+        str(root),
+        "--game-id",
+        "1",
+        "--position-id",
+        str(position),
+        "--alternative",
+        alternative,
+        "--reference",
+        "recent",
+    ]
+    monkeypatch.setattr(sys, "argv", [*args, "--prepare-public-capture-pv"])
+    output = io.StringIO()
+    start = time.monotonic()
+    started_engines = []
+    games = []
+    actual_start = opening_public_capture_pv_session.start_engine
+
+    def tracked_start(*args, **kwargs):
+        engine, metadata = actual_start(*args, **kwargs)
+        started_engines.append(engine)
+        actual_analysis = engine.protocol.analysis
+
+        async def tracked_analysis(board, limit, **options):
+            games.append(options.get("game"))
+            return await actual_analysis(board, limit, **options)
+
+        measured.setattr(engine.protocol, "analysis", tracked_analysis)
+        return engine, metadata
+
+    with monkeypatch.context() as measured:
+        measured.setattr(opening_public_capture_pv_session, "start_engine", tracked_start)
+        with contextlib.redirect_stdout(output):
+            opening_profile()
+    assert time.monotonic() - start < 30
+    assert len(started_engines) == 1 and started_engines[0].returncode.done()
+    assert len(games) == 4 and all(game is not None for game in games)
+    assert len({id(game) for game in games}) == 4
+    prepared = json.loads(output.getvalue())
+    assert prepared["version"] == "public-opening-capture-consequences-v1"
+    for label in ("played", "alternative"):
+        branch = prepared["branches"][label]
+        assert branch["native_attempted"] == branch["native_completed"] == 2, label
+        if not black:
+            assert branch["native_qualified"] == 2
+            assert {branch["records"][i]["observation"]["outcome"] for i in branch["examples"]} == {
+                "success",
+                "failure",
+            }, (
+                label,
+                [
+                    {
+                        "san": item["recorded_san"],
+                        "qualified": item["qualified"],
+                        "outcome": item["observation"]["outcome"],
+                        "reason": item["observation"].get("reason"),
+                        "native_status": item["native"].get("status"),
+                        "native_reason": item["native"].get("reason"),
+                        "work": item["native"].get("work"),
+                    }
+                    for item in branch["records"]
+                ],
+            )
+        assert branch["incomplete"] and branch["not_qualified_positions"]
+        assert (
+            branch["not_requested_positions"]
+            == branch["positions_seen"] - branch["native_attempted"]
+        )
+        assert (
+            branch["not_qualified_positions"]
+            == branch["positions_seen"] - branch["native_qualified"]
+        )
+        assert branch["eligible"] == branch["selected"] == 2
+        if black:
+            records = {item["recorded_san"]: item for item in branch["records"]}
+            examples = [branch["records"][index] for index in branch["examples"]]
+            assert set(records) == {"Be7", "Nxh5"}
+            assert branch["native_qualified"] == sum(item["qualified"] for item in records.values())
+            assert all(item["source"] and item["history_sha256"] for item in records.values())
+            capture = records["Nxh5"]
+            assert capture["qualified"] and capture in examples
+            assert capture["observation"]["outcome"] == "success"
+            assert capture["observation"]["target"] == "h5"
+            assert capture["observation"]["target_piece"] == "queen"
+            quiet = records["Be7"]
+            if quiet["qualified"]:
+                assert quiet in examples and quiet["observation"]["outcome"] == "failure"
+                assert quiet["observation"]["target"] == "h5"
+                assert quiet["observation"]["target_piece"] == "queen"
+            else:
+                assert quiet not in examples and quiet["observation"]["outcome"] == "ambiguous"
+                assert quiet["observation"]["reason"] == "native_reference_unavailable"
+                assert quiet["native"]["status"] == "insufficient" and quiet["native"]["reason"]
+    assert prepared["reference"]["license"] == "CC0-1.0"
+
+    tables = (
+        "unified_sessions",
+        "unified_session_events",
+        "objective_requests",
+        "objective_results",
+        "unified_training_enrollments",
+        "unified_training_completions",
+        "training_items",
+        "training_attempts",
+        "mastery_states",
+        "mastery_events",
+        "evidence_mappings",
+        "evidence_review_events",
+    )
+
+    def learning():
+        with sqlite3.connect(db_path.resolve().as_uri() + "?mode=ro", uri=True) as connection:
+            return tuple(
+                connection.execute(f"SELECT * FROM {table} ORDER BY rowid").fetchall()
+                for table in tables
+            )
+
+    before = None if black else learning()
+    db.connection.commit()
+    with monkeypatch.context() as read_only:
+        read_only.setattr(
+            opening_public_capture_pv_position,
+            "observe",
+            lambda *_a, **_k: pytest.fail("proof ran on read"),
+        )
+        read_only.setattr(
+            chess.engine.SimpleEngine,
+            "popen_uci",
+            lambda *_a, **_k: pytest.fail("engine ran on read"),
+        )
+        read_only.setattr(sys, "argv", [*args, "--proof-kind", "capture_pv"])
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            opening_profile()
+        shown = json.loads(output.getvalue())["public_preparation"]
+        assert shown["branches"] == prepared["branches"]
+        if black:
+            db.close()
+            return
+        app = create_app(
+            db_path=db_path,
+            project_root=root,
+            subject="learner",
+            actor="reviewer",
+            corpus="test",
+            login="fixture",
+            origin="https://coach.invalid",
+        )
+        page = app.test_client().get(
+            f"/repertoire/games/1/openings/{position}/profile"
+            f"?reference=recent&alternative={alternative}&proof_kind=capture_pv",
+            base_url="https://coach.invalid",
+            headers={"Tailscale-User-Login": "fixture"},
+        )
+        assert page.status_code == 200 and b"Capture opportunities in public games" in page.data
+        assert b"Public game example" in page.data
+        assert f"({color})".encode() in page.data
+    assert learning() == before
+    import chess_coach.opening_public_comparison_engine as public_engine
+
+    compatibility = public_engine.detect_compatibility
+
+    def changed_compatibility():
+        value = compatibility()
+        return {**value, "popcnt": not bool(value["popcnt"])}
+
+    with monkeypatch.context() as changed:
+        changed.setattr(public_engine, "detect_compatibility", changed_compatibility)
+        changed.setattr(sys, "argv", [*args, "--proof-kind", "capture_pv"])
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            opening_profile()
+        assert json.loads(output.getvalue())["public_preparation"] is None
+    directory, _ = planning(root, "learner")
+    index = directory / INDEX_NAME
+    previous = hashlib.sha256(index.read_bytes()).hexdigest()
+    index.chmod(0o600)
+    try:
+        with sqlite3.connect(index) as changed:
+            changed.execute("UPDATE metadata SET value=value WHERE key='coverage'")
+            changed.execute("PRAGMA user_version=1")
+    finally:
+        index.chmod(0o400)
+    assert hashlib.sha256(index.read_bytes()).hexdigest() != previous
+    monkeypatch.setattr(sys, "argv", [*args, "--proof-kind", "capture_pv"])
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output):
+        opening_profile()
+    assert json.loads(output.getvalue())["public_preparation"] is None
+    db.close()
 
 
 def _automatic_lane_workflow(tmp_path, monkeypatch):

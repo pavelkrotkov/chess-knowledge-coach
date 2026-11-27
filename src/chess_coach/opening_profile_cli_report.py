@@ -81,6 +81,7 @@ def prepare_public(
     fork_window="initial",
     prevent=False,
     protection=False,
+    capture_pv=False,
 ):
     from .opening_public_proof import prepare
 
@@ -96,4 +97,5 @@ def prepare_public(
             fork_window=fork_window,
             prevent=prevent,
             protection=protection,
+            capture_pv=capture_pv,
         )
