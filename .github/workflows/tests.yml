@@ -48,5 +48,5 @@ jobs:
         timeout-minutes: 15
         run: |
           uv run python -c 'import sqlite3, sys; assert sys.version_info[:3] == (3, 12, 13), sys.version; print("Python:", sys.version); print("SQLite:", sqlite3.sqlite_version); print("SQLite source:", sqlite3.connect(":memory:").execute("SELECT sqlite_source_id()").fetchone()[0])'
-          uv run pytest -vv -o faulthandler_timeout=120 --cov --cov-report=term-missing --cov-precision=2
+          uv run pytest -vv --cov --cov-report=term-missing --cov-precision=2
           uv run coverage json -o - | uv run python -c 'import json, sys; total = json.load(sys.stdin)["totals"]["percent_covered"]; print(f"Unrounded coverage: {total:.6f}%")'

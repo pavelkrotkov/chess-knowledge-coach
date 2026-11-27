@@ -90,7 +90,7 @@ jobs:
         env:
           TARGET_SHA: ${{ steps.target.outputs.sha }}
         run: |
-          uv run --frozen --no-sync pytest -vv -o faulthandler_timeout=120 -ra --junitxml="$RUNNER_TEMP/pytest-results.xml" --cov --cov-report=term-missing --cov-precision=2
+          uv run --frozen --no-sync pytest -vv -ra --junitxml="$RUNNER_TEMP/pytest-results.xml" --cov --cov-report=term-missing --cov-precision=2
           uv run --frozen --no-sync python - "$RUNNER_TEMP/pytest-results.xml" <<'PYTEST_CHECK'
           import collections, sys, xml.etree.ElementTree as ET
           expected = {
