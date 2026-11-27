@@ -8,7 +8,7 @@ from .unified_own_game_evidence import LIMIT, _inspect, _rows
 from .unified_own_game_snapshot import snapshot
 
 
-def source_for_position(db, subject, position, *, check=None):
+def source_for_position(db, subject, position, *, check=None, _history=None):
     tick = check or (lambda: None)
     for row in _rows(db, subject, position)[:LIMIT]:
         tick()
@@ -19,7 +19,7 @@ def source_for_position(db, subject, position, *, check=None):
         if not eligible:
             continue
         options = {"check": check} if check is not None else {}
-        view, review, reasons = _inspect(db, row["id"], subject, **options)
+        view, review, reasons = _inspect(db, row["id"], subject, history=_history, **options)
         tick()
         if reasons:
             raise ValueError("capture source unavailable")

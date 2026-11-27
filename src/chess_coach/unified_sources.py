@@ -6,11 +6,11 @@ from .public_training_source import resolve as _public
 from .puzzle_session_validate import CORPUS_PLIES_LIMIT, solution_moves, validate_line
 
 
-def resolve_source(db, source_type, version, key, *, subject=None, check=None):
+def resolve_source(db, source_type, version, key, *, subject=None, check=None, _history=None):
     if source_type == "own-game":
         from .unified_own_game_resolve import resolve
 
-        return resolve(db, version, key, subject, check=check)
+        return resolve(db, version, key, subject, check=check, _history=_history)
     if source_type == "corpus":
         return _corpus(db, version, key)
     if source_type == "public":

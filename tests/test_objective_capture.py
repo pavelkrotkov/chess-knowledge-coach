@@ -6696,13 +6696,19 @@ def _fork_capture_common_workflow(tmp_path, monkeypatch):
         finally:
             trend.write_bytes(original_trend)
 
-    # Reissue after restoration and start the same owner-bound source normally.
+    # Reissue a timed plan after restoration and start the same owner-bound source.
     plan_page = client.get(
-        "/plan?limit=1",
+        "/plan?goal=balanced&minutes=5&limit=1",
         base_url="https://coach.invalid",
         headers={"Tailscale-User-Login": "fixture"},
     )
     assert plan_page.status_code == 200
+    assert (
+        b"The first unassisted assessment for this fork source was incorrect; "
+        b"the comparable capture source was correct." in plan_page.data
+    )
+    assert b"Matching opportunities occurred in" in plan_page.data
+    assert b"recent games" in plan_page.data
     parsed = Forms()
     parsed.feed(plan_page.get_data(as_text=True))
     form = next(
@@ -6712,6 +6718,8 @@ def _fork_capture_common_workflow(tmp_path, monkeypatch):
         and value.get("window_offer")
         and value.get("training") == "1"
     )
+    binding = _decode(db, form["window_offer"])
+    assert binding[0] == COMMON_WINDOW_POLICY and binding[3] is not None
     response = client.post(
         "/unified/start",
         data=form,
@@ -6719,5 +6727,11 @@ def _fork_capture_common_workflow(tmp_path, monkeypatch):
         headers={"Tailscale-User-Login": "fixture", "Origin": "https://coach.invalid"},
     )
     assert response.status_code == 303
+    attempt = response.headers["Location"].rstrip("/").rsplit("/", 1)[-1]
+    persisted = db.connection.execute(
+        "SELECT source_type,source_version,source_key FROM unified_sessions WHERE attempt_id=?",
+        (attempt,),
+    ).fetchone()
+    assert tuple(persisted) == ("own-game", form["version"], str(fork_id))
 
     db.close()

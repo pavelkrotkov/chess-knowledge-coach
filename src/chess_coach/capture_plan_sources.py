@@ -17,11 +17,17 @@ SCAN = 20
 SOURCE_CHECKS = 3
 
 
-def _groups(db, learner, *, check=lambda: None, operation="execute", as_of=None):
+def _groups(db, learner, *, check=lambda: None, operation="execute", as_of=None, _history=None):
     cutoff = source_cutoff(as_of) if as_of is not None else None
     rows, limited = evidence(
         db, learner, "hanging_piece", operation, MAX_ID, failure_only=True, limit=SCAN
     )
+    if _history is not None:
+        _history.targets(row["position_id"] for row in rows)
+    return _group_rows(db, learner, rows, cutoff, check, _history), limited, len(rows)
+
+
+def _group_rows(db, learner, rows, cutoff, check, history):
     cache, parts, excluded, seen = {}, {}, Counter(), set()
     groups = defaultdict(list)
     # Recheck only the bounded recent record page, not the full corpus.
@@ -38,6 +44,7 @@ def _groups(db, learner, *, check=lambda: None, operation="execute", as_of=None)
             datetime(2, 1, 1, tzinfo=UTC),
             cutoff if cutoff is not None else datetime.now(UTC),
             datetime(1, 1, 1, tzinfo=UTC),
+            _history=history,
         )
         check()
         if item is None or item["family"] != MAPPER:
@@ -48,20 +55,21 @@ def _groups(db, learner, *, check=lambda: None, operation="execute", as_of=None)
             continue
         seen.add(identity)
         groups[(item["family"], item["version"])].append(item)
-    return groups, limited, len(rows)
+    return groups
 
 
 def _finished(checked, stop):
     return checked >= SOURCE_CHECKS or stop()
 
 
-def _source(db, learner, position, check):
-    if check is None:
-        return source_for_position(db, learner, position)
-    return source_for_position(db, learner, position, check=check)
+def _source(db, learner, position, check, _history):
+    options = {"check": check} if check is not None else {}
+    if _history is not None:
+        options["_history"] = _history
+    return source_for_position(db, learner, position, **options)
 
 
-def witnesses(db, learner, groups, *, stop=lambda: False, check=None):
+def witnesses(db, learner, groups, *, stop=lambda: False, check=None, _history=None):
     ranked = sorted(
         groups.values(), key=lambda items: (-len({x["game_key"] for x in items}), -items[0]["id"])
     )
@@ -73,7 +81,7 @@ def witnesses(db, learner, groups, *, stop=lambda: False, check=None):
                 return
             checked += 1
             try:
-                source = _source(db, learner, item["position_id"], check)
+                source = _source(db, learner, item["position_id"], check, _history)
                 if source["provenance"]["evidence_id"] != item["id"]:
                     continue
                 yield {
