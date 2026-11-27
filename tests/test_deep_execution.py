@@ -390,12 +390,12 @@ def _public_capture_pv_workflow(root, monkeypatch, *, black=False):
     else:
         players = '[White "learner"]\n[Black "opponent"]\n'
         histories = (
-            "e4 e5 Nf3 Nc6 Be2 Qh4 Nxh4",
-            "e4 e5 Nf3 Nc6 Be2 Qh4 a3",
-            "e4 e5 Be2 Nc6 Nf3 Qh4 Nxh4",
-            "e4 e5 Be2 Nc6 Nf3 Qh4 a3",
+            "e4 e5 Nf3 a6 Be2 Qh4 Nxh4",
+            "e4 e5 Nf3 a6 Be2 Qh4 a3",
+            "e4 e5 Be2 a6 Nf3 Qh4 Nxh4",
+            "e4 e5 Be2 a6 Nf3 Qh4 a3",
         )
-        owned_moves = "1. e4 e5 2. Nf3 Nc6 3. Be2 Qh4 4. Nxh4 1-0"
+        owned_moves = "1. e4 e5 2. Nf3 a6 3. Be2 Qh4 4. Nxh4 1-0"
         decision_ply, alternative, color = 3, "f1e2", "White"
     owned = (
         '[Event "Synthetic"]\n'
@@ -528,7 +528,21 @@ def _public_capture_pv_workflow(root, monkeypatch, *, black=False):
             assert {branch["records"][i]["observation"]["outcome"] for i in branch["examples"]} == {
                 "success",
                 "failure",
-            }
+            }, (
+                label,
+                [
+                    {
+                        "san": item["recorded_san"],
+                        "qualified": item["qualified"],
+                        "outcome": item["observation"]["outcome"],
+                        "reason": item["observation"].get("reason"),
+                        "native_status": item["native"].get("status"),
+                        "native_reason": item["native"].get("reason"),
+                        "work": item["native"].get("work"),
+                    }
+                    for item in branch["records"]
+                ],
+            )
         assert branch["incomplete"] and branch["not_qualified_positions"]
         assert (
             branch["not_requested_positions"]
