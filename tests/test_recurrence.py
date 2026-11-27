@@ -66,18 +66,22 @@ def add(db, game_id, ply, outcome, *, subject="learner", version="1.0.1", observ
     return mapping["evidence_ids"][0]
 
 
-def test_recurrence_review_boundaries_and_independence(tmp_path, monkeypatch):
+def test_recurrence_review_boundaries_and_independence(tmp_path, monkeypatch, capsys):
     path = tmp_path / "data.sqlite"
     db = Database(path)
     db.initialize()
-    ingest_pgn(db, game(1))
+    ingest_pgn(db, game(1, "1. e4 {[%clk 0:00:25]} e5 2. Nf3 Nc6 3. Bc4"))
     first = add(db, 1, 1, "failure")
     kept = add(db, 1, 3, "failure")
     current = report(db, "learner", START, END, PREV)
     group = current["current"][0]
     assert (group["misses"], group["miss_games"], group["games_with_repetitions"]) == (2, 1, 1)
     assert group["currentness"] == {"currentness unverified": 2}
-    ingest_pgn(db, game(2, "1. d4 d5 2. Nf3 Nf6"))
+    strata = {(item["field"], item["value"]): item for item in group["strata"]}
+    assert strata[("clock", "unknown")]["misses"] == 1
+    assert strata[("clock", "30 seconds or less")]["misses"] == 1
+    assert strata[("opening familiarity", "unavailable")]["opportunities"] == 2
+    ingest_pgn(db, game(2, "1. d4 {[%clk 0:05:00]} d5 2. Nf3 Nf6"))
     second = add(db, 2, 1, "failure")
     review_evidence(db, second, decision="accept", actor="synthetic")
     group = report(db, "learner", START, END, PREV)["current"][0]
@@ -257,6 +261,61 @@ def test_recurrence_review_boundaries_and_independence(tmp_path, monkeypatch):
         b"complete 1" in coaching_page.data
         and b"no verified start time: at least 1" in coaching_page.data
     )
+
+    import json
+    import sys
+
+    from chess_coach.cli import main
+
+    updated = Database(path)
+    ample = add(updated, 2, 3, "failure")
+    prior_pgn = game(2, "1. c4 e5").replace("2026.10.02", "2026.09.02")
+    assert ingest_pgn(updated, prior_pgn)["games"] == 1
+    (prior_game,) = updated.connection.execute(
+        "SELECT game_id FROM style_game_times WHERE status=? AND started_at=?",
+        ("current", "2026-09-02T12:00:00+00:00"),
+    ).fetchall()
+    prior_game = prior_game[0]
+    prior = add(updated, prior_game, 1, "failure", observed="2026-09-02T12:00:00+00:00")
+    comparison = report(updated, "learner", START, END, PREV, skill="fork", operation="execute")
+    current_group = comparison["current"][0]
+    previous_group = comparison["previous"][0]
+    assert (current_group["independent_games"], previous_group["independent_games"]) == (1, 1)
+    assert [item["id"] for item in current_group["examples"]] == [ample]
+    assert [item["id"] for item in previous_group["examples"]] == [prior]
+    assert any(
+        item["field"] == "clock" and item["value"] == "over 30 seconds" and item["misses"] == 1
+        for item in current_group["strata"]
+    )
+    updated.close()
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "chess-coach",
+            "--db",
+            str(path),
+            "recurrence",
+            "--learner",
+            "learner",
+            "--start",
+            START,
+            "--end",
+            END,
+            "--compare-start",
+            PREV,
+            "--skill",
+            "fork",
+            "--operation",
+            "execute",
+        ],
+    )
+    capsys.readouterr()
+    main()
+    cli = json.loads(capsys.readouterr().out)
+    for period in ("current", "previous"):
+        assert cli[period][0]["independent_games"] == comparison[period][0]["independent_games"]
+        assert cli[period][0]["examples"] == comparison[period][0]["examples"]
 
 
 def measure_work(db, monkeypatch, *, selected):
