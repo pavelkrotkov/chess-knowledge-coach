@@ -34,6 +34,7 @@ def prepare(
     prevent=False,
     protection=False,
     capture_pv=False,
+    defense_pv=False,
 ):
     start = time.monotonic()
     deadline = start + SECONDS
@@ -47,13 +48,23 @@ def prepare(
                 db, root, subject, game_id, position_id, alternative, deadline
             )
         base = identity
-        if capture_pv:
-            identity, full = (
-                capture_pv_policy(
+        if capture_pv or defense_pv:
+            if defense_pv:
+                from .opening_public_defense_pv_policy import policy as defense_policy
+
+                identity = defense_policy(
+                    base,
+                    forks=forks,
+                    prevent=prevent,
+                    protection=protection,
+                    capture_pv=capture_pv,
+                    window=fork_window,
+                )
+            else:
+                identity = capture_pv_policy(
                     base, forks=forks, prevent=prevent, protection=protection, window=fork_window
-                ),
-                None,
-            )
+                )
+            full = None
             result, sample = prepare_capture_pv(db.path, ENGINE, index, identity, start, deadline)
             later_sample = None
         else:
@@ -81,7 +92,7 @@ def prepare(
 
         def recheck():
             # The source can change during record checks, so confirm it last.
-            if capture_pv:
+            if capture_pv or defense_pv:
                 verify_capture_pv(index, identity, result, deadline)
             confirm(
                 db,

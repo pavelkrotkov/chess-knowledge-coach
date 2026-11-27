@@ -3,14 +3,15 @@
 import sqlite3
 import time
 
-from .opening_public_capture_pv_position import candidate, check, observe
+from .opening_public_capture_pv_position import check, observe
 from .opening_public_capture_pv_record import record
+from .opening_public_defense_pv_position import observe as defense_observe
 from .opening_public_proof_history import positions
 
 MAX_SEARCHES = 2
 
 
-def _scan_game(connection, row, binding, move, engine, deadline, result):
+def _scan_game(connection, row, binding, move, engine, deadline, result, nomination):
     rows, candidates, censored, safe = positions(
         connection, row[0], row[1], binding, move, deadline, all_moves=True
     )
@@ -22,15 +23,14 @@ def _scan_game(connection, row, binding, move, engine, deadline, result):
     completed_before = result["native_completed"]
     for ply, board, recorded in candidates:
         check(deadline)
-        kind = "capture" if board.is_capture(recorded) else "quiet"
-        if kind in result["attempted_kinds"]:
+        defense = "defense_pv" in binding["policy"]
+        kind = nomination(board, recorded, deadline, result, defense)
+        if kind is None:
             continue
-        result["witness_checked"] += 1
-        if not candidate(board, recorded, deadline):
-            continue
+        observer = defense_observe if defense else observe
         result["attempted_kinds"].append(kind)
         result["native_attempted"] += 1
-        measured = observe(board, recorded, engine, deadline)
+        measured = observer(board, recorded, engine, deadline)
         record(connection, row, binding, rows, ply, board, recorded, measured, result)
         if engine["failed"]:
             return False
@@ -40,7 +40,7 @@ def _scan_game(connection, row, binding, move, engine, deadline, result):
     return result["native_completed"] - completed_before == len(candidates)
 
 
-def visit(connection, row, binding, move, engine, deadline, result):
+def visit(connection, row, binding, move, engine, deadline, result, nomination):
     if (
         engine["failed"]
         or len(result["attempted_kinds"]) == MAX_SEARCHES
@@ -53,7 +53,7 @@ def visit(connection, row, binding, move, engine, deadline, result):
     complete = False
     # Earlier positives survive a later deadline or unsupported position.
     try:
-        complete = _scan_game(connection, row, binding, move, engine, deadline, result)
+        complete = _scan_game(connection, row, binding, move, engine, deadline, result, nomination)
     except TimeoutError:
         return False
     except sqlite3.OperationalError:
