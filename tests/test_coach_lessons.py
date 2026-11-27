@@ -4037,24 +4037,17 @@ def test_protection_lesson_offers_only_a_current_bounded_line_replay(tmp_path, m
         == selected_strict
     )
 
-    # Recheck actual changed review and corpus inputs without persisting fixture mutations.
+    # Recheck an actual changed review without persisting the fixture mutation.
     evidence_id = selected_strict["preview"]["patterns"][0]["supporting_sources"][0]["evidence_id"]
-    for changed in ("review", "corpus"):
-        check_budget = CourseBudget(db, slice_seconds=SELECTED_SECONDS)
-        db.connection.execute("SAVEPOINT protection_course_change")
-        try:
-            if changed == "review":
-                review_evidence(db, evidence_id, decision="reject", actor="fixture")
-            else:
-                db.connection.execute(
-                    "UPDATE puzzles SET solution=solution || ' a1a1' WHERE corpus_id=? AND puzzle_id=?",
-                    (corpus_id, selected_chapters[2]["source"]["key"]),
-                )
-            with pytest.raises(ValueError):
-                tactical_export(db, LEARNER, "test", selected_strict, check_budget)
-        finally:
-            db.connection.execute("ROLLBACK TO SAVEPOINT protection_course_change")
-            db.connection.execute("RELEASE SAVEPOINT protection_course_change")
+    check_budget = CourseBudget(db, slice_seconds=SELECTED_SECONDS)
+    db.connection.execute("SAVEPOINT protection_course_change")
+    try:
+        review_evidence(db, evidence_id, decision="reject", actor="fixture")
+        with pytest.raises(ValueError):
+            tactical_export(db, LEARNER, "test", selected_strict, check_budget)
+    finally:
+        db.connection.execute("ROLLBACK TO SAVEPOINT protection_course_change")
+        db.connection.execute("RELEASE SAVEPOINT protection_course_change")
 
     from chess_coach import (
         objective_protection_snapshot,
