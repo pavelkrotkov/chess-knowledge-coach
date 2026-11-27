@@ -9,7 +9,7 @@ from .opening_public_proof_files import latest, publish
 from .opening_queue_location import location
 from .opening_queue_lock import lock
 from .opening_recent_capacity import check as capacity
-from .tactical_course import SELECTED_FORK_VERSION
+from .tactical_course import FORK_VERSIONS
 from .tactical_course_deadline import PreviewDeadline
 
 PREFIX = "tactical-fork-proof"
@@ -26,7 +26,11 @@ def _record(db, root, subject, chapter):
 
 def retain(db, root, subject, course, budget):
     chapters = course["preview"]["chapters"]
-    if course["kind"] != SELECTED_FORK_VERSION or len(chapters) < 2:
+    if (
+        course["kind"] not in FORK_VERSIONS
+        or len(chapters) < 2
+        or chapters[-1]["source"]["type"] != "corpus"
+    ):
         return
     directory, key, assessment = _record(db, root, subject, chapters[-1])
     capacity(root, directory, deadline=budget.expires, working=PUBLICATION_WORKING)
@@ -41,7 +45,7 @@ def require(db, subject, chapter):
 
 
 def current(root, database, subject, corpus, envelope, version, kind):
-    if kind != SELECTED_FORK_VERSION:
+    if kind not in FORK_VERSIONS:
         return
     from .tactical_study_current import revalidate
 

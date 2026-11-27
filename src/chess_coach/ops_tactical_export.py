@@ -10,8 +10,8 @@ from types import SimpleNamespace
 from .opening_queue_location import scope
 from .schema_compat import readonly
 from .tactical_course import (
+    FORK_VERSIONS,
     NAMED_VERSION,
-    SELECTED_FORK_VERSION,
     SELECTED_ROLES_VERSION,
     SELECTED_VERSION,
     THEMATIC_SELECTED_VERSION,
@@ -49,7 +49,7 @@ def prepare(root, preview, expected_hash, output, *, offer=False):
             SELECTED_VERSION,
             THEMATIC_SELECTED_VERSION,
             NAMED_VERSION,
-            SELECTED_FORK_VERSION,
+            *FORK_VERSIONS,
             SELECTED_ROLES_VERSION,
         }:
             budget.slice_seconds = SELECTED_SECONDS

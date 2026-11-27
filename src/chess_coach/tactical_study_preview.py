@@ -16,6 +16,8 @@ from .tactical_course import (
     PROTECTION_POLICY,
     PROTECTION_VERSION,
     SELECTED_FORK_POLICY,
+    SELECTED_FORK_ROLES_POLICY,
+    SELECTED_FORK_ROLES_VERSION,
     SELECTED_FORK_VERSION,
     SELECTED_POLICY,
     SELECTED_ROLES_POLICY,
@@ -48,6 +50,10 @@ def preview(envelope, expected):
         "local-tactical-course-export-v9": (DEFAULT_ROLES_VERSION, DEFAULT_ROLES_POLICY),
         "local-tactical-course-export-v10": (SELECTED_ROLES_VERSION, SELECTED_ROLES_POLICY),
         "local-tactical-course-export-v11": (SELECTED_FORK_VERSION, SELECTED_FORK_POLICY),
+        "local-tactical-course-export-v12": (
+            SELECTED_FORK_ROLES_VERSION,
+            SELECTED_FORK_ROLES_POLICY,
+        ),
     }
     contract = contracts.get(envelope.get("kind"))
     if not re.fullmatch(r"[0-9a-f]{64}", expected) or contract is None:
