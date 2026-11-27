@@ -490,6 +490,7 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
                 return super().request(method, url, **kwargs)
 
         provider = ForkProvider()
+        no_proof.setattr("chess_coach.study_anonymous.request", provider.anonymous)
         provider.owner = LEARNER
         provider.timeout_create = provider.timeout_upload = False
         remote = Remote("fixture-token", LEARNER, provider)
