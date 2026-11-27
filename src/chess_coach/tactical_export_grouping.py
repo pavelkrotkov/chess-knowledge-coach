@@ -2,8 +2,9 @@
 
 from .tactical_course import (
     DEFAULT_ROLES_VERSION,
+    FORK_VERSIONS,
     NAMED_VERSION,
-    SELECTED_FORK_VERSION,
+    SELECTED_FORK_ROLES_VERSION,
     SELECTED_ROLES_VERSION,
 )
 
@@ -24,7 +25,11 @@ def group(chapters, index):
 
 
 def chapters(chapters, index, pattern, kind):
-    if kind in {DEFAULT_ROLES_VERSION, SELECTED_ROLES_VERSION} and pattern["kind"] == "capture":
+    if (kind, pattern["kind"]) in {
+        (DEFAULT_ROLES_VERSION, "capture"),
+        (SELECTED_ROLES_VERSION, "capture"),
+        (SELECTED_FORK_ROLES_VERSION, "fork"),
+    }:
         chapters, end = group(chapters, index)
         return chapters, end, True, True
     if index >= len(chapters) or chapters[index]["source"]["type"] != "own-game":
@@ -32,4 +37,4 @@ def chapters(chapters, index, pattern, kind):
     end = index + 1
     if end < len(chapters) and chapters[end]["source"]["type"] in {"public", "corpus"}:
         end += 1
-    return chapters[index:end], end, False, kind in {NAMED_VERSION, SELECTED_FORK_VERSION}
+    return chapters[index:end], end, False, kind in {NAMED_VERSION, *FORK_VERSIONS}

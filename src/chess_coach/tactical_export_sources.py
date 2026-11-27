@@ -51,7 +51,10 @@ def verify_owned(db, subject, pattern, lesson, chapters, budget, selected, roles
         )
     with budget.scope(snapshot=False):
         if roles:
-            from .tactical_course_capture_roles import explanation
+            if pattern["kind"] == "fork":
+                from .tactical_course_fork_roles import explanation
+            else:
+                from .tactical_course_capture_roles import explanation
 
             compare(chapters[0], explanation(owned))
             owned = {**owned, "role": "worked"}

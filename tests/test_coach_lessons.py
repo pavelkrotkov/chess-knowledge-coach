@@ -399,18 +399,51 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
     enqueue(db, project, LEARNER, "test", selected=["fork:execute"])
     prepare_course(db, LEARNER, project)
     fork_offer, fork_body = offered(project, path, LEARNER, "test")
-    assert fork_body["kind"] == "local-tactical-course-export-v11"
+    assert fork_body["kind"] == "local-tactical-course-export-v12"
     fork_chapters = fork_body["chapters"]
-    assert len(fork_chapters) == 2
-    assert fork_chapters[0]["source"]["type"] == "own-game"
-    assert fork_chapters[1]["source"]["type"] == "corpus"
-    assert fork_chapters[1]["mode"] == "conceal"
-    assert "ungraded" in fork_chapters[1]["pgn"]
-    assert "may choose a different exercise" in fork_chapters[1]["pgn"]
-    assert fork_chapters[1]["source"]["binding"]["assessment"]["proof"]["minimum_gain"] == 3
-    assert fork_chapters[1]["source"]["binding"]["assessment"]["context"]["rating_band"] == 6
+    assert [item["role"] for item in fork_chapters] == ["explanation", "worked", "practice"]
+    explain, worked, exercise = fork_chapters
+    assert explain["source"] == worked["source"]
+    assert explain["source"]["type"] == "own-game" and exercise["source"]["type"] == "corpus"
+    review = explain["source_snapshot"]["provenance"]["review_status"]
+    assert f"This source review is {review}" in explain["pgn"]
+    assert "Provisional recurring observation" in explain["pgn"]
+    assert "independently reviewed" not in explain["pgn"]
+    assert (
+        "knight on" in explain["pgn"]
+        and "king on" in explain["pgn"]
+        and "rook on" in explain["pgn"]
+    )
+    assert "at least three material units" in explain["pgn"]
+    assert exercise["mode"] == "conceal" and "ungraded" in exercise["pgn"]
+    assert "may choose a different exercise" in exercise["pgn"]
+    assert exercise["source"]["binding"]["assessment"]["proof"]["minimum_gain"] == 3
+    assert exercise["source"]["binding"]["assessment"]["context"]["rating_band"] == 6
     fork_export = json.loads((project / ".runtime" / "planning" / fork_offer["file"]).read_text())
     fork_preview = study_preview(fork_export, fork_offer["hash"])
+    # Build the released v11 layout through its actual historical policy route.
+    from chess_coach import tactical_course
+
+    with monkeypatch.context() as old_policy:
+        old_policy.setattr(
+            tactical_course,
+            "_policy",
+            lambda _selected: (
+                tactical_course.SELECTED_FORK_VERSION,
+                tactical_course.SELECTED_FORK_POLICY,
+                [("fork", "execute")],
+                SELECTED_SECONDS,
+            ),
+        )
+        old_fork = tactical_preview(
+            db,
+            LEARNER,
+            "test",
+            selected=["fork:execute"],
+            budget=Budget(db, slice_seconds=SELECTED_SECONDS),
+        )
+    assert old_fork["kind"] == "local-tactical-course-v11"
+    assert len(old_fork["preview"]["chapters"]) == 2
     preview_path = project / ".runtime" / "planning" / "selected-fork-preview.json"
     preview_path.write_text(json.dumps(fork_preview))
     preview_path.chmod(0o600)
@@ -451,8 +484,42 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
         assert json.loads(cli_path.read_text()) == fork_export
         with revalidate(path, fork_export, fork_offer["hash"], project_root=project) as check:
             check()
+        # Rebuild the actual released v11 layout without repeating its proof.
+        old_fork_export = tactical_export(
+            db, LEARNER, "test", old_fork, Budget(db, slice_seconds=SELECTED_SECONDS)
+        )
+        assert study_preview(old_fork_export, old_fork_export["export_sha256"]) == old_fork
+        missing_fork = tactical_preview(
+            db,
+            LEARNER,
+            "not-configured",
+            selected=["fork:execute"],
+            budget=Budget(db, slice_seconds=SELECTED_SECONDS),
+        )
+        assert [part["role"] for part in missing_fork["preview"]["chapters"]] == [
+            "explanation",
+            "worked",
+        ]
+        assert (
+            missing_fork["preview"]["selection"]["unavailable"][0]["reason"]
+            == "fork corpus unavailable"
+        )
+        from chess_coach.tactical_course_fork_provenance import retain as retain_fork_proof
+
+        planning = project / ".runtime" / "planning"
+        before_records = set(planning.glob("tactical-fork-proof-*.json"))
+        retain_fork_proof(
+            db, project, LEARNER, missing_fork, Budget(db, slice_seconds=SELECTED_SECONDS)
+        )
+        assert set(planning.glob("tactical-fork-proof-*.json")) == before_records
+        missing_fork_export = tactical_export(
+            db, LEARNER, "not-configured", missing_fork, Budget(db, slice_seconds=SELECTED_SECONDS)
+        )
+        assert (
+            study_preview(missing_fork_export, missing_fork_export["export_sha256"]) == missing_fork
+        )
         changed_proof = deepcopy(fork_preview)
-        changed_chapter = changed_proof["preview"]["chapters"][1]
+        changed_chapter = changed_proof["preview"]["chapters"][2]
         changed_chapter["source"]["binding"]["assessment"]["proof"]["branches"][0]["reply"] = "a1a1"
         changed_proof["preview_sha256"] = preview_hash(changed_proof["preview"])
         from chess_coach.tactical_course_fork_provenance import require as require_fork_proof
@@ -463,14 +530,14 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
             tactical_export(
                 db, LEARNER, "test", changed_proof, Budget(db, slice_seconds=SELECTED_SECONDS)
             )
-        page = client.get("/coaching/tactical-course?chapter=1", base_url=base, headers=headers)
+        page = client.get("/coaching/tactical-course?chapter=2", base_url=base, headers=headers)
         assert page.status_code == 200 and b"Practice a related knight fork" in page.data
         download = client.get(
             "/coaching/tactical-course?download=1&version=" + fork_offer["hash"],
             base_url=base,
             headers=headers,
         )
-        assert download.status_code == 200 and fork_chapters[1]["pgn"].encode() in download.data
+        assert download.status_code == 200 and exercise["pgn"].encode() in download.data
 
         import httpx
 
@@ -501,10 +568,8 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
         no_proof.setattr(tactical_session, "_publish", local_provider)
         tactical_session.prepare_locked(project, cli_path, fork_offer["hash"])
         tactical_session.publish_locked(project, cli_path, fork_offer["hash"])
-        assert [item["mode"] for item in provider.uploaded] == ["conceal", "conceal"]
-        assert matches(
-            {**fork_chapters[1], "name": provider.uploaded[1]["name"]}, provider.export()
-        )
+        assert [item["mode"] for item in provider.uploaded] == ["conceal", "conceal", "conceal"]
+        assert matches({**exercise, "name": provider.uploaded[2]["name"]}, provider.export())
     assert learning_rows() == learning_before
 
     with revalidate(path, exported, exported["export_sha256"]) as check:

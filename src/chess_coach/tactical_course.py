@@ -38,6 +38,10 @@ SELECTED_ROLES_VERSION = "local-tactical-course-v10"
 SELECTED_ROLES_POLICY = "provisional-recurring-tactics-v10"
 SELECTED_FORK_VERSION = "local-tactical-course-v11"
 SELECTED_FORK_POLICY = "provisional-recurring-tactics-v11"
+SELECTED_FORK_ROLES_VERSION = "local-tactical-course-v12"
+SELECTED_FORK_ROLES_POLICY = "provisional-recurring-tactics-v12"
+FORK_VERSIONS = {SELECTED_FORK_VERSION, SELECTED_FORK_ROLES_VERSION}
+FORK_PAIR = ("fork", "execute")
 CONTRACTS = {
     LEGACY_VERSION: (LEGACY_POLICY, PAIRS),
     PREVIOUS_VERSION: (PREVIOUS_POLICY, CURRENT_PAIRS),
@@ -49,7 +53,8 @@ CONTRACTS = {
     NAMED_VERSION: (NAMED_POLICY, None),
     DEFAULT_ROLES_VERSION: (DEFAULT_ROLES_POLICY, CURRENT_PAIRS),
     SELECTED_ROLES_VERSION: (SELECTED_ROLES_POLICY, None),
-    SELECTED_FORK_VERSION: (SELECTED_FORK_POLICY, [("fork", "execute")]),
+    SELECTED_FORK_VERSION: (SELECTED_FORK_POLICY, [FORK_PAIR]),
+    SELECTED_FORK_ROLES_VERSION: (SELECTED_FORK_ROLES_POLICY, [FORK_PAIR]),
 }
 
 
@@ -57,11 +62,12 @@ def _policy(selected):
     if selected is None:
         return DEFAULT_ROLES_VERSION, DEFAULT_ROLES_POLICY, CURRENT_PAIRS, None
     chosen = pairs(selected)
-    if chosen == [("hanging_piece", "execute")]:
-        return SELECTED_ROLES_VERSION, SELECTED_ROLES_POLICY, chosen, SELECTED_SECONDS
-    if chosen == [("fork", "execute")]:
-        return SELECTED_FORK_VERSION, SELECTED_FORK_POLICY, chosen, SELECTED_SECONDS
-    return THEMATIC_SELECTED_VERSION, THEMATIC_SELECTED_POLICY, chosen, SELECTED_SECONDS
+    versions = {
+        (("hanging_piece", "execute"),): SELECTED_ROLES_VERSION,
+        (FORK_PAIR,): SELECTED_FORK_ROLES_VERSION,
+    }
+    version = versions.get(tuple(chosen), THEMATIC_SELECTED_VERSION)
+    return version, CONTRACTS[version][0], chosen, SELECTED_SECONDS
 
 
 def build(db, subject, corpus, *, budget=None, selected=None):
@@ -82,8 +88,9 @@ def build(db, subject, corpus, *, budget=None, selected=None):
         allow_empty=True,
         thematic=True,
         named=version in {NAMED_VERSION, DEFAULT_ROLES_VERSION, SELECTED_ROLES_VERSION},
-        roles=version in {DEFAULT_ROLES_VERSION, SELECTED_ROLES_VERSION},
-        fork=version == SELECTED_FORK_VERSION,
+        roles=version
+        in {DEFAULT_ROLES_VERSION, SELECTED_ROLES_VERSION, SELECTED_FORK_ROLES_VERSION},
+        fork=version in FORK_VERSIONS,
     )
     budget.check()
     _check_empty(patterns, selected, coverage, unavailable, chosen)
