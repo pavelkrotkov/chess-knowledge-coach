@@ -307,9 +307,9 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
     )
     # Distinct zeroing setups allow separate real deliveries without reusing a taught prompt.
     for key, fen, line, theme in (
-        ("fixture-fork-h5", "r3k3/7p/8/1N6/8/8/6P1/7K b - - 0 1", "h7h5 b5c7 e8f8 c7a8", "fork"),
+        ("fixture-fork-h5", "r3k3/8/7p/1N6/8/8/6P1/7K b - - 0 1", "h6h5 b5c7 e8f8 c7a8", "fork"),
         ("fixture-fork-f6", "r3k3/5p2/8/1N6/8/8/6P1/7K b - - 0 1", "f7f6 b5c7 e8f8 c7a8", "fork"),
-        ("fixture-capture", "4k3/p7/8/8/3q4/8/8/3RK3 b - - 0 1", "a7a6 d1d4 e8f8", "hangingPiece"),
+        ("fixture-capture", "4k3/p7/8/8/3q4/8/8/3RK3 b - - 0 1", "a7a6 d1d4", "hangingPiece"),
     ):
         db.connection.execute(
             """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,rating_deviation,
@@ -773,7 +773,7 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
         ),
     )
     for suffix, fen, line in (
-        ("h5", "r3k3/7p/8/1N6/8/8/6P1/7K b - - 0 1", "h7h5 b5c7 e8f8 c7a8"),
+        ("h5", "r3k3/8/7p/1N6/8/8/6P1/7K b - - 0 1", "h6h5 b5c7 e8f8 c7a8"),
         ("f6", "r3k3/5p2/8/1N6/8/8/6P1/7K b - - 0 1", "f7f6 b5c7 e8f8 c7a8"),
     ):
         db.connection.execute(
@@ -2525,6 +2525,30 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
             default_offer = json.loads(default_offer_bytes)
             worker_default = json.loads((planning / default_offer["file"]).read_text())
             assert canonical(worker_default) == canonical(default_export)
+            # Produce the released v9 layout through its actual historical worker policy.
+            with monkeypatch.context() as historical:
+                historical.setattr(
+                    tactical_course,
+                    "_policy",
+                    lambda _selected: (
+                        tactical_course.DEFAULT_ROLES_VERSION,
+                        tactical_course.DEFAULT_ROLES_POLICY,
+                        tactical_course.CURRENT_PAIRS,
+                        None,
+                    ),
+                )
+                response = course_client.post(
+                    local_url,
+                    data={"csrf": course_csrf},
+                    base_url="https://coach.invalid",
+                    headers=post_headers,
+                )
+                assert response.status_code == 303
+                tactical_course_worker.run(db, LEARNER, project)
+                historical_offer_bytes = offer_slot.read_bytes()
+                historical_offer = json.loads(historical_offer_bytes)
+                historical_export = json.loads((planning / historical_offer["file"]).read_text())
+                assert historical_export["kind"] == "local-tactical-course-export-v9"
         finally:
             offer_slot.write_bytes(old_offer)
             request_file.write_bytes(old_request)
@@ -2844,11 +2868,32 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
         )
     finally:
         offer_slot.write_bytes(prior_offer)
-    # The real v9 view records its own delivery after the older baseline checks.
+    # An already delivered prompt makes the newer default unavailable across artifacts.
     try:
         offer_slot.write_bytes(default_offer_bytes)
-        shown_default = course_client.get(
+        stale_default = course_client.get(
             course_url + "?version=" + default_offer["hash"] + "&chapter=2",
+            base_url="https://coach.invalid",
+            headers=course_headers,
+        )
+        assert (
+            stale_default.status_code == 200
+            and b"No current prepared course is available" in stale_default.data
+        )
+        assert (
+            db.connection.execute(
+                "SELECT 1 FROM tactical_exposures WHERE artifact_hash=? AND chapter_index=2 AND kind='served'",
+                (default_offer["hash"],),
+            ).fetchone()
+            is None
+        )
+    finally:
+        offer_slot.write_bytes(prior_offer)
+    # The real v9 view records its own delivery after the older baseline checks.
+    try:
+        offer_slot.write_bytes(historical_offer_bytes)
+        shown_default = course_client.get(
+            course_url + "?version=" + historical_offer["hash"] + "&chapter=2",
             base_url="https://coach.invalid",
             headers=course_headers,
         )
@@ -2857,7 +2902,7 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
         assert (
             db.connection.execute(
                 "SELECT 1 FROM tactical_exposures WHERE artifact_hash=? AND chapter_index=2 AND kind='served'",
-                (default_offer["hash"],),
+                (historical_offer["hash"],),
             ).fetchone()
             is not None
         )
