@@ -5442,10 +5442,14 @@ def _conditional_fit_workflow(
             headers=submit_headers,
         )
         assert requested.status_code == 302 and "teaching=1" in requested.location
+        import stat
+
         from chess_coach.opening_profile_index import INDEX_NAME
 
         index_path = planning / INDEX_NAME
         original_index = index_path.read_bytes()
+        original_mode = stat.S_IMODE(index_path.stat().st_mode)
+        index_path.chmod(original_mode | stat.S_IWUSR)
         with sqlite3.connect(index_path) as public_index:
             public_index.execute("PRAGMA journal_mode=MEMORY")
             removed = public_index.execute(
@@ -5453,13 +5457,17 @@ def _conditional_fit_workflow(
             )
             assert removed.rowcount == 1
         public_index.close()
+        index_path.chmod(original_mode)
         opening_study_worker.run(db, "learner", root)
         assert json.loads(slot.read_text())["state"] == "stale" and not provider_calls
+        index_path.chmod(original_mode | stat.S_IWUSR)
         index_path.write_bytes(original_index)
+        index_path.chmod(original_mode)
         assert (
             hashlib.sha256(index_path.read_bytes()).digest()
             == hashlib.sha256(original_index).digest()
         )
+        assert stat.S_IMODE(index_path.stat().st_mode) == original_mode
         requested = ranked_client.post(
             "/repertoire/unfamiliar/course/study",
             data={
