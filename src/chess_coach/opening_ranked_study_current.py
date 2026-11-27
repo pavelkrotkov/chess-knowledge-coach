@@ -23,7 +23,16 @@ def admitted(database, directory, root, learner, version, choice, *, browser=Fal
         current, context = preview(
             db, root, learner, choice=choice, budget=budget, with_context=True
         )
-        course = build(current, version, context)
+        if current["version"] == version:
+            course = build(current, version, context)
+        else:
+            from .opening_ranked_teaching import assemble
+            from .opening_ranked_teaching_source import qualify
+            from .opening_ranked_teaching_study import build as teaching_study
+
+            qualification = qualify(context)
+            current = assemble(context, qualification)
+            course = teaching_study(current, version, context, qualification)
         check = guard(context, db, root, learner, directory, version, course)
         check()
         yield course, budget, check

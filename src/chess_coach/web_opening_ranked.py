@@ -35,20 +35,8 @@ def show():
                 headers={"Cache-Control": "private, no-store"},
             )
         else:
-            from .opening_ranked_study_course import build
-            from .opening_study_view import status
-
             selection, snapshot = course["selection"], course["chapters"][0]["source_snapshot"]
-            study = None
-            if not teaching:
-                study = status(
-                    db,
-                    root,
-                    subject,
-                    course,
-                    revision=build(course, course["version"], context),
-                    selection={"context_choice": choice},
-                )
+            study = _study(db, root, subject, choice, course, context, teaching)
             response = render_template(
                 "opening_ranked_course.html",
                 course=course,
@@ -65,3 +53,22 @@ def show():
         )
     except (Exception, PreviewDeadline):
         abort(503, "The ranked opening course could not be checked now.")
+
+
+def _study(db, root, subject, choice, course, context, teaching):
+    from .opening_ranked_study_course import build
+    from .opening_study_view import status
+
+    if teaching:
+        if course["public_status"] != "available":
+            return None
+        from .opening_ranked_teaching_study import build as teaching_study
+
+        revision = teaching_study(
+            course, course["version"], context, context["teaching_qualification"]
+        )
+    else:
+        revision = build(course, course["version"], context)
+    return status(
+        db, root, subject, course, revision=revision, selection={"context_choice": choice}
+    )

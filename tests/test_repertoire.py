@@ -5345,12 +5345,14 @@ def _conditional_fit_workflow(
             csrf = session["csrf"]
         form = {"csrf": csrf, "context_choice": selected_choice, "version": course["version"]}
         submit_headers = {**ranked_headers, "Origin": "https://coach.invalid"}
-        refused_teaching = ranked_client.post(
-            "/repertoire/unfamiliar/course/study",
-            data={"csrf": csrf, "context_choice": teaching_choice, "version": partial_version},
-            base_url="https://coach.invalid",
-            headers=submit_headers,
-        )
+        with patch.context() as limited:
+            limited.setattr(ranked_teaching, "MAX_GAMES", 1)
+            refused_teaching = ranked_client.post(
+                "/repertoire/unfamiliar/course/study",
+                data={"csrf": csrf, "context_choice": teaching_choice, "version": partial_version},
+                base_url="https://coach.invalid",
+                headers=submit_headers,
+            )
         assert refused_teaching.status_code == 409 and provider.created == 0
         staged = opening_study_request.staged
         appeared = planning / ("opening-study-" + "f" * 64 + "-intent.json")
@@ -5410,6 +5412,93 @@ def _conditional_fit_workflow(
         )
         assert receipt["chapters"] == ["done"] and len(receipt["chapter_ids"]) == 1
         assert provider.uploaded[0]["pgn"] == course["chapters"][0]["pgn"]
+        old_intent = intent.read_bytes()
+        provider = Provider()
+        provider_calls = []
+        provider_request = provider.request
+
+        def record_provider(*args, **kwargs):
+            provider_calls.append(True)
+            return provider_request(*args, **kwargs)
+
+        patch.setattr(provider, "request", record_provider)
+        patch.setattr(study_anonymous, "request", provider.anonymous)
+        teaching_form = ranked_client.get(
+            "/repertoire/unfamiliar",
+            query_string={"ranked": "1", "choice": teaching_choice, "teaching": "1"},
+            base_url="https://coach.invalid",
+            headers=ranked_headers,
+        )
+        assert teaching_form.status_code == 200 and b"Request private Study" in teaching_form.data
+        requested = ranked_client.post(
+            "/repertoire/unfamiliar/course/study",
+            data={
+                "csrf": csrf,
+                "context_choice": teaching_choice,
+                "version": teaching["version"],
+                "teaching": "1",
+            },
+            base_url="https://coach.invalid",
+            headers=submit_headers,
+        )
+        assert requested.status_code == 302 and "teaching=1" in requested.location
+        import stat
+
+        from chess_coach.opening_profile_index import INDEX_NAME
+
+        index_path = planning / INDEX_NAME
+        original_index = index_path.read_bytes()
+        original_mode = stat.S_IMODE(index_path.stat().st_mode)
+        index_path.chmod(original_mode | stat.S_IWUSR)
+        with sqlite3.connect(index_path) as public_index:
+            public_index.execute("PRAGMA journal_mode=MEMORY")
+            removed = public_index.execute(
+                "DELETE FROM games WHERE id = ?", (practice["source"]["record"],)
+            )
+            assert removed.rowcount == 1
+        public_index.close()
+        index_path.chmod(original_mode)
+        opening_study_worker.run(db, "learner", root)
+        assert json.loads(slot.read_text())["state"] == "stale" and not provider_calls
+        index_path.chmod(original_mode | stat.S_IWUSR)
+        index_path.write_bytes(original_index)
+        index_path.chmod(original_mode)
+        assert (
+            hashlib.sha256(index_path.read_bytes()).digest()
+            == hashlib.sha256(original_index).digest()
+        )
+        assert stat.S_IMODE(index_path.stat().st_mode) == original_mode
+        requested = ranked_client.post(
+            "/repertoire/unfamiliar/course/study",
+            data={
+                "csrf": csrf,
+                "context_choice": teaching_choice,
+                "version": teaching["version"],
+                "teaching": "1",
+            },
+            base_url="https://coach.invalid",
+            headers=submit_headers,
+        )
+        assert requested.status_code == 302
+        opening_study_worker.run(db, "learner", root)
+        assert json.loads(slot.read_text())["state"] == "incomplete" and provider.created == 1
+        reconcile_locked(root, teaching["version"])
+        opening_study_worker.run(db, "learner", root)
+        assert json.loads(slot.read_text())["state"] == "incomplete" and len(provider.uploaded) == 1
+        opening_study_worker.run(db, "learner", root)
+        assert json.loads(slot.read_text())["state"] == "complete" and provider.created == 1
+        teaching_intent = planning / ("opening-study-" + teaching["version"] + "-intent.json")
+        teaching_receipt = json.loads(teaching_intent.read_text())
+        assert teaching_receipt["chapters"] == ["done"] * 3
+        assert len(teaching_receipt["chapter_ids"]) == 3
+        assert all(
+            teaching_receipt[key]
+            for key in ("anonymous_verified", "privacy_verified", "ordered_verified")
+        )
+        assert [item["pgn"] for item in provider.uploaded] == [
+            value["pgn"] for value in teaching["chapters"]
+        ]
+        assert intent.read_bytes() == old_intent
         patch.setattr(opening_engine, "start_engine", original_start_engine)
         assert hashlib.sha256(path.read_bytes()).hexdigest() == database_hash
         patch.setattr(public_fork_candidate, "fork_proof", proof_impl)

@@ -30,7 +30,9 @@ def preview(
         from .opening_ranked_teaching import assemble
         from .opening_ranked_teaching_source import qualify
 
-        course = assemble(context, qualify(context))
+        qualification = qualify(context)
+        course = assemble(context, qualification)
+        context["teaching_qualification"] = qualification
     else:
         course = build_from_context(context)
     validate(context, db, root, learner)
