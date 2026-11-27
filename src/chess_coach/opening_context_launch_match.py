@@ -2,6 +2,8 @@
 
 
 def eligible(current, items):
+    if current["admission"] != "development":
+        return None
     owned = current["parent"]["development"]["owned"]["observations"]
     identifiers = {item["evidence_id"] for item in owned}
     for item in items:

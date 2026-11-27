@@ -20,30 +20,30 @@ def preflight(db, root, subject, choice):
     budget.expires = min(budget.expires, time.monotonic() + SECONDS)
     guard = start(db, root, subject)
     base = inventory(db, root, subject, deadline=budget.expires, annotation=False)
-    parent, _ = selected(base, choice, provisional=False)
+    parent, _, _ = selected(base, choice, provisional=False)
     watched = sorted(paths(root, subject, parent))
     before = fingerprint(watched)
     budget.check()
     report = inventory(db, root, subject, deadline=budget.expires)
-    current, item = selected(report, choice, provisional=True)
+    current, item, admission = selected(report, choice, provisional=True)
     check(db, root, subject, guard, budget)
     if sorted(paths(root, subject, current)) != watched or fingerprint(watched) != before:
         raise ValueError("opening context changed")
-    binding = digest(
-        canonical(
-            [
-                subject,
-                choice,
-                report["sample_identity"],
-                report["reference_index_sha256"],
-                item["selection"],
-                item["source"],
-                current["fit"],
-                current["development"],
-                before,
-            ]
-        )
-    )
+    inputs = [
+        subject,
+        choice,
+        report["sample_identity"],
+        report["reference_index_sha256"],
+        item["selection"],
+        item["source"],
+        current["fit"],
+        current["development"],
+        before,
+    ]
+    # Keep existing developmental-token bindings while distinguishing a fit-only admission.
+    if admission == "fit":
+        inputs.append("fit")
+    binding = digest(canonical(inputs))
     return {
         "budget": budget,
         "guard": guard,
@@ -53,4 +53,5 @@ def preflight(db, root, subject, choice):
         "parent": current,
         "item": item,
         "choice": choice,
+        "admission": admission,
     }

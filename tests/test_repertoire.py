@@ -1138,7 +1138,13 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
             Database, "__init__", lambda *_args, **_kwargs: pytest.fail("CLI constructed DB")
         )
         context_cli.main()
-    assert json.loads(out.getvalue())["version"] == "opening-context-inventory-v1"
+    cli_contexts = json.loads(out.getvalue())
+    assert cli_contexts["version"] == "opening-context-inventory-v1"
+    assert cli_contexts["status"] == "prepared"
+    for color in ("white", "black"):
+        assert [parent["path"] for parent in cli_contexts["contexts"][color]["parents"]] == [
+            parent["path"] for parent in contexts["contexts"][color]["parents"]
+        ]
     assert experiment_db.connection.total_changes == before_inventory
     assert hashlib.sha256(experiment_path.read_bytes()).hexdigest() == before_inventory_hash
     app_first = create_app(
@@ -4799,6 +4805,48 @@ def _conditional_fit_workflow(
             goal_guard.setattr("chess_coach.objective_fork_judge.fork_proof", no_goal_solver)
             goal_guard.setattr("chess_coach.objective_capture_snapshot.judge", no_goal_solver)
             goal_guard.setattr(chess.engine.SimpleEngine, "popen_uci", no_goal_solver)
+            fit_item = next(item for item in parent["items"] if item["uci"] == "g1f3")
+            fit_choice = token(fit_item["selection"])
+            fit_plan = goal_client.get(
+                "/plan",
+                query_string={"opening": fit_choice, "goal": "balanced", "limit": "1"},
+                base_url="https://coach.invalid",
+                headers=launch_headers,
+            )
+            assert fit_plan.status_code == 200
+            assert b"Why this choice: it fits your observed play" in fit_plan.data
+            assert b"Fit with your observed play: supported" in fit_plan.data
+            assert b"Learning opportunity: provisional" in fit_plan.data
+            assert b"for e3" in fit_plan.data
+            assert b"A learning benefit for this choice has not been established." in fit_plan.data
+            assert b"opening experiment itself is not graded" in fit_plan.data
+            assert b"A matching eligible fork task is unavailable on this page." in fit_plan.data
+            assert b'name="opening_window_cursor"' not in fit_plan.data
+            assert b"Public source" in fit_plan.data and b"CC BY-SA 4.0" in fit_plan.data
+            assert fit_item["distance"]["status"] == "checked"
+            assert (
+                f"distinct replies: {fit_item['distance']['counts']['responses']}".encode()
+                in fit_plan.data
+            )
+            match = re.search(
+                r'name="opening_token" value="([^"]+)"', fit_plan.get_data(as_text=True)
+            )
+            assert match is not None
+            from chess_coach.opening_context_launch_token import context as opening_context_token
+
+            fit_token = html.unescape(match.group(1))
+            assert opening_context_token(goal_db, "learner", fit_token)[5] == "fit"
+            changed_choice = goal_client.get(
+                "/plan",
+                query_string={"opening_token": fit_token, "opening": choice},
+                base_url="https://coach.invalid",
+                headers=launch_headers,
+            )
+            assert changed_choice.status_code == 400
+            assert goal_before == {
+                name: goal_observer.execute(f"SELECT * FROM {name} ORDER BY rowid").fetchall()
+                for name in goal_tables
+            }
             goal_form, _ = opening_form(client=goal_client, balanced=True)
             other_form, _ = opening_form(client=goal_client, balanced=True)
             from chess_coach.curriculum_capture_offer import COMMON_WINDOW_POLICY

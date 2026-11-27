@@ -28,12 +28,36 @@ def attach(db, root, subject, corpus, current, plan):
 
 def _detail(current):
     item, selection = current["item"], current["item"]["selection"]
+    parent = current["parent"]
+    development = parent["development"]
+    development_choice = next(
+        (
+            candidate["san"]
+            for candidate in parent["items"]
+            if candidate["uci"] == development.get("choice")
+        ),
+        None,
+    )
+    selected_unknown = next(
+        (
+            entry["reason"]
+            for entry in development.get("unknown", [])
+            if entry["move"] == item["uci"]
+        ),
+        None,
+    )
     return {
         "status": "unavailable",
         "name": item["name"],
         "move": item["san"],
         "color": selection["color"],
         "context": _path(selection["path"]),
+        "admission": current["admission"],
+        "distance": item["distance"],
+        "development_status": current["parent"]["development"]["status"],
+        "development_reason": development["reason"],
+        "development_choice": development_choice,
+        "selected_development_unknown": selected_unknown,
         "fit_status": current["parent"]["fit"]["status"],
         "fit_reason": current["parent"]["fit"]["reason"],
         "source": item["source"]["line"]["site"] or item["source"]["profile"]["source"],
