@@ -6,6 +6,7 @@ from .curriculum_cursor_phase import after_due
 from .curriculum_due import due_candidate, due_page
 from .curriculum_due_schedule import check_schedule, eligible
 from .curriculum_due_window import full, incomplete, take_again
+from .curriculum_recall import estimate
 from .curriculum_selection import select
 from .db import Database
 
@@ -24,6 +25,7 @@ def scan_due(db: Database, state: dict, now: datetime, summary: dict, scan: dict
             if reason:
                 break
             if state["scheduled_best"] == row["id"]:
+                candidate["recall"] = estimate(db, row, now)
                 take_again(candidate, seen, window)
                 items, seen = select([candidate], state["limit"] - len(seen), summary, seen)
                 selected.extend(items)
