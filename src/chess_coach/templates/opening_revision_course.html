@@ -3,7 +3,7 @@
 {% block content %}
 {% if exposure_unavailable %}<p>Delivery tracking is unavailable in compatibility mode; held-out qualification is unavailable.</p>{% endif %}
 <h2>Opening revision course preview</h2>
-<p>As the owner or an editor, you can see answers outside play. For an interactive chapter, use Preview to try the prepared line; another sound move may be rejected. Moves in a Study do not update your coach practice record.</p>
+<p>As the owner or an editor, you can see answers outside play. In Lichess, use Preview for an interactive chapter to try the prepared line; another sound move may be rejected. Moves in a Study do not update your coach practice record.</p>
 {% if course.rationale is defined %}<p>This is your chosen revision with the current bounded evidence and its uncertainties. These examples do not establish opening causation, preference, or mastery.</p>{% else %}<p>This private exploratory preview pairs your checked opening decision with a public continuation of the same selected move when one is available. These examples support rehearsal; preparation, soundness and personal fit remain unknown.</p>{% endif %}
 <p>Preview version: <code>{{ course.version }}</code>. <a href="{{ download_url }}">Download this version as PGN</a> · <a href="{{ url_for('opening_experiments.show', game_id=course.decision.game_id, position_id=course.decision.position_id, move=course.choice.uci) }}">Return to your exact experiment</a>.</p>
 {% if study %}

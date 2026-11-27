@@ -2023,6 +2023,7 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
 
     # The selected course uses the genuine prepared assessment, not a worked-line substitute.
     from chess_coach.course_gamebook import capture as faithful_capture
+    from chess_coach.fact_fingerprint import canonical
     from chess_coach.tactical_course import build as build_course
 
     learning_tables = (
@@ -2058,8 +2059,11 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
     assert (
         parsed_practice.headers["White"] == "White" and parsed_practice.headers["Black"] == "Black"
     )
-    assert practice["orientation"] == "white" and "White to move" in parsed_practice.comment
-    assert "queen on d4" in parsed_practice.comment and "Preview" in parsed_practice.comment
+    practice_note = " ".join(parsed_practice.comment.split())
+    assert practice["orientation"] == "white" and "White to move" in practice_note
+    assert "queen on d4" in practice_note and "In Lichess, use Preview" in practice_note
+    assert "checked automatically and completes this one-move exercise" in practice_note
+    assert "Use your coach for practice that is checked and recorded" in practice_note
     assert parsed_practice.variations[0].move.uci() == "d1d4"
     named_export = build_export(
         db, LEARNER, "test", named, Budget(db, slice_seconds=SELECTED_SECONDS)
@@ -2093,17 +2097,11 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
         )
         assert response.status_code == 303
         tactical_course_worker.run(db, LEARNER, project)
-        named_offer = json.loads(offer_slot.read_text())
+        named_offer_bytes = offer_slot.read_bytes()
+        named_offer = json.loads(named_offer_bytes)
         worker_export = json.loads((planning / named_offer["file"]).read_text())
-        assert worker_export == named_export
-        shown_practice = course_client.get(
-            course_url + "?version=" + named_offer["hash"] + "&chapter=1",
-            base_url="https://coach.invalid",
-            headers=course_headers,
-        )
-        assert shown_practice.status_code == 200
-        assert b"Open related capture practice in the coach" in shown_practice.data
-        assert b"Moves in a Study do not update your coach practice record" in shown_practice.data
+        assert worker_export["export_sha256"] == named_export["export_sha256"]
+        assert canonical(worker_export) == canonical(named_export)
     finally:
         offer_slot.write_bytes(saved_offer)
         request_file.write_bytes(saved_request)
@@ -2235,6 +2233,32 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
     with pytest.raises(ValueError):
         export_candidate(project, altered_path, altered["preview_sha256"], rejected)
     assert not rejected.exists() and related_output.is_file()
+
+    # Serving the new practice records exposure; preserve the older unseen checks first.
+    prior_offer = offer_slot.read_bytes()
+    try:
+        offer_slot.write_bytes(named_offer_bytes)
+        shown_practice = course_client.get(
+            course_url + "?version=" + named_offer["hash"] + "&chapter=1",
+            base_url="https://coach.invalid",
+            headers=course_headers,
+        )
+        assert shown_practice.status_code == 200
+        assert b"Open related capture practice in the coach" in shown_practice.data
+        assert b"Moves in a Study do not update your coach practice record" in shown_practice.data
+        assert (
+            db.connection.execute(
+                "SELECT 1 FROM tactical_exposures WHERE artifact_hash=? AND chapter_index=1 AND kind='served'",
+                (named_offer["hash"],),
+            ).fetchone()
+            is not None
+        )
+    finally:
+        offer_slot.write_bytes(prior_offer)
+    assert learning_before == {
+        table: db.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        for table in learning_tables
+    }
 
     # A source change during inventory must stop the subsequent create.
     from chess_coach.study_remote import Remote

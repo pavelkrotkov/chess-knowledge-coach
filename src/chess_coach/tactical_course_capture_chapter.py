@@ -37,11 +37,12 @@ def chapter(db, subject, selected, item, assessment):
     goal = f"Capture the {chess.piece_name(piece.piece_type)} on {chess.square_name(square)}."
     note = f"{color} to move. {goal} {attribution(db, 'corpus', version, snapshot)}"
     instruction = (
-        "Use Preview to try the prepared line; another sound move may be rejected."
+        "In Lichess, use Preview to try the prepared line. A matching move is checked "
+        "automatically and completes this one-move exercise; another sound move may be rejected."
         if interactive
         else "This is an ungraded recorded line. Use the move controls to reveal it."
     )
-    guidance = f"{note} {instruction} Use the coach practice link to check and record your answer."
+    guidance = f"{note} {instruction} Use your coach for practice that is checked and recorded."
     source = {"type": "corpus", "version": version, "key": key, "binding": binding}
     result = pgn_chapter(
         "Practice a related capture",
