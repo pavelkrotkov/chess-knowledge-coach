@@ -28,7 +28,7 @@ def _reference_options():
     if (
         reference not in {"broadcast", "recent"}
         or fork_window not in {"initial", "continuation"}
-        or proof_kind not in {"fork", "prevention"}
+        or proof_kind not in {"fork", "prevention", "protection"}
     ):
         abort(400)
     return reference, fork_window, proof_kind

@@ -16,25 +16,40 @@ def main():
     parser.add_argument("--alternative", required=True)
     parser.add_argument("--reference", choices=("broadcast", "recent"), default="broadcast")
     parser.add_argument("--fork-window", choices=("initial", "continuation"), default="initial")
-    parser.add_argument("--proof-kind", choices=("fork", "prevention"), default="fork")
+    parser.add_argument(
+        "--proof-kind", choices=("fork", "prevention", "protection"), default="fork"
+    )
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument(
         "--preparation", action="store_true", help="Inventory this checked experiment"
     )
     mode.add_argument(
         "--prepare-public",
-        action="store_true",
+        dest="prepare_public",
+        action="store_const",
+        const="capture",
         help="Prepare bounded recent public capture evidence",
     )
     mode.add_argument(
         "--prepare-public-forks",
-        action="store_true",
+        dest="prepare_public",
+        action="store_const",
+        const="fork",
         help="Prepare bounded recent public capture and fork evidence",
     )
     mode.add_argument(
         "--prepare-public-prevention",
-        action="store_true",
+        dest="prepare_public",
+        action="store_const",
+        const="prevention",
         help="Prepare bounded recent public knight-fork prevention evidence",
+    )
+    mode.add_argument(
+        "--prepare-public-protection",
+        dest="prepare_public",
+        action="store_const",
+        const="protection",
+        help="Prepare bounded public named-piece protection evidence",
     )
     mode.add_argument(
         "--recommendation-course", action="store_true", help="Read a source-bound selected revision"
@@ -48,14 +63,15 @@ def main():
             args.position_id,
             args.alternative,
         )
-        if args.prepare_public or args.prepare_public_forks or args.prepare_public_prevention:
+        if args.prepare_public:
             if args.reference != "recent":
                 raise ValueError("recent reference required")
             value = prepare_public(
                 *arguments,
-                forks=args.prepare_public_forks,
+                forks=args.prepare_public == "fork",
                 fork_window=args.fork_window,
-                prevent=args.prepare_public_prevention,
+                prevent=args.prepare_public == "prevention",
+                protection=args.prepare_public == "protection",
             )
         elif args.recommendation_course:
             from .opening_recommendation_cli import report as recommendation

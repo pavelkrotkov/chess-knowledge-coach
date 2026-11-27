@@ -7,10 +7,10 @@ MAX_CAPTURES = 64
 
 
 def probe(board, *, check=None, inner_check=None):
-    if board.is_game_over(claim_draw=True) or board.is_repetition(2):
-        return None
     if inner_check is not None:
         inner_check()
+    if board.is_game_over(claim_draw=True) or board.is_repetition(2):
+        return None
     result = threats(board, hypothetical=True, check=check, inner_check=inner_check)
     if not _valid(result):
         return None
