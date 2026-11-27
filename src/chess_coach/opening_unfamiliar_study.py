@@ -14,10 +14,20 @@ def publish_locked(root, version, selection=None, *, queued=False):
     root, learner, planning, database = _paths(root, version)
     if not os.environ.get("LICHESS_STUDY_TOKEN", "").strip():
         raise ValueError("Study credentials unavailable")
+    if selection and "context_choice" in selection:
+        if set(selection) != {"context_choice"}:
+            raise ValueError("opening selection unavailable")
+        from .opening_ranked_study_current import admitted as ranked_admitted
+
+        admission = ranked_admitted(
+            database, planning, root, learner, version, selection["context_choice"]
+        )
+    else:
+        admission = admitted(database, planning, root, learner, version, selection)
     with (
         locked(database, planning, sync_wait=not queued),
         nullcontext() if queued else opening_lock(planning),
-        admitted(database, planning, root, learner, version, selection) as source,
+        admission as source,
     ):
         if queued and verified(planning, learner, version, source[0]):
             source[2]()

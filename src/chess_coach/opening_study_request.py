@@ -18,6 +18,12 @@ SLOT = "opening-study-request.json"
 
 
 def _admitted(database, directory, root, learner, version, selection):
+    if "context_choice" in selection:
+        from .opening_ranked_study_current import admitted
+
+        return admitted(
+            database, directory, root, learner, version, selection["context_choice"], browser=True
+        )
     if "game_id" in selection:
         return revision_admitted(
             database,
