@@ -9,6 +9,7 @@ from .fact_fingerprint import canonical
 from .opening_queue_location import scope
 from .schema_compat import readonly
 from .tactical_course import (
+    DEFAULT_FORK_VERSION,
     DEFAULT_ROLES_VERSION,
     FORK_VERSIONS,
     NAMED_VERSION,
@@ -56,6 +57,7 @@ def revalidate(
                 THEMATIC_SELECTED_VERSION,
                 NAMED_VERSION,
                 DEFAULT_ROLES_VERSION,
+                DEFAULT_FORK_VERSION,
                 SELECTED_ROLES_VERSION,
                 *FORK_VERSIONS,
             }

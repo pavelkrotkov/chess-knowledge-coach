@@ -2,6 +2,7 @@
 
 from .tactical_course import (
     CONTRACTS,
+    DEFAULT_FORK_VERSION,
     DEFAULT_ROLES_VERSION,
     FORK_VERSIONS,
     NAMED_VERSION,
@@ -23,13 +24,9 @@ from .tactical_export_gaps import omissions
 
 NAMED = {NAMED_VERSION, SELECTED_ROLES_VERSION}
 SELECTED = {SELECTED_VERSION, THEMATIC_SELECTED_VERSION, *FORK_VERSIONS, *NAMED}
-THEMATIC = {
-    THEMATIC_VERSION,
-    THEMATIC_SELECTED_VERSION,
-    DEFAULT_ROLES_VERSION,
-    *FORK_VERSIONS,
-    *NAMED,
-}
+THEMATIC = {THEMATIC_VERSION, DEFAULT_ROLES_VERSION, DEFAULT_FORK_VERSION} | (
+    SELECTED - {SELECTED_VERSION}
+)
 MODERN = {PROTECTION_VERSION, VERSION, SELECTED_VERSION, *THEMATIC}
 
 
@@ -49,10 +46,9 @@ def _pairs(selection, contract, selected, named):
     if not selected:
         return contract[1]
     result = from_pairs(selection["pairs"])
-    if named and result != [("hanging_piece", "execute")]:
-        raise ValueError("named capture selection differs")
-    if contract[1] is not None and result != contract[1]:
-        raise ValueError("selected fork differs")
+    required = [("hanging_piece", "execute")] if named else contract[1]
+    if required is not None and result != required:
+        raise ValueError("named capture selection differs" if named else "selected fork differs")
     return result
 
 

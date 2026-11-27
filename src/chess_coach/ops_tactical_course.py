@@ -12,6 +12,7 @@ from .tactical_course import build
 from .tactical_course_budget import Budget
 from .tactical_course_deadline import PreviewDeadline
 from .tactical_course_files import paths
+from .tactical_course_fork_provenance import retain
 from .tactical_course_publish import publish
 
 
@@ -26,6 +27,7 @@ def prepare(root, output):
         db.capture_root = scope(db, root)
         budget = Budget(db)
         result = build(db, os.environ["CHESS_SUBJECT"], os.environ["CHESS_CORPUS"], budget=budget)
+        retain(db, root, os.environ["CHESS_SUBJECT"], result, budget)
         publish(output, result, budget)
     finally:
         connection.close()

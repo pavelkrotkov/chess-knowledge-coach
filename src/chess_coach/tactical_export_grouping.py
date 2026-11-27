@@ -1,6 +1,7 @@
 """Group versioned course chapters with their explicit source roles."""
 
 from .tactical_course import (
+    DEFAULT_FORK_VERSION,
     DEFAULT_ROLES_VERSION,
     FORK_VERSIONS,
     NAMED_VERSION,
@@ -29,6 +30,8 @@ def chapters(chapters, index, pattern, kind):
         (DEFAULT_ROLES_VERSION, "capture"),
         (SELECTED_ROLES_VERSION, "capture"),
         (SELECTED_FORK_ROLES_VERSION, "fork"),
+        (DEFAULT_FORK_VERSION, "capture"),
+        (DEFAULT_FORK_VERSION, "fork"),
     }:
         chapters, end = group(chapters, index)
         return chapters, end, True, True

@@ -40,7 +40,17 @@ SELECTED_FORK_VERSION = "local-tactical-course-v11"
 SELECTED_FORK_POLICY = "provisional-recurring-tactics-v11"
 SELECTED_FORK_ROLES_VERSION = "local-tactical-course-v12"
 SELECTED_FORK_ROLES_POLICY = "provisional-recurring-tactics-v12"
+DEFAULT_FORK_VERSION = "local-tactical-course-v13"
+DEFAULT_FORK_POLICY = "provisional-recurring-tactics-v13"
+# Only selected fork versions use the eight-second slice; the default keeps two seconds.
 FORK_VERSIONS = {SELECTED_FORK_VERSION, SELECTED_FORK_ROLES_VERSION}
+QUALIFIED_FORK_VERSIONS = {*FORK_VERSIONS, DEFAULT_FORK_VERSION}
+ROLE_COURSE_VERSIONS = {
+    DEFAULT_ROLES_VERSION,
+    SELECTED_ROLES_VERSION,
+    SELECTED_FORK_ROLES_VERSION,
+    DEFAULT_FORK_VERSION,
+}
 FORK_PAIR = ("fork", "execute")
 CONTRACTS = {
     LEGACY_VERSION: (LEGACY_POLICY, PAIRS),
@@ -55,12 +65,13 @@ CONTRACTS = {
     SELECTED_ROLES_VERSION: (SELECTED_ROLES_POLICY, None),
     SELECTED_FORK_VERSION: (SELECTED_FORK_POLICY, [FORK_PAIR]),
     SELECTED_FORK_ROLES_VERSION: (SELECTED_FORK_ROLES_POLICY, [FORK_PAIR]),
+    DEFAULT_FORK_VERSION: (DEFAULT_FORK_POLICY, CURRENT_PAIRS),
 }
 
 
 def _policy(selected):
     if selected is None:
-        return DEFAULT_ROLES_VERSION, DEFAULT_ROLES_POLICY, CURRENT_PAIRS, None
+        return DEFAULT_FORK_VERSION, DEFAULT_FORK_POLICY, CURRENT_PAIRS, None
     chosen = pairs(selected)
     versions = {
         (("hanging_piece", "execute"),): SELECTED_ROLES_VERSION,
@@ -87,10 +98,10 @@ def build(db, subject, corpus, *, budget=None, selected=None):
         budget,
         allow_empty=True,
         thematic=True,
-        named=version in {NAMED_VERSION, DEFAULT_ROLES_VERSION, SELECTED_ROLES_VERSION},
-        roles=version
-        in {DEFAULT_ROLES_VERSION, SELECTED_ROLES_VERSION, SELECTED_FORK_ROLES_VERSION},
-        fork=version in FORK_VERSIONS,
+        named=version
+        in {NAMED_VERSION, DEFAULT_ROLES_VERSION, SELECTED_ROLES_VERSION, DEFAULT_FORK_VERSION},
+        roles=version in ROLE_COURSE_VERSIONS,
+        fork=version in QUALIFIED_FORK_VERSIONS,
     )
     budget.check()
     _check_empty(patterns, selected, coverage, unavailable, chosen)

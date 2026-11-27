@@ -42,17 +42,17 @@ def assemble(
             return patterns, chapters, unavailable, len(groups) - index
         pair = {"skill": group["lesson"]["skill"], "operation": group["lesson"]["operation"]}
         result = own(db, subject, group, budget)
-        if result is None or isinstance(result, str):
+        if not isinstance(result, tuple):
             unavailable.append({**pair, "reason": result or "owned source unavailable"})
             continue
         choice, own_chapter, bindings = result
         patterns.append(_pattern(group, choice, bindings))
-        if fork:
+        if fork and choice["kind"] == "fork":
             from .tactical_course_fork_practice import related as fork_related
             from .tactical_course_fork_roles import compose as fork_compose
 
             item, reason = fork_related(db, subject, corpus, choice, budget)
-            # Saved v11 courses keep two roles; v12 adds the explanation.
+            # Saved v11 courses keep two roles; newer versions add the explanation.
             chapters_for_pattern = fork_compose(own_chapter, item, budget, roles)
         else:
             item, reason = related(

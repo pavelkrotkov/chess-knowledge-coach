@@ -4,6 +4,8 @@ import re
 
 from .course_preview import preview_hash
 from .tactical_course import (
+    DEFAULT_FORK_POLICY,
+    DEFAULT_FORK_VERSION,
     DEFAULT_ROLES_POLICY,
     DEFAULT_ROLES_VERSION,
     LEGACY_POLICY,
@@ -54,6 +56,7 @@ def preview(envelope, expected):
             SELECTED_FORK_ROLES_VERSION,
             SELECTED_FORK_ROLES_POLICY,
         ),
+        "local-tactical-course-export-v13": (DEFAULT_FORK_VERSION, DEFAULT_FORK_POLICY),
     }
     contract = contracts.get(envelope.get("kind"))
     if not re.fullmatch(r"[0-9a-f]{64}", expected) or contract is None:
