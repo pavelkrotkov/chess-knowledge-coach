@@ -34,6 +34,7 @@ def assemble(
     thematic=False,
     named=False,
     roles=False,
+    fork=False,
 ):
     patterns, chapters, unavailable = [], [], []
     for index, group in enumerate(groups):
@@ -51,7 +52,14 @@ def assemble(
             continue
         choice, own_chapter, bindings = result
         patterns.append(_pattern(group, choice, bindings))
-        item, reason = related(db, subject, corpus, choice, budget, thematic=thematic, named=named)
+        if fork:
+            from .tactical_course_fork_practice import related as fork_related
+
+            item, reason = fork_related(db, subject, corpus, choice, budget)
+        else:
+            item, reason = related(
+                db, subject, corpus, choice, budget, thematic=thematic, named=named
+            )
         if item is None:
             unavailable.append(
                 {

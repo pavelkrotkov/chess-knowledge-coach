@@ -1,6 +1,11 @@
 """Group versioned course chapters with their explicit source roles."""
 
-from .tactical_course import DEFAULT_ROLES_VERSION, NAMED_VERSION, SELECTED_ROLES_VERSION
+from .tactical_course import (
+    DEFAULT_ROLES_VERSION,
+    NAMED_VERSION,
+    SELECTED_FORK_VERSION,
+    SELECTED_ROLES_VERSION,
+)
 
 
 def group(chapters, index):
@@ -27,4 +32,4 @@ def chapters(chapters, index, pattern, kind):
     end = index + 1
     if end < len(chapters) and chapters[end]["source"]["type"] in {"public", "corpus"}:
         end += 1
-    return chapters[index:end], end, False, kind == NAMED_VERSION
+    return chapters[index:end], end, False, kind in {NAMED_VERSION, SELECTED_FORK_VERSION}

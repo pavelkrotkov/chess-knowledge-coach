@@ -36,6 +36,8 @@ DEFAULT_ROLES_VERSION = "local-tactical-course-v9"
 DEFAULT_ROLES_POLICY = "provisional-recurring-tactics-v9"
 SELECTED_ROLES_VERSION = "local-tactical-course-v10"
 SELECTED_ROLES_POLICY = "provisional-recurring-tactics-v10"
+SELECTED_FORK_VERSION = "local-tactical-course-v11"
+SELECTED_FORK_POLICY = "provisional-recurring-tactics-v11"
 CONTRACTS = {
     LEGACY_VERSION: (LEGACY_POLICY, PAIRS),
     PREVIOUS_VERSION: (PREVIOUS_POLICY, CURRENT_PAIRS),
@@ -47,6 +49,7 @@ CONTRACTS = {
     NAMED_VERSION: (NAMED_POLICY, None),
     DEFAULT_ROLES_VERSION: (DEFAULT_ROLES_POLICY, CURRENT_PAIRS),
     SELECTED_ROLES_VERSION: (SELECTED_ROLES_POLICY, None),
+    SELECTED_FORK_VERSION: (SELECTED_FORK_POLICY, [("fork", "execute")]),
 }
 
 
@@ -56,6 +59,8 @@ def _policy(selected):
     chosen = pairs(selected)
     if chosen == [("hanging_piece", "execute")]:
         return SELECTED_ROLES_VERSION, SELECTED_ROLES_POLICY, chosen, SELECTED_SECONDS
+    if chosen == [("fork", "execute")]:
+        return SELECTED_FORK_VERSION, SELECTED_FORK_POLICY, chosen, SELECTED_SECONDS
     return THEMATIC_SELECTED_VERSION, THEMATIC_SELECTED_POLICY, chosen, SELECTED_SECONDS
 
 
@@ -78,6 +83,7 @@ def build(db, subject, corpus, *, budget=None, selected=None):
         thematic=True,
         named=version in {NAMED_VERSION, DEFAULT_ROLES_VERSION, SELECTED_ROLES_VERSION},
         roles=version in {DEFAULT_ROLES_VERSION, SELECTED_ROLES_VERSION},
+        fork=version == SELECTED_FORK_VERSION,
     )
     budget.check()
     _check_empty(patterns, selected, coverage, unavailable, chosen)

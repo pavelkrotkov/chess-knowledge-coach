@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from .deep_selection_source import learner_key
 from .opening_queue_files import read
 from .opening_queue_location import location
+from .tactical_course_fork_provenance import current
 from .tactical_course_offer import SLOT, VERSION
 from .tactical_export_contract import contract, validate
 from .tactical_export_input import load
@@ -43,4 +44,5 @@ def offered(root, database, subject, corpus):
     exported = envelope["export"]
     if (exported.get("kind"), exported.get("policy")) != contract(body):
         raise ValueError("prepared export differs")
+    current(root, database, subject, corpus, envelope, version, saved["kind"])
     return item, exported

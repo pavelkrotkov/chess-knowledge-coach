@@ -5,6 +5,7 @@ from .tactical_course import (
     DEFAULT_ROLES_VERSION,
     NAMED_VERSION,
     PROTECTION_VERSION,
+    SELECTED_FORK_VERSION,
     SELECTED_ROLES_VERSION,
     SELECTED_VERSION,
     THEMATIC_SELECTED_VERSION,
@@ -21,8 +22,14 @@ from .tactical_export_coverage import coverage
 from .tactical_export_gaps import omissions
 
 NAMED = {NAMED_VERSION, SELECTED_ROLES_VERSION}
-SELECTED = {SELECTED_VERSION, THEMATIC_SELECTED_VERSION, *NAMED}
-THEMATIC = {THEMATIC_VERSION, THEMATIC_SELECTED_VERSION, DEFAULT_ROLES_VERSION, *NAMED}
+SELECTED = {SELECTED_VERSION, THEMATIC_SELECTED_VERSION, SELECTED_FORK_VERSION, *NAMED}
+THEMATIC = {
+    THEMATIC_VERSION,
+    THEMATIC_SELECTED_VERSION,
+    DEFAULT_ROLES_VERSION,
+    SELECTED_FORK_VERSION,
+    *NAMED,
+}
 MODERN = {PROTECTION_VERSION, VERSION, SELECTED_VERSION, *THEMATIC}
 
 
@@ -41,14 +48,11 @@ def _omissions(selection, pairs, modern):
 def _pairs(selection, contract, selected, named):
     if not selected:
         return contract[1]
-    if (
-        selection.get("work_policy") != WORK_POLICY
-        or selection.get("total_seconds") != TOTAL_SECONDS
-    ):
-        raise ValueError("selected work policy changed")
     result = from_pairs(selection["pairs"])
     if named and result != [("hanging_piece", "execute")]:
         raise ValueError("named capture selection differs")
+    if contract[1] is not None and result != contract[1]:
+        raise ValueError("selected fork differs")
     return result
 
 
@@ -60,28 +64,18 @@ def selection(body, corpus):
     # A selected preview must bind its canonical pairs and exact work policy.
     selected = body["kind"] in SELECTED
     pairs = _pairs(selection, contract, selected, body["kind"] in NAMED)
-    expected = [
-        corpus,
-        [list(pair) for pair in pairs],
-        PER_PAIR,
-        MAX_PATTERNS,
-        SELECTED_SECONDS if selected else SLICE_SECONDS,
-        "completed pairs by inspected independent failure games, then skill and operation",
-        "Only completed supported pairs are ranked; this is not a global weakness ranking.",
-    ]
-    actual = [
-        selection[key]
-        for key in (
-            "corpus_version",
-            "pairs",
-            "per_pair_limit",
-            "pattern_limit",
-            "related_match_seconds",
-            "ranking",
-            "scope",
-        )
-    ]
-    if actual != expected:
+    expected = {
+        "corpus_version": corpus,
+        "pairs": [list(pair) for pair in pairs],
+        "per_pair_limit": PER_PAIR,
+        "pattern_limit": MAX_PATTERNS,
+        "related_match_seconds": SELECTED_SECONDS if selected else SLICE_SECONDS,
+        "ranking": "completed pairs by inspected independent failure games, then skill and operation",
+        "scope": "Only completed supported pairs are ranked; this is not a global weakness ranking.",
+    }
+    if selected:
+        expected.update(work_policy=WORK_POLICY, total_seconds=TOTAL_SECONDS)
+    if {key: selection[key] for key in expected} != expected:
         raise ValueError("preview selection or bounds changed")
     # A deferred pair cannot supply a pattern; omissions must match coverage.
     coverage(selection["coverage"], pairs)

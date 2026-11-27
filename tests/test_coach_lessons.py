@@ -253,7 +253,7 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
     from copy import deepcopy
 
     from chess_coach.tactical_course import build as tactical_preview
-    from chess_coach.tactical_course_budget import Budget
+    from chess_coach.tactical_course_budget import Budget, PreviewUnavailable
     from chess_coach.tactical_export import build as tactical_export
     from chess_coach.tactical_study_current import revalidate
     from chess_coach.tactical_study_preview import preview as study_preview
@@ -383,8 +383,129 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
     legacy_export = tactical_export(db, LEARNER, "test", legacy_course, Budget(db))
     assert study_preview(legacy_export, legacy_export["export_sha256"]) == legacy_course
 
+    # The selected fork exercise is certified by the real worker; later reads
+    # must rebind its separately retained proof without running the solver.
+    from chess_coach.opening_queue_location import scope
+    from chess_coach.ops_tactical_export import prepare as export_candidate
+    from chess_coach.tactical_course_choice import SLICE_SECONDS as SELECTED_SECONDS
+    from chess_coach.tactical_course_offer_read import offered
+    from chess_coach.tactical_course_request import enqueue
+    from chess_coach.tactical_course_worker import run as prepare_course
+
+    db.capture_root = scope(db, project, db.capture_root)
+    monkeypatch.setenv("CHESS_DB", str(path))
     monkeypatch.setenv("CHESS_SUBJECT", LEARNER)
     monkeypatch.setenv("CHESS_CORPUS", "test")
+    enqueue(db, project, LEARNER, "test", selected=["fork:execute"])
+    prepare_course(db, LEARNER, project)
+    fork_offer, fork_body = offered(project, path, LEARNER, "test")
+    assert fork_body["kind"] == "local-tactical-course-export-v11"
+    fork_chapters = fork_body["chapters"]
+    assert len(fork_chapters) == 2
+    assert fork_chapters[0]["source"]["type"] == "own-game"
+    assert fork_chapters[1]["source"]["type"] == "corpus"
+    assert fork_chapters[1]["mode"] == "conceal"
+    assert "ungraded" in fork_chapters[1]["pgn"]
+    assert "may choose a different exercise" in fork_chapters[1]["pgn"]
+    assert fork_chapters[1]["source"]["binding"]["assessment"]["proof"]["minimum_gain"] == 3
+    assert fork_chapters[1]["source"]["binding"]["assessment"]["context"]["rating_band"] == 6
+    fork_export = json.loads((project / ".runtime" / "planning" / fork_offer["file"]).read_text())
+    fork_preview = study_preview(fork_export, fork_offer["hash"])
+    preview_path = project / ".runtime" / "planning" / "selected-fork-preview.json"
+    preview_path.write_text(json.dumps(fork_preview))
+    preview_path.chmod(0o600)
+    cli_path = project / ".runtime" / "planning" / "selected-fork-cli.json"
+
+    def learning_rows():
+        tables = (
+            "unified_sessions",
+            "unified_session_events",
+            "objective_requests",
+            "objective_results",
+            "unified_training_enrollments",
+            "unified_training_completions",
+            "training_items",
+            "training_attempts",
+            "mastery_states",
+            "mastery_events",
+            "evidence_mappings",
+            "evidence_review_events",
+        )
+        with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True) as reader:
+            reader.execute("PRAGMA query_only=ON")
+            return tuple(
+                (table, reader.execute(f"SELECT * FROM {table} ORDER BY rowid").fetchall())
+                for table in tables
+            )
+
+    learning_before = learning_rows()
+    with monkeypatch.context() as no_proof:
+
+        def forbidden(*_args, **_kwargs):
+            pytest.fail("fork proof ran during a prepared course read")
+
+        no_proof.setattr("chess_coach.related_fork_assessment.fork_proof", forbidden)
+        no_proof.setattr("chess_coach.fork_observation.fork_proof", forbidden)
+        no_proof.setattr("chess_coach.objective_fork_judge.fork_proof", forbidden)
+        export_candidate(project, preview_path, fork_preview["preview_sha256"], cli_path)
+        assert json.loads(cli_path.read_text()) == fork_export
+        with revalidate(path, fork_export, fork_offer["hash"], project_root=project) as check:
+            check()
+        changed_proof = deepcopy(fork_preview)
+        changed_chapter = changed_proof["preview"]["chapters"][1]
+        changed_chapter["source"]["binding"]["assessment"]["proof"]["branches"][0]["reply"] = "a1a1"
+        changed_proof["preview_sha256"] = preview_hash(changed_proof["preview"])
+        from chess_coach.tactical_course_fork_provenance import require as require_fork_proof
+
+        with pytest.raises(ValueError, match="fork assessment preparation"):
+            require_fork_proof(db, LEARNER, changed_chapter)
+        with pytest.raises((ValueError, PreviewUnavailable)):
+            tactical_export(
+                db, LEARNER, "test", changed_proof, Budget(db, slice_seconds=SELECTED_SECONDS)
+            )
+        page = client.get("/coaching/tactical-course?chapter=1", base_url=base, headers=headers)
+        assert page.status_code == 200 and b"Practice a related knight fork" in page.data
+        download = client.get(
+            "/coaching/tactical-course?download=1&version=" + fork_offer["hash"],
+            base_url=base,
+            headers=headers,
+        )
+        assert download.status_code == 200 and fork_chapters[1]["pgn"].encode() in download.data
+
+        import httpx
+
+        import chess_coach.tactical_study_session as tactical_session
+        from chess_coach.study_pgn_verify import matches
+        from chess_coach.study_remote import Remote
+        from tests.test_private_study import Provider
+
+        class ForkProvider(Provider):
+            def request(self, method, url, **kwargs):
+                if httpx.URL(url).path == "/api/account":
+                    request = httpx.Request(method, url)
+                    return httpx.Response(
+                        200, json={"id": LEARNER, "username": LEARNER}, request=request
+                    )
+                url = str(url).replace(f"/api/study/by/{LEARNER}", "/api/study/by/learner")
+                return super().request(method, url, **kwargs)
+
+        provider = ForkProvider()
+        provider.owner = LEARNER
+        provider.timeout_create = provider.timeout_upload = False
+        remote = Remote("fixture-token", LEARNER, provider)
+
+        def local_provider(_database, intent, course, *, action, check=None):
+            return action(remote, intent, course)
+
+        no_proof.setattr(tactical_session, "_publish", local_provider)
+        tactical_session.prepare_locked(project, cli_path, fork_offer["hash"])
+        tactical_session.publish_locked(project, cli_path, fork_offer["hash"])
+        assert [item["mode"] for item in provider.uploaded] == ["conceal", "conceal"]
+        assert matches(
+            {**fork_chapters[1], "name": provider.uploaded[1]["name"]}, provider.export()
+        )
+    assert learning_rows() == learning_before
+
     with revalidate(path, exported, exported["export_sha256"]) as check:
         check()
     with revalidate(path, legacy_export, legacy_export["export_sha256"]) as check:
@@ -486,6 +607,15 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
     )
     familiar_export = tactical_export(db, LEARNER, "test", familiar_course, Budget(db))
     assert study_preview(familiar_export, familiar_export["export_sha256"]) == familiar_course
+    with pytest.raises((ValueError, PreviewUnavailable)):
+        tactical_export(
+            db,
+            LEARNER,
+            "test",
+            fork_preview,
+            Budget(db, slice_seconds=SELECTED_SECONDS),
+            artifact=fork_offer["hash"],
+        )
     from chess_coach import tactical_course_familiar
 
     with monkeypatch.context() as patch:
@@ -677,6 +807,11 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
     assert resolve_example(db, LEARNER, lesson, second_example) is None
     with pytest.raises(ValueError):
         tactical_export(db, LEARNER, "test", course, Budget(db))
+    with (
+        pytest.raises(ValueError),
+        revalidate(path, fork_export, fork_offer["hash"], project_root=project),
+    ):
+        pass
 
     db.connection.execute(
         "UPDATE detector_runs SET status='superseded' WHERE id=?", (result["detector_run_id"],)
