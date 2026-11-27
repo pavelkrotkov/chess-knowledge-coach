@@ -9,9 +9,7 @@ from .schema_compat import readonly
 from .tactical_course_budget import Budget
 from .tactical_export_chapters import verify
 from .tactical_export_contract import validate
-from .tactical_export_coverage import selected as covered
-from .tactical_export_gaps import OWN_REASONS, selected
-from .tactical_export_grouping import chapters
+from .tactical_export_groups import groups
 from .tactical_export_selection import context
 from .tactical_export_sources import lesson
 from .tactical_study_preview import preview
@@ -34,24 +32,25 @@ def current(root, database, subject, corpus, envelope, version):
 
 
 def _forks(db, subject, corpus, body, budget, artifact):
-    pairs, modern, gaps, thematic, kind = context(body, corpus, budget)
-    index, seen = 0, set()
-    for pattern in body["patterns"]:
+    pairs, modern, gaps, thematic, _ = context(body, corpus, budget)
+    for pattern, group, roles, named in groups(body, gaps, modern=modern):
         pair = (pattern["skill"], pattern["operation"])
-        if pair in seen:
-            raise ValueError("duplicate tactical pattern")
-        seen.add(pair)
-        group, index, roles, named = chapters(body["chapters"], index, pattern, kind)
-        covered(pattern, body["selection"]["coverage"])
-        selected(pattern, group, gaps, modern=modern, roles=roles)
+        if (pair == ("fork", "execute")) != (pattern["kind"] == "fork"):
+            raise ValueError("fork pattern identity differs")
         if pattern["kind"] == "fork":
             current = lesson(db, subject, pattern, budget, pairs=pairs)
             verify(
-                db, subject, corpus, pattern, current, group, budget,
-                modern=modern, thematic=thematic, named=named, roles=roles, artifact=artifact,
+                db,
+                subject,
+                corpus,
+                pattern,
+                current,
+                group,
+                budget,
+                modern=modern,
+                thematic=thematic,
+                named=named,
+                roles=roles,
+                artifact=artifact,
             )
-    if any(reason not in OWN_REASONS and pair not in seen for pair, reason in gaps.items()):
-        raise ValueError("related omission has no selected pattern")
-    if index != len(body["chapters"]):
-        raise ValueError("unexpected chapter order")
     budget.check()

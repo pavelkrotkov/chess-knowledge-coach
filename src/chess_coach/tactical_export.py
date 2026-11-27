@@ -5,9 +5,7 @@ from .learner_identity import normalize_identity
 from .tactical_export_chapters import verify
 from .tactical_export_contract import contract as _contract
 from .tactical_export_contract import validate
-from .tactical_export_coverage import selected as covered
-from .tactical_export_gaps import OWN_REASONS, selected
-from .tactical_export_grouping import chapters as _chapters
+from .tactical_export_groups import groups
 from .tactical_export_selection import context
 from .tactical_export_sources import lesson
 
@@ -31,16 +29,8 @@ def build(db, subject, corpus, envelope, budget, *, artifact=None):
         raise ValueError("learner identity unavailable")
     with budget.scope(snapshot=False):
         body = validate(envelope, corpus)
-    pairs, modern, gaps, thematic, kind = context(body, corpus, budget)
-    index, seen = 0, set()
-    for pattern in body["patterns"]:
-        pair = (pattern["skill"], pattern["operation"])
-        if pair in seen:
-            raise ValueError("duplicate tactical pattern")
-        seen.add(pair)
-        group, index, roles, named = _chapters(body["chapters"], index, pattern, kind)
-        covered(pattern, body["selection"]["coverage"])
-        selected(pattern, group, gaps, modern=modern, roles=roles)
+    pairs, modern, gaps, thematic, _ = context(body, corpus, budget)
+    for pattern, group, roles, named in groups(body, gaps, modern=modern):
         current = lesson(db, subject, pattern, budget, pairs=pairs)
         verify(
             db,
@@ -56,10 +46,6 @@ def build(db, subject, corpus, envelope, budget, *, artifact=None):
             roles=roles,
             artifact=artifact,
         )
-    if any(reason not in OWN_REASONS and pair not in seen for pair, reason in gaps.items()):
-        raise ValueError("related omission has no selected pattern")
-    if index != len(body["chapters"]):
-        raise ValueError("unexpected chapter order")
     # A commit after the final source check invalidates the entire candidate.
     budget.check()
     version, policy = _contract(body)
