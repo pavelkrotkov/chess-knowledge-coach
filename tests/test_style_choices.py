@@ -3971,9 +3971,17 @@ def _opening_fit_route(monkeypatch, tmp_path):
                 import chess_coach.ops_opening_profile as selected_cli
                 import chess_coach.web_opening_course as selected_web
                 from chess_coach.opening_recommendation_preview import (
+                    legacy as legacy_recommendation,
+                )
+                from chess_coach.opening_recommendation_preview import (
                     preview as recommendation_preview,
                 )
+                from chess_coach.opening_recommendation_roles import (
+                    version as recommendation_version,
+                )
                 from chess_coach.opening_revision_course import preview as legacy_preview
+                from chess_coach.opening_revision_roles import three_roles as direct_roles
+                from chess_coach.opening_study_course import build as build_study
                 from chess_coach.opening_study_current import admitted as admitted_study
                 from chess_coach.opening_study_source import fingerprint as source_fingerprint
 
@@ -3982,6 +3990,10 @@ def _opening_fit_route(monkeypatch, tmp_path):
                     nomination_db, recent_root, "learner", game_id, decision_id, "b1c3"
                 )
                 assert legacy["public_status"] == "available"
+                old_recommendation = legacy_recommendation(
+                    nomination_db, recent_root, "learner", game_id, decision_id, "b1c3"
+                )
+                direct_course = direct_roles(legacy)
                 selected_course = recommendation_preview(
                     nomination_db,
                     recent_root,
@@ -3991,8 +4003,32 @@ def _opening_fit_route(monkeypatch, tmp_path):
                     "b1c3",
                     with_identity=True,
                 )
-                assert selected_course["schema"] == "opening-revision-course-v2"
-                assert selected_course["version"] != legacy["version"]
+                assert old_recommendation["schema"] == "opening-revision-course-v2"
+                assert selected_course["schema"] == "opening-revision-course-v4"
+                assert selected_course["source_version"] == old_recommendation["version"]
+                assert (
+                    selected_course["version"] != old_recommendation["version"] != legacy["version"]
+                )
+                assert [chapter["kind"] for chapter in selected_course["chapters"]] == [
+                    "explanation",
+                    "owned",
+                    "public",
+                ]
+                assert selected_course["chapters"][1] == legacy["chapters"][0]
+                assert "ungraded" in selected_course["chapters"][2]["pgn"]
+                assert "CC BY-SA 4.0" in selected_course["chapters"][2]["pgn"]
+                assert (
+                    build_study(
+                        direct_course, direct_course["version"], game_id, decision_id, "b1c3"
+                    )["course"]["preview_version"]
+                    == direct_course["version"]
+                )
+                mixed = {**selected_course, "chapters": list(reversed(selected_course["chapters"]))}
+                mixed["version"] = recommendation_version(
+                    mixed["source_version"], mixed["chapters"], mixed["rationale"]
+                )
+                with pytest.raises(ValueError):
+                    build_study(mixed, mixed["version"], game_id, decision_id, "b1c3")
                 assert selected_course["rationale"]["selected"] == "b1c3"
                 assert selected_course["rationale"]["judgments"]["development"]["provisional"]
                 assert "Selected by the learner" in selected_course["chapters"][0]["pgn"]
@@ -4041,12 +4077,18 @@ def _opening_fit_route(monkeypatch, tmp_path):
                 )
                 assert b"provisional developmental evidence" in selected_page.data
                 assert b"Public example after the selected alternative" in selected_page.data
+                assert b"1. Why study this position" in selected_page.data
+                assert b"2. Your worked comparison" in selected_page.data
+                assert b"3. Public continuation" in selected_page.data
                 download = selected_client.get(
                     selected_path + "&download=1&version=" + selected_course["version"],
                     base_url="https://coach.invalid",
                     headers=headers,
                 )
                 assert download.status_code == 200 and b"Selected by the learner" in download.data
+                assert download.get_data(as_text=True) == (
+                    "\n\n".join(chapter["pgn"] for chapter in selected_course["chapters"]) + "\n"
+                )
                 assert (
                     legacy_preview(
                         nomination_db, recent_root, "learner", game_id, decision_id, "b1c3"
@@ -4068,6 +4110,21 @@ def _opening_fit_route(monkeypatch, tmp_path):
                     assert legacy_study["course"]["preview_version"] == legacy["version"]
                     check()
 
+                with admitted_study(
+                    nomination_path,
+                    recent_planning,
+                    recent_root,
+                    "learner",
+                    game_id,
+                    decision_id,
+                    "b1c3",
+                    old_recommendation["version"],
+                    browser=True,
+                ) as (old_study, _budget, check):
+                    assert old_study["course"]["preview_version"] == old_recommendation["version"]
+                    assert len(old_study["course"]["chapters"]) == 2
+                    check()
+
                 # Even an absent watched proof attempt becoming present must
                 # invalidate the exact course before a Study action proceeds.
                 absent = next(
@@ -4087,6 +4144,11 @@ def _opening_fit_route(monkeypatch, tmp_path):
                     browser=True,
                 ) as (study_course, _budget, check):
                     assert study_course["course"]["preview_version"] == selected_course["version"]
+                    assert [item["kind"] for item in study_course["course"]["chapters"]] == [
+                        "explanation",
+                        "owned",
+                        "public",
+                    ]
                     before_paths = source_fingerprint(selected_course["_paths"])
                     try:
                         absent.write_text("{}")
@@ -4139,6 +4201,10 @@ def _opening_fit_route(monkeypatch, tmp_path):
                 assert (
                     stale["revision_judgments"]["reason"] == "current_fork_nomination_unavailable"
                 )
+                with pytest.raises(ValueError):
+                    recommendation_preview(
+                        nomination_db, recent_root, "learner", game_id, decision_id, "b1c3"
+                    )
             finally:
                 with prefix_path.open("r+b") as stream:
                     stream.write(original_prefix[:1])

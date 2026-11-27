@@ -24,3 +24,16 @@ def content(current, chapters):
     ):
         raise ValueError("public attribution differs")
     return [owned, public]
+
+
+def roles(current, expected):
+    chapters = current["chapters"]
+    kinds = ["explanation", "owned", "public"] if expected else ["owned", "public"]
+    if [item["kind"] for item in chapters] != kinds:
+        raise ValueError("complete opening preview required")
+    decision = current["decision"]
+    color, fen = decision["color"], decision["fen"]
+    if expected and chapters[0] != expected:
+        raise ValueError("opening explanation differs")
+    prefix = [chapter(chapters[0], color, fen)[0]] if expected else []
+    return prefix + content(current, chapters[-2:])
