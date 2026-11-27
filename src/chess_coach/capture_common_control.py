@@ -23,7 +23,7 @@ def current(db, source, corpus):
         "rating": context["content_rating"],
         "deviation": context["content_deviation"],
         "checksum": context["corpus_checksum"],
-        "admission": practice["admission"],
+        "admission": "harder" if "progression" in practice["binding"] else "ordinary",
     }
 
 
@@ -33,7 +33,7 @@ def compatible(db, capture, fork, corpus):
     if any(a[key] != b[key] for key in ("side", "time_control", "phase", "material")):
         return False
     first, second = current(db, left, corpus), right["controls"]
-    if first is None or first["admission"] != "ordinary" or second["admission"] != "ordinary":
+    if first is None or first["admission"] != second["admission"]:
         return False
     fork_context = right["practice"]["binding"]["assessment"]["context"]
     if (left["practice"]["controls"]["corpus"], first["checksum"]) != (
