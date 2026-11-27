@@ -43,7 +43,8 @@ def assemble(
         if len(patterns) >= MAX_PATTERNS:
             return patterns, chapters, unavailable, len(groups) - index
         pair = {"skill": group["lesson"]["skill"], "operation": group["lesson"]["operation"]}
-        options = {"identity_for": protection_identity} if protection else {}
+        protection_group = protection and pair == {"skill": "hanging_piece", "operation": "prevent"}
+        options = {"identity_for": protection_identity} if protection_group else {}
         result = own(db, subject, group, budget, **options)
         if not isinstance(result, tuple):
             unavailable.append({**pair, "reason": result or "owned source unavailable"})
@@ -61,7 +62,7 @@ def assemble(
             named=named,
             roles=roles,
             fork=fork,
-            protection=protection,
+            protection=protection_group,
         )
         if item is None:
             unavailable.append({**pair, "reason": reason})

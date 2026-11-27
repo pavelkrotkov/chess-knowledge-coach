@@ -2,6 +2,7 @@
 
 from .tactical_course import (
     DEFAULT_FORK_VERSION,
+    DEFAULT_PROTECTION_ROLES_VERSION,
     DEFAULT_ROLES_VERSION,
     FORK_VERSIONS,
     NAMED_VERSION,
@@ -34,9 +35,12 @@ def chapters(chapters, index, pattern, kind):
         (DEFAULT_FORK_VERSION, "capture"),
         (DEFAULT_FORK_VERSION, "fork"),
         (SELECTED_PROTECTION_ROLES_VERSION, "protection"),
+        (DEFAULT_PROTECTION_ROLES_VERSION, "protection"),
+        (DEFAULT_PROTECTION_ROLES_VERSION, "capture"),
+        (DEFAULT_PROTECTION_ROLES_VERSION, "fork"),
     }:
         chapters, end = group(chapters, index)
-        return chapters, end, True, kind != SELECTED_PROTECTION_ROLES_VERSION
+        return chapters, end, True, pattern["kind"] != "protection"
     if index >= len(chapters) or chapters[index]["source"]["type"] != "own-game":
         raise ValueError("owned chapter order differs")
     end = index + 1

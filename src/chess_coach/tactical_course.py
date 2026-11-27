@@ -44,15 +44,18 @@ DEFAULT_FORK_VERSION = "local-tactical-course-v13"
 DEFAULT_FORK_POLICY = "provisional-recurring-tactics-v13"
 SELECTED_PROTECTION_ROLES_VERSION = "local-tactical-course-v14"
 SELECTED_PROTECTION_ROLES_POLICY = "provisional-recurring-tactics-v14"
+DEFAULT_PROTECTION_ROLES_VERSION = "local-tactical-course-v15"
+DEFAULT_PROTECTION_ROLES_POLICY = "provisional-recurring-tactics-v15"
 # Only selected fork versions use the eight-second slice; the default keeps two seconds.
 FORK_VERSIONS = {SELECTED_FORK_VERSION, SELECTED_FORK_ROLES_VERSION}
-QUALIFIED_FORK_VERSIONS = {*FORK_VERSIONS, DEFAULT_FORK_VERSION}
+QUALIFIED_FORK_VERSIONS = {*FORK_VERSIONS, DEFAULT_FORK_VERSION, DEFAULT_PROTECTION_ROLES_VERSION}
 ROLE_COURSE_VERSIONS = {
     DEFAULT_ROLES_VERSION,
     SELECTED_ROLES_VERSION,
     SELECTED_FORK_ROLES_VERSION,
     DEFAULT_FORK_VERSION,
     SELECTED_PROTECTION_ROLES_VERSION,
+    DEFAULT_PROTECTION_ROLES_VERSION,
 }
 FORK_PAIR = ("fork", "execute")
 CONTRACTS = {
@@ -69,6 +72,7 @@ CONTRACTS = {
     SELECTED_FORK_VERSION: (SELECTED_FORK_POLICY, [FORK_PAIR]),
     SELECTED_FORK_ROLES_VERSION: (SELECTED_FORK_ROLES_POLICY, [FORK_PAIR]),
     DEFAULT_FORK_VERSION: (DEFAULT_FORK_POLICY, CURRENT_PAIRS),
+    DEFAULT_PROTECTION_ROLES_VERSION: (DEFAULT_PROTECTION_ROLES_POLICY, CURRENT_PAIRS),
     SELECTED_PROTECTION_ROLES_VERSION: (
         SELECTED_PROTECTION_ROLES_POLICY,
         [("hanging_piece", "prevent")],
@@ -78,7 +82,7 @@ CONTRACTS = {
 
 def _policy(selected):
     if selected is None:
-        return DEFAULT_FORK_VERSION, DEFAULT_FORK_POLICY, CURRENT_PAIRS, None
+        return DEFAULT_PROTECTION_ROLES_VERSION, DEFAULT_PROTECTION_ROLES_POLICY, CURRENT_PAIRS, None
     chosen = pairs(selected)
     versions = {
         (("hanging_piece", "execute"),): SELECTED_ROLES_VERSION,
@@ -107,10 +111,10 @@ def build(db, subject, corpus, *, budget=None, selected=None):
         allow_empty=True,
         thematic=True,
         named=version
-        in {NAMED_VERSION, DEFAULT_ROLES_VERSION, SELECTED_ROLES_VERSION, DEFAULT_FORK_VERSION},
+        in {NAMED_VERSION, DEFAULT_ROLES_VERSION, SELECTED_ROLES_VERSION, DEFAULT_FORK_VERSION, DEFAULT_PROTECTION_ROLES_VERSION},
         roles=version in ROLE_COURSE_VERSIONS,
         fork=version in QUALIFIED_FORK_VERSIONS,
-        protection=version == SELECTED_PROTECTION_ROLES_VERSION,
+        protection=version in {SELECTED_PROTECTION_ROLES_VERSION, DEFAULT_PROTECTION_ROLES_VERSION},
     )
     budget.check()
     _check_empty(patterns, selected, coverage, unavailable, chosen)

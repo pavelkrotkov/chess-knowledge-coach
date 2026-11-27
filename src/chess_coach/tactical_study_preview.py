@@ -6,6 +6,8 @@ from .course_preview import preview_hash
 from .tactical_course import (
     DEFAULT_FORK_POLICY,
     DEFAULT_FORK_VERSION,
+    DEFAULT_PROTECTION_ROLES_POLICY,
+    DEFAULT_PROTECTION_ROLES_VERSION,
     DEFAULT_ROLES_POLICY,
     DEFAULT_ROLES_VERSION,
     LEGACY_POLICY,
@@ -62,6 +64,10 @@ def preview(envelope, expected):
         "local-tactical-course-export-v14": (
             SELECTED_PROTECTION_ROLES_VERSION,
             SELECTED_PROTECTION_ROLES_POLICY,
+        ),
+        "local-tactical-course-export-v15": (
+            DEFAULT_PROTECTION_ROLES_VERSION,
+            DEFAULT_PROTECTION_ROLES_POLICY,
         ),
     }
     contract = contracts.get(envelope.get("kind"))

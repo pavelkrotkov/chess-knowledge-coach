@@ -10,6 +10,7 @@ from .opening_queue_location import scope
 from .schema_compat import readonly
 from .tactical_course import (
     DEFAULT_FORK_VERSION,
+    DEFAULT_PROTECTION_ROLES_VERSION,
     DEFAULT_ROLES_VERSION,
     FORK_VERSIONS,
     NAMED_VERSION,
@@ -60,6 +61,7 @@ def revalidate(
                 NAMED_VERSION,
                 DEFAULT_ROLES_VERSION,
                 DEFAULT_FORK_VERSION,
+                DEFAULT_PROTECTION_ROLES_VERSION,
                 SELECTED_ROLES_VERSION,
                 SELECTED_PROTECTION_ROLES_VERSION,
                 *FORK_VERSIONS,
