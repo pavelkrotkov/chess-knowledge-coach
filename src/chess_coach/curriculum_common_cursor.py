@@ -1,7 +1,12 @@
 """Validate the strict untimed common-choice continuation."""
 
 from .curriculum_cursor_values import common as common_values
+from .curriculum_priority_cursor import COMMON_POLICY
 from .curriculum_priority_validate import _capture_input
+
+
+def common_as_of(state):
+    return state["as_of"] if state.get("priority_policy") == COMMON_POLICY else None
 
 
 def validate(state):

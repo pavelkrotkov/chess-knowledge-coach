@@ -23,9 +23,9 @@ def _resolve(db, subject, corpus, source, limited, scanned, check, include_snaps
     return _candidate(report, value, key), report
 
 
-def candidates(db, subject, corpus, check, *, include_snapshot=False, limit=2):
+def candidates(db, subject, corpus, check, *, include_snapshot=False, limit=2, as_of=None):
     """Resolve at most two source witnesses once under the caller's budget."""
-    sources, limited, scanned, identity = collect(db, subject, check, limit=limit)
+    sources, limited, scanned, identity = collect(db, subject, check, limit=limit, as_of=as_of)
     found = []
     for source in sources:
         candidate, report = _resolve(

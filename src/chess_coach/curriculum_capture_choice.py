@@ -6,6 +6,7 @@ from .curriculum_capture_witnesses import candidates, pending
 
 
 def select(db, state, subject, scan, check, *, root=None):
+    from .curriculum_common_cursor import common_as_of
     from .curriculum_priority_cursor import COMMON_POLICY, CONTEXT_CAPTURE_POLICY
 
     options, status, identity, advisory = candidates(
@@ -14,6 +15,7 @@ def select(db, state, subject, scan, check, *, root=None):
         state["corpus_version"],
         check,
         include_snapshot=state["priority_policy"] in {CONTEXT_CAPTURE_POLICY, COMMON_POLICY},
+        as_of=common_as_of(state),
     )
     state["priority"]["capture_sources"] = identity
     if not options:
@@ -30,8 +32,7 @@ def select(db, state, subject, scan, check, *, root=None):
         report = options[0][1]
         report.pop("snapshot", None)
         return [], incomplete, reason, report
-    state["capture_pending"] = None
-    state["scheduled_after"] = 0
+    state.update(capture_pending=None, scheduled_after=0)
     state["priority"]["capture_matches"] = 0
     chosen, rationale = choice(db, subject, state, options, matched, check, root=root)
     candidate, report = options[chosen]

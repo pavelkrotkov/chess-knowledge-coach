@@ -8,12 +8,18 @@ from .tactical_course_budget import PreviewUnavailable
 
 
 def _candidate(db, state, subject, counts, check):
-    candidate, status, report = read(db, subject, state["corpus_version"], check)
+    from .curriculum_common_cursor import common_as_of
+
+    candidate, status, report = read(
+        db, subject, state["corpus_version"], check, as_of=common_as_of(state)
+    )
     pending = state["fork_pending"]
     if pending is not None and (candidate is None or candidate["binding"] != pending):
         raise ValueError("fork source changed; restart the plan")
-    if candidate is None or candidate["prompt_key"] in state["seen"]:
-        return [], status if candidate is None else "duplicate", None, report
+    if candidate is None:
+        return [], status, None, report
+    if candidate["prompt_key"] in state["seen"]:
+        return [], "duplicate", None, report
     return check_conflicts(db, state, counts, check, candidate, report, pending_key="fork_pending")
 
 

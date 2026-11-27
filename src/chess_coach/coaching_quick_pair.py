@@ -12,14 +12,14 @@ from .recurrence_sources import evidence
 ROW_LIMIT = 5
 
 
-def build(db, learner, pair, check, *, _history=None):
+def build(db, learner, pair, check, *, _history=None, as_of=None):
     check()
     rows, truncated = evidence(db, learner, *pair, MAX_ID, failure_only=True, limit=ROW_LIMIT)
     check()
     groups, excluded, seen = defaultdict(list), Counter(), set()
     with preview_history(db, learner) if _history is None else nullcontext(_history) as history:
         history.targets(row["position_id"] for row in rows)
-        collect_page(db, learner, history, rows, groups, excluded, seen, check=check)
+        collect_page(db, learner, history, rows, groups, excluded, seen, check=check, as_of=as_of)
         lessons = rank(db, learner, groups, history, check=check)
         check()
     return lessons, truncated, len(rows)

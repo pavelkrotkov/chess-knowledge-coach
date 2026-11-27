@@ -60,7 +60,9 @@ def checked(db, subject, corpus, check, *, as_of=None):
     from .preview_snapshot import preview_history
 
     with preview_history(db, subject) as history_scope:
-        groups, limited, _ = build(db, subject, ("fork", "execute"), check, _history=history_scope)
+        groups, limited, _ = build(
+            db, subject, ("fork", "execute"), check, _history=history_scope, as_of=as_of
+        )
         actions = [
             choose(db, subject, group, check, source_check=True, _history=history_scope)
             for group in groups

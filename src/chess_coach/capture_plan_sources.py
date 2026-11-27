@@ -4,6 +4,7 @@ from collections import Counter, defaultdict
 from datetime import UTC, datetime
 
 from .learner_identity import normalize_identity
+from .mastery_time import source_cutoff
 from .material_policy import MAPPER
 from .recurrence_cursor import MAX_ID
 from .recurrence_selection import consider
@@ -16,7 +17,8 @@ SCAN = 20
 SOURCE_CHECKS = 3
 
 
-def _groups(db, learner, *, check=lambda: None, operation="execute"):
+def _groups(db, learner, *, check=lambda: None, operation="execute", as_of=None):
+    cutoff = source_cutoff(as_of) if as_of is not None else None
     rows, limited = evidence(
         db, learner, "hanging_piece", operation, MAX_ID, failure_only=True, limit=SCAN
     )
@@ -34,7 +36,7 @@ def _groups(db, learner, *, check=lambda: None, operation="execute"):
             parts,
             excluded,
             datetime(2, 1, 1, tzinfo=UTC),
-            datetime.now(UTC),
+            cutoff if cutoff is not None else datetime.now(UTC),
             datetime(1, 1, 1, tzinfo=UTC),
         )
         check()

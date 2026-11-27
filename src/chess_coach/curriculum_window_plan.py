@@ -13,12 +13,8 @@ def build(db, value, learner, version, limit, scan_limit, now, budget, goal, min
     value = state(db, value, learner, version, limit, scan_limit, now, goal, minutes, renew, budget)
     plan_state = value["state"]
     from .curriculum_common_guard import check as check_common
-    from .curriculum_plain_plan import _fallback
 
-    try:
-        check_common(db, plan_state, learner, budget.project_root if budget else None, budget)
-    except ValueError as error:
-        _fallback(plan_state, budget, error)
+    check_common(db, plan_state, learner, budget.project_root if budget else None, budget)
     from .curriculum_capture_file_guard import initialize
 
     initialize(db, plan_state, learner, budget)
