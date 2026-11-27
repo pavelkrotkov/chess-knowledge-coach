@@ -28,7 +28,10 @@ def submit():
     if "context_choice" in selection:
         return redirect(
             url_for(
-                "repertoire_views.opening_unfamiliar", ranked=1, choice=selection["context_choice"]
+                "repertoire_views.opening_unfamiliar",
+                ranked=1,
+                choice=selection["context_choice"],
+                teaching="1" if request.form.get("teaching") == "1" else None,
             )
         )
     return redirect(

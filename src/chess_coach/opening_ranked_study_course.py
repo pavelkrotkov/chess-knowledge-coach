@@ -17,14 +17,16 @@ def build(current, expected, context):
     chapters = current["chapters"]
     if len(chapters) != 1:
         raise ValueError("ranked opening chapter unavailable")
-    value = chapters[0]
+    validate_chapter(chapters[0], current["selection"]["color"], 0)
+    body = {"kind": KIND, "preview_version": expected, "chapters": chapters}
+    return {"course": body, "course_sha256": preview_hash(body)}
+
+
+def validate_chapter(value, color, index):
     snapshot = value["source_snapshot"]
-    color = current["selection"]["color"]
     if value["mode"] != "conceal" or value["orientation"] != color:
         raise ValueError("ranked opening chapter differs")
     _, game = chapter(value, color, snapshot["prompt_fen"])
     if len(snapshot["lines"]) != 1 or not line(game, snapshot["lines"][0]):
         raise ValueError("ranked opening continuation differs")
-    named(value, {"marker": "Chess coaching " + "0" * 16}, 0)
-    body = {"kind": KIND, "preview_version": expected, "chapters": chapters}
-    return {"course": body, "course_sha256": preview_hash(body)}
+    named(value, {"marker": "Chess coaching " + "0" * 16}, index)

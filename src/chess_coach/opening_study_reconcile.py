@@ -5,6 +5,7 @@ import re
 from .course_preview import preview_hash
 from .opening_queue_lock import lock as opening_lock
 from .opening_ranked_study_course import KIND as RANKED_KIND
+from .opening_ranked_teaching_study import KIND as TEACHING_KIND
 from .opening_study_freeze import _stamp
 from .opening_study_session import _paths
 from .opening_unfamiliar_study_course import KIND as UNFAMILIAR_KIND
@@ -60,6 +61,7 @@ def reconcile_locked(root, version):
                 "opening-study-course-v2",
                 UNFAMILIAR_KIND,
                 RANKED_KIND,
+                TEACHING_KIND,
             }
             or course["course"].get("preview_version") != version
         ):
