@@ -8,7 +8,12 @@ from types import SimpleNamespace
 from .fact_fingerprint import canonical
 from .opening_queue_location import scope
 from .schema_compat import readonly
-from .tactical_course import SELECTED_VERSION, THEMATIC_SELECTED_VERSION, THEMATIC_VERSION
+from .tactical_course import (
+    NAMED_VERSION,
+    SELECTED_VERSION,
+    THEMATIC_SELECTED_VERSION,
+    THEMATIC_VERSION,
+)
 from .tactical_course_budget import Budget
 from .tactical_course_choice import SLICE_SECONDS as SELECTED_SECONDS
 from .tactical_export import build
@@ -28,12 +33,12 @@ def revalidate(path, envelope, expected, *, with_budget=False, project_root=None
         budget = Budget(
             db,
             slice_seconds=SELECTED_SECONDS
-            if saved_preview["kind"] in {SELECTED_VERSION, THEMATIC_SELECTED_VERSION}
+            if saved_preview["kind"] in {SELECTED_VERSION, THEMATIC_SELECTED_VERSION, NAMED_VERSION}
             else None,
         )
         options = (
             {"artifact": expected}
-            if saved_preview["kind"] in {THEMATIC_VERSION, THEMATIC_SELECTED_VERSION}
+            if saved_preview["kind"] in {THEMATIC_VERSION, THEMATIC_SELECTED_VERSION, NAMED_VERSION}
             else {}
         )
         current = build(

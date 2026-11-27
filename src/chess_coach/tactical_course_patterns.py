@@ -22,7 +22,9 @@ def _pattern(group, choice, bindings):
     }
 
 
-def assemble(db, subject, corpus, groups, budget, *, allow_empty=False, thematic=False):
+def assemble(
+    db, subject, corpus, groups, budget, *, allow_empty=False, thematic=False, named=False
+):
     patterns, chapters, unavailable = [], [], []
     for index, group in enumerate(groups):
         if len(patterns) >= MAX_PATTERNS:
@@ -40,7 +42,7 @@ def assemble(db, subject, corpus, groups, budget, *, allow_empty=False, thematic
         choice, own_chapter, bindings = result
         patterns.append(_pattern(group, choice, bindings))
         chapters.append(own_chapter)
-        item, reason = related(db, subject, corpus, choice, budget, thematic=thematic)
+        item, reason = related(db, subject, corpus, choice, budget, thematic=thematic, named=named)
         if item is None:
             unavailable.append(
                 {

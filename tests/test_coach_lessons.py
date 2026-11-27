@@ -1939,6 +1939,16 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
     db.connection.execute(
         "INSERT INTO puzzle_themes VALUES(?,?,'hangingPiece',1200)", (corpus_id, "fixture-related")
     )
+    # The same target has two legal captures; a real proof must not turn the other into a wrong move.
+    multiple = chess.Board("4k3/p7/8/8/3q4/1N6/8/3RK3 b - - 0 1")
+    db.connection.execute(
+        """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,rating_deviation,themes_json,objective)
+        VALUES('fixture-multiple',?,?,'https://example.invalid','a7a6 d1d4',1200,80,'["hangingPiece"]','unknown')""",
+        (corpus_id, multiple.fen()),
+    )
+    db.connection.execute(
+        "INSERT INTO puzzle_themes VALUES(?,?,'hangingPiece',1200)", (corpus_id, "fixture-multiple")
+    )
     db.connection.execute("UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus_id,))
     db.connection.commit()
     from tests.capture_certificate_fixture import prepare_corpus
@@ -1956,6 +1966,151 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
         db, LEARNER, position_id, "test", familiar_data=paged_familiarity(db, LEARNER, Budget(db))
     )
     assert new_selection == old_selection
+    assert old_selection is not None
+    source, baseline, corpus, ordered, _, _ = old_selection
+    assert source["provenance"]["position_id"] == position_id
+    assert source["provenance"]["evidence_id"] == selected_id
+    candidate = next(item for item in ordered if item["key"] == "fixture-related")
+    assert (candidate["type"], candidate["version"]) == ("corpus", "test")
+    assert eligible(db, LEARNER, candidate)
+
+    # Use the worker's real assessment and rebind it to this exact source and puzzle.
+    from chess_coach.related_capture_assessment import setup as assessment_setup
+    from chess_coach.related_capture_features import certified_features
+    from chess_coach.related_capture_prepared_assessment import assessment
+
+    prepared = assessment(
+        db,
+        "test",
+        candidate["key"],
+        source,
+        baseline,
+        corpus,
+        LEARNER,
+        original_familiarity(db, LEARNER)[1],
+    )
+    assert prepared["source_fingerprint"] == assessment_setup(db, "test", candidate["key"])[2]
+    assert prepared["history_mode"] == "zeroing_setup"
+    assert prepared["target"] == "d4" and prepared["proof"]["status"] == "correct"
+    context = prepared["context"]
+    assert context is not None and context["corpus_checksum"] == "checksum"
+    source_feature = certified_features(source["prompt_fen"], source["lines"][0].split())
+    assert source_feature is not None
+    assert context["source_mechanism"] == {
+        field: source_feature[field] for field in ("mover", "target", "geometry")
+    }
+    assert context["content_rating"] == 1200 and context["content_deviation"] == 80
+    alternate = next(item for item in ordered if item["key"] == "fixture-multiple")
+    alternate_proof = assessment(
+        db,
+        "test",
+        alternate["key"],
+        source,
+        baseline,
+        corpus,
+        LEARNER,
+        original_familiarity(db, LEARNER)[1],
+    )
+    from chess_coach.tactical_course_capture_chapter import chapter as capture_chapter
+
+    ungraded = capture_chapter(db, LEARNER, old_selection, alternate, alternate_proof)
+    assert ungraded["mode"] == "conceal" and "ungraded" in ungraded["pgn"]
+    alternate_board = chess.Board(ungraded["source_snapshot"]["prompt_fen"])
+    assert {move.uci() for move in alternate_board.legal_moves if move.to_square == chess.D4} == {
+        "b3d4",
+        "d1d4",
+    }
+
+    # The selected course uses the genuine prepared assessment, not a worked-line substitute.
+    from chess_coach.course_gamebook import capture as faithful_capture
+    from chess_coach.tactical_course import build as build_course
+
+    learning_tables = (
+        "unified_sessions",
+        "unified_session_events",
+        "training_attempts",
+        "mastery_events",
+    )
+    learning_before = {
+        table: db.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        for table in learning_tables
+    }
+    named = build_course(
+        db,
+        LEARNER,
+        "test",
+        selected=["hanging_piece:execute"],
+        budget=Budget(db, slice_seconds=SELECTED_SECONDS),
+    )
+    assert named["kind"] == "local-tactical-course-v8"
+    assert named["preview"]["selection"]["pairs"] == [["hanging_piece", "execute"]]
+    worked, practice = named["preview"]["chapters"]
+    assert worked["source"]["type"] == "own-game"
+    assert practice["source"]["type"] == "corpus"
+    assert (
+        practice["source"]["version"] == "test" and practice["source"]["key"] == "fixture-related"
+    )
+    assert practice["source"]["binding"]["evidence_id"] == selected_id
+    assert practice["source"]["binding"]["assessment"] == prepared
+    assert practice["mode"] == "gamebook" and faithful_capture(practice["source_snapshot"])
+    parsed_practice = chess.pgn.read_game(io.StringIO(practice["pgn"]))
+    assert parsed_practice is not None and not parsed_practice.errors
+    assert (
+        parsed_practice.headers["White"] == "White" and parsed_practice.headers["Black"] == "Black"
+    )
+    assert practice["orientation"] == "white" and "White to move" in parsed_practice.comment
+    assert "queen on d4" in parsed_practice.comment and "Preview" in parsed_practice.comment
+    assert parsed_practice.variations[0].move.uci() == "d1d4"
+    named_export = build_export(
+        db, LEARNER, "test", named, Budget(db, slice_seconds=SELECTED_SECONDS)
+    )
+    assert named_export["kind"] == "local-tactical-course-export-v8"
+    assert study_preview(named_export, named_export["export_sha256"]) == named
+    with study_revalidate(
+        path, named_export, named_export["export_sha256"], project_root=project
+    ) as check:
+        check()
+    altered = json.loads(json.dumps(named))
+    altered["preview"]["chapters"][1]["source"]["binding"]["assessment"]["source_fingerprint"] = (
+        "0" * 64
+    )
+    altered["preview_sha256"] = preview_hash(altered["preview"])
+    with pytest.raises(ValueError):
+        build_export(db, LEARNER, "test", altered, Budget(db, slice_seconds=SELECTED_SECONDS))
+    altered = json.loads(json.dumps(named))
+    altered["preview"]["selection"]["pairs"].append(["fork", "execute"])
+    altered["preview_sha256"] = preview_hash(altered["preview"])
+    with pytest.raises(ValueError, match="named capture selection differs"):
+        build_export(db, LEARNER, "test", altered, Budget(db, slice_seconds=SELECTED_SECONDS))
+
+    saved_offer, saved_request = offer_slot.read_bytes(), request_file.read_bytes()
+    try:
+        response = course_client.post(
+            local_url,
+            data={"csrf": course_csrf, "mode": "selected", "pair": "hanging_piece:execute"},
+            base_url="https://coach.invalid",
+            headers=post_headers,
+        )
+        assert response.status_code == 303
+        tactical_course_worker.run(db, LEARNER, project)
+        named_offer = json.loads(offer_slot.read_text())
+        worker_export = json.loads((planning / named_offer["file"]).read_text())
+        assert worker_export == named_export
+        shown_practice = course_client.get(
+            course_url + "?version=" + named_offer["hash"] + "&chapter=1",
+            base_url="https://coach.invalid",
+            headers=course_headers,
+        )
+        assert shown_practice.status_code == 200
+        assert b"Open related capture practice in the coach" in shown_practice.data
+        assert b"Moves in a Study do not update your coach practice record" in shown_practice.data
+    finally:
+        offer_slot.write_bytes(saved_offer)
+        request_file.write_bytes(saved_request)
+    assert learning_before == {
+        table: db.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        for table in learning_tables
+    }
     assert len(related_preview["preview"]["chapters"]) == 2
     export_candidate(
         project, related_preview_path, related_preview["preview_sha256"], related_output, offer=True

@@ -8,8 +8,9 @@ from .fact_fingerprint import canonical
 from .study_pgn_verify import matches
 
 
-def compare(saved, expected):
-    if canonical(saved) != canonical(expected) or saved["mode"] != "conceal":
+def compare(saved, expected, *, gamebook=False):
+    modes = {"conceal", "gamebook"} if gamebook else {"conceal"}
+    if canonical(saved) != canonical(expected) or saved["mode"] not in modes:
         raise ValueError("course chapter differs")
     game = chess.pgn.read_game(io.StringIO(saved["pgn"]))
     if game is None or game.errors:

@@ -3,6 +3,7 @@
 {% block content %}
 {% if exposure_unavailable %}<p>Delivery tracking is unavailable in compatibility mode; held-out qualification is unavailable.</p>{% endif %}
 <h2>Exploratory opening course preview</h2>
+<p>As the owner or an editor, you can see answers outside play. For an interactive chapter, use Preview to try the prepared line; another sound move may be rejected. Moves in a Study do not update your coach practice record.</p>
 <p><a href="{{ url_for('repertoire_views.opening_unfamiliar') }}">Back to unfamiliar experiments</a></p>
 {% if course.selection %}<p>Selected {{ course.selection.color|title }} move <code>{{ course.selection.move }}</code> from <code>{{ course.selection.parent }}</code>.</p>{% endif %}
 {% if course.legacy_version %}<p><a href="{{ url_for('repertoire_views.unfamiliar_course', version=course.legacy_version, **course.selection) }}">View the earlier unmeasured version</a>.</p>{% endif %}

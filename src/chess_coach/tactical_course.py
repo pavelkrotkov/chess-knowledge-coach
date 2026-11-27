@@ -30,6 +30,8 @@ THEMATIC_VERSION = "local-tactical-course-v6"
 THEMATIC_POLICY = "provisional-recurring-tactics-v6"
 THEMATIC_SELECTED_VERSION = "local-tactical-course-v7"
 THEMATIC_SELECTED_POLICY = "provisional-recurring-tactics-v7"
+NAMED_VERSION = "local-tactical-course-v8"
+NAMED_POLICY = "provisional-recurring-tactics-v8"
 CONTRACTS = {
     LEGACY_VERSION: (LEGACY_POLICY, PAIRS),
     PREVIOUS_VERSION: (PREVIOUS_POLICY, CURRENT_PAIRS),
@@ -38,13 +40,17 @@ CONTRACTS = {
     SELECTED_VERSION: (SELECTED_POLICY, None),
     THEMATIC_VERSION: (THEMATIC_POLICY, CURRENT_PAIRS),
     THEMATIC_SELECTED_VERSION: (THEMATIC_SELECTED_POLICY, None),
+    NAMED_VERSION: (NAMED_POLICY, None),
 }
 
 
 def _policy(selected):
     if selected is None:
         return THEMATIC_VERSION, THEMATIC_POLICY, CURRENT_PAIRS, None
-    return THEMATIC_SELECTED_VERSION, THEMATIC_SELECTED_POLICY, pairs(selected), SELECTED_SECONDS
+    chosen = pairs(selected)
+    if chosen == [("hanging_piece", "execute")]:
+        return NAMED_VERSION, NAMED_POLICY, chosen, SELECTED_SECONDS
+    return THEMATIC_SELECTED_VERSION, THEMATIC_SELECTED_POLICY, chosen, SELECTED_SECONDS
 
 
 def build(db, subject, corpus, *, budget=None, selected=None):
@@ -57,7 +63,14 @@ def build(db, subject, corpus, *, budget=None, selected=None):
     check_budget(selected is not None, budget)
     groups, coverage = candidates(db, subject, budget, pairs=chosen)
     patterns, chapters, unavailable, omitted = assemble(
-        db, subject, corpus, groups, budget, allow_empty=True, thematic=True
+        db,
+        subject,
+        corpus,
+        groups,
+        budget,
+        allow_empty=True,
+        thematic=True,
+        named=version == NAMED_VERSION,
     )
     budget.check()
     _check_empty(patterns, selected, coverage, unavailable, chosen)

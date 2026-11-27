@@ -2,17 +2,12 @@
 
 from .course_preview import preview_hash
 from .learner_identity import normalize_identity
-from .tactical_course import PROTECTION_VERSION as PROTECTION_PREVIEW_VERSION
-from .tactical_course import SELECTED_VERSION as SELECTED_PREVIEW_VERSION
-from .tactical_course import THEMATIC_SELECTED_VERSION, THEMATIC_VERSION
-from .tactical_course import VERSION as PREVIEW_VERSION
-from .tactical_course_choice import check_budget
 from .tactical_export_chapters import verify
 from .tactical_export_contract import contract as _contract
 from .tactical_export_contract import validate
 from .tactical_export_coverage import selected as covered
-from .tactical_export_gaps import OWN_REASONS, omissions, selected
-from .tactical_export_selection import selection
+from .tactical_export_gaps import OWN_REASONS, selected
+from .tactical_export_selection import context
 from .tactical_export_sources import lesson
 
 LEGACY_VERSION = "local-tactical-course-export-v1"
@@ -44,24 +39,8 @@ def build(db, subject, corpus, envelope, budget, *, artifact=None):
         raise ValueError("learner identity unavailable")
     with budget.scope(snapshot=False):
         body = validate(envelope, corpus)
-    pairs = selection(body, corpus)
-    check_budget(body["kind"] in {SELECTED_PREVIEW_VERSION, THEMATIC_SELECTED_VERSION}, budget)
+    pairs, modern, gaps, thematic, named = context(body, corpus, budget)
     index, seen = 0, set()
-    # Selected courses use the same source and chapter proofs as modern defaults.
-    modern = body["kind"] in {
-        PROTECTION_PREVIEW_VERSION,
-        PREVIEW_VERSION,
-        SELECTED_PREVIEW_VERSION,
-        THEMATIC_VERSION,
-        THEMATIC_SELECTED_VERSION,
-    }
-    gaps = omissions(
-        body["selection"],
-        pairs=pairs,
-        modern=modern,
-        owned_deadline=body["kind"]
-        in {PREVIEW_VERSION, SELECTED_PREVIEW_VERSION, THEMATIC_VERSION, THEMATIC_SELECTED_VERSION},
-    )
     for pattern in body["patterns"]:
         pair = (pattern["skill"], pattern["operation"])
         if pair in seen:
@@ -80,7 +59,8 @@ def build(db, subject, corpus, envelope, budget, *, artifact=None):
             group,
             budget,
             modern=modern,
-            thematic=body["kind"] in {THEMATIC_VERSION, THEMATIC_SELECTED_VERSION},
+            thematic=thematic,
+            named=named,
             artifact=artifact,
         )
     if any(reason not in OWN_REASONS and pair not in seen for pair, reason in gaps.items()):
