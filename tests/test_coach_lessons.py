@@ -1079,45 +1079,45 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
 
 
 def test_decision_and_saved_history_render_coaching(tmp_path, monkeypatch):
-    import chess_coach.web_lessons as web_lessons
+    from chess_coach.db import Database
+    from chess_coach.evidence_review import review_evidence
+    from chess_coach.ingest import ingest_pgn
+    from chess_coach.lesson_history import get
+    from chess_coach.lesson_narrative import build
+    from chess_coach.pipeline_inputs import engine_identity, game_input
+    from chess_coach.pipeline_work import run_analysis
+    from chess_coach.recurrence_report import report
     from chess_coach.web import create_app
+    from chess_coach.web_db import database
 
     path = tmp_path / "synthetic.sqlite"
-    db, _ = make_game(path, monkeypatch)
-    result = process_decision(db, 1, LEARNER)
-    evidence_id = result["evidence_ids"][0]
-    from chess_coach.evidence_review import review_evidence
-
-    review_evidence(db, evidence_id, decision="accept", actor="fixture")
+    db, config = make_game(path, monkeypatch)
+    first_id = process_decision(db, 1, LEARNER)["evidence_ids"][0]
+    review_evidence(db, first_id, decision="accept", actor="fixture")
+    pgn = db.connection.execute("SELECT pgn FROM games WHERE id=1").fetchone()[0]
+    ingest_pgn(db, pgn.replace("2026.01.01", "2026.01.02"))
+    second_position = db.connection.execute(
+        "SELECT id FROM positions WHERE game_id=2 AND ply=1"
+    ).fetchone()[0]
+    assert (
+        run_analysis(db, 2, game_input(db, 2), config, engine_identity(config.engine_path))[
+            "status"
+        ]
+        == "complete"
+    )
+    second_id = process_decision(db, second_position, LEARNER)["evidence_ids"][0]
+    review_evidence(db, second_id, decision="accept", actor="fixture")
+    dates = {
+        "start": "2026-01-01T00:00:00+00:00",
+        "end": "2026-01-03T00:00:00+00:00",
+        "compare_start": "2025-12-01T00:00:00+00:00",
+    }
+    data = report(db, LEARNER, **dates, skill="fork", operation="execute")
+    group = next(item for item in data["current"] if item["family"] == "fork-opportunity-mapper")
+    canonical = build(db, LEARNER, group)
+    assert len(canonical["examples"]) == 2
+    assert {item["evidence_id"] for item in canonical["examples"]} == {first_id, second_id}
     db.close()
-    group = {
-        "skill": "fork",
-        "operation": "execute",
-        "family": "fork-opportunity-mapper",
-        "version": "1.0.1",
-        "lesson_examples": [
-            {
-                "id": evidence_id,
-                "position_id": 1,
-                "context": {
-                    "side": "white",
-                    "phase": "low material",
-                    "clock": "unknown",
-                    "time control": "unknown",
-                },
-            }
-        ],
-    }
-    report_data = {
-        "current": [group],
-        "previous": [],
-        "start": "s",
-        "end": "e",
-        "compare_start": "p",
-        "skill": None,
-        "operation": None,
-    }
-    monkeypatch.setattr(web_lessons, "report", lambda *args, **kwargs: report_data)
     app = create_app(
         db_path=path,
         subject=LEARNER,
@@ -1128,7 +1128,9 @@ def test_decision_and_saved_history_render_coaching(tmp_path, monkeypatch):
     )
     client = app.test_client()
     headers = {"Tailscale-User-Login": "login"}
-    report_page = client.get("/recurrence", base_url="https://coach.invalid", headers=headers)
+    report_page = client.get(
+        "/recurrence", query_string=dates, base_url="https://coach.invalid", headers=headers
+    )
     assert b"not repeated mistakes" in report_page.data
     view = client.get("/decisions/1", base_url="https://coach.invalid", headers=headers)
     assert view.status_code == 200
@@ -1137,9 +1139,9 @@ def test_decision_and_saved_history_render_coaching(tmp_path, monkeypatch):
         csrf = session["csrf"]
     form = {
         "csrf": csrf,
-        "start": "s",
-        "end": "e",
-        "compare_start": "p",
+        **dates,
+        "filter_skill": "fork",
+        "filter_operation": "execute",
         "period": "current",
         **{key: group[key] for key in ("skill", "operation", "family", "version")},
     }
@@ -1147,6 +1149,13 @@ def test_decision_and_saved_history_render_coaching(tmp_path, monkeypatch):
     first = client.post(
         "/lessons/regenerate", data=form, base_url="https://coach.invalid", headers=headers
     )
+
+    def reorder(payload):
+        assert not database().connection.in_transaction
+        payload["facts"]["lesson"]["examples"][0]["facts"].append("unsupported invented claim")
+        return '{"order":[1,0]}'
+
+    app.extensions["lesson_generator"] = (reorder, "fixture-model")
     second = client.post(
         "/lessons/regenerate", data=form, base_url="https://coach.invalid", headers=headers
     )
@@ -1154,13 +1163,57 @@ def test_decision_and_saved_history_render_coaching(tmp_path, monkeypatch):
     assert first.location != second.location
     page = client.get(first.location, base_url="https://coach.invalid", headers=headers)
     assert b"historical snapshot" in page.data and b"Nc7+" in page.data
-    history = client.get("/lessons", base_url="https://coach.invalid", headers=headers)
-    assert history.status_code == 200 and history.data.count(b"fork / execute") == 2
-    from chess_coach.db import Database
+    app.extensions["lesson_generator"] = (
+        lambda _facts: '{"order":[1,0],"claim":"unsupported"}',
+        "fixture-model",
+    )
+    malformed = client.post(
+        "/lessons/regenerate", data=form, base_url="https://coach.invalid", headers=headers
+    )
 
+    def unavailable(_facts):
+        raise RuntimeError("private generator error")
+
+    app.extensions["lesson_generator"] = (unavailable, "fixture-model")
+    fallback = client.post(
+        "/lessons/regenerate", data=form, base_url="https://coach.invalid", headers=headers
+    )
+    assert malformed.status_code == fallback.status_code == 303
+    assert b"private generator error" not in fallback.data
+
+    def changed(_facts):
+        writer = Database(path)
+        try:
+            review_evidence(writer, second_id, decision="reject", actor="fixture")
+        finally:
+            writer.close()
+        return '{"order":[1,0]}'
+
+    app.extensions["lesson_generator"] = (changed, "fixture-model")
+    stale = client.post(
+        "/lessons/regenerate", data=form, base_url="https://coach.invalid", headers=headers
+    )
+    assert stale.status_code == 400 and b"lesson source changed" not in stale.data
+    history = client.get("/lessons", base_url="https://coach.invalid", headers=headers)
+    assert history.status_code == 200 and history.data.count(b"fork / execute") == 4
     check = Database(path)
+    records = [
+        get(check, LEARNER, int(response.location.rsplit("/", 1)[1]))
+        for response in (first, second, malformed, fallback)
+    ]
+    assert records[0]["lesson"] == canonical
+    assert records[0]["inputs"]["generation"]["status"] == "not_requested"
+    assert records[1]["lesson"]["examples"] == list(reversed(canonical["examples"]))
+    assert records[1]["generator_model"] == "fixture-model"
+    assert records[1]["prompt_version"] == "lesson-order-v1"
+    assert records[1]["inputs"]["generation"]["input"]["lesson"] == canonical
+    for record in records[2:]:
+        assert record["lesson"] == canonical and record["generator_model"] == "deterministic"
+        assert record["inputs"]["generation"]["status"] == "fallback"
+        assert record["inputs"]["generation"]["attempted_model"] == "fixture-model"
+    assert check.connection.execute("SELECT COUNT(*) FROM lesson_versions").fetchone()[0] == 4
     assert (
-        check.connection.execute("SELECT COUNT(*) FROM evidence_review_events").fetchone()[0] == 1
+        check.connection.execute("SELECT COUNT(*) FROM evidence_review_events").fetchone()[0] == 3
     )
     check.close()
 
