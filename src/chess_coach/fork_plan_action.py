@@ -53,7 +53,7 @@ def recommendation(db, subject, corpus):
 
 
 # Reuse the same finder and history while the caller owns the snapshot budget.
-def checked(db, subject, corpus, check):
+def checked(db, subject, corpus, check, *, as_of=None):
     from .coaching_quick_pair import build
     from .coaching_quick_practice import choose
     from .fork_plan_history import checked as checked_history
@@ -64,18 +64,18 @@ def checked(db, subject, corpus, check):
     if selected is None:
         return None
     evidence = selected["source"]["evidence_id"]
-    assessment = checked_history(db, subject, corpus, evidence, check)
-    harder = _harder(db, subject, corpus, evidence, assessment, check)
+    assessment = checked_history(db, subject, corpus, evidence, check, as_of=as_of)
+    harder = _harder(db, subject, corpus, evidence, assessment, check, as_of)
     return {**selected, "assessment": assessment, "harder": harder, "limited": limited}
 
 
-def _harder(db, subject, corpus, evidence, assessment, check):
+def _harder(db, subject, corpus, evidence, assessment, check, as_of):
     if assessment["status"] != "correct":
         return False
     from .fork_difficulty_history import _pair
 
     try:
-        _pair(db, subject, corpus, evidence, assessment["attempt"], check)
+        _pair(db, subject, corpus, evidence, assessment["attempt"], check, as_of=as_of)
         return True
     except (ValueError, TypeError, KeyError, IndexError, AttributeError):
         return False

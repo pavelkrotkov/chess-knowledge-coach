@@ -2,8 +2,7 @@
 
 from .curriculum_capture_offer_check import _bounded
 from .curriculum_capture_offer_scope import scope
-from .curriculum_common_inputs import current
-from .curriculum_common_inputs import file_identity as files_current
+from .curriculum_common_inputs import offer_current
 from .curriculum_cursor import revision
 from .curriculum_cursor_values import hex_digest, text
 from .curriculum_window_offer_check import valid_time
@@ -17,13 +16,7 @@ def check(db, data, subject, source, version, key, mode, root, budget):
     if root is None or budget is None:
         raise ValueError("common practice offer changed")
     binding = _binding(db, data[7])
-    files = _bounded(budget, lambda: files_current(db, owner, root))
-    actual = _bounded(
-        budget,
-        lambda: current(db, owner, binding["corpus_version"], root, binding["as_of"], budget.check),
-    )
-    if actual != binding["common_input"] or files != files_current(db, owner, root):
-        raise ValueError("common practice offer changed")
+    files = _bounded(budget, lambda: offer_current(db, owner, binding, root, budget.check))
     valid_time(data)
     return {"data": data, "subject": owner, "root": root, "files": files, "common": True}
 

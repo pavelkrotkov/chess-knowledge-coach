@@ -4,7 +4,7 @@ import json
 import time
 
 from .fork_followup_first import first
-from .fork_followup_prior import _prior
+from .fork_followup_prior import _as_of, _prior
 from .fork_history_item import item
 from .mate_assessment_rows import LIMIT, _end
 from .related_fork_assessment_scope import is_source
@@ -45,15 +45,16 @@ def _candidates(db, subject, evidence, check):
 
 # The event replay checks the complete attempt, including assistance after
 # a proof. The established follow-up admission additionally checks its cohort.
-def _result(db, subject, corpus, row, evidence, check):
+def _result(db, subject, corpus, row, evidence, check, as_of):
     if row is None:
         return {"status": "unknown"}
     first(db, subject, row)
     result = item(db, row, corpus, check)
+    _as_of(row, result, as_of)
     if (result.get("hints"), result.get("reveals")) != (0, 0):
         return {"status": "unknown"}
     if result["status"] == "correct":
-        source, _ = _prior(db, subject, corpus, row["attempt_id"], check)
+        source, _ = _prior(db, subject, corpus, row["attempt_id"], check, as_of=as_of)
         if source == evidence:
             return {"status": "correct", "attempt": row["attempt_id"]}
     if result["status"] == "incorrect":
@@ -61,9 +62,9 @@ def _result(db, subject, corpus, row, evidence, check):
     return {"status": "unknown"}
 
 
-def _attempt(db, subject, corpus, row, evidence, check):
+def _attempt(db, subject, corpus, row, evidence, check, as_of):
     try:
-        return _result(db, subject, corpus, row, evidence, check)
+        return _result(db, subject, corpus, row, evidence, check, as_of)
     except (ValueError, TypeError, KeyError, IndexError, AttributeError):
         return {"status": "unknown"}
 
@@ -74,13 +75,13 @@ def report(db, subject, corpus, evidence, budget):
         return checked(db, subject, corpus, evidence, budget.check)
 
 
-def checked(db, subject, corpus, evidence, check):
+def checked(db, subject, corpus, evidence, check, *, as_of=None):
     matches, boundary = _candidates(db, subject, evidence, check)
     for index, row in enumerate(matches):
         if _ambiguous(matches[index : index + 2], boundary):
             break
         check()
-        result = _attempt(db, subject, corpus, row, evidence, check)
+        result = _attempt(db, subject, corpus, row, evidence, check, as_of)
         if result["status"] != "unknown":
             return result
     return {"status": "unknown"}

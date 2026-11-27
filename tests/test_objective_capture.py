@@ -5628,6 +5628,7 @@ def _fork_capture_common_workflow(tmp_path, monkeypatch):
 
     now = datetime.now(UTC)
     as_of = now + timedelta(days=1 + ((-now.date().toordinal() - 1) % 4))
+    before_results = now - timedelta(days=((now.date().toordinal() - 1) % 4) or 4)
     from chess_coach.training import create_training_item, review_item
     from chess_coach.training_feedback import puzzle_training_ref
 
@@ -5803,6 +5804,47 @@ def _fork_capture_common_workflow(tmp_path, monkeypatch):
             assert "first unassisted assessment" in item["reason"]
             assert "incorrect" in item["reason"] and "correct" in item["reason"]
             assert "of 20 recent games" in item["reason"]
+            past = daily_plan(
+                db,
+                subject=LEARNER,
+                corpus_version="common",
+                limit=1,
+                as_of=before_results,
+                project_root=root,
+            )
+            assert past["items"][0]["skill"] == "fork"
+            assert "recent assessment: unknown" in past["items"][0]["reason"]
+            assert "harder assessment band is not established" in past["items"][0]["reason"]
+            partial = daily_plan(
+                db,
+                subject=LEARNER,
+                corpus_version="common",
+                limit=1,
+                scan_limit=1,
+                as_of=as_of,
+                project_root=root,
+            )
+            assert not partial["items"] and partial["next_cursor"]
+            from chess_coach.fork_game_trend_paths import location as fork_trend_path
+
+            artifact = fork_trend_path(db, root)
+            assert artifact is not None and artifact.is_file()
+            artifact_bytes = artifact.read_bytes()
+            try:
+                artifact.write_bytes(b"{}")
+                with pytest.raises(ValueError, match="common practice changed"):
+                    daily_plan(
+                        db,
+                        subject=LEARNER,
+                        corpus_version="common",
+                        limit=1,
+                        scan_limit=1,
+                        as_of=as_of,
+                        cursor=partial["next_cursor"],
+                        project_root=root,
+                    )
+            finally:
+                artifact.write_bytes(artifact_bytes)
             partial = daily_plan(
                 db,
                 subject=LEARNER,
@@ -5863,6 +5905,17 @@ def _fork_capture_common_workflow(tmp_path, monkeypatch):
                 and value.get("window_offer")
                 and value.get("training") == "1"
             )
+            from chess_coach.curriculum_window_legacy import start as start_legacy
+
+            with pytest.raises(ValueError):
+                start_legacy(
+                    db,
+                    LEARNER,
+                    "common",
+                    "common-scheduled-a",
+                    "legacy-common-refusal",
+                    form["window_offer"],
+                )
         assert before == {
             name: observer.execute(f"SELECT * FROM {name} ORDER BY rowid").fetchall()
             for name in tables

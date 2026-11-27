@@ -1,26 +1,17 @@
 """Validate the strict untimed common-choice continuation."""
 
-from .curriculum_cursor_values import hex_digest, integer
+from .curriculum_cursor_values import common as common_values
+from .curriculum_priority_validate import _capture_input
 
 
 def validate(state):
-    if not hex_digest(state["common_input"]):
-        raise ValueError("invalid common input")
+    _capture_input(state["common_input"])
     common = state["common"]
     if common is None:
         return
     if not isinstance(common, dict) or set(common) != {"binding", "matches", "complete", "winner"}:
         raise ValueError("invalid common continuation")
-    _validate_common(common)
-
-
-def _validate_common(common):
-    if not hex_digest(common["binding"]) or not integer(common["matches"], 0, 7):
-        raise ValueError("invalid common continuation")
-    if type(common["complete"]) is not bool or common["winner"] not in {None, "capture", "fork"}:
-        raise ValueError("invalid common continuation")
-    if common["winner"] is not None and not common["complete"]:
-        raise ValueError("invalid common continuation")
+    common_values(common)
 
 
 def bind(state, binding):
@@ -36,3 +27,10 @@ def bind(state, binding):
 def finish(state):
     state["common"]["complete"] = True
     state["scheduled_after"] = 0
+
+
+def bind_input(state, actual):
+    if state["common_input"] is None:
+        state["common_input"] = actual
+    elif state["common_input"] != actual:
+        raise ValueError("common practice changed; restart the plan")

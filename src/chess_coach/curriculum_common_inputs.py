@@ -28,7 +28,9 @@ def observe(db, subject, corpus, root, as_of, check):
     options, status, identity, advisory = candidates(
         db, subject, corpus, check, include_snapshot=True
     )
-    fork, fork_status, focus = fork_source(db, subject, corpus, check, include_snapshot=True)
+    fork, fork_status, focus = fork_source(
+        db, subject, corpus, check, include_snapshot=True, as_of=as_of
+    )
     attempts = selected_attempts(db, subject, corpus, options, fork, as_of, check)
     practice = practice_inputs(db, subject, corpus, attempts, check)
     check()
@@ -68,12 +70,9 @@ def current(db, subject, corpus, root, as_of, check):
     return observe(db, subject, corpus, root, as_of, check)[0]
 
 
-def recheck(db, subject, corpus, root, bundle, check):
-    check()
-    if (
-        file_identity(db, subject, root) != bundle["files"]
-        or revision(db) != bundle["revision"]
-        or capture_inputs(db, subject, root, check) != bundle["capture"]
-        or practice_inputs(db, subject, corpus, bundle["attempts"], check) != bundle["practice"]
-    ):
-        raise ValueError("common practice changed; restart the plan")
+def offer_current(db, owner, binding, root, check):
+    files = file_identity(db, owner, root)
+    actual = current(db, owner, binding["corpus_version"], root, binding["as_of"], check)
+    if actual != binding["common_input"] or files != file_identity(db, owner, root):
+        raise ValueError("common practice offer changed")
+    return files
