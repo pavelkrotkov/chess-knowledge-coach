@@ -195,6 +195,10 @@ def _native_upgrade_inventory(tmp_path, monkeypatch):
     db.connection.execute(
         "INSERT INTO games(source_id,pgn,white,black,result) VALUES('sample','synthetic','A','B','*')"
     )
+    db.connection.executemany(
+        "INSERT INTO games(id,source_id,pgn,white,black,result) VALUES(?,?,'synthetic','A','B','*')",
+        [(-5, "é棋"), (128, None)],
+    )
     db.connection.execute(
         "INSERT INTO positions(game_id,ply,fen,san,uci) VALUES(1,1,'fen','a','a1a2')"
     )
@@ -272,6 +276,21 @@ finally:
         result["public_mate_rows"],
     ) == (1, 1, 1, 1, 1)
     assert result["target_schema"] == CURRENT_VERSION
+    assert (
+        result["game_source_rows"],
+        result["game_source_null_rows"],
+        result["game_source_text_rows"],
+        result["game_source_max_bytes"],
+        result["game_source_total_bytes"],
+        result["game_rowid_min"],
+        result["game_rowid_max"],
+    ) == (3, 1, 2, 6, 11, -5, 128)
+    from chess_coach import native_upgrade_inventory
+
+    with monkeypatch.context() as patch:
+        patch.setattr(native_upgrade_inventory, "MAX_ROWS", 2)
+        assert plan(path, tmp_path) == {"status": "unknown", "inventory_complete": False}
+    assert path.read_bytes() == original
     assert result["source_index_rows"] == result["source_due_rows"] == 4
     assert result["source_type_max_bytes"] == len("unified_owned_capture")
     assert result["skill_max_bytes"] == len("hanging_piece")
@@ -400,7 +419,13 @@ finally:
     assert path.read_bytes() == original
 
     with sqlite3.connect(path) as connection:
+        connection.execute("UPDATE games SET source_id=x'ff' WHERE id=-5")
+    unsupported = path.read_bytes()
+    assert plan(path, tmp_path) == {"status": "unknown", "inventory_complete": False}
+    assert path.read_bytes() == unsupported
+    with sqlite3.connect(path) as connection:
         connection.execute("PRAGMA foreign_keys=OFF")
+        connection.execute("UPDATE games SET source_id='é棋' WHERE id=-5")
         connection.execute("UPDATE engine_outputs SET position_id='invalid'")
     assert plan(path, tmp_path) == {"status": "unknown", "inventory_complete": False}
 

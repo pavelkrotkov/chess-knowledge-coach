@@ -58,8 +58,38 @@ def _source_keys(connection):
     )
 
 
+def _game_keys(connection):
+    row = connection.execute(
+        """SELECT count(*),coalesce(sum(typeof(source_id)='null'),0),
+        coalesce(sum(typeof(source_id)='text'),0),
+        coalesce(sum(typeof(id)!='integer' OR typeof(source_id) NOT IN ('null','text')),0),
+        coalesce(max(octet_length(source_id)),0),coalesce(sum(octet_length(source_id)),0),
+        min(id),max(id)
+        FROM (SELECT id,source_id FROM games LIMIT ?)""",
+        (MAX_ROWS + 1,),
+    ).fetchone()
+    if row[0] > MAX_ROWS or row[3]:
+        raise ValueError("game source index inventory incomplete or unsupported")
+    return dict(
+        zip(
+            (
+                "game_source_rows",
+                "game_source_null_rows",
+                "game_source_text_rows",
+                "game_source_max_bytes",
+                "game_source_total_bytes",
+                "game_rowid_min",
+                "game_rowid_max",
+            ),
+            (*row[:3], *row[4:]),
+            strict=True,
+        )
+    )
+
+
 def inventory(connection):
     result = _engine(connection)
+    result.update(_game_keys(connection))
     result.update(_source_keys(connection))
     for condition, name in (
         (MATE, "mate"),
