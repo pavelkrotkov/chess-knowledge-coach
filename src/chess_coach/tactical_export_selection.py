@@ -2,6 +2,7 @@
 
 from .tactical_course import (
     CONTRACTS,
+    DEFAULT_ROLES_VERSION,
     NAMED_VERSION,
     PROTECTION_VERSION,
     SELECTED_VERSION,
@@ -19,8 +20,8 @@ from .tactical_export_coverage import coverage
 from .tactical_export_gaps import omissions
 
 SELECTED = {SELECTED_VERSION, THEMATIC_SELECTED_VERSION, NAMED_VERSION}
-MODERN = {PROTECTION_VERSION, VERSION, THEMATIC_VERSION, *SELECTED}
-THEMATIC = {THEMATIC_VERSION, THEMATIC_SELECTED_VERSION, NAMED_VERSION}
+MODERN = {PROTECTION_VERSION, VERSION, THEMATIC_VERSION, DEFAULT_ROLES_VERSION, *SELECTED}
+THEMATIC = {THEMATIC_VERSION, THEMATIC_SELECTED_VERSION, NAMED_VERSION, DEFAULT_ROLES_VERSION}
 
 
 def _omissions(selection, pairs, modern):
@@ -98,4 +99,4 @@ def context(body, corpus, budget):
         owned_deadline=kind in MODERN - {PROTECTION_VERSION},
     )
     thematic = kind in THEMATIC
-    return pairs, modern, gaps, thematic, kind == NAMED_VERSION
+    return pairs, modern, gaps, thematic, kind

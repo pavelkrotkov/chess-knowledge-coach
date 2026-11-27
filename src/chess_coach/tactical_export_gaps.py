@@ -66,10 +66,10 @@ def omissions(selection, *, pairs=PAIRS, modern=False, owned_deadline=False):
     return result
 
 
-def selected(pattern, chapters, gaps, *, modern=False):
+def selected(pattern, chapters, gaps, *, modern=False, roles=False):
     pair = (pattern["skill"], pattern["operation"])
     reason = gaps.get(pair)
-    if reason in OWN_REASONS or (reason is None) != (len(chapters) == 2):
+    if reason in OWN_REASONS or (reason is None) != (len(chapters) == (3 if roles else 2)):
         raise ValueError("related chapter and omission differ")
     if (reason == UNSUPPORTED) != (pattern["kind"] == "protection" and not modern):
         raise ValueError("unsupported related pattern differs")

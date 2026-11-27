@@ -2,6 +2,7 @@
 
 from .course_guidance import challenge
 from .tactical_course_budget import PreviewUnavailable
+from .tactical_course_capture_roles import compose
 from .tactical_course_resolve import own, related
 
 MAX_PATTERNS = 3
@@ -23,7 +24,16 @@ def _pattern(group, choice, bindings):
 
 
 def assemble(
-    db, subject, corpus, groups, budget, *, allow_empty=False, thematic=False, named=False
+    db,
+    subject,
+    corpus,
+    groups,
+    budget,
+    *,
+    allow_empty=False,
+    thematic=False,
+    named=False,
+    roles=False,
 ):
     patterns, chapters, unavailable = [], [], []
     for index, group in enumerate(groups):
@@ -41,7 +51,6 @@ def assemble(
             continue
         choice, own_chapter, bindings = result
         patterns.append(_pattern(group, choice, bindings))
-        chapters.append(own_chapter)
         item, reason = related(db, subject, corpus, choice, budget, thematic=thematic, named=named)
         if item is None:
             unavailable.append(
@@ -51,8 +60,7 @@ def assemble(
                     "reason": reason,
                 }
             )
-        else:
-            chapters.append(item)
+        chapters.extend(compose(choice, own_chapter, item, roles))
     _require_patterns(patterns, allow_empty)
     return patterns, chapters, unavailable, 0
 

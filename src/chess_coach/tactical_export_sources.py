@@ -2,8 +2,11 @@
 
 from .coaching_practice_source import resolve_example
 from .lesson_cues import cues
+from .tactical_course_chapters import owned_chapter
+from .tactical_course_presentation import VERSION as FORK_PRESENTATION
 from .tactical_course_selection import PAIRS
 from .tactical_export_binding import example
+from .tactical_export_compare import compare
 from .tactical_export_pattern import supports, versions
 
 
@@ -33,3 +36,23 @@ def choice(db, subject, lesson, budget):
         if result:
             return result
     raise ValueError("owned practice source unavailable")
+
+
+def verify_owned(db, subject, pattern, lesson, chapters, budget, selected, roles):
+    owned_saved = chapters[1] if roles else chapters[0]
+    with budget.scope(snapshot=True):
+        owned = owned_chapter(
+            db,
+            subject,
+            {"lesson": lesson},
+            selected,
+            pattern["supporting_sources"],
+            illustrated=owned_saved.get("presentation", {}).get("version") == FORK_PRESENTATION,
+        )
+    with budget.scope(snapshot=False):
+        if roles:
+            from .tactical_course_capture_roles import explanation
+
+            compare(chapters[0], explanation(owned))
+            owned = {**owned, "role": "worked"}
+        compare(owned_saved, owned)
