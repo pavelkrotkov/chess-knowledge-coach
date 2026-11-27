@@ -9,6 +9,7 @@ from .fact_fingerprint import canonical
 from .opening_queue_location import scope
 from .schema_compat import readonly
 from .tactical_course import (
+    DEFAULT_ROLES_VERSION,
     NAMED_VERSION,
     SELECTED_VERSION,
     THEMATIC_SELECTED_VERSION,
@@ -38,7 +39,8 @@ def revalidate(path, envelope, expected, *, with_budget=False, project_root=None
         )
         options = (
             {"artifact": expected}
-            if saved_preview["kind"] in {THEMATIC_VERSION, THEMATIC_SELECTED_VERSION, NAMED_VERSION}
+            if saved_preview["kind"]
+            in {THEMATIC_VERSION, THEMATIC_SELECTED_VERSION, NAMED_VERSION, DEFAULT_ROLES_VERSION}
             else {}
         )
         current = build(

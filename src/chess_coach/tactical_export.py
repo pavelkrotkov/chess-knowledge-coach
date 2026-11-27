@@ -7,6 +7,7 @@ from .tactical_export_contract import contract as _contract
 from .tactical_export_contract import validate
 from .tactical_export_coverage import selected as covered
 from .tactical_export_gaps import OWN_REASONS, selected
+from .tactical_export_grouping import chapters as _chapters
 from .tactical_export_selection import context
 from .tactical_export_sources import lesson
 
@@ -24,31 +25,22 @@ THEMATIC_EXPORT_VERSION = "local-tactical-course-export-v6"
 THEMATIC_SELECTED_EXPORT_VERSION = "local-tactical-course-export-v7"
 
 
-def _chapters(chapters, index):
-    if index >= len(chapters) or chapters[index]["source"]["type"] != "own-game":
-        raise ValueError("owned chapter order differs")
-    end = index + 1
-    if end < len(chapters) and chapters[end]["source"]["type"] in {"public", "corpus"}:
-        end += 1
-    return chapters[index:end], end
-
-
 def build(db, subject, corpus, envelope, budget, *, artifact=None):
     subject = normalize_identity(subject)
     if not subject:
         raise ValueError("learner identity unavailable")
     with budget.scope(snapshot=False):
         body = validate(envelope, corpus)
-    pairs, modern, gaps, thematic, named = context(body, corpus, budget)
+    pairs, modern, gaps, thematic, kind = context(body, corpus, budget)
     index, seen = 0, set()
     for pattern in body["patterns"]:
         pair = (pattern["skill"], pattern["operation"])
         if pair in seen:
             raise ValueError("duplicate tactical pattern")
         seen.add(pair)
-        group, index = _chapters(body["chapters"], index)
+        group, index, roles, named = _chapters(body["chapters"], index, pattern, kind)
         covered(pattern, body["selection"]["coverage"])
-        selected(pattern, group, gaps, modern=modern)
+        selected(pattern, group, gaps, modern=modern, roles=roles)
         current = lesson(db, subject, pattern, budget, pairs=pairs)
         verify(
             db,
@@ -61,6 +53,7 @@ def build(db, subject, corpus, envelope, budget, *, artifact=None):
             modern=modern,
             thematic=thematic,
             named=named,
+            roles=roles,
             artifact=artifact,
         )
     if any(reason not in OWN_REASONS and pair not in seen for pair, reason in gaps.items()):

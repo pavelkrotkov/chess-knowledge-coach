@@ -2,14 +2,12 @@
 
 from .course_guidance import challenge
 from .objective_fork_contract import VERSION as LEGACY_FORK_VERSION
-from .tactical_course_chapters import owned_chapter
 from .tactical_course_familiar import familiarity
-from .tactical_course_presentation import VERSION as FORK_PRESENTATION
 from .tactical_course_protection import source as teaching_source
 from .tactical_course_related import unfamiliar
 from .tactical_course_resolve import related as current_related
 from .tactical_export_compare import compare
-from .tactical_export_sources import choice
+from .tactical_export_sources import choice, verify_owned
 
 
 def verify(
@@ -25,22 +23,26 @@ def verify(
     thematic=False,
     artifact=None,
     named=False,
+    roles=False,
 ):
-    selected = _selected(db, subject, pattern, lesson, chapters[0], budget, modern)
-    with budget.scope(snapshot=True):
-        owned = owned_chapter(
-            db,
-            subject,
-            {"lesson": lesson},
-            selected,
-            pattern["supporting_sources"],
-            illustrated=chapters[0].get("presentation", {}).get("version") == FORK_PRESENTATION,
-        )
-    with budget.scope(snapshot=False):
-        compare(chapters[0], owned)
-    if len(chapters) == 1:
+    owned_saved = chapters[1] if roles else chapters[0]
+    selected = _selected(db, subject, pattern, lesson, owned_saved, budget, modern)
+    verify_owned(db, subject, pattern, lesson, chapters, budget, selected, roles)
+    if len(chapters) == (2 if roles else 1):
         return
-    _related(db, subject, corpus, selected, chapters[1], budget, modern, thematic, artifact, named)
+    _related(
+        db,
+        subject,
+        corpus,
+        selected,
+        chapters[-1],
+        budget,
+        modern,
+        thematic,
+        artifact,
+        named,
+        roles,
+    )
 
 
 def _is_thematic(chapter, enabled):
@@ -51,7 +53,9 @@ def _is_thematic(chapter, enabled):
     return chapter["source"].get("binding", {}).get("version") == THEMATIC_BINDING
 
 
-def _related(db, subject, corpus, selected, saved, budget, modern, thematic, artifact, named):
+def _related(
+    db, subject, corpus, selected, saved, budget, modern, thematic, artifact, named, roles
+):
     if named:
         related, _ = current_related(
             db, subject, corpus, selected, budget, thematic=True, artifact=artifact, named=True
@@ -73,6 +77,8 @@ def _related(db, subject, corpus, selected, saved, budget, modern, thematic, art
             )
     if related is None:
         raise ValueError("related source unavailable")
+    if roles:
+        related = {**related, "role": "practice"}
     with budget.scope(snapshot=False):
         compare(saved, related, gamebook=named)
 

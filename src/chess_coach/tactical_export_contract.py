@@ -1,7 +1,7 @@
 """Validate the bounded tactical preview contract before source verification."""
 
 from .course_preview import preview_hash
-from .tactical_course import CONTRACTS
+from .tactical_course import CONTRACTS, DEFAULT_ROLES_VERSION
 from .tactical_course_patterns import MAX_PATTERNS
 from .tactical_export_selection import selection
 
@@ -10,7 +10,8 @@ def _bounds(body):
     patterns, chapters = body.get("patterns"), body.get("chapters")
     if not isinstance(patterns, list) or not 1 <= len(patterns) <= MAX_PATTERNS:
         raise ValueError("unsupported pattern count")
-    if not isinstance(chapters, list) or not len(patterns) <= len(chapters) <= 2 * len(patterns):
+    maximum = (3 if body.get("kind") == DEFAULT_ROLES_VERSION else 2) * len(patterns)
+    if not isinstance(chapters, list) or not len(patterns) <= len(chapters) <= maximum:
         raise ValueError("unsupported chapter count")
 
 

@@ -32,6 +32,8 @@ THEMATIC_SELECTED_VERSION = "local-tactical-course-v7"
 THEMATIC_SELECTED_POLICY = "provisional-recurring-tactics-v7"
 NAMED_VERSION = "local-tactical-course-v8"
 NAMED_POLICY = "provisional-recurring-tactics-v8"
+DEFAULT_ROLES_VERSION = "local-tactical-course-v9"
+DEFAULT_ROLES_POLICY = "provisional-recurring-tactics-v9"
 CONTRACTS = {
     LEGACY_VERSION: (LEGACY_POLICY, PAIRS),
     PREVIOUS_VERSION: (PREVIOUS_POLICY, CURRENT_PAIRS),
@@ -41,12 +43,13 @@ CONTRACTS = {
     THEMATIC_VERSION: (THEMATIC_POLICY, CURRENT_PAIRS),
     THEMATIC_SELECTED_VERSION: (THEMATIC_SELECTED_POLICY, None),
     NAMED_VERSION: (NAMED_POLICY, None),
+    DEFAULT_ROLES_VERSION: (DEFAULT_ROLES_POLICY, CURRENT_PAIRS),
 }
 
 
 def _policy(selected):
     if selected is None:
-        return THEMATIC_VERSION, THEMATIC_POLICY, CURRENT_PAIRS, None
+        return DEFAULT_ROLES_VERSION, DEFAULT_ROLES_POLICY, CURRENT_PAIRS, None
     chosen = pairs(selected)
     if chosen == [("hanging_piece", "execute")]:
         return NAMED_VERSION, NAMED_POLICY, chosen, SELECTED_SECONDS
@@ -57,7 +60,7 @@ def build(db, subject, corpus, *, budget=None, selected=None):
     subject = normalize_identity(subject)
     if not subject or not isinstance(corpus, str) or not corpus:
         raise PreviewUnavailable("preview subject or corpus unavailable")
-    # The default contract stays unchanged; selected work binds its own budget.
+    # Selected work binds its own budget.
     version, policy, chosen, slice_seconds = _policy(selected)
     budget = budget or Budget(db, slice_seconds=slice_seconds)
     check_budget(selected is not None, budget)
@@ -70,7 +73,8 @@ def build(db, subject, corpus, *, budget=None, selected=None):
         budget,
         allow_empty=True,
         thematic=True,
-        named=version == NAMED_VERSION,
+        named=version in {NAMED_VERSION, DEFAULT_ROLES_VERSION},
+        roles=version == DEFAULT_ROLES_VERSION,
     )
     budget.check()
     _check_empty(patterns, selected, coverage, unavailable, chosen)
