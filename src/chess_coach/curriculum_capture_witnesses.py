@@ -9,27 +9,39 @@ from .objective_capture_source import resolve
 from .unified_sources import resolve_source
 
 
-def _resolve(db, subject, corpus, source, limited, scanned, check, include_snapshot):
+def _resolve(db, subject, corpus, source, limited, scanned, check, include_snapshot, _history=None):
     history = latest(db, subject, source["position_id"], corpus, check=check, prove_latest=True)
     report = {"source": source, "history": history, "limited": limited, "scanned": scanned}
     if history.get("status") in {"stale", "pending", "incomplete"}:
         return None, report
-    resolve_source(db, "own-game", source["version"], source["key"], subject=subject, check=check)
+    resolve_source(
+        db,
+        "own-game",
+        source["version"],
+        source["key"],
+        subject=subject,
+        check=check,
+        _history=_history,
+    )
     key = str(source["evidence_id"])
-    value = resolve(db, TARGET_VERSION, key, subject, check=check)
+    value = resolve(db, TARGET_VERSION, key, subject, check=check, _history=_history)
     check()
     if include_snapshot:
         report["snapshot"] = value
     return _candidate(report, value, key), report
 
 
-def candidates(db, subject, corpus, check, *, include_snapshot=False, limit=2, as_of=None):
+def candidates(
+    db, subject, corpus, check, *, include_snapshot=False, limit=2, as_of=None, _history=None
+):
     """Resolve at most two source witnesses once under the caller's budget."""
-    sources, limited, scanned, identity = collect(db, subject, check, limit=limit, as_of=as_of)
+    sources, limited, scanned, identity = collect(
+        db, subject, check, limit=limit, as_of=as_of, _history=_history
+    )
     found = []
     for source in sources:
         candidate, report = _resolve(
-            db, subject, corpus, source, limited, scanned, check, include_snapshot
+            db, subject, corpus, source, limited, scanned, check, include_snapshot, _history
         )
         if candidate is None:
             return found, "available" if found else "history_unavailable", identity, report

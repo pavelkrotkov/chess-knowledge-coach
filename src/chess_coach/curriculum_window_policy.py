@@ -11,17 +11,15 @@ def check_policy(state):
 def check_window(value):
     from .curriculum_priority_cursor import COMMON_POLICY
 
-    if value["state"].get("priority_policy") == COMMON_POLICY and (
-        value["goal"] != "balanced" or value["minutes"] is not None
-    ):
+    if value["state"].get("priority_policy") == COMMON_POLICY and value["goal"] != "balanced":
         raise ValueError("unsupported common window")
 
 
-def common_renewal(policy, minutes, budget):
+def common_renewal(policy, prior_minutes, minutes, budget):
     from .curriculum_priority_cursor import COMMON_POLICY
 
     if policy == COMMON_POLICY:
-        if minutes is not None or budget is None:
+        if (prior_minutes is None and minutes is not None) or budget is None:
             raise ValueError("start a new timed plan")
         from .tactical_course_budget import SLICE_SECONDS
 

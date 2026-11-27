@@ -1,4 +1,4 @@
-"""Validate the strict untimed common-choice continuation."""
+"""Validate the strict common-choice continuation."""
 
 from .curriculum_cursor_values import common as common_values
 from .curriculum_priority_cursor import COMMON_POLICY

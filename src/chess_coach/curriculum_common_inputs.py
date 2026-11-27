@@ -11,6 +11,7 @@ from .fact_fingerprint import canonical, digest
 from .fork_game_trend_paths import location as fork_trend
 from .fork_miss_store import location as fork_misses
 from .opening_study_source import fingerprint
+from .preview_snapshot import preview_history
 
 POLICY = "common-choice-inputs-v1"
 
@@ -25,9 +26,10 @@ def file_identity(db, subject, root):
 def observe(db, subject, corpus, root, as_of, check):
     before = file_identity(db, subject, root)
     capture = capture_inputs(db, subject, root, check)
-    options, status, identity, advisory = candidates(
-        db, subject, corpus, check, include_snapshot=True, as_of=as_of
-    )
+    with preview_history(db, subject) as history:
+        options, status, identity, advisory = candidates(
+            db, subject, corpus, check, include_snapshot=True, as_of=as_of, _history=history
+        )
     fork, fork_status, focus = fork_source(
         db, subject, corpus, check, include_snapshot=True, as_of=as_of
     )

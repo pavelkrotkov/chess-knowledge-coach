@@ -4631,12 +4631,16 @@ def _conditional_fit_workflow(
         launch_headers = {"Tailscale-User-Login": "login", "Origin": "https://coach.invalid"}
         choice = token(next(item for item in parent["items"] if item["uci"] == "e2e3")["selection"])
 
-        def opening_form(url=None, *, require_offer=True, client=launch_client, balanced=False):
+        def opening_form(
+            url=None, *, require_offer=True, client=launch_client, balanced=False, minutes=None
+        ):
             query = (
                 {"opening": choice, "goal": "balanced", "limit": "1"}
                 if balanced
                 else {"opening": choice, "goal": "fork", "minutes": "5"}
             )
+            if balanced and minutes is not None:
+                query["minutes"] = str(minutes)
             response = client.get(
                 url or "/plan",
                 query_string=None if url else query,
@@ -4694,6 +4698,21 @@ def _conditional_fit_workflow(
             origin="https://coach.invalid",
         )
         goal_client = goal_app.test_client()
+        timed_path = data / "opening-timed-balanced-launch-fixture.sqlite"
+        timed_target = sqlite3.connect(timed_path)
+        launch_db.connection.backup(timed_target)
+        timed_target.close()
+        timed_db = Database(timed_path)
+        timed_app = create_app(
+            db_path=timed_path,
+            project_root=root,
+            subject="learner",
+            actor="fixture",
+            corpus="test",
+            login="login",
+            origin="https://coach.invalid",
+        )
+        timed_client = timed_app.test_client()
         goal_tables = (
             "unified_sessions",
             "unified_session_events",
@@ -4842,6 +4861,53 @@ def _conditional_fit_workflow(
                 == 1
             )
             goal_db.close()
+
+            timed_observer = sqlite3.connect(timed_path.resolve().as_uri() + "?mode=ro", uri=True)
+            timed_observer.execute("PRAGMA query_only=ON")
+            timed_before = {
+                name: timed_observer.execute(f"SELECT * FROM {name} ORDER BY rowid").fetchall()
+                for name in goal_tables
+            }
+            timed_form, _ = opening_form(client=timed_client, balanced=True, minutes=5)
+            other_timed_form, _ = opening_form(client=timed_client, balanced=True, minutes=5)
+            assert _decode(timed_db, timed_form["window_offer"])[0] == COMMON_WINDOW_POLICY
+            timed_window = decode_window(timed_db, timed_form["opening_window_cursor"])
+            assert timed_window["minutes"] == 5 and timed_window["expires_at"] is not None
+            assert (
+                timed_window["issued_at"]
+                != decode_window(timed_db, other_timed_form["opening_window_cursor"])["issued_at"]
+            )
+            mismatched_timed = {**timed_form, "window_offer": other_timed_form["window_offer"]}
+            refused_timed = timed_client.post(
+                "/unified/start",
+                base_url="https://coach.invalid",
+                headers=launch_headers,
+                data=mismatched_timed,
+            )
+            assert refused_timed.status_code == 400
+            assert timed_before == {
+                name: timed_observer.execute(f"SELECT * FROM {name} ORDER BY rowid").fetchall()
+                for name in goal_tables
+            }
+            timed_observer.close()
+            shared.clear()
+            starts.clear()
+            with patch.context() as timed_guard:
+                timed_guard.setattr(unified_sessions, "_capture_budget", observe_budget)
+                timed_guard.setattr(opening_context_launch_prepare, "begin", observe_begin)
+                timed_started = timed_client.post(
+                    "/unified/start",
+                    base_url="https://coach.invalid",
+                    headers=launch_headers,
+                    data=timed_form,
+                )
+            assert timed_started.status_code == 303 and len(starts) == 2
+            assert starts[0] == starts[1] == shared[0]
+            assert (
+                timed_db.connection.execute("SELECT count(*) FROM unified_sessions").fetchone()[0]
+                == 1
+            )
+            timed_db.close()
 
         launch_form, _ = opening_form()
         assert (

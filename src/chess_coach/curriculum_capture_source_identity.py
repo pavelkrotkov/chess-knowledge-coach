@@ -6,14 +6,14 @@ from .objective_capture_current import current
 from .related_capture_position import prompt_key
 
 
-def collect(db, subject, check, *, limit=2, as_of=None):
-    groups, limited, scanned = _groups(db, subject, check=check, as_of=as_of)
+def collect(db, subject, check, *, limit=2, as_of=None, _history=None):
+    groups, limited, scanned = _groups(db, subject, check=check, as_of=as_of, _history=_history)
     selected, identities, seen = [], [], set()
-    for source in witnesses(db, subject, groups, check=check):
+    for source in witnesses(db, subject, groups, check=check, _history=_history):
         check()
         if source["games"] < 2:
             continue
-        view, review = current(db, source["evidence_id"], subject, check=check)
+        view, review = current(db, source["evidence_id"], subject, check=check, _history=_history)
         key = prompt_key(view["decision_fen"])
         if key in seen:
             continue

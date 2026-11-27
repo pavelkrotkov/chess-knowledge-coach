@@ -9,12 +9,9 @@ def state(db, value, learner, version, limit, scan_limit, now, goal, minutes, re
     if not value:
         from .curriculum_priority_cursor import COMMON_POLICY, available, upgrade
 
+        goal, minutes = options(goal, minutes)
         capture = available(db, learner, budget)
-        policy = (
-            COMMON_POLICY
-            if capture and limit == 1 and goal == "balanced" and minutes is None
-            else None
-        )
+        policy = COMMON_POLICY if capture and limit == 1 and goal == "balanced" else None
         initial = upgrade(
             new_state(db, learner, version, limit, scan_limit, now),
             capture=capture,

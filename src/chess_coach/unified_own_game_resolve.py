@@ -12,13 +12,13 @@ from .unified_own_game_legacy import _legacy
 from .unified_own_game_snapshot import group_for, snapshot
 
 
-def _current(db, subject, rows, kind, evidence_id, *, check=None):
+def _current(db, subject, rows, kind, evidence_id, *, check=None, _history=None):
     seen = set()
     # Check before each row; even duplicate groups need a currentness proof.
     for row in rows[:LIMIT]:
         if check is not None:
             check()
-        view, review, reasons = _inspect(db, row["id"], subject, check=check)
+        view, review, reasons = _inspect(db, row["id"], subject, history=_history, check=check)
         if reasons or view["objective"]["kind"] != kind:
             continue
         group = group_for(view)
@@ -29,7 +29,7 @@ def _current(db, subject, rows, kind, evidence_id, *, check=None):
     raise ValueError("practice source unavailable")
 
 
-def resolve(db, version, key, subject, *, check=None):
+def resolve(db, version, key, subject, *, check=None, _history=None):
     if version in ENDGAME_VERSIONS:
         return resolve_endgame(db, version, key, subject)
     position, kind, suffix = _parts(key)
@@ -42,4 +42,4 @@ def resolve(db, version, key, subject, *, check=None):
         return _legacy(db, subject, rows, (position, kind, suffix))
     if version != VERSION:
         raise ValueError("practice source unavailable")
-    return _current(db, subject, rows, kind, _positive(suffix), check=check)
+    return _current(db, subject, rows, kind, _positive(suffix), check=check, _history=_history)

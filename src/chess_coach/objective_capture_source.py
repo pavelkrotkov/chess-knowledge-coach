@@ -9,14 +9,19 @@ from .objective_source_budget import within_budget
 from .pawn_scope import history_known
 
 
-def resolve(db, version, key, subject, *, check=None):
+def resolve(db, version, key, subject, *, check=None, _history=None):
     if not valid_key(version, key) or not within_budget(db, int(key), subject):
         raise ValueError("capture objective unavailable")
     _check(check)
     evidence_id = int(key)
-    options = {"check": check} if check is not None else {}
+    options = {"check": check, "_history": _history}
     view, review = current(db, evidence_id, subject, **options)
-    board = decision_board(db, position_row(db, view["position_id"]))
+    position = position_row(db, view["position_id"])
+    board = (
+        decision_board(db, position)
+        if _history is None
+        else _history.board(position["game_id"], view["position_id"])
+    )
     if not history_known(board) or board.fen() != view["decision_fen"]:
         raise ValueError("capture history unavailable")
     result = _snapshot(board, view, review, evidence_id, version)
