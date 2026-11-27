@@ -11,6 +11,7 @@ from .schema_compat import readonly
 from .tactical_course import (
     DEFAULT_ROLES_VERSION,
     NAMED_VERSION,
+    SELECTED_ROLES_VERSION,
     SELECTED_VERSION,
     THEMATIC_SELECTED_VERSION,
     THEMATIC_VERSION,
@@ -34,13 +35,20 @@ def revalidate(path, envelope, expected, *, with_budget=False, project_root=None
         budget = Budget(
             db,
             slice_seconds=SELECTED_SECONDS
-            if saved_preview["kind"] in {SELECTED_VERSION, THEMATIC_SELECTED_VERSION, NAMED_VERSION}
+            if saved_preview["kind"]
+            in {SELECTED_VERSION, THEMATIC_SELECTED_VERSION, NAMED_VERSION, SELECTED_ROLES_VERSION}
             else None,
         )
         options = (
             {"artifact": expected}
             if saved_preview["kind"]
-            in {THEMATIC_VERSION, THEMATIC_SELECTED_VERSION, NAMED_VERSION, DEFAULT_ROLES_VERSION}
+            in {
+                THEMATIC_VERSION,
+                THEMATIC_SELECTED_VERSION,
+                NAMED_VERSION,
+                DEFAULT_ROLES_VERSION,
+                SELECTED_ROLES_VERSION,
+            }
             else {}
         )
         current = build(

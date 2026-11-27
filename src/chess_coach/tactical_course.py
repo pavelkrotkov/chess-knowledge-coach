@@ -34,6 +34,8 @@ NAMED_VERSION = "local-tactical-course-v8"
 NAMED_POLICY = "provisional-recurring-tactics-v8"
 DEFAULT_ROLES_VERSION = "local-tactical-course-v9"
 DEFAULT_ROLES_POLICY = "provisional-recurring-tactics-v9"
+SELECTED_ROLES_VERSION = "local-tactical-course-v10"
+SELECTED_ROLES_POLICY = "provisional-recurring-tactics-v10"
 CONTRACTS = {
     LEGACY_VERSION: (LEGACY_POLICY, PAIRS),
     PREVIOUS_VERSION: (PREVIOUS_POLICY, CURRENT_PAIRS),
@@ -44,6 +46,7 @@ CONTRACTS = {
     THEMATIC_SELECTED_VERSION: (THEMATIC_SELECTED_POLICY, None),
     NAMED_VERSION: (NAMED_POLICY, None),
     DEFAULT_ROLES_VERSION: (DEFAULT_ROLES_POLICY, CURRENT_PAIRS),
+    SELECTED_ROLES_VERSION: (SELECTED_ROLES_POLICY, None),
 }
 
 
@@ -52,7 +55,7 @@ def _policy(selected):
         return DEFAULT_ROLES_VERSION, DEFAULT_ROLES_POLICY, CURRENT_PAIRS, None
     chosen = pairs(selected)
     if chosen == [("hanging_piece", "execute")]:
-        return NAMED_VERSION, NAMED_POLICY, chosen, SELECTED_SECONDS
+        return SELECTED_ROLES_VERSION, SELECTED_ROLES_POLICY, chosen, SELECTED_SECONDS
     return THEMATIC_SELECTED_VERSION, THEMATIC_SELECTED_POLICY, chosen, SELECTED_SECONDS
 
 
@@ -73,8 +76,8 @@ def build(db, subject, corpus, *, budget=None, selected=None):
         budget,
         allow_empty=True,
         thematic=True,
-        named=version in {NAMED_VERSION, DEFAULT_ROLES_VERSION},
-        roles=version == DEFAULT_ROLES_VERSION,
+        named=version in {NAMED_VERSION, DEFAULT_ROLES_VERSION, SELECTED_ROLES_VERSION},
+        roles=version in {DEFAULT_ROLES_VERSION, SELECTED_ROLES_VERSION},
     )
     budget.check()
     _check_empty(patterns, selected, coverage, unavailable, chosen)

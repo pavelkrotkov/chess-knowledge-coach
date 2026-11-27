@@ -5,6 +5,7 @@ from .tactical_course import (
     DEFAULT_ROLES_VERSION,
     NAMED_VERSION,
     PROTECTION_VERSION,
+    SELECTED_ROLES_VERSION,
     SELECTED_VERSION,
     THEMATIC_SELECTED_VERSION,
     THEMATIC_VERSION,
@@ -19,9 +20,10 @@ from .tactical_course_selection import PER_PAIR
 from .tactical_export_coverage import coverage
 from .tactical_export_gaps import omissions
 
-SELECTED = {SELECTED_VERSION, THEMATIC_SELECTED_VERSION, NAMED_VERSION}
-MODERN = {PROTECTION_VERSION, VERSION, THEMATIC_VERSION, DEFAULT_ROLES_VERSION, *SELECTED}
-THEMATIC = {THEMATIC_VERSION, THEMATIC_SELECTED_VERSION, NAMED_VERSION, DEFAULT_ROLES_VERSION}
+NAMED = {NAMED_VERSION, SELECTED_ROLES_VERSION}
+SELECTED = {SELECTED_VERSION, THEMATIC_SELECTED_VERSION, *NAMED}
+THEMATIC = {THEMATIC_VERSION, THEMATIC_SELECTED_VERSION, DEFAULT_ROLES_VERSION, *NAMED}
+MODERN = {PROTECTION_VERSION, VERSION, SELECTED_VERSION, *THEMATIC}
 
 
 def _omissions(selection, pairs, modern):
@@ -57,7 +59,7 @@ def selection(body, corpus):
         raise ValueError("unsupported preview policy")
     # A selected preview must bind its canonical pairs and exact work policy.
     selected = body["kind"] in SELECTED
-    pairs = _pairs(selection, contract, selected, body["kind"] == NAMED_VERSION)
+    pairs = _pairs(selection, contract, selected, body["kind"] in NAMED)
     expected = [
         corpus,
         [list(pair) for pair in pairs],
@@ -98,5 +100,4 @@ def context(body, corpus, budget):
         modern=modern,
         owned_deadline=kind in MODERN - {PROTECTION_VERSION},
     )
-    thematic = kind in THEMATIC
-    return pairs, modern, gaps, thematic, kind
+    return pairs, modern, gaps, kind in THEMATIC, kind

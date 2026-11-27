@@ -1,6 +1,6 @@
 """Group versioned course chapters with their explicit source roles."""
 
-from .tactical_course import DEFAULT_ROLES_VERSION, NAMED_VERSION
+from .tactical_course import DEFAULT_ROLES_VERSION, NAMED_VERSION, SELECTED_ROLES_VERSION
 
 
 def group(chapters, index):
@@ -19,7 +19,7 @@ def group(chapters, index):
 
 
 def chapters(chapters, index, pattern, kind):
-    if kind == DEFAULT_ROLES_VERSION and pattern["kind"] == "capture":
+    if kind in {DEFAULT_ROLES_VERSION, SELECTED_ROLES_VERSION} and pattern["kind"] == "capture":
         chapters, end = group(chapters, index)
         return chapters, end, True, True
     if index >= len(chapters) or chapters[index]["source"]["type"] != "own-game":
