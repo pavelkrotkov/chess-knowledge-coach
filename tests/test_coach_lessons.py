@@ -252,12 +252,27 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
     import json
     from copy import deepcopy
 
+    # Construct the released default through its real historical policy route.
+    from chess_coach import tactical_course
     from chess_coach.tactical_course import build as tactical_preview
     from chess_coach.tactical_course_budget import Budget, PreviewUnavailable
     from chess_coach.tactical_export import build as tactical_export
     from chess_coach.tactical_study_current import revalidate
     from chess_coach.tactical_study_preview import preview as study_preview
 
+    current_fork_course_policy = tactical_course._policy
+
+    def released_default(selected):
+        if selected is None:
+            return (
+                tactical_course.DEFAULT_ROLES_VERSION,
+                tactical_course.DEFAULT_ROLES_POLICY,
+                tactical_course.CURRENT_PAIRS,
+                None,
+            )
+        return current_fork_course_policy(selected)
+
+    monkeypatch.setattr(tactical_course, "_policy", released_default)
     missing_corpus = tactical_preview(db, LEARNER, "not-configured")
     assert missing_corpus["preview"]["selection"]["unavailable"][0]["reason"] == (
         "fork corpus unavailable"
@@ -290,6 +305,20 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
     db.connection.execute(
         "INSERT INTO puzzle_themes VALUES(?,?,'fork',1200)", (corpus_id, "fixture-fork")
     )
+    # Distinct zeroing setups allow separate real deliveries without reusing a taught prompt.
+    for key, fen, line, theme in (
+        ("fixture-fork-h5", "r3k3/8/7p/1N6/8/8/6P1/7K b - - 0 1", "h6h5 b5c7 e8f8 c7a8", "fork"),
+        ("fixture-fork-f6", "r3k3/5p2/8/1N6/8/8/6P1/7K b - - 0 1", "f7f6 b5c7 e8f8 c7a8", "fork"),
+        ("fixture-capture", "4k3/p7/8/8/3q4/8/8/3RK3 b - - 0 1", "a7a6 d1d4", "hangingPiece"),
+    ):
+        db.connection.execute(
+            """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,rating_deviation,
+            themes_json,objective) VALUES(?,?,?,?,?,?,?,?,'unknown')""",
+            (key, corpus_id, fen, "https://example.invalid", line, 1200, 80, json.dumps([theme])),
+        )
+        db.connection.execute(
+            "INSERT INTO puzzle_themes VALUES(?,?,?,1200)", (corpus_id, key, theme)
+        )
     db.connection.execute("UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus_id,))
     db.connection.commit()
     before_course = db.connection.total_changes
@@ -396,6 +425,125 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
     monkeypatch.setenv("CHESS_DB", str(path))
     monkeypatch.setenv("CHESS_SUBJECT", LEARNER)
     monkeypatch.setenv("CHESS_CORPUS", "test")
+
+    def learning_rows():
+        tables = (
+            "unified_sessions",
+            "unified_session_events",
+            "objective_requests",
+            "objective_results",
+            "unified_training_enrollments",
+            "unified_training_completions",
+            "training_items",
+            "training_attempts",
+            "mastery_states",
+            "mastery_events",
+            "evidence_mappings",
+            "evidence_review_events",
+        )
+        with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True) as reader:
+            reader.execute("PRAGMA query_only=ON")
+            return tuple(
+                (table, reader.execute(f"SELECT * FROM {table} ORDER BY rowid").fetchall())
+                for table in tables
+            )
+
+    import httpx
+
+    import chess_coach.tactical_study_session as tactical_session
+    from chess_coach.study_pgn_verify import matches
+    from chess_coach.study_remote import Remote
+    from tests.test_private_study import Provider
+
+    class ForkProvider(Provider):
+        def request(self, method, url, **kwargs):
+            if httpx.URL(url).path == "/api/account":
+                request = httpx.Request(method, url)
+                return httpx.Response(
+                    200, json={"id": LEARNER, "username": LEARNER}, request=request
+                )
+            url = str(url).replace(f"/api/study/by/{LEARNER}", "/api/study/by/learner")
+            return super().request(method, url, **kwargs)
+
+    def local_provider(_database, intent, course, *, action, check=None):
+        return action(remote, intent, course)
+
+    # The real default worker and CLI use their existing two-second slices.
+    from chess_coach.ops_tactical_course import prepare as prepare_default_cli
+
+    with monkeypatch.context() as default_policy:
+        default_policy.setattr(tactical_course, "_policy", current_fork_course_policy)
+        enqueue(db, project, LEARNER, "test")
+        prepare_course(db, LEARNER, project)
+        default_offer, default_body = offered(project, path, LEARNER, "test")
+        assert default_body["kind"] == "local-tactical-course-export-v13"
+        assert [part["role"] for part in default_body["chapters"]] == [
+            "explanation",
+            "worked",
+            "practice",
+        ]
+        assert default_body["selection"]["related_match_seconds"] == 2.0
+        assert "work_policy" not in default_body["selection"]
+        default_explanation = default_body["chapters"][0]
+        default_review = default_explanation["source_snapshot"]["provenance"]["review_status"]
+        assert f"This source review is {default_review}" in default_explanation["pgn"]
+        assert "king on" in default_explanation["pgn"] and "rook on" in default_explanation["pgn"]
+        default_practice = default_body["chapters"][2]
+        assert default_practice["source"]["binding"]["assessment"]["proof"]["minimum_gain"] == 3
+        default_export = json.loads(
+            (project / ".runtime" / "planning" / default_offer["file"]).read_text()
+        )
+        default_preview_path = project / ".runtime" / "planning" / "default-fork-preview.json"
+        prepare_default_cli(project, default_preview_path)
+        default_preview = json.loads(default_preview_path.read_text())
+        assert default_preview["kind"] == "local-tactical-course-v13"
+        default_cli = project / ".runtime" / "planning" / "default-fork-cli.json"
+        before_default_reads = learning_rows()
+        with monkeypatch.context() as guarded_default:
+
+            def forbidden_default(*_args, **_kwargs):
+                pytest.fail("fork proof ran during a prepared default-course read")
+
+            guarded_default.setattr(
+                "chess_coach.related_fork_assessment.fork_proof", forbidden_default
+            )
+            guarded_default.setattr("chess_coach.fork_observation.fork_proof", forbidden_default)
+            guarded_default.setattr(
+                "chess_coach.objective_fork_judge.fork_proof", forbidden_default
+            )
+            export_candidate(
+                project, default_preview_path, default_preview["preview_sha256"], default_cli
+            )
+            assert json.loads(default_cli.read_text()) == default_export
+            with revalidate(
+                path, default_export, default_offer["hash"], project_root=project
+            ) as check:
+                check()
+            page = client.get("/coaching/tactical-course?chapter=2", base_url=base, headers=headers)
+            assert page.status_code == 200 and b"Practice a related knight fork" in page.data
+            download = client.get(
+                "/coaching/tactical-course?download=1&version=" + default_offer["hash"],
+                base_url=base,
+                headers=headers,
+            )
+            assert download.status_code == 200 and default_practice["pgn"].encode() in download.data
+            default_provider = ForkProvider()
+            default_provider.owner = LEARNER
+            default_provider.timeout_create = default_provider.timeout_upload = False
+            remote = Remote("fixture-token", LEARNER, default_provider)
+            guarded_default.setattr(
+                "chess_coach.study_anonymous.request", default_provider.anonymous
+            )
+            guarded_default.setattr(tactical_session, "_publish", local_provider)
+            tactical_session.prepare_locked(project, default_cli, default_offer["hash"])
+            tactical_session.publish_locked(project, default_cli, default_offer["hash"])
+            assert [part["mode"] for part in default_provider.uploaded] == ["conceal"] * 3
+            assert matches(
+                {**default_practice, "name": default_provider.uploaded[2]["name"]},
+                default_provider.export(),
+            )
+        assert learning_rows() == before_default_reads
+
     enqueue(db, project, LEARNER, "test", selected=["fork:execute"])
     prepare_course(db, LEARNER, project)
     fork_offer, fork_body = offered(project, path, LEARNER, "test")
@@ -405,6 +553,7 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
     explain, worked, exercise = fork_chapters
     assert explain["source"] == worked["source"]
     assert explain["source"]["type"] == "own-game" and exercise["source"]["type"] == "corpus"
+    assert exercise["source"]["key"] != default_practice["source"]["key"]
     review = explain["source_snapshot"]["provenance"]["review_status"]
     assert f"This source review is {review}" in explain["pgn"]
     assert "Provisional recurring observation" in explain["pgn"]
@@ -448,28 +597,6 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
     preview_path.write_text(json.dumps(fork_preview))
     preview_path.chmod(0o600)
     cli_path = project / ".runtime" / "planning" / "selected-fork-cli.json"
-
-    def learning_rows():
-        tables = (
-            "unified_sessions",
-            "unified_session_events",
-            "objective_requests",
-            "objective_results",
-            "unified_training_enrollments",
-            "unified_training_completions",
-            "training_items",
-            "training_attempts",
-            "mastery_states",
-            "mastery_events",
-            "evidence_mappings",
-            "evidence_review_events",
-        )
-        with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True) as reader:
-            reader.execute("PRAGMA query_only=ON")
-            return tuple(
-                (table, reader.execute(f"SELECT * FROM {table} ORDER BY rowid").fetchall())
-                for table in tables
-            )
 
     learning_before = learning_rows()
     with monkeypatch.context() as no_proof:
@@ -539,31 +666,11 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
         )
         assert download.status_code == 200 and exercise["pgn"].encode() in download.data
 
-        import httpx
-
-        import chess_coach.tactical_study_session as tactical_session
-        from chess_coach.study_pgn_verify import matches
-        from chess_coach.study_remote import Remote
-        from tests.test_private_study import Provider
-
-        class ForkProvider(Provider):
-            def request(self, method, url, **kwargs):
-                if httpx.URL(url).path == "/api/account":
-                    request = httpx.Request(method, url)
-                    return httpx.Response(
-                        200, json={"id": LEARNER, "username": LEARNER}, request=request
-                    )
-                url = str(url).replace(f"/api/study/by/{LEARNER}", "/api/study/by/learner")
-                return super().request(method, url, **kwargs)
-
         provider = ForkProvider()
         no_proof.setattr("chess_coach.study_anonymous.request", provider.anonymous)
         provider.owner = LEARNER
         provider.timeout_create = provider.timeout_upload = False
         remote = Remote("fixture-token", LEARNER, provider)
-
-        def local_provider(_database, intent, course, *, action, check=None):
-            return action(remote, intent, course)
 
         no_proof.setattr(tactical_session, "_publish", local_provider)
         tactical_session.prepare_locked(project, cli_path, fork_offer["hash"])
@@ -665,6 +772,28 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
             "2026-01-01",
         ),
     )
+    for suffix, fen, line in (
+        ("h5", "r3k3/8/7p/1N6/8/8/6P1/7K b - - 0 1", "h6h5 b5c7 e8f8 c7a8"),
+        ("f6", "r3k3/5p2/8/1N6/8/8/6P1/7K b - - 0 1", "f7f6 b5c7 e8f8 c7a8"),
+    ):
+        db.connection.execute(
+            """INSERT INTO puzzle_sessions(attempt_id,corpus_version,corpus_checksum,puzzle_id,
+            initial_fen,solution,current_fen,next_index,status,hints_used,started_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                f"familiar-fork-{suffix}",
+                "test",
+                "fixture-checksum",
+                f"fixture-fork-{suffix}",
+                fen,
+                line,
+                fen,
+                0,
+                "active",
+                0,
+                "2026-01-01",
+            ),
+        )
     db.connection.commit()
     familiar_course = tactical_preview(db, LEARNER, "test")
     assert familiar_course["preview"]["chapters"] == [own]
@@ -693,7 +822,9 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
     )
     with pytest.raises(ValueError):
         tactical_export(db, LEARNER, "test", course, Budget(db))
-    db.connection.execute("DELETE FROM puzzle_sessions WHERE attempt_id='familiar-fork'")
+    db.connection.execute(
+        "DELETE FROM puzzle_sessions WHERE attempt_id IN ('familiar-fork','familiar-fork-h5','familiar-fork-f6')"
+    )
     db.connection.commit()
 
     # Both rank orders retain real owned fork and capture chapters when the
@@ -707,28 +838,28 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
     from chess_coach.tactical_course_selection import candidates
     from tests.test_material_pipeline import Engine as MaterialEngine
 
-    with monkeypatch.context() as patch:
-        patch.setattr(chess.engine.SimpleEngine, "popen_uci", lambda *_: MaterialEngine())
-        for day in (3, 4):
-            board = chess.Board("4k3/8/8/8/3q4/8/8/3RK3 w - - 0 1")
-            game = chess.pgn.Game()
-            game.setup(board)
-            game.headers.update(
-                {
-                    "White": LEARNER,
-                    "Black": "fixture_opponent",
-                    "Result": "*",
-                    "UTCDate": f"2026.01.0{day}",
-                    "UTCTime": "12:00:00",
-                }
-            )
-            node = game.add_variation(board.parse_uci("e1f1"))
-            node.add_variation(chess.Move.from_uci("e8f8"))
-            ingest_pgn(db, str(game))
-            game_id = db.connection.execute("SELECT MAX(id) FROM games").fetchone()[0]
-            position_id = db.connection.execute(
-                "SELECT id FROM positions WHERE game_id=? AND ply=1", (game_id,)
-            ).fetchone()[0]
+    def add_capture_source(day):
+        board = chess.Board("4k3/8/8/8/3q4/8/8/3RK3 w - - 0 1")
+        game = chess.pgn.Game()
+        game.setup(board)
+        game.headers.update(
+            {
+                "White": LEARNER,
+                "Black": "fixture_opponent",
+                "Result": "*",
+                "UTCDate": f"2026.01.0{day}",
+                "UTCTime": "12:00:00",
+            }
+        )
+        node = game.add_variation(board.parse_uci("e1f1"))
+        node.add_variation(chess.Move.from_uci("e8f8"))
+        ingest_pgn(db, str(game))
+        game_id = db.connection.execute("SELECT MAX(id) FROM games").fetchone()[0]
+        position_id = db.connection.execute(
+            "SELECT id FROM positions WHERE game_id=? AND ply=1", (game_id,)
+        ).fetchone()[0]
+        with monkeypatch.context() as engine:
+            engine.setattr(chess.engine.SimpleEngine, "popen_uci", lambda *_: MaterialEngine())
             assert (
                 run_analysis(
                     db,
@@ -739,7 +870,10 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
                 )["status"]
                 == "complete"
             )
-            material_decision(db, position_id, LEARNER)
+        material_decision(db, position_id, LEARNER)
+
+    for day in (3, 4):
+        add_capture_source(day)
     certify(db, LEARNER, project)
     groups, coverage = candidates(db, LEARNER, Budget(db))
     capture_group = next(g for g in groups if g["lesson"]["skill"] == "hanging_piece")
@@ -868,6 +1002,50 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
         with pytest.raises(ValueError, match="subject changed"):
             tactical_course_familiar.familiarity(db, "another", limited_budget)
 
+    # Real source counts, rather than a substituted ranking, exercise both mixed orders.
+    from tests.capture_certificate_fixture import prepare_corpus
+
+    capture_position = capture_group["lesson"]["examples"][0]["position_id"]
+    prepare_corpus(db, LEARNER, project, "test", capture_position)
+
+    def mixed_offer():
+        with monkeypatch.context() as guard:
+            guard.setattr("chess_coach.related_fork_assessment.fork_proof", forbidden_default)
+            guard.setattr("chess_coach.fork_observation.fork_proof", forbidden_default)
+            guard.setattr("chess_coach.objective_fork_judge.fork_proof", forbidden_default)
+            return offered(project, path, LEARNER, "test")
+
+    with monkeypatch.context() as actual_default:
+        actual_default.setattr(tactical_course, "_policy", current_fork_course_policy)
+        enqueue(db, project, LEARNER, "test")
+        prepare_course(db, LEARNER, project)
+        first_offer, first_mixed = mixed_offer()
+        first_skills = [part["skill"] for part in first_mixed["patterns"]]
+        assert first_skills.index("fork") < first_skills.index("hanging_piece")
+        first_practice = next(
+            part
+            for part in first_mixed["chapters"]
+            if part["source"].get("binding", {}).get("motif") == "fork"
+        )
+        assert first_practice["source"]["binding"]["assessment"]["proof"]["minimum_gain"] == 3
+        assert first_mixed["chapters"][-1]["source"]["binding"]["motif"] == "material_capture"
+        require_fork_proof(db, LEARNER, first_practice)
+        add_capture_source(5)
+        certify(db, LEARNER, project)
+        prepare_corpus(db, LEARNER, project, "test", capture_position)
+        enqueue(db, project, LEARNER, "test")
+        prepare_course(db, LEARNER, project)
+        second_offer, second_mixed = mixed_offer()
+        second_skills = [part["skill"] for part in second_mixed["patterns"]]
+        assert second_skills.index("hanging_piece") < second_skills.index("fork")
+        second_practice = next(
+            part
+            for part in second_mixed["chapters"]
+            if part["source"].get("binding", {}).get("motif") == "fork"
+        )
+        require_fork_proof(db, LEARNER, second_practice)
+        assert first_offer["hash"] != second_offer["hash"]
+
     second_example = next(item for item in lesson["examples"] if item["evidence_id"] == second_id)
     review_evidence(db, second_id, decision="reject", actor="fixture")
     assert resolve_example(db, LEARNER, lesson, second_example) is None
@@ -876,6 +1054,11 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
     with (
         pytest.raises(ValueError),
         revalidate(path, fork_export, fork_offer["hash"], project_root=project),
+    ):
+        pass
+    with (
+        pytest.raises(ValueError),
+        revalidate(path, default_export, default_offer["hash"], project_root=project),
     ):
         pass
 
@@ -2280,7 +2463,7 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
     with monkeypatch.context() as current_default:
         current_default.setattr(tactical_course, "_policy", current_policy)
         default_course = build_course(db, LEARNER, "test", budget=Budget(db))
-        assert default_course["kind"] == "local-tactical-course-v9"
+        assert default_course["kind"] == "local-tactical-course-v13"
         explain, worked_default, exercise = default_course["preview"]["chapters"]
         assert [part["role"] for part in (explain, worked_default, exercise)] == [
             "explanation",
@@ -2298,7 +2481,7 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
         assert "net gain of at least three material points" in explanation_note
         assert "Played" in explanation_note and "Source review:" in explanation_note
         default_export = build_export(db, LEARNER, "test", default_course, Budget(db))
-        assert default_export["kind"] == "local-tactical-course-export-v9"
+        assert default_export["kind"] == "local-tactical-course-export-v13"
         assert study_preview(default_export, default_export["export_sha256"]) == default_course
         with study_revalidate(
             path, default_export, default_export["export_sha256"], project_root=project
@@ -2342,6 +2525,30 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
             default_offer = json.loads(default_offer_bytes)
             worker_default = json.loads((planning / default_offer["file"]).read_text())
             assert canonical(worker_default) == canonical(default_export)
+            # Produce the released v9 layout through its actual historical worker policy.
+            with monkeypatch.context() as historical:
+                historical.setattr(
+                    tactical_course,
+                    "_policy",
+                    lambda _selected: (
+                        tactical_course.DEFAULT_ROLES_VERSION,
+                        tactical_course.DEFAULT_ROLES_POLICY,
+                        tactical_course.CURRENT_PAIRS,
+                        None,
+                    ),
+                )
+                response = course_client.post(
+                    local_url,
+                    data={"csrf": course_csrf},
+                    base_url="https://coach.invalid",
+                    headers=post_headers,
+                )
+                assert response.status_code == 303
+                tactical_course_worker.run(db, LEARNER, project)
+                historical_offer_bytes = offer_slot.read_bytes()
+                historical_offer = json.loads(historical_offer_bytes)
+                historical_export = json.loads((planning / historical_offer["file"]).read_text())
+                assert historical_export["kind"] == "local-tactical-course-export-v9"
         finally:
             offer_slot.write_bytes(old_offer)
             request_file.write_bytes(old_request)
@@ -2661,11 +2868,32 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
         )
     finally:
         offer_slot.write_bytes(prior_offer)
-    # The real v9 view records its own delivery after the older baseline checks.
+    # An already delivered prompt makes the newer default unavailable across artifacts.
     try:
         offer_slot.write_bytes(default_offer_bytes)
-        shown_default = course_client.get(
+        stale_default = course_client.get(
             course_url + "?version=" + default_offer["hash"] + "&chapter=2",
+            base_url="https://coach.invalid",
+            headers=course_headers,
+        )
+        assert (
+            stale_default.status_code == 200
+            and b"No current prepared course is available" in stale_default.data
+        )
+        assert (
+            db.connection.execute(
+                "SELECT 1 FROM tactical_exposures WHERE artifact_hash=? AND chapter_index=2 AND kind='served'",
+                (default_offer["hash"],),
+            ).fetchone()
+            is None
+        )
+    finally:
+        offer_slot.write_bytes(prior_offer)
+    # The real v9 view records its own delivery after the older baseline checks.
+    try:
+        offer_slot.write_bytes(historical_offer_bytes)
+        shown_default = course_client.get(
+            course_url + "?version=" + historical_offer["hash"] + "&chapter=2",
             base_url="https://coach.invalid",
             headers=course_headers,
         )
@@ -2674,7 +2902,7 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
         assert (
             db.connection.execute(
                 "SELECT 1 FROM tactical_exposures WHERE artifact_hash=? AND chapter_index=2 AND kind='served'",
-                (default_offer["hash"],),
+                (historical_offer["hash"],),
             ).fetchone()
             is not None
         )
@@ -3769,7 +3997,7 @@ def test_protection_lesson_offers_only_a_current_bounded_line_replay(tmp_path, m
             budget=CourseBudget(db, slice_seconds=SELECTED_SECONDS),
         )
         assert (default["kind"], selected["kind"]) == (
-            "local-tactical-course-v9",
+            "local-tactical-course-v13",
             "local-tactical-course-v7",
         )
         from chess_coach.tactical_course_protection import ContextUnavailable

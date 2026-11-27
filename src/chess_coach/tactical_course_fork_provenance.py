@@ -9,7 +9,7 @@ from .opening_public_proof_files import latest, publish
 from .opening_queue_location import location
 from .opening_queue_lock import lock
 from .opening_recent_capacity import check as capacity
-from .tactical_course import FORK_VERSIONS
+from .tactical_course import QUALIFIED_FORK_VERSIONS
 from .tactical_course_deadline import PreviewDeadline
 
 PREFIX = "tactical-fork-proof"
@@ -25,14 +25,21 @@ def _record(db, root, subject, chapter):
 
 
 def retain(db, root, subject, course, budget):
-    chapters = course["preview"]["chapters"]
-    if (
-        course["kind"] not in FORK_VERSIONS
-        or len(chapters) < 2
-        or chapters[-1]["source"]["type"] != "corpus"
-    ):
+    if course["kind"] not in QUALIFIED_FORK_VERSIONS:
         return
-    directory, key, assessment = _record(db, root, subject, chapters[-1])
+    # A mixed course can end with another family's practice; retain the fork's proof.
+    chapter = next(
+        (
+            item
+            for item in course["preview"]["chapters"]
+            if item["source"]["type"] == "corpus"
+            and item["source"].get("binding", {}).get("motif") == "fork"
+        ),
+        None,
+    )
+    if chapter is None:
+        return
+    directory, key, assessment = _record(db, root, subject, chapter)
     capacity(root, directory, deadline=budget.expires, working=PUBLICATION_WORKING)
     with lock(directory), budget.publication():
         publish(directory, key, assessment, budget.check, prefix=PREFIX)
@@ -45,7 +52,7 @@ def require(db, subject, chapter):
 
 
 def current(root, database, subject, corpus, envelope, version, kind):
-    if kind not in FORK_VERSIONS:
+    if kind not in QUALIFIED_FORK_VERSIONS:
         return
     from .tactical_study_current import revalidate
 
