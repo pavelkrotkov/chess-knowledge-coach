@@ -648,6 +648,8 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
         assert failed.status_code == status
     partial_course = client.get(course_url, base_url="https://coach.invalid", headers=headers)
     assert partial_course.status_code == 200 and b"Partial preview" in partial_course.data
+    assert b"In Lichess, use Preview for an interactive chapter" in partial_course.data
+    assert b"Moves in a Study do not update your coach practice record" in partial_course.data
     assert b"Request private Study" not in partial_course.data
     assert b"You play White" in partial_course.data and b'class="board"' in partial_course.data
     assert b"played 0 cp; alternative 120 cp" in partial_course.data
@@ -1593,6 +1595,8 @@ def test_repertoire_transpositions_colors_refresh_and_privacy(tmp_path, monkeypa
     before_delivery = datetime.now(UTC).isoformat()
     page = client_first.get(course_path, base_url="https://coach.invalid", headers=headers)
     assert page.status_code == 200 and b"Exploratory opening course preview" in page.data
+    assert b"In Lichess, use Preview for an interactive chapter" in page.data
+    assert b"Moves in a Study do not update your coach practice record" in page.data
     assert b"Play White" in page.data and b"Play Black" in page.data
     assert b"pause" in page.data and b"Revisit" in page.data and b"CC BY-SA 4.0" in page.data
     assert page.data.count(b"pause and choose") == 2

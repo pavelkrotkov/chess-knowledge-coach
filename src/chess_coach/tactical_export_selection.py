@@ -2,6 +2,7 @@
 
 from .tactical_course import (
     CONTRACTS,
+    NAMED_VERSION,
     PROTECTION_VERSION,
     SELECTED_VERSION,
     THEMATIC_SELECTED_VERSION,
@@ -10,11 +11,16 @@ from .tactical_course import (
 )
 from .tactical_course_budget import SLICE_SECONDS, TOTAL_SECONDS
 from .tactical_course_choice import SLICE_SECONDS as SELECTED_SECONDS
-from .tactical_course_choice import WORK_POLICY, from_pairs
+from .tactical_course_choice import WORK_POLICY, check_budget, from_pairs
 from .tactical_course_patterns import MAX_PATTERNS
 from .tactical_course_protection import PER_BAND
 from .tactical_course_selection import PER_PAIR
 from .tactical_export_coverage import coverage
+from .tactical_export_gaps import omissions
+
+SELECTED = {SELECTED_VERSION, THEMATIC_SELECTED_VERSION, NAMED_VERSION}
+MODERN = {PROTECTION_VERSION, VERSION, THEMATIC_VERSION, *SELECTED}
+THEMATIC = {THEMATIC_VERSION, THEMATIC_SELECTED_VERSION, NAMED_VERSION}
 
 
 def _omissions(selection, pairs, modern):
@@ -29,7 +35,7 @@ def _omissions(selection, pairs, modern):
         raise ValueError("invalid preview omissions")
 
 
-def _pairs(selection, contract, selected):
+def _pairs(selection, contract, selected, named):
     if not selected:
         return contract[1]
     if (
@@ -37,7 +43,10 @@ def _pairs(selection, contract, selected):
         or selection.get("total_seconds") != TOTAL_SECONDS
     ):
         raise ValueError("selected work policy changed")
-    return from_pairs(selection["pairs"])
+    result = from_pairs(selection["pairs"])
+    if named and result != [("hanging_piece", "execute")]:
+        raise ValueError("named capture selection differs")
+    return result
 
 
 def selection(body, corpus):
@@ -46,8 +55,8 @@ def selection(body, corpus):
     if contract is None or body.get("policy") != contract[0]:
         raise ValueError("unsupported preview policy")
     # A selected preview must bind its canonical pairs and exact work policy.
-    selected = body["kind"] in {SELECTED_VERSION, THEMATIC_SELECTED_VERSION}
-    pairs = _pairs(selection, contract, selected)
+    selected = body["kind"] in SELECTED
+    pairs = _pairs(selection, contract, selected, body["kind"] == NAMED_VERSION)
     expected = [
         corpus,
         [list(pair) for pair in pairs],
@@ -73,16 +82,20 @@ def selection(body, corpus):
         raise ValueError("preview selection or bounds changed")
     # A deferred pair cannot supply a pattern; omissions must match coverage.
     coverage(selection["coverage"], pairs)
-    _omissions(
-        selection,
-        pairs,
-        body["kind"]
-        in {
-            PROTECTION_VERSION,
-            VERSION,
-            SELECTED_VERSION,
-            THEMATIC_VERSION,
-            THEMATIC_SELECTED_VERSION,
-        },
-    )
+    _omissions(selection, pairs, body["kind"] in MODERN)
     return pairs
+
+
+def context(body, corpus, budget):
+    pairs = selection(body, corpus)
+    kind = body["kind"]
+    check_budget(kind in SELECTED, budget)
+    modern = kind in MODERN
+    gaps = omissions(
+        body["selection"],
+        pairs=pairs,
+        modern=modern,
+        owned_deadline=kind in MODERN - {PROTECTION_VERSION},
+    )
+    thematic = kind in THEMATIC
+    return pairs, modern, gaps, thematic, kind == NAMED_VERSION

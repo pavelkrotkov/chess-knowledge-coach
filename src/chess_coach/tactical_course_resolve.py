@@ -57,11 +57,15 @@ def _match(db, subject, corpus, choice, source, familiar_data, thematic, artifac
     return result
 
 
-def related(db, subject, corpus, choice, budget, *, thematic=False, artifact=None):
+def related(db, subject, corpus, choice, budget, *, thematic=False, artifact=None, named=False):
     try:
         source = _source(db, subject, choice, budget, thematic)
         familiar_data = familiarity(db, subject, budget)
         with budget.scope(snapshot=False):
+            if named and choice["kind"] == "capture":
+                from .tactical_course_capture import practice
+
+                return practice(db, subject, corpus, choice, familiar_data, artifact=artifact)
             return _match(db, subject, corpus, choice, source, familiar_data, thematic, artifact)
     except ContextUnavailable:
         return None, PROTECTION_SOURCE

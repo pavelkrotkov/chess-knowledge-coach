@@ -6,6 +6,8 @@ from .course_preview import preview_hash
 from .tactical_course import (
     LEGACY_POLICY,
     LEGACY_VERSION,
+    NAMED_POLICY,
+    NAMED_VERSION,
     POLICY,
     PREVIOUS_POLICY,
     PREVIOUS_VERSION,
@@ -36,6 +38,7 @@ def preview(envelope, expected):
         SELECTED_EXPORT_VERSION: (SELECTED_VERSION, SELECTED_POLICY),
         THEMATIC_EXPORT_VERSION: (THEMATIC_VERSION, THEMATIC_POLICY),
         THEMATIC_SELECTED_EXPORT_VERSION: (THEMATIC_SELECTED_VERSION, THEMATIC_SELECTED_POLICY),
+        "local-tactical-course-export-v8": (NAMED_VERSION, NAMED_POLICY),
     }
     contract = contracts.get(envelope.get("kind"))
     if not re.fullmatch(r"[0-9a-f]{64}", expected) or contract is None:

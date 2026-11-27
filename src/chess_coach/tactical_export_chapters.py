@@ -24,6 +24,7 @@ def verify(
     modern=False,
     thematic=False,
     artifact=None,
+    named=False,
 ):
     selected = _selected(db, subject, pattern, lesson, chapters[0], budget, modern)
     with budget.scope(snapshot=True):
@@ -39,7 +40,7 @@ def verify(
         compare(chapters[0], owned)
     if len(chapters) == 1:
         return
-    _related(db, subject, corpus, selected, chapters[1], budget, modern, thematic, artifact)
+    _related(db, subject, corpus, selected, chapters[1], budget, modern, thematic, artifact, named)
 
 
 def _is_thematic(chapter, enabled):
@@ -50,8 +51,12 @@ def _is_thematic(chapter, enabled):
     return chapter["source"].get("binding", {}).get("version") == THEMATIC_BINDING
 
 
-def _related(db, subject, corpus, selected, saved, budget, modern, thematic, artifact):
-    if _is_thematic(saved, thematic):
+def _related(db, subject, corpus, selected, saved, budget, modern, thematic, artifact, named):
+    if named:
+        related, _ = current_related(
+            db, subject, corpus, selected, budget, thematic=True, artifact=artifact, named=True
+        )
+    elif _is_thematic(saved, thematic):
         related, _ = current_related(
             db, subject, corpus, selected, budget, thematic=True, artifact=artifact
         )
@@ -69,7 +74,7 @@ def _related(db, subject, corpus, selected, saved, budget, modern, thematic, art
     if related is None:
         raise ValueError("related source unavailable")
     with budget.scope(snapshot=False):
-        compare(saved, related)
+        compare(saved, related, gamebook=named)
 
 
 def _selected(db, subject, pattern, lesson, chapter, budget, modern):
