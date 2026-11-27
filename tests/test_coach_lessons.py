@@ -631,8 +631,24 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
             assert [p["kind"] for p in mixed["preview"]["patterns"]] == (
                 ["capture", "fork"] if index == 0 else ["fork", "capture"]
             )
-            assert len(mixed["preview"]["chapters"]) == 2
-            assert all(c["source"]["type"] == "own-game" for c in mixed["preview"]["chapters"])
+            chapters = mixed["preview"]["chapters"]
+            assert len(chapters) == 3
+            if index == 0:
+                explanation, worked, fork = chapters
+            else:
+                fork, explanation, worked = chapters
+            assert [explanation["role"], worked["role"]] == ["explanation", "worked"]
+            assert explanation["source"] == worked["source"]
+            assert explanation["source_snapshot"] == worked["source_snapshot"]
+            assert explanation["source"]["kind"] == "capture" and fork["source"]["kind"] == "fork"
+            assert explanation["source"]["evidence_id"] in {
+                item["evidence_id"] for item in capture_group["lesson"]["examples"]
+            }
+            assert fork["source"]["evidence_id"] in {
+                item["evidence_id"] for item in fork_group["lesson"]["examples"]
+            }
+            assert all(c["source"]["type"] == "own-game" for c in chapters)
+            assert all(c["orientation"] == "white" and c["mode"] == "conceal" for c in chapters)
             assert [u["reason"] for u in mixed["preview"]["selection"]["unavailable"]] == [
                 "familiarity history exceeds the bounded scan"
             ] * 2
