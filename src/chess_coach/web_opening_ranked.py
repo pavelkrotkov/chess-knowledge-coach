@@ -13,14 +13,18 @@ def show():
     db = database()
     root, subject = current_app.config["PROJECT_ROOT"], current_app.config["SUBJECT"]
     choice = request.args.get("choice", "")
+    teaching = request.args.get("teaching") == "1"
     try:
-        course, context = preview(db, root, subject, choice=choice, with_context=True)
+        course, context = preview(
+            db, root, subject, choice=choice, with_context=True, teaching=teaching
+        )
         download = url_for(
             "repertoire_views.opening_unfamiliar",
             ranked=1,
             choice=choice,
             download=1,
             version=course["version"],
+            teaching="1" if teaching else None,
         )
         if request.args.get("download") == "1":
             if request.args.get("version") != course["version"]:
@@ -35,19 +39,22 @@ def show():
             from .opening_study_view import status
 
             selection, snapshot = course["selection"], course["chapters"][0]["source_snapshot"]
-            study = status(
-                db,
-                root,
-                subject,
-                course,
-                revision=build(course, course["version"], context),
-                selection={"context_choice": choice},
-            )
+            study = None
+            if not teaching:
+                study = status(
+                    db,
+                    root,
+                    subject,
+                    course,
+                    revision=build(course, course["version"], context),
+                    selection={"context_choice": choice},
+                )
             response = render_template(
                 "opening_ranked_course.html",
                 course=course,
                 study=study,
                 download_url=download,
+                teaching=teaching,
                 board=board_rows(snapshot["prompt_fen"], selection["color"]),
             )
         validate(context, db, root, subject)

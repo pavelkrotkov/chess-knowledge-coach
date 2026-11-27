@@ -26,11 +26,15 @@ def _report(args):
 def run(args):
     if args.command != "repertoire":
         return False
+    if args.context_teaching and args.context_course is None:
+        raise ValueError("ranked opening selection required")
     report = _report(args)
     if report is None:
         return False
     options = {"revision": True} if args.revision_judgments else {}
     if args.context_course is not None:
         options["choice"] = args.context_course
+        if args.context_teaching:
+            options["teaching"] = True
     print(json.dumps(report(args.project_root, args.learner, args.db, **options), indent=2))
     return True

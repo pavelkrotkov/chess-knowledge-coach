@@ -9,7 +9,7 @@ from .tactical_course_budget import PreviewUnavailable
 from .tactical_course_deadline import DeadlineConflict, PreviewDeadline
 
 
-def report(root, learner, database, *, choice=None):
+def report(root, learner, database, *, choice=None, teaching=False):
     if root is None:
         raise ValueError("project root required")
     try:
@@ -19,7 +19,7 @@ def report(root, learner, database, *, choice=None):
             if choice is not None:
                 from .opening_unfamiliar_course import preview
 
-                return preview(db, root, learner, choice=choice)
+                return preview(db, root, learner, choice=choice, teaching=teaching)
             return inventory(db, root, learner)
     except (
         OSError,

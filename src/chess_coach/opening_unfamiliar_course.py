@@ -32,6 +32,7 @@ def preview(
     choice=None,
     budget=None,
     with_context=False,
+    teaching=False,
 ):
     if choice is not None:
         from .opening_ranked_course import preview as ranked
@@ -46,7 +47,10 @@ def preview(
             with_context=with_context,
             selection=selection,
             legacy=legacy,
+            teaching=teaching,
         )
+    if teaching:
+        raise ValueError("ranked opening selection required")
     before = db.connection.execute("PRAGMA data_version").fetchone()[0]
     report, measurement = _source(db, root, learner, selection, legacy, deadline)
     decision = None

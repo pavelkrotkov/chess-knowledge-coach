@@ -3,8 +3,10 @@
 {% block content %}
 <h2>Selected opening course</h2>
 <p><a href="{{ url_for('repertoire_views.opening_unfamiliar', contexts=1) }}">Return to opening choices</a></p>
+{% if not teaching %}<p><a href="{{ url_for('repertoire_views.opening_unfamiliar', ranked=1, choice=course.choice, teaching=1) }}">Open the full opening lesson</a>.</p>{% endif %}
 <p>Version: <code>{{ course.version }}</code> · <a href="{{ download_url }}">Download this exact course as PGN</a></p>
 <p>As the owner or an editor, you may see answers. In Lichess, Preview is for interactive chapters; this recorded line is ungraded and other legal moves are not assessed. Study moves do not update your coach practice record.</p>
+{% if teaching %}<p>{% if course.public_status == "incomplete" %}A distinct public rehearsal is unavailable in the checked sample; this course is incomplete.{% else %}This course uses a different public record for rehearsal.{% endif %}</p>{% endif %}
 {% if study %}<section><h3>Private Lichess Study</h3>
 {% if study.link %}<p><a href="{{ study.link }}">Open verified private Study</a>.</p>{% else %}<p>{{ study.message }}</p>{% endif %}
 {% if study.credentials and not study.link and study.request_allowed %}<form method="post" action="{{ url_for('repertoire_views.unfamiliar_study') }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="context_choice" value="{{ course.choice }}"><input type="hidden" name="version" value="{{ course.version }}"><button type="submit">Request private Study</button></form>{% endif %}
@@ -15,5 +17,6 @@
 {% set board_label = "Selected opening position; learner plays " + course.selection.color %}{% include "board.html" %}
 {% for item in course.parent["items"] if item.uci == course.selection.move %}<p>Recorded continuation: {{ item.source.line.san|join(" ") }}.</p>{% endfor %}
 <p><a href="{{ course.chapters[0].source.source_url }}">Public source</a> · <a href="{{ course.chapters[0].source.license_url }}">{{ course.chapters[0].source.license }}</a>.</p>
+{% if teaching and course.public_status == "available" %}<h3>Practice another recorded line</h3><p>Pause before revealing the recorded continuation. Other legal moves are ungraded.</p><details><summary>Reveal the recorded line</summary><p>{{ course.chapters[2].source.san|join(" ") }}</p></details><p><a href="{{ course.chapters[2].source.source_url }}">Rehearsal source</a> · <a href="{{ course.chapters[2].source.license_url }}">{{ course.chapters[2].source.license }}</a>.</p>{% endif %}
 <p>This is ungraded rehearsal. Viewing or downloading it does not create practice credit.</p>
 {% endblock %}

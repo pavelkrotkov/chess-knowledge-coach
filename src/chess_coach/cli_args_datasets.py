@@ -15,6 +15,7 @@ def configure(sub):
     report.add_argument("--learner", required=True)
     report.add_argument("--unfamiliar-contexts", action="store_true")
     report.add_argument("--context-course", metavar="CHOICE")
+    report.add_argument("--context-teaching", action="store_true")
     report.add_argument("--fork-nominations", action="store_true")
     report.add_argument("--revision-judgments", action="store_true")
     report.add_argument("--project-root", type=Path)
