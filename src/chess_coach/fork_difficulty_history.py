@@ -7,7 +7,7 @@ from .fork_plan_history import _candidates
 from .protection_progress_item import _answer, _time
 
 
-def _pair(db, subject, corpus, evidence, attempt, check):
+def _pair(db, subject, corpus, evidence, attempt, check, *, as_of=None):
     matches, boundary = _candidates(db, subject, evidence, check)
     if len(matches) < 2:
         raise ValueError("harder fork unavailable")
@@ -15,7 +15,10 @@ def _pair(db, subject, corpus, evidence, attempt, check):
     _ordered(matches, boundary)
     if recent["attempt_id"] != attempt:
         raise ValueError("harder fork changed")
-    current = [_prior(db, subject, corpus, row["attempt_id"], check) for row in (recent, earlier)]
+    current = [
+        _prior(db, subject, corpus, row["attempt_id"], check, as_of=as_of)
+        for row in (recent, earlier)
+    ]
     if current[0] != current[1] or current[0][0] != evidence:
         raise ValueError("harder fork context changed")
     compatible(recent, earlier)

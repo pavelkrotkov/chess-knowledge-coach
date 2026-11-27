@@ -6,14 +6,14 @@ from .curriculum_capture_witnesses import candidates, pending
 
 
 def select(db, state, subject, scan, check, *, root=None):
-    from .curriculum_priority_cursor import CONTEXT_CAPTURE_POLICY
+    from .curriculum_priority_cursor import COMMON_POLICY, CONTEXT_CAPTURE_POLICY
 
     options, status, identity, advisory = candidates(
         db,
         subject,
         state["corpus_version"],
         check,
-        include_snapshot=state["priority_policy"] == CONTEXT_CAPTURE_POLICY,
+        include_snapshot=state["priority_policy"] in {CONTEXT_CAPTURE_POLICY, COMMON_POLICY},
     )
     state["priority"]["capture_sources"] = identity
     if not options:

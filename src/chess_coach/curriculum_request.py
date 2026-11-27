@@ -2,6 +2,7 @@
 
 from datetime import datetime
 
+from .curriculum_cursor_codec import decode_cursor
 from .learner_identity import normalize_identity
 from .mastery_time import as_utc
 
@@ -27,3 +28,13 @@ def _bounds(limit: int, scan_limit: int) -> None:
         raise ValueError("limit must be 1..50")
     if type(scan_limit) is not int or not 1 <= scan_limit <= 1000:
         raise ValueError("scan_limit must be 1..1000")
+
+
+def prior(db, cursor, window):
+    if window:
+        return window["state"]
+    state = decode_cursor(db, cursor) if cursor is not None else None
+    # Preselection cursors authorize one due start, not further plan scanning.
+    if state is not None and state.get("capture_selection"):
+        raise ValueError("practice cursor is for due selection only")
+    return state

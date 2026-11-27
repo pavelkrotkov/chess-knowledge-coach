@@ -1,7 +1,7 @@
 """Publish the new capture offer without changing ordinary offer meaning."""
 
 from .curriculum_capture_offer import issue
-from .curriculum_priority_cursor import CAPTURE_POLICIES
+from .curriculum_priority_cursor import CAPTURE_POLICIES, COMMON_POLICY
 
 
 def offer(db, value, item):
@@ -9,7 +9,12 @@ def offer(db, value, item):
     if (
         state.get("priority_policy") not in CAPTURE_POLICIES
         or item.get("source_type") != "own-game"
-        or item.get("skill") != "hanging_piece"
+        or item.get("skill")
+        not in (
+            {"hanging_piece", "fork"}
+            if state.get("priority_policy") == COMMON_POLICY
+            else {"hanging_piece"}
+        )
         or item.get("kind") != "new"
     ):
         return None

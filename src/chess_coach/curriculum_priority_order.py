@@ -4,7 +4,7 @@
 def owned(state, index, source):
     if not _enabled(state, source):
         return source
-    winner = state["priority"]["winner"]
+    winner = _winner(state)
     turn = state["family_turn"]
     first = 0 if turn < 2 else 4 - turn
     if index == first:
@@ -18,6 +18,11 @@ def _enabled(state, source):
     priority = state["priority"]
     return (
         priority is not None
-        and priority["winner"] != "rotate"
+        and _winner(state) != "rotate"
         and state["priority_goal"] not in {"capture", "fork"}
     )
+
+
+def _winner(state):
+    common = state.get("common")
+    return (common and common["winner"]) or state["priority"]["winner"]

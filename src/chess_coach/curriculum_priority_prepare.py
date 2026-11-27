@@ -2,7 +2,7 @@
 
 from .curriculum_mix_order import family
 from .curriculum_priority import explain, snapshot, unknown
-from .curriculum_priority_cursor import CAPTURE_POLICIES
+from .curriculum_priority_cursor import CAPTURE_POLICIES, COMMON_POLICY
 
 
 def prepare_priority(db, state, learner, budget, check):
@@ -14,7 +14,11 @@ def prepare_priority(db, state, learner, budget, check):
     if state["priority_policy"] in CAPTURE_POLICIES:
         from .curriculum_capture_inputs import current
 
-        priority["capture_input"] = current(db, learner, budget.project_root, check)
+        priority["capture_input"] = (
+            budget.common_choice["capture"]
+            if state["priority_policy"] == COMMON_POLICY
+            else current(db, learner, budget.project_root, check)
+        )
         priority["capture_sources"] = None
         priority["capture_matches"] = 0
     state["priority"] = priority

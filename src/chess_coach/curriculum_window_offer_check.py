@@ -21,10 +21,10 @@ def check(
     db, token, subject, source, version, key, mode, *, project_root=None, capture_budget=None
 ):
     data = _decode(db, token)
-    from .curriculum_capture_offer import CONTEXT_POLICY
+    from .curriculum_capture_offer import COMMON_POLICY, CONTEXT_POLICY
     from .curriculum_capture_offer import POLICY as CAPTURE_POLICY
 
-    if data[0] in {CAPTURE_POLICY, CONTEXT_POLICY}:
+    if data[0] in {CAPTURE_POLICY, CONTEXT_POLICY, COMMON_POLICY}:
         from .curriculum_capture_offer_check import check as check_capture
 
         return check_capture(

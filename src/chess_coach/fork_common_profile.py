@@ -6,10 +6,10 @@ from .fork_common_source import bind
 from .fork_context_presence import pattern, turn
 
 
-def profile(db, subject, corpus, as_of, report, check):
+def profile(db, subject, corpus, as_of, report, check, *, admitted=None):
     if report["historical"] or not report["comparable"] or not report["boundary"]:
         return None
-    source = bind(db, subject, corpus, as_of, report, check)
+    source = bind(db, subject, corpus, as_of, report, check, admitted=admitted)
     if source is None:
         return None
     source_turn, root = source["turn"], source["root"]

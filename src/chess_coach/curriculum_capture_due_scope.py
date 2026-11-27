@@ -4,11 +4,11 @@ import time
 from datetime import UTC, datetime
 
 from .capture_certificate_store import scope
-from .curriculum_capture_file_guard import current
+from .curriculum_capture_file_guard import for_policy
 from .curriculum_cursor import revision
 from .curriculum_cursor_codec import decode_cursor
 from .curriculum_due import due_candidate
-from .curriculum_priority_cursor import CAPTURE_FILE_POLICIES, CONTEXT_CAPTURE_POLICY
+from .curriculum_priority_cursor import CAPTURE_FILE_POLICIES
 from .curriculum_window_cursor import decode
 from .fact_fingerprint import digest
 from .learner_identity import normalize_identity
@@ -51,7 +51,7 @@ def prepare(db, root, cursor, corpus, subject, source, version, key, item_id, tr
         "owner": owner,
         "root": root,
         "files": state["capture_files"],
-        "context": state["priority_policy"] == CONTEXT_CAPTURE_POLICY,
+        "policy": state["priority_policy"],
         "item": item_id,
         "revision": state["revision"],
         "version": version,
@@ -64,8 +64,8 @@ def prepare(db, root, cursor, corpus, subject, source, version, key, item_id, tr
 
 # SQLite's write lock does not freeze the worker's sidecar publications.
 def _current(db, selected):
-    return selected["files"] == current(
-        db, selected["owner"], selected["root"], context=selected["context"]
+    return selected["files"] == for_policy(
+        db, selected["owner"], selected["root"], selected["policy"]
     )
 
 

@@ -1,6 +1,6 @@
 """Preserve completed work and bound candidates across a plan deadline."""
 
-from .curriculum_family_retry import retry_or_defer
+from .curriculum_family_retry import restore, retry_or_defer
 from .curriculum_mix_order import advance as _advance
 from .curriculum_mix_order import recovery
 
@@ -47,6 +47,7 @@ def timeout(db, state, counts, budget, progress):
     }[phase]
     pending = state[pending_key]
     after = state["scheduled_after"]
+    common = state.get("common")
     # The prior corpus coordinate and its pending candidate are one continuation.
     new_after = state["new_after"]
     source = _source_position(state, phase)
@@ -57,7 +58,7 @@ def timeout(db, state, counts, budget, progress):
         state.update(saved_state)
         counts.update(saved_counts)
         del progress["items"][size:]
-    _restore(state, phase, pending_key, pending, after, new_after, source)
+    restore(state, phase, pending_key, pending, after, new_after, source, common)
     phase = state["phase"]
     progress["statuses"][phase] = "deferred"
     progress["reason"] = retry_or_defer(state, phase, completed, defer)
@@ -65,17 +66,6 @@ def timeout(db, state, counts, budget, progress):
 
 def _source_position(state, phase):
     return state.get(phase + "_after"), state.get(phase + "_examined")
-
-
-def _restore(state, phase, key, pending, after, new_after, source):
-    if state["phase"] != phase:
-        return
-    if phase in {"public", "canonical"}:
-        state[phase + "_after"], state[phase + "_examined"] = source
-    if pending is not None:
-        state[key], state["scheduled_after"] = pending, after
-        if phase == "new":
-            state["new_after"] = new_after
 
 
 def _source_rewind(state, saved, counts, phase, pending, after, source):
@@ -87,3 +77,19 @@ def _source_rewind(state, saved, counts, phase, pending, after, source):
         return saved[phase + "_pending"], saved["scheduled_after"], _source_position(saved, phase)
     prior = counts.get("_" + phase + "_before", _source_position(saved, phase))
     return None, 0, prior
+
+
+def reason(state, reason):
+    if reason == "family_quota_complete":
+        return None
+    if reason in {
+        "capture_scan_incomplete",
+        "fork_scan_incomplete",
+        "public_scan_incomplete",
+        "canonical_scan_incomplete",
+    }:
+        return defer(state)
+    # Yield to other families only during the one-item corpus pass.
+    if reason == "corpus_scan_incomplete" and state["family_index"] < 3:
+        return defer(state)
+    return reason

@@ -3,7 +3,8 @@
 import time
 from contextlib import nullcontext
 
-from .curriculum_family_checkpoint import defer, timeout
+from .curriculum_family_checkpoint import reason as classify_reason
+from .curriculum_family_checkpoint import timeout
 from .curriculum_mix_order import action, mark, record
 from .curriculum_mix_order import advance as _advance
 from .curriculum_new_capture import scan as capture
@@ -15,22 +16,24 @@ from .tactical_course_budget import SLICE_SECONDS, PreviewUnavailable
 
 def _step(db, state, learner, summary, counts, corpus, budget, check):
     phase = state["phase"]
+    staged = _common(db, state, learner, counts, budget, check)
+    if staged is not None:
+        return staged
     if phase == "capture":
-        items, status, reason, focus = capture(
-            db, state, learner, counts, budget, shared_check=check
-        )
-        return items, status, reason, focus
-    if phase == "fork":
-        return fork(db, state, learner, counts, check)
-    if phase == "public":
+        result = capture(db, state, learner, counts, budget, shared_check=check)
+    elif phase == "fork":
+        result = fork(db, state, learner, counts, check)
+    elif phase == "public":
         from .curriculum_public_scan import scan
 
-        return scan(db, state, learner, counts, check)
-    if phase == "canonical":
+        result = scan(db, state, learner, counts, check)
+    elif phase == "canonical":
         from .curriculum_canonical_scan import scan
 
-        return scan(db, state, learner, counts, check)
-    return checked_page(db, state, summary, counts, corpus, check)
+        result = scan(db, state, learner, counts, check)
+    else:
+        result = checked_page(db, state, summary, counts, corpus, check)
+    return (*result, phase)
 
 
 def scan(db, state, learner, summary, counts, corpus, budget):
@@ -39,6 +42,8 @@ def scan(db, state, learner, summary, counts, corpus, budget):
     def check():
         if time.monotonic() >= expires:
             raise PreviewUnavailable("request deadline reached")
+        if budget is not None:
+            budget.check()
 
     # A single scope and clock cover the topic and every family on this page.
     progress = {"items": [], "statuses": {}, "focuses": {}, "reason": None, "checkpoint": None}
@@ -73,7 +78,7 @@ def _loop(db, state, learner, summary, counts, corpus, budget, check, progress):
             continue
         # Only a completed family can be published after a timeout.
         progress["checkpoint"] = (dict(state), dict(counts), len(progress["items"]))
-        found, status, reason, focus = _step(
+        found, status, reason, focus, phase = _step(
             db,
             state,
             learner,
@@ -100,7 +105,7 @@ def _loop(db, state, learner, summary, counts, corpus, budget, check, progress):
         if _fill_quota(state, reason, found):
             progress["reason"] = None
             continue
-        reason = _reason(state, reason)
+        reason = classify_reason(state, reason)
         progress["reason"] = reason
         if reason is not None or _finished(state, phase):
             break
@@ -127,17 +132,11 @@ def _check_completed(reason, budget, check):
         check()
 
 
-def _reason(state, reason):
-    if reason == "family_quota_complete":
+def _common(db, state, learner, counts, budget, check):
+    from .curriculum_priority_cursor import COMMON_POLICY
+
+    if state.get("priority_policy") != COMMON_POLICY or state["phase"] not in {"capture", "fork"}:
         return None
-    if reason in {
-        "capture_scan_incomplete",
-        "fork_scan_incomplete",
-        "public_scan_incomplete",
-        "canonical_scan_incomplete",
-    }:
-        return defer(state)
-    # Yield to other families only during the one-item corpus pass.
-    if reason == "corpus_scan_incomplete" and state["family_index"] < 3:
-        return defer(state)
-    return reason
+    from .curriculum_common_choice import stage
+
+    return stage(db, state, learner, counts, budget.project_root, check, budget.common_choice)

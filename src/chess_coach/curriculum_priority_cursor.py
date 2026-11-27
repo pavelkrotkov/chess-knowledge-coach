@@ -6,7 +6,8 @@ POLICY = "qualified-family-v1:mastery-v2-90d"
 LEGACY_CAPTURE_POLICY = "qualified-family-v2:capture-practice-v1"
 CAPTURE_POLICY = "qualified-family-v3:capture-files-v1"
 CONTEXT_CAPTURE_POLICY = "qualified-family-v4:capture-context-v1"
-CAPTURE_FILE_POLICIES = {CAPTURE_POLICY, CONTEXT_CAPTURE_POLICY}
+COMMON_POLICY = "qualified-family-v5:common-choice-v1"
+CAPTURE_FILE_POLICIES = {CAPTURE_POLICY, CONTEXT_CAPTURE_POLICY, COMMON_POLICY}
 CAPTURE_POLICIES = {LEGACY_CAPTURE_POLICY, *CAPTURE_FILE_POLICIES}
 
 
@@ -17,6 +18,9 @@ def upgrade(state, *, capture=False, policy=None):
         if capture:
             state["capture_files"] = None
             state["capture_selection"] = False
+        if policy == COMMON_POLICY:
+            state["common_input"] = None
+            state["common"] = None
     return state
 
 
@@ -59,6 +63,10 @@ def validate(state):
             raise ValueError("invalid capture selection scope")
     if state["priority_policy"] in CAPTURE_POLICIES:
         _matches(state)
+    if state["priority_policy"] == COMMON_POLICY:
+        from .curriculum_common_cursor import validate as validate_common
+
+        validate_common(state)
 
 
 def _matches(state):
@@ -66,3 +74,9 @@ def _matches(state):
         matches = state["priority"]["capture_matches"]
         if matches and (state["phase"] != "capture" or state["capture_pending"] is None):
             raise ValueError("invalid capture schedule progress")
+
+
+def available(db, subject, budget):
+    from .capture_certificate_store import location
+
+    return bool(budget and location(db, budget.project_root, subject))

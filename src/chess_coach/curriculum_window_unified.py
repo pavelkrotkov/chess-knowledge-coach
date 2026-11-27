@@ -2,7 +2,7 @@
 
 import time
 
-from .curriculum_capture_offer import CONTEXT_POLICY, POLICY
+from .curriculum_capture_offer import COMMON_POLICY, CONTEXT_POLICY, POLICY
 from .curriculum_prerequisite_token import _decode
 from .opening_queue_budget import BrowserBudget
 from .tactical_course_budget import SLICE_SECONDS
@@ -52,7 +52,7 @@ def finish(value, db, capture_budget):
 
 
 def prepare(db, token, root):
-    if token is None or _decode(db, token)[0] not in {POLICY, CONTEXT_POLICY}:
+    if token is None or _decode(db, token)[0] not in {POLICY, CONTEXT_POLICY, COMMON_POLICY}:
         return None
     if root is None:
         raise ValueError("capture practice offer changed")

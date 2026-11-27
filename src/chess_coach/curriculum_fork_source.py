@@ -10,8 +10,8 @@ from .objective_fork_source import resolve
 from .unified_source_current import snapshot_hash
 
 
-def read(db, subject, corpus, check):
-    report = checked(db, subject, corpus, check)
+def read(db, subject, corpus, check, *, include_snapshot=False, as_of=None):
+    report = checked(db, subject, corpus, check, as_of=as_of)
     if not report:
         return None, "no_source", None
     source = report["source"]
@@ -22,6 +22,8 @@ def read(db, subject, corpus, check):
     if not _snapshot_valid(snapshot, source["evidence_id"]):
         raise ValueError("fork objective unavailable")
     check()
+    if include_snapshot:
+        report = {**report, "snapshot": snapshot}
     return _candidate(report, snapshot), "available", report
 
 

@@ -18,6 +18,12 @@ def _bounded(budget, action):
 
 
 def check(db, data, subject, source, version, key, mode, root, budget):
+    from .curriculum_capture_offer import COMMON_POLICY
+
+    if data[0] == COMMON_POLICY:
+        from .curriculum_common_offer import check as check_common
+
+        return check_common(db, data, subject, source, version, key, mode, root, budget)
     owner = normalize_identity(subject)
     scope(data, owner, source, version, key, mode)
     expected = binding(db, data[7], root, budget)
@@ -34,7 +40,12 @@ def check(db, data, subject, source, version, key, mode, root, budget):
 def finish(db, value, budget):
     if budget is None:
         raise ValueError("capture practice offer changed")
-    files = _bounded(budget, lambda: file_identity(db, value["subject"], value["root"]))
+    if value.get("common"):
+        from .curriculum_common_inputs import file_identity as current
+
+        files = _bounded(budget, lambda: current(db, value["subject"], value["root"]))
+    else:
+        files = _bounded(budget, lambda: file_identity(db, value["subject"], value["root"]))
     if files != value["files"]:
         raise ValueError("capture practice offer changed")
     valid_time(value["data"])

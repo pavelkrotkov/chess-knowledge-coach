@@ -72,4 +72,8 @@ def _fields(state):
 
         if state.get("priority_policy") in CAPTURE_FILE_POLICIES:
             fields.update({"capture_files", "capture_selection"})
+        from .curriculum_priority_cursor import COMMON_POLICY
+
+        if state.get("priority_policy") == COMMON_POLICY:
+            fields.update({"common_input", "common"})
     return fields

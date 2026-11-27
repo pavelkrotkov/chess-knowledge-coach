@@ -5587,6 +5587,17 @@ def _fork_capture_common_workflow(tmp_path, monkeypatch):
         db.connection.execute(
             "INSERT INTO puzzle_themes VALUES(?,?,?,?)", (corpus, key, theme, content_rating)
         )
+    # Two unrelated real scheduled prompts make the shared conflict scan resumable.
+    for file in ("a", "b"):
+        board = chess.Board(boards["capture"])
+        board.turn = chess.BLACK
+        board.remove_piece_at(chess.H7)
+        board.set_piece_at(chess.parse_square(file + "7"), chess.Piece(chess.PAWN, chess.BLACK))
+        db.connection.execute(
+            """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,
+            rating_deviation,themes_json,objective) VALUES(?,?,?,'fixture',?,3000,80,'[]','unknown')""",
+            ("common-scheduled-" + file, corpus, board.fen(), file + "7" + file + "6"),
+        )
     db.connection.execute("UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus,))
     db.connection.commit()
 
@@ -5611,6 +5622,37 @@ def _fork_capture_common_workflow(tmp_path, monkeypatch):
     assert status == "available" and options
     position = options[0][1]["source"]["position_id"]
     prepare_corpus(db, LEARNER, root, "common", position)
+    from datetime import UTC, datetime, timedelta
+
+    from chess_coach.curriculum import daily_plan
+
+    now = datetime.now(UTC)
+    as_of = now + timedelta(days=1 + ((-now.date().toordinal() - 1) % 4))
+    before_results = now - timedelta(days=((now.date().toordinal() - 1) % 4) or 4)
+    from chess_coach.training import create_training_item, review_item
+    from chess_coach.training_feedback import puzzle_training_ref
+
+    for file in ("a", "b"):
+        item_id = create_training_item(
+            db,
+            source_type="puzzle",
+            source_ref=puzzle_training_ref("common", "common-scheduled-" + file),
+            skill="mate_in_one",
+            operation="execute",
+        )
+        review_item(db, item_id, "easy", reviewed_at=now)
+        due = db.connection.execute(
+            "SELECT due FROM training_items WHERE id=?", (item_id,)
+        ).fetchone()[0]
+        assert datetime.fromisoformat(due) > as_of
+    baseline = daily_plan(
+        db, subject=LEARNER, corpus_version="common", limit=1, as_of=as_of, project_root=root
+    )
+    assert baseline["items"][0]["skill"] == "hanging_piece"
+    from chess_coach.curriculum_cursor_codec import decode_cursor
+    from chess_coach.curriculum_priority_cursor import COMMON_POLICY
+
+    assert decode_cursor(db, baseline["plan_selection_cursor"])["priority_policy"] == COMMON_POLICY
     secret = b"common-control-fixture"
     selected = preview(db, LEARNER, position, "common", secret=secret)
     item = next(value for value in selected["items"] if value.get("assessment_available"))
@@ -5716,6 +5758,169 @@ def _fork_capture_common_workflow(tmp_path, monkeypatch):
             assert b"was met for the" in page.data and b"unmet for the" in page.data
             assert b"of 20 recent games" in page.data and b"of 20 earlier games" in page.data
             assert LEARNER.encode() not in page.data
+
+            from chess_coach.curriculum_capture_file_guard import initialize
+            from chess_coach.curriculum_cursor import new_state
+            from chess_coach.curriculum_cursor_codec import encode_cursor
+            from chess_coach.curriculum_priority_cursor import CONTEXT_CAPTURE_POLICY, upgrade
+            from chess_coach.opening_queue_budget import BrowserBudget
+            from tests.capture_certificate_fixture import cli as fresh_cli
+            from tests.native_pair_probe import Forms
+
+            old_state = upgrade(
+                new_state(db, LEARNER, "common", 1, 200, as_of),
+                capture=True,
+                policy=CONTEXT_CAPTURE_POLICY,
+            )
+            initialize(db, old_state, LEARNER, BrowserBudget(db, project_root=root))
+            old = daily_plan(
+                db,
+                subject=LEARNER,
+                corpus_version="common",
+                limit=1,
+                as_of=as_of,
+                cursor=encode_cursor(db, old_state),
+                project_root=root,
+            )
+            assert old["items"][0]["skill"] == "hanging_piece"
+            started = time.monotonic()
+            planned = daily_plan(
+                db,
+                subject=LEARNER,
+                corpus_version="common",
+                limit=1,
+                as_of=as_of,
+                project_root=root,
+            )
+            assert time.monotonic() - started < 2.0
+            item = planned["items"][0]
+            assert item["skill"] == "fork" and item["source_key"] == str(fork_id)
+            assert item["source_key"] != baseline["items"][0]["source_key"]
+            assert item["reason"] != baseline["items"][0]["reason"]
+            assert (
+                decode_cursor(db, planned["plan_selection_cursor"])["priority_policy"]
+                == COMMON_POLICY
+            )
+            assert "first unassisted assessment" in item["reason"]
+            assert "incorrect" in item["reason"] and "correct" in item["reason"]
+            assert "of 20 recent games" in item["reason"]
+            past = daily_plan(
+                db,
+                subject=LEARNER,
+                corpus_version="common",
+                limit=1,
+                as_of=before_results,
+                project_root=root,
+            )
+            assert past["items"][0]["skill"] == "fork"
+            assert "recent assessment: unknown" in past["items"][0]["reason"]
+            assert "harder assessment band is not established" in past["items"][0]["reason"]
+            partial = daily_plan(
+                db,
+                subject=LEARNER,
+                corpus_version="common",
+                limit=1,
+                scan_limit=1,
+                as_of=as_of,
+                project_root=root,
+            )
+            assert not partial["items"] and partial["next_cursor"]
+            from chess_coach.fork_game_trend_paths import location as fork_trend_path
+
+            artifact = fork_trend_path(db, root)
+            assert artifact is not None and artifact.is_file()
+            artifact_bytes = artifact.read_bytes()
+            try:
+                artifact.write_bytes(b"{}")
+                with pytest.raises(ValueError, match="common practice changed"):
+                    daily_plan(
+                        db,
+                        subject=LEARNER,
+                        corpus_version="common",
+                        limit=1,
+                        scan_limit=1,
+                        as_of=as_of,
+                        cursor=partial["next_cursor"],
+                        project_root=root,
+                    )
+            finally:
+                artifact.write_bytes(artifact_bytes)
+            partial = daily_plan(
+                db,
+                subject=LEARNER,
+                corpus_version="common",
+                limit=1,
+                scan_limit=1,
+                as_of=as_of,
+                project_root=root,
+            )
+            assert not partial["items"] and partial["next_cursor"]
+            for _ in range(4):
+                partial = daily_plan(
+                    db,
+                    subject=LEARNER,
+                    corpus_version="common",
+                    limit=1,
+                    scan_limit=1,
+                    as_of=as_of,
+                    cursor=partial["next_cursor"],
+                    project_root=root,
+                )
+                if partial["items"]:
+                    break
+                assert partial["next_cursor"]
+            assert partial["items"][0]["source_key"] == str(fork_id)
+            assert "first unassisted assessment" in partial["items"][0]["reason"]
+            command = fresh_cli(
+                path,
+                "daily-plan",
+                "common",
+                "--subject",
+                LEARNER,
+                "--limit",
+                "1",
+                "--project-root",
+                str(root),
+                proof_free_candidates=True,
+                proof_free_forks=True,
+                check=False,
+            )
+            assert command.returncode == 0, (
+                f"CLI exit={command.returncode}; parent transaction={db.connection.in_transaction}; "
+                f"stderr={command.stderr!r}; stdout={command.stdout!r}"
+            )
+            cli_item = json.loads(command.stdout)["items"][0]
+            assert cli_item["skill"] == "fork" and cli_item["source_key"] == str(fork_id)
+            assert "first unassisted assessment" in cli_item["reason"]
+            started = time.monotonic()
+            client = app.test_client()
+            plan_page = client.get(
+                "/plan?limit=1",
+                base_url="https://coach.invalid",
+                headers={"Tailscale-User-Login": "fixture"},
+            )
+            assert plan_page.status_code == 200 and time.monotonic() - started < 2.0
+            assert b"first unassisted assessment" in plan_page.data
+            parsed = Forms()
+            parsed.feed(plan_page.get_data(as_text=True))
+            form = next(
+                value
+                for value in parsed.forms
+                if value.get("key") == str(fork_id)
+                and value.get("window_offer")
+                and value.get("training") == "1"
+            )
+            from chess_coach.curriculum_window_legacy import start as start_legacy
+
+            with pytest.raises(ValueError):
+                start_legacy(
+                    db,
+                    LEARNER,
+                    "common",
+                    "common-scheduled-a",
+                    "legacy-common-refusal",
+                    form["window_offer"],
+                )
         assert before == {
             name: observer.execute(f"SELECT * FROM {name} ORDER BY rowid").fetchall()
             for name in tables
@@ -5776,6 +5981,13 @@ def _fork_capture_common_workflow(tmp_path, monkeypatch):
         )
         submit(db, attempt, LEARNER, event_id="answer", move="b5c7")
         assert process(db, LEARNER)["outcomes"] == {"correct": 1}
+
+    # Equal verified first-result tiers retain the original family order.
+    tied = daily_plan(
+        db, subject=LEARNER, corpus_version="common", limit=1, as_of=as_of, project_root=root
+    )
+    assert tied["items"][0]["skill"] == "hanging_piece"
+    assert "first unassisted assessment" not in tied["items"][0]["reason"]
 
     # Prepare the actual next capture band using the existing bounded worker.
     from chess_coach.capture_certificate_worker import run as certificate_worker
@@ -5941,4 +6153,84 @@ def _fork_capture_common_workflow(tmp_path, monkeypatch):
             name: observer.execute(f"SELECT * FROM {name} ORDER BY rowid").fetchall()
             for name in tables
         }
+    # Obtain a fresh form after all related-practice observations have completed.
+    plan_page = client.get(
+        "/plan?limit=1",
+        base_url="https://coach.invalid",
+        headers={"Tailscale-User-Login": "fixture"},
+    )
+    assert plan_page.status_code == 200
+    parsed = Forms()
+    parsed.feed(plan_page.get_data(as_text=True))
+    form = next(
+        value
+        for value in parsed.forms
+        if value.get("key") == str(fork_id)
+        and value.get("window_offer")
+        and value.get("training") == "1"
+    )
+
+    # A real sidecar publication during enrollment must roll back the new session.
+    from chess_coach import unified_training_enroll
+    from chess_coach.fork_game_trend_paths import location as fork_trend_path
+
+    trend = fork_trend_path(db, root)
+    assert trend is not None and trend.is_file()
+    original_trend = trend.read_bytes()
+    real_enroll = unified_training_enroll.enroll_if_requested
+    with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True) as observer:
+        observer.execute("PRAGMA query_only=ON")
+        before = {
+            name: observer.execute(f"SELECT * FROM {name} ORDER BY rowid").fetchall()
+            for name in tables
+        }
+
+        def publish_after_enrollment(*args, **kwargs):
+            result = real_enroll(*args, **kwargs)
+            trend.write_bytes(b"{}")
+            return result
+
+        try:
+            with monkeypatch.context() as racing:
+                racing.setattr(
+                    unified_training_enroll, "enroll_if_requested", publish_after_enrollment
+                )
+                refused = client.post(
+                    "/unified/start",
+                    data=form,
+                    base_url="https://coach.invalid",
+                    headers={"Tailscale-User-Login": "fixture", "Origin": "https://coach.invalid"},
+                )
+            assert refused.status_code == 400
+            assert before == {
+                name: observer.execute(f"SELECT * FROM {name} ORDER BY rowid").fetchall()
+                for name in tables
+            }
+        finally:
+            trend.write_bytes(original_trend)
+
+    # Reissue after restoration and start the same owner-bound source normally.
+    plan_page = client.get(
+        "/plan?limit=1",
+        base_url="https://coach.invalid",
+        headers={"Tailscale-User-Login": "fixture"},
+    )
+    assert plan_page.status_code == 200
+    parsed = Forms()
+    parsed.feed(plan_page.get_data(as_text=True))
+    form = next(
+        value
+        for value in parsed.forms
+        if value.get("key") == str(fork_id)
+        and value.get("window_offer")
+        and value.get("training") == "1"
+    )
+    response = client.post(
+        "/unified/start",
+        data=form,
+        base_url="https://coach.invalid",
+        headers={"Tailscale-User-Login": "fixture", "Origin": "https://coach.invalid"},
+    )
+    assert response.status_code == 303
+
     db.close()
