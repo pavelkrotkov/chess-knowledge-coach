@@ -23,6 +23,8 @@ def before(db, root, subject, choice, selected_token, cursor):
     if not choice:
         return None
     current = preflight(db, root, subject, choice)
-    if prior is not None and current["binding"] != prior[3]:
+    if prior is not None and (
+        current["binding"] != prior[3] or prior[5] not in (None, current["admission"])
+    ):
         raise ValueError("opening context changed")
     return current

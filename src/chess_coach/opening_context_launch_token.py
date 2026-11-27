@@ -24,7 +24,7 @@ def issue_context(db, subject, context, scope):
             context["choice"],
             context["binding"],
             scope,
-            None,
+            context["admission"],
             None,
             None,
             None,
@@ -37,6 +37,8 @@ def context(db, subject, value):
     owner = normalize_identity(subject)
     if owner is None or data[0] != CONTEXT or data[1] != digest(owner):
         raise ValueError("opening context owner changed")
+    if data[5] not in (None, "development", "fit"):
+        raise ValueError("opening admission changed")
     return data
 
 

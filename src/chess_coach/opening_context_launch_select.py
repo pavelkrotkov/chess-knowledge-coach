@@ -1,4 +1,4 @@
-"""Select one learner-chosen, current provisional opening experiment."""
+"""Select one learner-chosen, source-current opening experiment."""
 
 from .opening_context_choice import reason, token
 
@@ -17,8 +17,14 @@ def selected(report, choice, *, provisional):
 def _selected(report, parent, item, provisional):
     if reason(report, item) != "available":
         raise ValueError("opening selection unavailable")
+    admission = None
     if provisional:
-        judgment = parent["development"]
-        if judgment["status"] != "provisional" or judgment["choice"] != item["uci"]:
-            raise ValueError("opening development unavailable")
-    return parent, item
+        development = parent["development"]
+        fit = parent["fit"]
+        if development["status"] == "provisional" and development.get("choice") == item["uci"]:
+            admission = "development"
+        elif fit["status"] == "supported" and fit.get("winner") == item["uci"]:
+            admission = "fit"
+        else:
+            raise ValueError("opening recommendation unavailable")
+    return parent, item, admission
