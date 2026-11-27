@@ -9,7 +9,7 @@ from .capture_game_trend_current import current
 from .capture_game_trend_paths import binding, location
 from .capture_game_trend_validate import validate
 from .dated_game_controls import reason as control_reason
-from .dated_game_trend import choose
+from .dated_game_trend import boundary_id, choose
 from .mate_game_comparability import reason as comparability_reason
 from .opening_study_source import fingerprint
 from .short_mate_trend_report import _qualified
@@ -69,6 +69,7 @@ def report(db, learner, root, *, check=None, as_of=None):
             "through": games[0]["date"] if historical else None,
             "qualified": _qualified(comparable, (newer, earlier)),
             "boundary": len(games) > 40,
+            "boundary_id": boundary_id(games),
             "bounds": bounds(comparable, earlier, newer),
             "newer": newer,
             "earlier": earlier,

@@ -3,6 +3,7 @@
 import sqlite3
 
 from .curriculum_capture_inputs import observe
+from .fork_capture_comparison import compare
 from .fork_context_profile import profile
 from .fork_game_trend_paths import location as trend_location
 from .fork_game_trend_report import report as trend_report
@@ -24,9 +25,11 @@ def read(db, subject, corpus, root, as_of, check):
         if not result:
             return None
         value = profile(db, subject, corpus, as_of, result, check)
+        common = compare(db, subject, corpus, root, as_of, result, check)
         if observe(db, subject, root, check) != before or fingerprint(paths) != files:
             return None
         result["context_profile"] = value
+        result["common_comparison"] = common
         return result
     except (OSError, sqlite3.Error, ValueError, TypeError, KeyError, IndexError):
         return None

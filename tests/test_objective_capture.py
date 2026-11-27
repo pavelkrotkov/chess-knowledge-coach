@@ -2731,6 +2731,7 @@ def test_capture_plan_uses_independent_current_sources_and_is_lazy(tmp_path, mon
     assert db.connection.execute("SELECT count(*) FROM unified_sessions").fetchone()[0] == 1
     db.close()
     _capture_context_comparison_workflow(tmp_path, monkeypatch)
+    _fork_capture_common_workflow(tmp_path, monkeypatch)
 
 
 def _daily_capture_workflow(tmp_path, monkeypatch):
@@ -5463,3 +5464,260 @@ def _retained_capture_workflow(tmp_path, monkeypatch):
     )
     assert unrelated_page.status_code == 200
     assert not (outside / ".runtime" / "data").exists()
+
+
+def _fork_capture_common_workflow(tmp_path, monkeypatch):
+    """Compare actual first assessments from two admitted families in one cohort."""
+    import sqlite3
+    import sys
+    import time
+
+    import chess.engine
+    import chess.pgn
+
+    from chess_coach import capture_game_proof, capture_game_roots, fork_game_proof
+    from chess_coach.capture_game_trend_report import report as capture_report
+    from chess_coach.curriculum_capture_witnesses import candidates
+    from chess_coach.db import Database
+    from chess_coach.fork_detector import process_decision as detect_fork
+    from chess_coach.fork_game_trend_report import report as fork_report
+    from chess_coach.fork_game_trend_scan import run as scan_forks
+    from chess_coach.fork_plan_action import checked as fork_action
+    from chess_coach.ingest import ingest_pgn
+    from chess_coach.pipeline_config import PipelineConfig
+    from chess_coach.pipeline_inputs import engine_identity, game_input
+    from chess_coach.pipeline_work import run_analysis
+    from chess_coach.related_capture import preview
+    from chess_coach.related_capture_start import start_related
+    from chess_coach.related_fork_assessment_finder import find as find_fork
+    from chess_coach.related_fork_assessment_start import start as start_fork
+    from chess_coach.web import create_app
+    from tests.capture_certificate_fixture import prepare_corpus
+    from tests.test_fork_pipeline import Engine as ForkEngine
+    from tests.test_material_pipeline import Engine as CaptureEngine
+
+    root, path = capture_project(tmp_path, "fork-capture-common")
+    db = Database(path, capture_root=root)
+    db.initialize()
+    boards = {
+        "capture": "4k3/7p/8/8/3q4/8/N7/3R3K w - - 0 1",
+        "fork": "q3k3/7p/8/1N6/8/8/6R1/7K w - - 0 1",
+    }
+    games = {"capture": [], "fork": []}
+    for index in range(41):
+        family = "capture" if index % 2 == 0 else "fork"
+        board = chess.Board(boards[family])
+        game = chess.pgn.Game.from_board(board)
+        game.headers.update(
+            White=LEARNER,
+            Black="fixture_opponent",
+            WhiteElo="1200",
+            BlackElo="1200",
+            TimeControl="600+0",
+            Result="1-0",
+            UTCDate="2026.01.10",
+            UTCTime=f"12:00:{index:02d}",
+        )
+        game.add_variation(board.parse_uci("h1h2" if family == "capture" else "h1g1"))
+        ingest_pgn(db, str(game))
+        games[family].append(db.connection.execute("SELECT max(id) FROM games").fetchone()[0])
+
+    config = PipelineConfig(learner=LEARNER, engine_path=sys.executable, nodes=100)
+    engine_hash = engine_identity(sys.executable)
+    evidence = {"capture": [], "fork": []}
+    for family in ("capture", "fork"):
+        for game_id in games[family][-2:]:
+            with monkeypatch.context() as engine:
+                engine.setattr(
+                    chess.engine.SimpleEngine,
+                    "popen_uci",
+                    lambda _path, _family=family: (
+                        CaptureEngine("d1d4", "e8f8") if _family == "capture" else ForkEngine()
+                    ),
+                )
+                result = run_analysis(db, game_id, game_input(db, game_id), config, engine_hash)
+                assert result["status"] == "complete"
+            position = db.connection.execute(
+                "SELECT id FROM positions WHERE game_id=? ORDER BY ply LIMIT 1", (game_id,)
+            ).fetchone()[0]
+            observed = (process_decision if family == "capture" else detect_fork)(
+                db, position, LEARNER
+            )
+            assert observed["outcome"] == "failure" and observed["evidence_ids"]
+            evidence_id = observed["evidence_ids"][0]
+            review_evidence(db, evidence_id, decision="accept", actor="fixture")
+            evidence[family].append(evidence_id)
+
+    corpus = db.connection.execute(
+        "INSERT INTO puzzle_corpora(version,source,checksum,state) VALUES(?,?,?,?)",
+        ("common", "fixture", "checksum", "staging"),
+    ).lastrowid
+    for family, move in (("capture", "d1d4"), ("fork", "b5c7")):
+        board = chess.Board(boards[family])
+        board.turn = chess.BLACK
+        key = "common-" + family
+        solution = "h7h6 " + move + (" e8f8 c7a8" if family == "fork" else "")
+        theme = "hangingPiece" if family == "capture" else "fork"
+        db.connection.execute(
+            """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,
+            rating_deviation,themes_json,objective) VALUES(?,?,?,'fixture',?,1200,80,?,'unknown')""",
+            (key, corpus, board.fen(), solution, json.dumps([theme])),
+        )
+        db.connection.execute("INSERT INTO puzzle_themes VALUES(?,?,?,1200)", (corpus, key, theme))
+    db.connection.execute("UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus,))
+    db.connection.commit()
+
+    for _ in range(30):
+        certify(db, LEARNER, root)
+        scan_forks(db, LEARNER, root)
+        capture = capture_report(db, LEARNER, root)
+        fork = fork_report(db, LEARNER, root)
+        if (
+            capture
+            and fork
+            and all(
+                sample["unchecked"] == 0
+                for sample in (capture["newer"], capture["earlier"], fork["newer"], fork["earlier"])
+            )
+        ):
+            break
+    else:
+        pytest.fail("both real background scans did not finish")
+
+    options, status, _, _ = candidates(db, LEARNER, "common", lambda: None)
+    assert status == "available" and options
+    position = options[0][1]["source"]["position_id"]
+    prepare_corpus(db, LEARNER, root, "common", position)
+    secret = b"common-control-fixture"
+    selected = preview(db, LEARNER, position, "common", secret=secret)
+    item = next(value for value in selected["items"] if value.get("assessment_available"))
+    start_related(
+        db,
+        attempt_id="common-capture",
+        subject=LEARNER,
+        position=position,
+        corpus_version="common",
+        reference=item["reference"],
+        assessment=True,
+        secret=secret,
+    )
+    submit(db, "common-capture", LEARNER, event_id="answer", move="d1d4")
+    assert process(db, LEARNER)["outcomes"] == {"correct": 1}
+
+    action = fork_action(db, LEARNER, "common", lambda: None)
+    assert action and action["source"]["evidence_id"] in evidence["fork"]
+    fork_id = action["source"]["evidence_id"]
+    selected = find_fork(db, LEARNER, fork_id, "common", secret)
+    assert selected and selected["items"]
+    start_fork(
+        db,
+        attempt_id="common-fork",
+        subject=LEARNER,
+        evidence_id=fork_id,
+        corpus_version="common",
+        reference=selected["items"][0]["reference"],
+        secret=secret,
+    )
+    submit(db, "common-fork", LEARNER, event_id="answer", move="h1h2")
+    assert process(db, LEARNER)["outcomes"] == {"incorrect": 1}
+    from copy import deepcopy
+
+    from chess_coach.fork_common_control import current as current_fork_controls
+
+    row = db.connection.execute(
+        "SELECT * FROM unified_sessions WHERE attempt_id=?", ("common-fork",)
+    ).fetchone()
+    bound = json.loads(row["provenance_json"])["related_fork"]
+    assert current_fork_controls(db, row, bound, "white") is not None
+    legacy = deepcopy(bound)
+    legacy["assessment"].pop("common_controls")
+    assert current_fork_controls(db, row, legacy, "white") is None
+
+    app = create_app(
+        db_path=path,
+        project_root=root,
+        subject=LEARNER,
+        actor="fixture",
+        corpus="common",
+        login="fixture",
+        origin="https://coach.invalid",
+    )
+    tables = (
+        "unified_sessions",
+        "unified_session_events",
+        "objective_requests",
+        "objective_results",
+        "unified_training_enrollments",
+        "unified_training_completions",
+        "training_items",
+        "training_attempts",
+        "mastery_states",
+        "mastery_events",
+        "evidence_mappings",
+        "evidence_review_events",
+        "tactical_exposure_coverage",
+        "tactical_exposures",
+    )
+    with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True) as observer:
+        observer.execute("PRAGMA query_only=ON")
+        before = {
+            name: observer.execute(f"SELECT * FROM {name} ORDER BY rowid").fetchall()
+            for name in tables
+        }
+        with monkeypatch.context() as guard:
+
+            def forbidden(*_args, **_kwargs):
+                pytest.fail("private comparison ran a proof or engine")
+
+            guard.setattr(capture_game_proof, "inspect", forbidden)
+            guard.setattr(capture_game_roots, "capture_gain", forbidden)
+            guard.setattr(capture_game_roots, "inspect_checking", forbidden)
+            guard.setattr(capture_game_roots, "inspect_replies", forbidden)
+            guard.setattr(fork_game_proof, "fork_proof", forbidden)
+            guard.setattr("chess_coach.fork_observation.fork_proof", forbidden)
+            guard.setattr("chess_coach.related_capture_features.capture_gain", forbidden)
+            guard.setattr("chess_coach.related_capture_assessment.judge", forbidden)
+            guard.setattr("chess_coach.objective_capture_snapshot.judge", forbidden)
+            guard.setattr("chess_coach.material_opportunity_current.verified_witness", forbidden)
+            guard.setattr("chess_coach.objective_fork_judge.fork_proof", forbidden)
+            guard.setattr("chess_coach.related_fork_assessment.fork_proof", forbidden)
+            guard.setattr(chess.engine.SimpleEngine, "popen_uci", forbidden)
+            started = time.monotonic()
+            page = app.test_client().get(
+                "/game-samples/knight-forks",
+                base_url="https://coach.invalid",
+                headers={"Tailscale-User-Login": "fixture"},
+            )
+            assert page.status_code == 200 and time.monotonic() - started < 2.0
+            assert b"First assessments in two qualified contexts" in page.data
+            assert b"was met for the" in page.data and b"unmet for the" in page.data
+            assert b"of 20 recent games" in page.data and b"of 20 earlier games" in page.data
+            assert LEARNER.encode() not in page.data
+        assert before == {
+            name: observer.execute(f"SELECT * FROM {name} ORDER BY rowid").fetchall()
+            for name in tables
+        }
+
+    # A same-band source-rating edit still invalidates the exact recorded control.
+    source_game = db.connection.execute(
+        """SELECT p.game_id FROM evidence_mappings e JOIN positions p ON p.id=e.position_id
+        WHERE e.id=?""",
+        (fork_id,),
+    ).fetchone()[0]
+    db.connection.execute("UPDATE games SET white_elo=1201 WHERE id=?", (source_game,))
+    db.connection.commit()
+    changed = app.test_client().get(
+        "/game-samples/knight-forks",
+        base_url="https://coach.invalid",
+        headers={"Tailscale-User-Login": "fixture"},
+    )
+    assert b"First assessments in two qualified contexts" not in changed.data
+    db.connection.execute("UPDATE games SET white_elo=1200 WHERE id=?", (source_game,))
+    db.connection.commit()
+    restored = app.test_client().get(
+        "/game-samples/knight-forks",
+        base_url="https://coach.invalid",
+        headers={"Tailscale-User-Login": "fixture"},
+    )
+    assert b"First assessments in two qualified contexts" in restored.data
+    db.close()

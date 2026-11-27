@@ -89,3 +89,8 @@ def choose(db, learner, state, *, strict=True, check=None, as_of=None):
         if selected is None and current:
             selected = state, candidates, coverage, False
     return selected if as_of is None else _as_of(selected, as_of, check)
+
+
+def boundary_id(games):
+    """Return the separately observed 41st game, if available."""
+    return games[40]["id"] if len(games) > 40 else None

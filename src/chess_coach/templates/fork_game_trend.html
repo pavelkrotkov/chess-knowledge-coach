@@ -8,6 +8,16 @@
 {% else %}
 {% if not report.selection_complete %}<p>The bounded game selection is incomplete.</p>{% endif %}
 {% if report.historical %}<p>Historical sample through {{ report.through }}. Newer games are pending and are not included in these results.</p>{% endif %}
+{% if report.common_comparison %}
+{% set common = report.common_comparison %}
+<section><h3>First assessments in two qualified contexts</h3>
+<p>These source-linked contexts have supported opportunities in the same independent games. The first unassisted assessment was {% if common.capture.source.practice.result == "correct" %}met{% else %}unmet{% endif %} for the <a href="{{ url_for('views.decision_detail', position_id=common.capture.source.turn.position_id) }}">capture source</a> and {% if common.fork.practice.result == "correct" %}met{% else %}unmet{% endif %} for the <a href="{{ url_for('views.decision_detail', position_id=common.fork.turn.position_id) }}">fork source</a>.</p>
+{% for label, source in (("Capture", common.capture), ("Fork", common.fork)) %}
+{% for when, sample in (("recent", source.newer), ("earlier", source.earlier)) %}<p>{{ label }}: matching opportunities appeared in at least {{ sample.lower }} and at most {{ sample.upper }} of {{ sample.denominator }} {{ when }} games.</p>{% endfor %}
+{% endfor %}
+<p>This describes recorded first assessments and opportunity presence, not mastery or a predicted learning benefit.</p></section>
+{% else %}<p>A comparable first-assessment comparison is unavailable when source, coverage or practice controls are missing or incompatible.</p>
+{% endif %}
 {% if report.context_profile %}
 {% set profile = report.context_profile %}
 <section><h3>One practiced fork context</h3>
