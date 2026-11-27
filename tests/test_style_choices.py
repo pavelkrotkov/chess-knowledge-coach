@@ -3447,7 +3447,7 @@ def _opening_fit_route(monkeypatch, tmp_path):
                     "e4 e5 Nf3 Nc6 Bb5 a6 Ba4",
                     "e4 e5 Bc4 Nc6 Bb5 a6 Ba4",
                     "e4 e5 Nc3 Nf6 d3 Bb4 a3 Ba5",
-                    "e4 e6 Nc3 Nf6 d3 Bb4 a3 Ba5",
+                    "e4 Nf6 Nc3 e5 d3 Bb4 a3 Ba5",
                 )
                 protection_text = "\n\n".join(
                     rated_game(index, 700 + index, "600+0", moves=moves)
@@ -3480,7 +3480,7 @@ def _opening_fit_route(monkeypatch, tmp_path):
                 cli.setenv("CHESS_DB", str(protection_db_path))
                 decisions = (
                     (later_games[0], "f1c4", "white"),
-                    ((black_game, black_position), "e7e6", "black"),
+                    ((black_game, black_position), "g8f6", "black"),
                 )
                 for (game_id, position_id), alternative, color in decisions:
                     absent = cli_profile(
