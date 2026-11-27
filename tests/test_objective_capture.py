@@ -5564,6 +5564,29 @@ def _fork_capture_common_workflow(tmp_path, monkeypatch):
             (key, corpus, board.fen(), solution, json.dumps([theme])),
         )
         db.connection.execute("INSERT INTO puzzle_themes VALUES(?,?,?,1200)", (corpus, key, theme))
+    for family, file, content_rating in (
+        ("capture", "g", 1200),
+        ("capture", "f", 1400),
+        ("fork", "g", 1200),
+        ("fork", "e", 1200),
+        ("fork", "f", 1400),
+    ):
+        board = chess.Board(boards[family])
+        board.turn = chess.BLACK
+        board.remove_piece_at(chess.H7)
+        board.set_piece_at(chess.parse_square(file + "7"), chess.Piece(chess.PAWN, chess.BLACK))
+        key = f"common-{family}-{file}"
+        move = "d1d4" if family == "capture" else "b5c7"
+        solution = file + "7" + file + "6 " + move + (" e8f8 c7a8" if family == "fork" else "")
+        theme = "hangingPiece" if family == "capture" else "fork"
+        db.connection.execute(
+            """INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,
+            rating_deviation,themes_json,objective) VALUES(?,?,?,'fixture',?,?,80,?,'unknown')""",
+            (key, corpus, board.fen(), solution, content_rating, json.dumps([theme])),
+        )
+        db.connection.execute(
+            "INSERT INTO puzzle_themes VALUES(?,?,?,?)", (corpus, key, theme, content_rating)
+        )
     db.connection.execute("UPDATE puzzle_corpora SET state='ready' WHERE id=?", (corpus,))
     db.connection.commit()
 
@@ -5720,4 +5743,202 @@ def _fork_capture_common_workflow(tmp_path, monkeypatch):
         headers={"Tailscale-User-Login": "fixture"},
     )
     assert b"First assessments in two qualified contexts" in restored.data
+
+    # A second genuinely new capture prompt gives the original two-success rule its pair.
+    selected = preview(db, LEARNER, position, "common", secret=secret)
+    item = next(value for value in selected["items"] if value.get("assessment_available"))
+    start_related(
+        db,
+        attempt_id="common-capture-prior",
+        subject=LEARNER,
+        position=position,
+        corpus_version="common",
+        reference=item["reference"],
+        assessment=True,
+        secret=secret,
+    )
+    submit(db, "common-capture-prior", LEARNER, event_id="answer", move="d1d4")
+    assert process(db, LEARNER)["outcomes"] == {"correct": 1}
+
+    # Both fork successes are distinct actual first-encounter prompts.
+    for index in range(2):
+        selected = find_fork(db, LEARNER, fork_id, "common", secret)
+        assert selected and selected["items"]
+        attempt = f"common-fork-prior-{index}"
+        start_fork(
+            db,
+            attempt_id=attempt,
+            subject=LEARNER,
+            evidence_id=fork_id,
+            corpus_version="common",
+            reference=selected["items"][0]["reference"],
+            secret=secret,
+        )
+        submit(db, attempt, LEARNER, event_id="answer", move="b5c7")
+        assert process(db, LEARNER)["outcomes"] == {"correct": 1}
+
+    # Prepare the actual next capture band using the existing bounded worker.
+    from chess_coach.capture_certificate_worker import run as certificate_worker
+    from chess_coach.capture_difficulty import checked as capture_difficulty
+    from chess_coach.capture_finder import find as find_capture
+    from chess_coach.pipeline_lock import pipeline_lock
+    from chess_coach.related_capture_familiar import familiarity
+    from chess_coach.related_capture_pool import complete as capture_window
+
+    difficulty = capture_difficulty(
+        db, LEARNER, "common", position, "common-capture-prior", lambda: None
+    )
+    lower = difficulty["band"]
+    familiar_games = familiarity(db, LEARNER)[1]
+    for _ in range(80):
+        with pipeline_lock(db.path):
+            certificate_worker(db, LEARNER, root, time.monotonic() + 5)
+        if capture_window(db, root, "common", lower, lower + 199, LEARNER, familiar_games):
+            break
+    else:
+        pytest.fail("the genuine harder capture window did not finish")
+    found = find_capture(
+        db,
+        LEARNER,
+        "common",
+        secret,
+        position=position,
+        attempt="common-capture-prior",
+        harder=True,
+    )
+    assert found and found[0] == position and found[1]["items"]
+    start_related(
+        db,
+        attempt_id="common-capture-harder",
+        subject=LEARNER,
+        position=position,
+        corpus_version="common",
+        reference=found[1]["items"][0]["reference"],
+        assessment=True,
+        secret=secret,
+        harder_attempt="common-capture-prior",
+        finder=True,
+    )
+    submit(db, "common-capture-harder", LEARNER, event_id="answer", move="d1d4")
+    assert process(db, LEARNER)["outcomes"] == {"correct": 1}
+
+    from chess_coach.fork_difficulty_history import _pair as fork_difficulty
+    from chess_coach.fork_followup_finder import followup as fork_followup
+
+    difficulty = fork_difficulty(
+        db, LEARNER, "common", fork_id, "common-fork-prior-1", lambda: None
+    )
+    selected_id, selected = fork_followup(
+        db, LEARNER, "common", secret, "common-fork-prior-1", difficulty=difficulty
+    )
+    assert selected_id == fork_id and selected and selected["items"]
+    start_fork(
+        db,
+        attempt_id="common-fork-harder",
+        subject=LEARNER,
+        evidence_id=fork_id,
+        corpus_version="common",
+        reference=selected["items"][0]["reference"],
+        secret=secret,
+        prior="harder:common-fork-prior-1",
+    )
+    submit(db, "common-fork-harder", LEARNER, event_id="answer", move="h1h2")
+    assert process(db, LEARNER)["outcomes"] == {"incorrect": 1}
+    action = fork_action(db, LEARNER, "common", lambda: None)
+    assert action and action["assessment"]["status"] == "incorrect" and not action["harder"]
+    with pytest.raises(ValueError):
+        fork_difficulty(db, LEARNER, "common", fork_id, "common-fork-harder", lambda: None)
+
+    # The actual newer harder sessions must not cause replay to select a new pair.
+    capture_row = db.connection.execute(
+        "SELECT provenance_json FROM unified_sessions WHERE attempt_id='common-capture-harder'"
+    ).fetchone()
+    capture_binding = json.loads(capture_row[0])["related_capture"]
+    assert capture_binding["progression"]["prior_attempts"] == [
+        "common-capture",
+        "common-capture-prior",
+    ]
+    fork_row = db.connection.execute(
+        "SELECT * FROM unified_sessions WHERE attempt_id='common-fork-harder'"
+    ).fetchone()
+    fork_binding = json.loads(fork_row["provenance_json"])["related_fork"]
+    lineage = fork_binding["assessment"]["common_controls"]["lineage"]
+    assert (lineage["earlier"], lineage["attempt"]) == (
+        "common-fork-prior-0",
+        "common-fork-prior-1",
+    )
+    from datetime import UTC, datetime
+
+    from chess_coach.capture_harder_lineage import verify as verify_capture_lineage
+    from chess_coach.fork_harder_lineage import verify as verify_fork_lineage
+
+    capture_source = {
+        "common_practice": {
+            "attempt": "common-capture-harder",
+            "binding": capture_binding,
+            "context": capture_binding["assessment"]["context"],
+        }
+    }
+    fork_source = {
+        "practice": {"row": fork_row, "binding": fork_binding},
+        "controls": fork_binding["assessment"]["common_controls"],
+    }
+    as_of = datetime.now(UTC).isoformat()
+    verify_capture_lineage(db, LEARNER, "common", capture_source, lambda: None)
+    verify_fork_lineage(db, LEARNER, "common", fork_source, as_of, lambda: None)
+    wrong_binding = deepcopy(capture_binding)
+    wrong_binding["progression"]["prior_attempts"][0] = "common-fork-prior-0"
+    wrong_capture = {
+        "common_practice": {**capture_source["common_practice"], "binding": wrong_binding}
+    }
+    with pytest.raises(ValueError):
+        verify_capture_lineage(db, LEARNER, "common", wrong_capture, lambda: None)
+    wrong_fork = {
+        **fork_source,
+        "controls": {
+            **fork_source["controls"],
+            "lineage": {**lineage, "earlier": "common-capture"},
+        },
+    }
+    with pytest.raises(ValueError):
+        verify_fork_lineage(db, LEARNER, "common", wrong_fork, as_of, lambda: None)
+    missing_fork = {**fork_source, "controls": dict(fork_source["controls"])}
+    missing_fork["controls"].pop("lineage")
+    with pytest.raises(ValueError):
+        verify_fork_lineage(db, LEARNER, "common", missing_fork, as_of, lambda: None)
+
+    with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True) as observer:
+        observer.execute("PRAGMA query_only=ON")
+        before = {
+            name: observer.execute(f"SELECT * FROM {name} ORDER BY rowid").fetchall()
+            for name in tables
+        }
+        with monkeypatch.context() as guard:
+            guard.setattr(capture_game_proof, "inspect", forbidden)
+            guard.setattr(capture_game_roots, "capture_gain", forbidden)
+            guard.setattr(capture_game_roots, "inspect_checking", forbidden)
+            guard.setattr(capture_game_roots, "inspect_replies", forbidden)
+            guard.setattr(fork_game_proof, "fork_proof", forbidden)
+            guard.setattr("chess_coach.fork_observation.fork_proof", forbidden)
+            guard.setattr("chess_coach.related_capture_features.capture_gain", forbidden)
+            guard.setattr("chess_coach.related_capture_assessment.judge", forbidden)
+            guard.setattr("chess_coach.objective_capture_snapshot.judge", forbidden)
+            guard.setattr("chess_coach.material_opportunity_current.verified_witness", forbidden)
+            guard.setattr("chess_coach.objective_fork_judge.fork_proof", forbidden)
+            guard.setattr("chess_coach.related_fork_assessment.fork_proof", forbidden)
+            guard.setattr(chess.engine.SimpleEngine, "popen_uci", forbidden)
+            started = time.monotonic()
+            page = app.test_client().get(
+                "/game-samples/knight-forks",
+                base_url="https://coach.invalid",
+                headers={"Tailscale-User-Login": "fixture"},
+            )
+            assert page.status_code == 200 and time.monotonic() - started < 2.0
+            assert b"First assessments in two qualified contexts" in page.data
+            assert b"was met for the" in page.data and b"unmet for the" in page.data
+            assert b"harder-practice rules" in page.data and LEARNER.encode() not in page.data
+        assert before == {
+            name: observer.execute(f"SELECT * FROM {name} ORDER BY rowid").fetchall()
+            for name in tables
+        }
     db.close()

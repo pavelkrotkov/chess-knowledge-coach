@@ -14,13 +14,16 @@ def record(db, selection, version, key, difficulty):
     ).fetchone()
     if row is None:
         raise ValueError("fork control source unavailable")
-    return {
+    result = {
         "version": VERSION,
         "baseline": selection[1],
         "rating": row["rating"],
         "deviation": row["rating_deviation"],
         "admission": "harder" if difficulty is not None else "ordinary",
     }
+    if difficulty is not None:
+        result["lineage"] = dict(difficulty)
+    return result
 
 
 def current(db, row, binding, side):

@@ -67,7 +67,7 @@ def bind(db, subject, corpus, as_of, option, turns, check, *, observed=None):
             "attempt": observed["session"]["attempt_id"],
             "content_key": observed["session"]["source_key"],
             "context": observed["practice_context"],
-            "admission": "harder" if observed["binding"].get("progression") else "ordinary",
+            "binding": observed["binding"],
         },
         "wanted": (context, pattern(root)),
     }

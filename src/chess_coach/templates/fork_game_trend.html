@@ -15,6 +15,7 @@
 {% for label, source in (("Capture", common.capture), ("Fork", common.fork)) %}
 {% for when, sample in (("recent", source.newer), ("earlier", source.earlier)) %}<p>{{ label }}: matching opportunities appeared in at least {{ sample.lower }} and at most {{ sample.upper }} of {{ sample.denominator }} {{ when }} games.</p>{% endfor %}
 {% endfor %}
+{% if common.fork.controls.admission == "harder" %}<p>Both first assessments were admitted through their family’s harder-practice rules.</p>{% endif %}
 <p>This describes recorded first assessments and opportunity presence, not mastery or a predicted learning benefit.</p></section>
 {% else %}<p>A comparable first-assessment comparison is unavailable when source, coverage or practice controls are missing or incompatible.</p>
 {% endif %}

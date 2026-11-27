@@ -4,6 +4,7 @@ from .capture_common_control import compatible
 from .capture_context_comparison import profile as capture_profile
 from .capture_game_trend_report import report as capture_report
 from .dated_game_cohort_identity import identity
+from .fork_capture_lineage import verify as verify_lineage
 from .fork_common_profile import profile as fork_profile
 
 
@@ -29,6 +30,7 @@ def _profiles(db, subject, corpus, as_of, capture, fork, check):
         right = fork_profile(db, subject, corpus, as_of, fork, check)
         if left is None or right is None or not compatible(db, left, right, corpus):
             return None
+        verify_lineage(db, subject, corpus, left, right, as_of, check)
         return left, right
     except (ValueError, TypeError, KeyError, IndexError):
         return None
