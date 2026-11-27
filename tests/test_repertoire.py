@@ -4765,6 +4765,7 @@ def _conditional_fit_workflow(
             trend = fork_trend_path(goal_db, root)
             assert trend is not None
             original_trend = trend.read_bytes() if trend.exists() else None
+            assert original_trend is None
             original_enroll = unified_training_enroll.enroll_if_requested
             original_budget = unified_sessions._capture_budget
             original_begin = opening_context_launch_prepare.begin

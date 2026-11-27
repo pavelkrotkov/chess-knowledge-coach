@@ -1,5 +1,6 @@
 """Synthetic bounded capture objectives preserve source and event history."""
 
+import html
 import json
 
 import chess
@@ -6010,7 +6011,9 @@ def _fork_capture_common_workflow(tmp_path, monkeypatch):
                 f"CLI exit={goal_cli.returncode}; parent transaction={db.connection.in_transaction}; "
                 f"stderr={goal_cli.stderr!r}; stdout={goal_cli.stdout!r}"
             )
-            assert json.loads(goal_cli.stdout)["items"][0]["source_key"] == str(fork_id)
+            goal_cli_item = json.loads(goal_cli.stdout)["items"][0]
+            assert goal_cli_item["source_key"] == str(fork_id)
+            assert goal_cli_item["reason"] == goal_plan["items"][0]["reason"]
             started = time.monotonic()
             client = app.test_client()
             goal_page = client.get(
@@ -6020,6 +6023,7 @@ def _fork_capture_common_workflow(tmp_path, monkeypatch):
             )
             assert goal_page.status_code == 200 and time.monotonic() - started < 2.0
             assert b"first unassisted assessment" in goal_page.data
+            assert html.escape(goal_plan["items"][0]["reason"]).encode() in goal_page.data
             goal_forms = Forms()
             goal_forms.feed(goal_page.get_data(as_text=True))
             goal_form = next(
