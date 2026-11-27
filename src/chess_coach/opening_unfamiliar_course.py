@@ -6,6 +6,7 @@ from .opening_unfamiliar_course_payload import (
 )
 from .opening_unfamiliar_course_payload import SELECTED_VERSION as SELECTED_VERSION
 from .opening_unfamiliar_course_payload import VERSION as VERSION
+from .opening_unfamiliar_course_payload import legacy_from as legacy_from
 from .opening_unfamiliar_course_payload import payload as _payload
 from .opening_unfamiliar_course_payload import result as _result
 
@@ -20,7 +21,32 @@ def _source(db, root, learner, selection, legacy, deadline):
     return selected(db, root, learner, selection, measured=True, deadline=deadline)
 
 
-def preview(db, root, learner, selection=None, *, legacy=False, deadline=None):
+def preview(
+    db,
+    root,
+    learner,
+    selection=None,
+    *,
+    legacy=False,
+    deadline=None,
+    choice=None,
+    budget=None,
+    with_context=False,
+):
+    if choice is not None:
+        from .opening_ranked_course import preview as ranked
+
+        return ranked(
+            db,
+            root,
+            learner,
+            choice,
+            budget=budget,
+            deadline=deadline,
+            with_context=with_context,
+            selection=selection,
+            legacy=legacy,
+        )
     before = db.connection.execute("PRAGMA data_version").fetchone()[0]
     report, measurement = _source(db, root, learner, selection, legacy, deadline)
     decision = None
@@ -39,17 +65,4 @@ def preview(db, root, learner, selection=None, *, legacy=False, deadline=None):
     payload, legacy_version = _payload(report, selection, measurement)
     if db.connection.execute("PRAGMA data_version").fetchone()[0] != before:
         raise ValueError("opening course source changed")
-    result = _result(payload, selection, legacy_version)
-    if decision is not None:
-        result["_decision"] = decision
-    return result
-
-
-def legacy_from(value):
-    selection = value["selection"]
-    payload, version = _payload(value["report"], selection, None)
-    if version != value.get("legacy_version"):
-        raise ValueError("previous opening version differs")
-    result = _result(payload, selection, version)
-    result["_measurement_source"] = value["measurement"]["source_identity"]
-    return result
+    return _result(payload, selection, legacy_version, decision)

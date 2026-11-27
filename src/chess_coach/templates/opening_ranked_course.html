@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Selected opening course — Chess coach{% endblock %}
+{% block content %}
+<h2>Selected opening course</h2>
+<p><a href="{{ url_for('repertoire_views.opening_unfamiliar', contexts=1) }}">Return to opening choices</a></p>
+<p>Version: <code>{{ course.version }}</code> · <a href="{{ download_url }}">Download this exact course as PGN</a></p>
+<h3>{{ course.name }} ({{ course.eco }})</h3>
+<p>{{ course.explanation }}</p>
+{% with distance=course.distance %}{% include "opening_context_distance.html" %}{% endwith %}
+{% set board_label = "Selected opening position; learner plays " + course.selection.color %}{% include "board.html" %}
+{% for item in course.parent["items"] if item.uci == course.selection.move %}<p>Recorded continuation: {{ item.source.line.san|join(" ") }}.</p>{% endfor %}
+<p><a href="{{ course.chapters[0].source.source_url }}">Public source</a> · <a href="{{ course.chapters[0].source.license_url }}">{{ course.chapters[0].source.license }}</a>.</p>
+<p>This is ungraded rehearsal. Viewing or downloading it does not create practice credit.</p>
+{% endblock %}

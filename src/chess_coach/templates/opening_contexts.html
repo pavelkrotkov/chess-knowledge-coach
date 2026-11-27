@@ -32,6 +32,7 @@
 {% for item in parent["items"] %}
 <li>{{ item.name }} ({{ item.eco }}) — {{ item.san }}:
 {% if item.admission == "available" %}<a href="{{ url_for("repertoire_views.opening_unfamiliar", contexts=1, choice=item.choice_token) }}">Preview this checked public line</a>.
+{% if (parent.fit.status == "supported" and parent.fit.winner == item.uci) or (parent.development.status == "provisional" and parent.development.choice == item.uci) %}<a href="{{ url_for("repertoire_views.opening_unfamiliar", ranked=1, choice=item.choice_token) }}">Open this ranked course</a>.{% endif %}
 {% if parent.development.status == "provisional" and parent.development.choice == item.uci %}<a href="{{ url_for("views.plan", opening=item.choice_token) }}">Consider related fork practice</a>.{% endif %}
 {% with distance=item.distance %}{% include "opening_context_distance.html" %}{% endwith %}
 {% with comparison=item.comparison %}{% include "opening_context_comparison.html" %}{% endwith %}
