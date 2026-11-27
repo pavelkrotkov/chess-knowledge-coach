@@ -41,6 +41,8 @@ def show():
         validate(context, db, root, subject)
         return response
     except ValueError:
-        abort(409, "The opening selection or its source changed. Open a new preview.")
+        abort(
+            409, "The ranked opening course could not be verified as current. Open a new preview."
+        )
     except (Exception, PreviewDeadline):
         abort(503, "The ranked opening course could not be checked now.")
