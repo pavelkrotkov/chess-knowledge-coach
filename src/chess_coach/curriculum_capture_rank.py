@@ -15,7 +15,7 @@ def preferred(first, second):
     return 0 if first["result"] == "incorrect" else 1
 
 
-def choice(db, subject, state, options, matched, check, *, root=None):
+def choice(db, subject, state, options, matched, check, *, root=None, report=None):
     if len(options) < 2 or any(report["limited"] for _, report in options):
         return 0, practice_reason(False)
     if not _eligible(options, matched, state["seen"]):
@@ -37,7 +37,9 @@ def choice(db, subject, state, options, matched, check, *, root=None):
         return selected, practice_reason(True)
     from .curriculum_capture_context import choice as plan_choice
 
-    return plan_choice(db, subject, state, root, options, (first, second), check) or (
+    return plan_choice(
+        db, subject, state, root, options, (first, second), check, report=report
+    ) or (
         0,
         practice_reason(False),
     )

@@ -3,8 +3,7 @@
 from datetime import datetime
 
 from .curriculum_cursor import new_state as new_state
-from .curriculum_cursor_codec import decode_cursor
-from .curriculum_request import validate_plan_request
+from .curriculum_request import prior, validate_plan_request
 from .curriculum_snapshot import plan_snapshot
 from .db import Database
 from .mastery_time import parse_utc
@@ -35,11 +34,11 @@ def daily_plan(
         from .curriculum_window_request import requested
 
         window = requested(db, cursor, goal, duration_minutes, renew, _due_recheck)
-        prior = _prior(db, cursor, window)
+        prior_state = prior(db, cursor, window)
         requested_time = (
             as_of
             if as_of is not None
-            else (parse_utc(prior["as_of"]) if prior and not renew else None)
+            else (parse_utc(prior_state["as_of"]) if prior_state and not renew else None)
         )
         learner, now = validate_plan_request(
             subject, corpus_version, limit, scan_limit, requested_time
@@ -48,7 +47,7 @@ def daily_plan(
         from .curriculum_capture_guard import window as finish_window
 
         if not renew:
-            check_capture(db, prior, learner, project_root, budget)
+            check_capture(db, prior_state, learner, project_root, budget)
         if window is not None:
             page = build_window(
                 db,
@@ -68,7 +67,7 @@ def daily_plan(
 
         return build_plain(
             db,
-            prior,
+            prior_state,
             learner,
             corpus_version,
             limit,
@@ -78,16 +77,6 @@ def daily_plan(
             project_root,
             new_state,
         )
-
-
-def _prior(db, cursor, window):
-    if window:
-        return window["state"]
-    state = decode_cursor(db, cursor) if cursor is not None else None
-    # Preselection cursors authorize one due start, not further plan scanning.
-    if state is not None and state.get("capture_selection"):
-        raise ValueError("practice cursor is for due selection only")
-    return state
 
 
 def _budget(db, project_root):

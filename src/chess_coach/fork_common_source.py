@@ -8,15 +8,15 @@ from .objective_fork_contract import MISS_VERSION
 from .objective_fork_source import resolve
 
 
-def bind(db, subject, corpus, as_of, report, check):
-    candidate, _, source = source_read(db, subject, corpus, check)
+def bind(db, subject, corpus, as_of, report, check, *, admitted=None):
+    candidate, _, source = admitted or source_read(db, subject, corpus, check)
     if candidate is None or source["limited"]:
         return None
     evidence = candidate["source_evidence_id"]
     practice = first_result(db, subject, corpus, evidence, as_of, check)
     if practice is None:
         return None
-    snapshot = resolve(db, MISS_VERSION, str(evidence), subject, check=check)
+    snapshot = _snapshot(db, source, evidence, subject, check)
     turns = report["newer"]["root_details"] + report["earlier"]["root_details"]
     matched = _match(snapshot, turns)
     if matched is None:
@@ -29,3 +29,7 @@ def bind(db, subject, corpus, as_of, report, check):
     if controls is None:
         return None
     return {"turn": source_turn, "root": root, "practice": practice, "controls": controls}
+
+
+def _snapshot(db, source, evidence, subject, check):
+    return source.get("snapshot") or resolve(db, MISS_VERSION, str(evidence), subject, check=check)

@@ -2,7 +2,7 @@
 
 from .curriculum_capture_file_guard import changed as files_changed
 from .curriculum_capture_inputs import current
-from .curriculum_priority_cursor import CAPTURE_POLICIES, LEGACY_CAPTURE_POLICY
+from .curriculum_priority_cursor import CAPTURE_POLICIES, COMMON_POLICY, LEGACY_CAPTURE_POLICY
 
 
 def _require_scope(db, root, budget):
@@ -16,8 +16,13 @@ def _reason(db, state, subject, root, budget):
     if state is None or state.get("priority_policy") not in CAPTURE_POLICIES:
         return None
     _require_scope(db, root, budget)
+    from .curriculum_common_guard import check as check_common
+
+    check_common(db, state, subject, root, budget)
     if files_changed(db, state, subject, root):
         return "capture practice changed"
+    if state["priority_policy"] == COMMON_POLICY:
+        return None
     # A legacy cursor with no priority contains no proof of the earlier due scan.
     if state["priority"] is None:
         return (

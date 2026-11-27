@@ -11,6 +11,7 @@ from .tactical_course_budget import SLICE_SECONDS, Budget, PreviewUnavailable
 class BrowserBudget(Budget):
     def __init__(self, db, *, slice_seconds=None, project_root=None):
         super().__init__(db, slice_seconds=slice_seconds)
+        self.common_started = time.monotonic()
         self.project_root = project_root
 
     @contextmanager

@@ -10,12 +10,17 @@ from .curriculum_priority_cursor import upgrade
 
 def build(db, prior, learner, corpus, limit, scan_limit, now, budget, project_root, new_state):
     if prior is None:
-        from .curriculum_capture_file_guard import available
+        from .curriculum_priority_cursor import COMMON_POLICY, available
 
+        capture = available(db, learner, budget)
         state = upgrade(
             new_state(db, learner, corpus, limit, scan_limit, now),
-            capture=available(db, learner, budget),
+            capture=capture,
+            policy=COMMON_POLICY if capture and limit == 1 else None,
         )
+        from .curriculum_common_guard import check as check_common
+
+        check_common(db, state, learner, project_root, budget)
     else:
         state, now = resume_state(db, prior, learner, corpus, limit, scan_limit, now)
     from .curriculum_capture_file_guard import initialize

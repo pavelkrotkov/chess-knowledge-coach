@@ -2,7 +2,7 @@
 
 from .capture_context_comparison import _comparison, _profile
 from .capture_game_trend_report import report as capture_trend_report
-from .curriculum_priority_cursor import CONTEXT_CAPTURE_POLICY
+from .curriculum_priority_cursor import COMMON_POLICY, CONTEXT_CAPTURE_POLICY
 
 
 def _profiles(db, subject, corpus, as_of, report, options, observations, check):
@@ -15,11 +15,16 @@ def _profiles(db, subject, corpus, as_of, report, options, observations, check):
     return None if None in profiles else profiles
 
 
-def choice(db, subject, state, root, options, observations, check):
-    if state["priority_policy"] != CONTEXT_CAPTURE_POLICY or root is None or None in observations:
+def choice(db, subject, state, root, options, observations, check, *, report=None):
+    if (
+        state["priority_policy"] not in {CONTEXT_CAPTURE_POLICY, COMMON_POLICY}
+        or root is None
+        or None in observations
+    ):
         return None
     corpus, as_of = state["corpus_version"], state["as_of"]
-    report = capture_trend_report(db, subject, root, check=check, as_of=as_of)
+    if report is None:
+        report = capture_trend_report(db, subject, root, check=check, as_of=as_of)
     profiles = _profiles(db, subject, corpus, as_of, report, options, observations, check)
     if profiles is None:
         return None
