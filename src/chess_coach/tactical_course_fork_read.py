@@ -1,9 +1,10 @@
-"""Rebind only fork sources when reading a mixed prepared course."""
+"""Rebind non-protection sources when reading a mixed prepared course."""
 
 import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
 
+from .objective_protection_contract import VERSION as PROTECTION_VERSION
 from .opening_queue_location import scope
 from .schema_compat import readonly
 from .tactical_course_budget import Budget
@@ -26,31 +27,39 @@ def current(root, database, subject, corpus, envelope, version):
         connection.execute("PRAGMA query_only=ON")
         db = SimpleNamespace(connection=connection, path=path, capture_root=None)
         db.capture_root = scope(db, root)
-        _forks(db, subject, corpus, body, Budget(db), version)
+        _current_groups(db, subject, corpus, body, Budget(db), version)
     finally:
         connection.close()
 
 
-def _forks(db, subject, corpus, body, budget, artifact):
+def _current_groups(db, subject, corpus, body, budget, artifact):
     pairs, modern, gaps, thematic, _ = context(body, corpus, budget)
     for pattern, group, roles, named in groups(body, gaps, modern=modern):
         pair = (pattern["skill"], pattern["operation"])
-        if (pair == ("fork", "execute")) != (pattern["kind"] == "fork"):
-            raise ValueError("fork pattern identity differs")
-        if pattern["kind"] == "fork":
-            current = lesson(db, subject, pattern, budget, pairs=pairs)
-            verify(
-                db,
-                subject,
-                corpus,
-                pattern,
-                current,
-                group,
-                budget,
-                modern=modern,
-                thematic=thematic,
-                named=named,
-                roles=roles,
-                artifact=artifact,
-            )
+        if (pair == ("hanging_piece", "prevent")) != (pattern["kind"] == "protection"):
+            raise ValueError("protection pattern identity differs")
+        if pattern["kind"] == "protection":
+            source = group[1]["source"]
+            if (source["version"], source["kind"], group[1]["source_snapshot"]["objective"]) != (
+                PROTECTION_VERSION,
+                "protection",
+                "protect_threatened_piece",
+            ):
+                raise ValueError("protection chapter identity differs")
+            continue
+        current = lesson(db, subject, pattern, budget, pairs=pairs)
+        verify(
+            db,
+            subject,
+            corpus,
+            pattern,
+            current,
+            group,
+            budget,
+            modern=modern,
+            thematic=thematic,
+            named=named,
+            roles=roles,
+            artifact=artifact,
+        )
     budget.check()
