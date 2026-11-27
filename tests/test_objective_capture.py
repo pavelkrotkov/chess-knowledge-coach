@@ -5883,6 +5883,11 @@ def _fork_capture_common_workflow(tmp_path, monkeypatch):
                 str(root),
                 proof_free_candidates=True,
                 proof_free_forks=True,
+                check=False,
+            )
+            assert command.returncode == 0, (
+                f"CLI exit={command.returncode}; parent transaction={db.connection.in_transaction}; "
+                f"stderr={command.stderr!r}; stdout={command.stdout!r}"
             )
             cli_item = json.loads(command.stdout)["items"][0]
             assert cli_item["skill"] == "fork" and cli_item["source_key"] == str(fork_id)
