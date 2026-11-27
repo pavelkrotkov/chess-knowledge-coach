@@ -4,6 +4,7 @@ from .opening_public_capture_pv_game import visit
 from .opening_public_capture_pv_position import check
 from .opening_public_proof_coverage import _selected
 from .opening_public_proof_source import MAX_GAMES
+from .opening_public_pv_nominations import nomination
 
 
 def unavailable():
@@ -47,7 +48,7 @@ def branch(connection, binding, move, engine, deadline):
     result["eligible"] = context["matched_candidates"]
     result["selected"] = len(selected)
     for row in selected:
-        if not visit(connection, row, binding, move, engine, deadline, result):
+        if not visit(connection, row, binding, move, engine, deadline, result, nomination):
             break
     result["unstarted"] = len(selected) - result["entered"]
     result["incomplete"] = len(selected) - result["analyzed"]

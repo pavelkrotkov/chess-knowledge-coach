@@ -334,9 +334,26 @@ def test_real_stockfish_deep_smoke(tmp_path, monkeypatch):
     assert public_reference(defense_result, defense, defense_board)
     _public_capture_pv_workflow(tmp_path / "public-capture-pv", monkeypatch)
     _public_capture_pv_workflow(tmp_path / "public-capture-pv-black", monkeypatch, black=True)
+    _public_capture_pv_workflow(
+        tmp_path / "public-defense-pv", monkeypatch, black=True, defense=True
+    )
+
+    from chess_coach import opening_public_proof
+    from chess_coach.material_defense import defense_observation
+
+    white_board = chess.Board()
+    for san in ("e4", "e5", "Nf3", "Nc6", "Bb5", "a6"):
+        white_board.push_san(san)
+    _, white_result = analyze(
+        white_board, "b5a4", opening_public_proof.ENGINE, time.monotonic() + 20
+    )
+    assert public_reference(white_result, "b5a4", white_board)
+    white_line = next(line for line in white_result["lines"] if line["root_move"] == "b5a4")
+    white_defense = defense_observation(white_board, "b5a4", white_result["lines"][0], white_line)
+    assert white_defense["outcome"] == "success"
 
 
-def _public_capture_pv_workflow(root, monkeypatch, *, black=False):
+def _public_capture_pv_workflow(root, monkeypatch, *, black=False, defense=False):
     """Exercise actual public indexing, bounded native preparation and private reads."""
     import base64
     import contextlib
@@ -353,6 +370,7 @@ def _public_capture_pv_workflow(root, monkeypatch, *, black=False):
 
     from chess_coach import (
         opening_decision_budget,
+        opening_public_capture_pv_game,
         opening_public_capture_pv_position,
         opening_public_capture_pv_session,
     )
@@ -377,7 +395,17 @@ def _public_capture_pv_workflow(root, monkeypatch, *, black=False):
     db_path = data / "synthetic.sqlite"
     db = Database(db_path)
     db.initialize()
-    if black:
+    if defense:
+        players = '[White "opponent"]\n[Black "learner"]\n'
+        histories = (
+            "e4 e5 Nc3 Nc6 Bc4 Qh4 Nf3 a6",
+            "e4 e5 Nc3 Nc6 Bc4 Qh4 Nf3 Qf6",
+            "e4 Nc6 Nc3 e5 Bc4 Qh4 Nf3 a6",
+            "e4 Nc6 Nc3 e5 Bc4 Qh4 Nf3 Qf6",
+        )
+        owned_moves = "1. e4 e5 2. Nc3 Nc6 3. Bc4 Qh4 4. Nf3 Qf6 1-0"
+        decision_ply, alternative, color = 2, "b8c6", "Black"
+    elif black:
         players = '[White "opponent"]\n[Black "learner"]\n'
         histories = (
             "e4 e5 Nc3 Nf6 Qh5 Be7 a3 Nxh5",
@@ -407,8 +435,9 @@ def _public_capture_pv_workflow(root, monkeypatch, *, black=False):
     )
     ingest_pgn(db, owned)
     openings = root / "synthetic-openings.tsv"
+    played_history = histories[1] if defense else histories[0]
     openings.write_text(
-        f"eco\tname\tmoves\nC20\tPlayed\t{histories[0]}\nC20\tAlternative\t{histories[2]}\n"
+        f"eco\tname\tmoves\nC20\tPlayed\t{played_history}\nC20\tAlternative\t{histories[2]}\n"
     )
     import_openings(db, openings, version="fixture", source_url="cc0://fixture")
     config = PipelineConfig(
@@ -491,7 +520,9 @@ def _public_capture_pv_workflow(root, monkeypatch, *, black=False):
         "--reference",
         "recent",
     ]
-    monkeypatch.setattr(sys, "argv", [*args, "--prepare-public-capture-pv"])
+    kind = "defense_pv" if defense else "capture_pv"
+    command = "--prepare-public-defense-pv" if defense else "--prepare-public-capture-pv"
+    monkeypatch.setattr(sys, "argv", [*args, command])
     output = io.StringIO()
     start = time.monotonic()
     started_engines = []
@@ -519,11 +550,15 @@ def _public_capture_pv_workflow(root, monkeypatch, *, black=False):
     assert len(games) == 4 and all(game is not None for game in games)
     assert len({id(game) for game in games}) == 4
     prepared = json.loads(output.getvalue())
-    assert prepared["version"] == "public-opening-capture-consequences-v1"
+    assert prepared["version"] == (
+        "public-opening-defense-consequences-v1"
+        if defense
+        else "public-opening-capture-consequences-v1"
+    )
     for label in ("played", "alternative"):
         branch = prepared["branches"][label]
         assert branch["native_attempted"] == branch["native_completed"] == 2, label
-        if not black:
+        if not black or defense:
             assert branch["native_qualified"] == 2
             assert {branch["records"][i]["observation"]["outcome"] for i in branch["examples"]} == {
                 "success",
@@ -553,7 +588,13 @@ def _public_capture_pv_workflow(root, monkeypatch, *, black=False):
             == branch["positions_seen"] - branch["native_qualified"]
         )
         assert branch["eligible"] == branch["selected"] == 2
-        if black:
+        if defense:
+            records = {item["recorded_san"]: item for item in branch["records"]}
+            assert set(records) == {"a6", "Qf6"}
+            assert records["a6"]["observation"]["outcome"] == "failure"
+            assert records["Qf6"]["observation"]["outcome"] == "success"
+            assert all(item["source"] and item["history_sha256"] for item in records.values())
+        elif black:
             records = {item["recorded_san"]: item for item in branch["records"]}
             examples = [branch["records"][index] for index in branch["examples"]]
             assert set(records) == {"Be7", "Nxh5"}
@@ -574,6 +615,9 @@ def _public_capture_pv_workflow(root, monkeypatch, *, black=False):
                 assert quiet["observation"]["reason"] == "native_reference_unavailable"
                 assert quiet["native"]["status"] == "insufficient" and quiet["native"]["reason"]
     assert prepared["reference"]["license"] == "CC0-1.0"
+    if defense:
+        assert prepared["defense_policy"]["searches_per_branch"] == 2
+        assert prepared["defense_policy"]["phase_seconds"] == 10
 
     tables = (
         "unified_sessions",
@@ -597,7 +641,7 @@ def _public_capture_pv_workflow(root, monkeypatch, *, black=False):
                 for table in tables
             )
 
-    before = None if black else learning()
+    before = None if black and not defense else learning()
     db.connection.commit()
     with monkeypatch.context() as read_only:
         read_only.setattr(
@@ -610,13 +654,19 @@ def _public_capture_pv_workflow(root, monkeypatch, *, black=False):
             "popen_uci",
             lambda *_a, **_k: pytest.fail("engine ran on read"),
         )
-        read_only.setattr(sys, "argv", [*args, "--proof-kind", "capture_pv"])
+        if defense:
+            read_only.setattr(
+                opening_public_capture_pv_game,
+                "defense_observe",
+                lambda *_a, **_k: pytest.fail("proof ran on read"),
+            )
+        read_only.setattr(sys, "argv", [*args, "--proof-kind", kind])
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
             opening_profile()
         shown = json.loads(output.getvalue())["public_preparation"]
         assert shown["branches"] == prepared["branches"]
-        if black:
+        if black and not defense:
             db.close()
             return
         app = create_app(
@@ -630,11 +680,16 @@ def _public_capture_pv_workflow(root, monkeypatch, *, black=False):
         )
         page = app.test_client().get(
             f"/repertoire/games/1/openings/{position}/profile"
-            f"?reference=recent&alternative={alternative}&proof_kind=capture_pv",
+            f"?reference=recent&alternative={alternative}&proof_kind={kind}",
             base_url="https://coach.invalid",
             headers={"Tailscale-User-Login": "fixture"},
         )
-        assert page.status_code == 200 and b"Capture opportunities in public games" in page.data
+        title = (
+            b"Defensive choices in public games"
+            if defense
+            else b"Capture opportunities in public games"
+        )
+        assert page.status_code == 200 and title in page.data
         assert b"Public game example" in page.data
         assert f"({color})".encode() in page.data
     assert learning() == before
@@ -648,7 +703,7 @@ def _public_capture_pv_workflow(root, monkeypatch, *, black=False):
 
     with monkeypatch.context() as changed:
         changed.setattr(public_engine, "detect_compatibility", changed_compatibility)
-        changed.setattr(sys, "argv", [*args, "--proof-kind", "capture_pv"])
+        changed.setattr(sys, "argv", [*args, "--proof-kind", kind])
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
             opening_profile()
@@ -664,7 +719,7 @@ def _public_capture_pv_workflow(root, monkeypatch, *, black=False):
     finally:
         index.chmod(0o400)
     assert hashlib.sha256(index.read_bytes()).hexdigest() != previous
-    monkeypatch.setattr(sys, "argv", [*args, "--proof-kind", "capture_pv"])
+    monkeypatch.setattr(sys, "argv", [*args, "--proof-kind", kind])
     output = io.StringIO()
     with contextlib.redirect_stdout(output):
         opening_profile()

@@ -32,7 +32,11 @@ def lookup(
             identity, index = binding(
                 db, root, subject, game_id, position_id, alternative, deadline
             )
-        if proof_kind == "capture_pv":
+        if proof_kind == "defense_pv":
+            from .opening_public_defense_pv_policy import selected as selected_defense_pv
+
+            value, legacy, full = selected_defense_pv(directory, identity, fork_window)
+        elif proof_kind == "capture_pv":
             value, legacy, full = selected_capture_pv(directory, identity, fork_window)
         elif proof_kind == "protection":
             value, legacy, full = selected_protection(directory, identity, fork_window)
@@ -43,7 +47,11 @@ def lookup(
         check(deadline)
         if value is None:
             return None
-        if proof_kind == "capture_pv":
+        if proof_kind == "defense_pv":
+            from .opening_public_defense_pv_policy import policy as defense_policy
+
+            verify_capture_pv(index, defense_policy(identity), value["branches"], deadline)
+        elif proof_kind == "capture_pv":
             verify_capture_pv(index, capture_pv_policy(identity), value["branches"], deadline)
         confirm(
             db,

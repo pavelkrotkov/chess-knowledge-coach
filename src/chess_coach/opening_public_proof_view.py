@@ -25,6 +25,13 @@ def view(payload, legacy=None):
             "proof_seconds": policy["proof_seconds"],
             "shared_seconds": policy["shared_seconds"],
         }
+    if "defense_pv" in payload["binding"]["policy"]:
+        policy = payload["binding"]["policy"]
+        result["defense_policy"] = {
+            **policy["defense_pv"],
+            "proof_seconds": policy["proof_seconds"],
+            "shared_seconds": policy["shared_seconds"],
+        }
     if "fork_sample" in payload:
         result["fork_sample"] = payload["fork_sample"]
     if legacy is not None:
