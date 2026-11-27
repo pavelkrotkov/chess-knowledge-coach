@@ -1,0 +1,21 @@
+<h3>Capture opportunities in public games</h3>
+<p>These examples describe a small, bounded sample of public games. A recorded choice is not a learner mistake, preference, or measure of progress. Other positions and possible compensation can remain unknown.</p>
+{% if prepared %}
+{% for label, branch in (("Your played line", prepared.branches.played), ("The selected alternative", prepared.branches.alternative)) %}
+<section><h4>{{ label }}</h4>
+{% if branch.eligible is not none %}
+<p>{{ branch.supported }} selected public games contain a supported example; {{ branch.incomplete }} games remain incomplete.</p>
+<details><summary>Analysis coverage</summary><p>{{ branch.eligible }} independent games matched; {{ branch.selected }} were selected, {{ branch.entered }} entered, {{ branch.analyzed }} fully checked, {{ branch.unsupported }} encountered an unavailable check, and {{ branch.censored }} reached a source boundary. Of {{ branch.positions_seen }} positions seen, {{ branch.not_requested_positions }} were not submitted for analysis and {{ branch.not_qualified_positions }} lacked a complete comparable result. {{ branch.native_attempted }} were submitted, {{ branch.native_completed }} returned, and {{ branch.native_qualified }} qualified.</p></details>
+{% else %}<p>The matching public sample is unavailable; coverage is unknown.</p>{% endif %}
+{% for index in branch.examples %}
+{% set record = branch.records[index] %}{% set observation = record.observation %}
+<p><a href="{{ record.source }}">Public game example</a>, move {{ (record.ply + 1) // 2 }} ({{ decision.color | capitalize }}): {{ record.recorded_san }}.
+{% if observation.outcome == "success" %}The recorded capture met the bounded material checks.
+{% else %}The recorded move left a supported capture unplayed; the compared continuations remain bounded.{% endif %}
+The target was the {{ observation.target_piece }} on {{ observation.target }}.
+{% if observation.best %}One compared continuation: {{ observation.best.san | join(" ") }}.{% endif %}</p>
+{% else %}<p>No supported example is available in the work completed so far.</p>{% endfor %}
+</section>
+{% endfor %}
+<details><summary>Source and analysis details</summary><p>Source: <a href="{{ prepared.reference.source_archive }}">public archive</a>. Exact source, native configuration, search and proof limits are retained with this preparation. Incomplete work and unknown compensation are not negative findings.</p></details>
+{% else %}<p>No current prepared result is available for this pair of lines.</p>{% endif %}

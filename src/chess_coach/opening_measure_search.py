@@ -11,12 +11,14 @@ from .purpose_iteration_search import search as retained_search
 from .purpose_lines import work
 
 
-def search(engine, board, position, alternative, deadline, *, reference=False):
+def search(engine, board, position, alternative, deadline, *, reference=False, game=None):
     timeout = search_timeout(deadline, FINAL_SECONDS)
     if timeout is None:
         return {"status": "insufficient", "reason": "deadline"}
     engine.timeout = timeout
     requested, moves, nodes, seconds, options = _request(board, position, alternative, reference)
+    if game is not None:
+        options["game"] = game
     state, error = retained_search(
         engine,
         board,

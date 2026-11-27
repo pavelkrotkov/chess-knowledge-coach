@@ -3,12 +3,16 @@
 import time
 
 from .fact_fingerprint import canonical, digest
+from .opening_public_capture_pv_current import verify as verify_capture_pv
+from .opening_public_capture_pv_policy import policy as capture_pv_policy
+from .opening_public_capture_pv_session import prepare as prepare_capture_pv
 from .opening_public_proof_current import confirm
 from .opening_public_proof_files import publish
 from .opening_public_proof_read import view
 from .opening_public_proof_source import PROOF_SECONDS, SECONDS, binding
 from .opening_public_proof_window import evaluate, select
 from .opening_public_protection_policy import protection as protection_policy
+from .opening_queue_binding import ENGINE
 from .opening_queue_files import MAX_BYTES
 from .opening_recent_capacity import check as capacity
 from .style_schedule_budget import history_budget
@@ -29,6 +33,7 @@ def prepare(
     fork_window="initial",
     prevent=False,
     protection=False,
+    capture_pv=False,
 ):
     start = time.monotonic()
     deadline = start + SECONDS
@@ -42,18 +47,28 @@ def prepare(
                 db, root, subject, game_id, position_id, alternative, deadline
             )
         base = identity
-        if protection:
+        if capture_pv:
             identity, full = (
-                protection_policy(base, forks=forks, prevent=prevent, window=fork_window),
+                capture_pv_policy(
+                    base, forks=forks, prevent=prevent, protection=protection, window=fork_window
+                ),
                 None,
             )
+            result, sample = prepare_capture_pv(db.path, ENGINE, index, identity, start, deadline)
+            later_sample = None
         else:
-            identity, full = select(
-                base, root, subject, deadline, forks, fork_window, prevent=prevent
+            if protection:
+                identity, full = (
+                    protection_policy(base, forks=forks, prevent=prevent, window=fork_window),
+                    None,
+                )
+            else:
+                identity, full = select(
+                    base, root, subject, deadline, forks, fork_window, prevent=prevent
+                )
+            result, sample, later_sample = evaluate(
+                index, base, identity, full, start, start + PROOF_SECONDS
             )
-        result, sample, later_sample = evaluate(
-            index, base, identity, full, start, start + PROOF_SECONDS
-        )
         payload = {
             "version": identity["version"],
             "binding": identity,
@@ -64,11 +79,11 @@ def prepare(
             payload["fork_sample"] = later_sample
         capacity(root, directory, working=PUBLICATION_WORKING)
 
-        publish(
-            directory,
-            digest(canonical(identity)),
-            payload,
-            lambda: confirm(
+        def recheck():
+            # The source can change during record checks, so confirm it last.
+            if capture_pv:
+                verify_capture_pv(index, identity, result, deadline)
+            confirm(
                 db,
                 root,
                 subject,
@@ -80,8 +95,9 @@ def prepare(
                 index,
                 full,
                 version,
-            ),
-        )
+            )
+
+        publish(directory, digest(canonical(identity)), payload, recheck)
         return view(payload)
     finally:
         db.connection.set_progress_handler(None, 0)
