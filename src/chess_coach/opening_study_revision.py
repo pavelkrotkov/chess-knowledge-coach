@@ -14,12 +14,14 @@ def current(db, root, learner, game, position, move, version, *, deadline, with_
     updated = three_roles(value)
     if updated["version"] == version:
         return updated
-    from .opening_recommendation_preview import preview
+    from .opening_recommendation_preview import legacy as recommendation
+    from .opening_recommendation_roles import three_roles as recommended_roles
 
     try:
-        return preview(
+        value = recommendation(
             db, root, learner, game, position, move, deadline=deadline, with_identity=with_identity
         )
+        return value if value["version"] == version else recommended_roles(value)
     except FileNotFoundError as error:
         raise ValueError("opening preview version differs") from error
 

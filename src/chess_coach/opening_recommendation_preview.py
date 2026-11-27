@@ -7,17 +7,18 @@ from .opening_decision import inspect
 from .opening_explore_view import report as explore
 from .opening_queue_budget import BrowserBudget
 from .opening_recommendation_paths import inputs
+from .opening_recommendation_roles import LEGACY_SCHEMA as SCHEMA
+from .opening_recommendation_roles import three_roles
 from .opening_recommendation_selection import selection
 from .opening_recommendation_snapshot import rationale_snapshot
 from .opening_recommendation_text import annotate, note
 from .opening_revision_course import preview as course_preview
 from .opening_study_source import fingerprint
 
-SCHEMA = "opening-revision-course-v2"
 SECONDS = 25
 
 
-def preview(db, root, learner, game_id, position_id, move, *, deadline=None, with_identity=False):
+def legacy(db, root, learner, game_id, position_id, move, *, deadline=None, with_identity=False):
     budget = BrowserBudget(db)
     budget.expires = min(budget.expires, time.monotonic() + SECONDS)
     if deadline is not None:
@@ -58,3 +59,18 @@ def preview(db, root, learner, game_id, position_id, move, *, deadline=None, wit
             else {}
         ),
     }
+
+
+def preview(db, root, learner, game_id, position_id, move, *, deadline=None, with_identity=False):
+    return three_roles(
+        legacy(
+            db,
+            root,
+            learner,
+            game_id,
+            position_id,
+            move,
+            deadline=deadline,
+            with_identity=with_identity,
+        )
+    )

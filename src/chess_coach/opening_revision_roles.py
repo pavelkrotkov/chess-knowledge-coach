@@ -36,22 +36,25 @@ def version(source_version, chapters):
     return digest(canonical(payload))
 
 
+def ungraded(public, color):
+    game = chess.pgn.read_game(io.StringIO(public["pgn"]))
+    if game is None or game.errors:
+        raise ValueError("opening continuation differs")
+    game.comment += (
+        f" You play {color.capitalize()}. "
+        "This recorded continuation is ungraded; other legal moves are not assessed. "
+        "Study moves do not update your coach practice record."
+    )
+    return {**public, "pgn": str(game)}
+
+
 def three_roles(original):
     if original["schema"] != LEGACY_VERSION:
         raise ValueError("opening preview version differs")
     chapters = [explanation(original["decision"], original["choice"], original["experiment"])]
     chapters.extend(original["chapters"])
     if original["public_status"] == "available":
-        public = chapters[-1]
-        game = chess.pgn.read_game(io.StringIO(public["pgn"]))
-        if game is None or game.errors:
-            raise ValueError("opening continuation differs")
-        game.comment += (
-            f" You play {original['decision']['color'].capitalize()}. "
-            "This recorded continuation is ungraded; other legal moves are not assessed. "
-            "Study moves do not update your coach practice record."
-        )
-        chapters[-1] = {**public, "pgn": str(game)}
+        chapters[-1] = ungraded(chapters[-1], original["decision"]["color"])
     return {
         **original,
         "schema": VERSION,
