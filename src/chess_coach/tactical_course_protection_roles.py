@@ -17,7 +17,8 @@ def explanation(owned):
     move = board.parse_uci(snapshot["lines"][0])
     if not piece or piece.color != board.turn or move not in board.legal_moves:
         raise ValueError("protection source changed")
-    note = _note(owned, board)
+    prefix = f"Worked example, ungraded. {snapshot['learner_color'].capitalize()} to move. "
+    note = _note(owned, board).removeprefix(prefix)
     guidance = (
         f"{snapshot['learner_color'].capitalize()} to move. Your "
         f"{chess.piece_name(piece.piece_type)} on {chess.square_name(target)} is threatened. "
@@ -31,6 +32,15 @@ def explanation(owned):
         ),
         "role": "explanation",
     }
+
+
+def worked(note, snapshot, source):
+    note = note.replace(
+        "This is a recorded line, not a mastery result.",
+        "The shown defense was checked separately from the played move; this is not a mastery result.",
+    )
+    guidance = f"Worked example, ungraded. {snapshot['learner_color'].capitalize()} to move. {note}"
+    return chapter("Your recurring pattern", note, snapshot, source, guidance=guidance)
 
 
 def rehearsal(practice):

@@ -11,7 +11,7 @@ from .tactical_course_protection import source as teaching_source
 from .tactical_course_related import HISTORY_LIMIT, PROTECTION_SOURCE, with_reason
 
 
-def own(db, subject, group, budget):
+def own(db, subject, group, budget, *, identity_for=None):
     try:
         bindings = None
         lesson = group["lesson"]
@@ -23,7 +23,7 @@ def own(db, subject, group, budget):
             with budget.scope(snapshot=True):
                 bindings = independent(db, subject, group)
         with budget.scope(snapshot=True):
-            return owned(db, subject, group, bindings=bindings)
+            return owned(db, subject, group, bindings=bindings, identity_for=identity_for)
     except PreviewDeadline:
         budget.check()
         return "owned source deferred: time budget"

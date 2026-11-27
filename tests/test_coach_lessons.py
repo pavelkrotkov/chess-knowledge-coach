@@ -4020,6 +4020,12 @@ def test_protection_lesson_offers_only_a_current_bounded_line_replay(tmp_path, m
         == "own-game"
     )
     assert selected_chapters[2]["source"]["type"] == "corpus"
+    assert selected_chapters[1]["source"]["version"] == "protect-threatened-piece-own-v1"
+    assert selected_chapters[1]["source_snapshot"]["objective"] == "protect_threatened_piece"
+    assert "Played a3." in selected_chapters[1]["pgn"]
+    assert (
+        "shown defense was checked separately from the played move" in selected_chapters[1]["pgn"]
+    )
     assert "no profitable immediate capture" in selected_chapters[0]["pgn"]
     assert "Ungraded rehearsal" in selected_chapters[2]["pgn"]
     assert "profitable immediate capture" in selected_chapters[2]["pgn"]

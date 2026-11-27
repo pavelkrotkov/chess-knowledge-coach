@@ -3,6 +3,7 @@
 from .course_guidance import challenge
 from .tactical_course_budget import PreviewUnavailable
 from .tactical_course_capture_roles import compose
+from .tactical_course_protection import identity as protection_identity
 from .tactical_course_resolve import own, related
 
 MAX_PATTERNS = 3
@@ -42,7 +43,8 @@ def assemble(
         if len(patterns) >= MAX_PATTERNS:
             return patterns, chapters, unavailable, len(groups) - index
         pair = {"skill": group["lesson"]["skill"], "operation": group["lesson"]["operation"]}
-        result = own(db, subject, group, budget)
+        options = {"identity_for": protection_identity} if protection else {}
+        result = own(db, subject, group, budget, **options)
         if not isinstance(result, tuple):
             unavailable.append({**pair, "reason": result or "owned source unavailable"})
             continue

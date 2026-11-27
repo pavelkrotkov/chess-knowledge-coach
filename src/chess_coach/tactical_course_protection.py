@@ -4,6 +4,7 @@ from .decision_history import decision_board
 from .mate_inspection_source import position_row
 from .objective_capture_current import current
 from .objective_protection_before import probe
+from .objective_protection_contract import VERSION as OWNED_VERSION
 from .objective_protection_snapshot import _check_recorded_target
 from .pawn_scope import history_known
 from .related_capture_position import _features
@@ -13,6 +14,10 @@ from .unified_sources import resolve_source
 
 VERSION = "protection-course-transfer-v1"
 PER_BAND = 200
+
+
+def identity(_db, _subject, evidence):
+    return OWNED_VERSION, str(evidence["id"]), "protection"
 
 
 class ContextUnavailable(ValueError):

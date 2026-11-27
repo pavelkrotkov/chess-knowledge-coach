@@ -26,7 +26,7 @@ def verify(
     roles=False,
 ):
     owned_saved = chapters[1] if roles else chapters[0]
-    selected = _selected(db, subject, pattern, lesson, owned_saved, budget, modern)
+    selected = _selected(db, subject, pattern, lesson, owned_saved, budget, modern, roles)
     verify_owned(db, subject, pattern, lesson, chapters, budget, selected, roles)
     if len(chapters) == (2 if roles else 1):
         return
@@ -79,8 +79,10 @@ def _related(
         compare(saved, related, gamebook=named, roles=roles, kind=selected["kind"])
 
 
-def _selected(db, subject, pattern, lesson, chapter, budget, modern):
-    selected = choice(db, subject, lesson, budget)
+def _selected(db, subject, pattern, lesson, chapter, budget, modern, roles):
+    selected = choice(
+        db, subject, lesson, budget, protection=roles and pattern["kind"] == "protection"
+    )
     if selected["kind"] != pattern["kind"] or pattern["local_challenge"] != challenge(
         selected, protection=modern
     ):
