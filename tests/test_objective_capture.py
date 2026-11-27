@@ -5683,10 +5683,10 @@ def _fork_capture_common_workflow(tmp_path, monkeypatch):
         as_of=one_family_cutoff,
         project_root=root,
     )
-    for candidate in single["items"]:
-        if candidate.get("source_type") == "own-game":
-            assert candidate["skill"] == "fork"
-            assert int(candidate["source_key"]) in evidence["fork"]
+    assert len(single["items"]) == 1, single
+    candidate = single["items"][0]
+    assert (candidate["skill"], candidate["source_type"]) == ("fork", "own-game"), single
+    assert candidate["source_key"] in {str(value) for value in evidence["fork"]}, single
 
     _, both = observe_common(db, LEARNER, "common", root, both_cutoff.isoformat(), lambda: None)
     assert both["options"] and both["fork"] is not None
