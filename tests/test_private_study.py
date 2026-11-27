@@ -147,6 +147,19 @@ def test_private_publication_reconciles_timeouts_and_rejects_public_destination(
     chapters = [
         chapter(f"Lesson {i}", "A source and a useful question.", snapshot, {}) for i in range(5)
     ]
+    promotion = {
+        "prompt_fen": "4k3/P7/8/8/8/8/8/4K3 w - - 0 1",
+        "learner_color": "white",
+        "lines": ["a7a8q"],
+        "provenance": {},
+    }
+    note = 'Find the "promotion" and check the reply.'
+    chapters[4] = chapter('Promotion "calm"', note, promotion, {})
+    promoted = chess.pgn.read_game(io.StringIO(chapters[4]["pgn"]))
+    assert promoted is not None and not promoted.errors
+    assert promoted.headers["Event"] == 'Example White: Promotion "calm"'
+    assert note in promoted.comment
+    assert [move.uci() for move in promoted.mainline_moves()] == ["a7a8q"]
     board = chess.Board()
     for move in ("f3", "e5", "g4"):
         board.push_san(move)
@@ -224,6 +237,8 @@ def test_private_publication_reconciles_timeouts_and_rejects_public_destination(
         "conceal",
     ]
     assert provider.created == 1 and len(provider.uploaded) == 5
+    promotion_expected = {**chapters[4], "name": provider.uploaded[4]["name"]}
+    assert matches(promotion_expected, provider.export())
     expected = {**chapters[2], "name": provider.uploaded[2]["name"]}
     assert matches(expected, provider.export())
     assert not matches(
