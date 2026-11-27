@@ -270,10 +270,12 @@ def test_recurrence_review_boundaries_and_independence(tmp_path, monkeypatch, ca
     updated = Database(path)
     ample = add(updated, 2, 3, "failure")
     prior_pgn = game(2, "1. c4 e5").replace("2026.10.02", "2026.09.02")
-    ingest_pgn(updated, prior_pgn)
-    prior_game = updated.connection.execute(
-        "SELECT id FROM games WHERE pgn=?", (prior_pgn,)
-    ).fetchone()[0]
+    assert ingest_pgn(updated, prior_pgn)["games"] == 1
+    (prior_game,) = updated.connection.execute(
+        "SELECT game_id FROM style_game_times WHERE status=? AND started_at=?",
+        ("current", "2026-09-02T12:00:00+00:00"),
+    ).fetchall()
+    prior_game = prior_game[0]
     prior = add(updated, prior_game, 1, "failure", observed="2026-09-02T12:00:00+00:00")
     comparison = report(updated, "learner", START, END, PREV, skill="fork", operation="execute")
     current_group = comparison["current"][0]
