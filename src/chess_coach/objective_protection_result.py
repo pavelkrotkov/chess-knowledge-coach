@@ -4,9 +4,11 @@ from .objective_capture_proof import unknown
 from .objective_protection_refute import witness
 
 
-def result(board, target, following, replies, clock, start, seconds, base):
+def result(board, target, following, replies, clock, start, seconds, base, *, check=None):
     attacks = following["targets"].get(target, [])
-    reply = witness(board, attacks) if attacks else None
+    reply = witness(board, attacks, check=check) if attacks else None
+    if check is not None:
+        check()
     if clock() - start > seconds:
         return unknown(base, "timeout")
     if attacks and not reply:
