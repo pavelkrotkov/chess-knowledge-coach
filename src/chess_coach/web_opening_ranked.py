@@ -31,10 +31,22 @@ def show():
                 headers={"Cache-Control": "private, no-store"},
             )
         else:
+            from .opening_ranked_study_course import build
+            from .opening_study_view import status
+
             selection, snapshot = course["selection"], course["chapters"][0]["source_snapshot"]
+            study = status(
+                db,
+                root,
+                subject,
+                course,
+                revision=build(course, course["version"], context),
+                selection={"context_choice": choice},
+            )
             response = render_template(
                 "opening_ranked_course.html",
                 course=course,
+                study=study,
                 download_url=download,
                 board=board_rows(snapshot["prompt_fen"], selection["color"]),
             )

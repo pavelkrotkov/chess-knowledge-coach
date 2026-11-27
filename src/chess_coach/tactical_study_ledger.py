@@ -18,3 +18,18 @@ def validate(state, chapters):
     complete = state.get("complete")
     if type(complete) is not bool or not _states(values, complete):
         raise StudyError("tactical chapter ledger differs")
+
+
+def validate_owned(state, course, owner):
+    """Recheck the exact owner's current course ledger between publication steps."""
+    if state.get("course_sha256") != course["course_sha256"] or state.get("learner_key") not in (
+        None,
+        owner,
+    ):
+        raise StudyError("Study intent identity differs")
+    delivery = state.get("tactical_delivery")
+    if delivery is not None and (
+        delivery.get("owner") != owner or delivery.get("version") != "tactical-study-exposure-v1"
+    ):
+        raise StudyError("Study intent owner differs")
+    validate(state, course["course"]["chapters"])

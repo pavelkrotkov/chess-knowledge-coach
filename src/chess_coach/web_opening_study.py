@@ -8,7 +8,12 @@ from .web_db import database
 
 
 def submit():
-    selection = {key: request.form.get(key, "") for key in ("color", "parent", "move")}
+    if "context_choice" in request.form:
+        if any(key in request.form for key in ("color", "parent", "move")):
+            abort(400, "The opening selection is ambiguous.")
+        selection = {"context_choice": request.form.get("context_choice", "")}
+    else:
+        selection = {key: request.form.get(key, "") for key in ("color", "parent", "move")}
     version = request.form.get("version", "")
     try:
         enqueue(
@@ -20,6 +25,12 @@ def submit():
         )
     except (Exception, PreviewDeadline):
         abort(409, "This Study request cannot be checked now. Open a new preview.")
+    if "context_choice" in selection:
+        return redirect(
+            url_for(
+                "repertoire_views.opening_unfamiliar", ranked=1, choice=selection["context_choice"]
+            )
+        )
     return redirect(
         url_for(
             "repertoire_views.unfamiliar_course",

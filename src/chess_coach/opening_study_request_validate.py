@@ -3,9 +3,11 @@
 import os
 import re
 
+from .curriculum_cursor_capture import _digest
 from .deep_selection_source import learner_key
 from .learner_identity import normalize_identity
 from .opening_study_session import _paths
+from .opening_unfamiliar_selection import _valid as valid_unfamiliar
 from .recurrence_cursor import _valid_id
 
 
@@ -33,11 +35,9 @@ def _revision(selection):
 def _selection(selection):
     if set(selection) == {"game_id", "position_id", "move"}:
         return _revision(selection)
-    return (
-        set(selection) == {"color", "parent", "move"}
-        and all(isinstance(value, str) and value for value in selection.values())
-        and selection.get("color") in {"white", "black"}
-    )
+    if set(selection) == {"context_choice"}:
+        return _digest(selection["context_choice"])
+    return valid_unfamiliar(selection)
 
 
 def valid(item, database, learner):
@@ -51,6 +51,6 @@ def valid(item, database, learner):
             item.get("owner") == learner_key(learner),
             item.get("state") in {"queued", "incomplete", "stale", "complete"},
             _selection(selection),
-            isinstance(version, str) and re.fullmatch(r"[0-9a-f]{64}", version) is not None,
+            _digest(version),
         )
     )

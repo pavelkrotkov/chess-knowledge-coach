@@ -5233,6 +5233,97 @@ def _conditional_fit_workflow(
             assert len(list(game_value.mainline_moves())) == 4
             assert "ungraded" in game_value.comment
             assert chess.pgn.read_game(stream) is None
+
+        from contextlib import contextmanager
+
+        from chess_coach import (
+            opening_study_request,
+            opening_study_worker,
+            study_anonymous,
+            study_session,
+        )
+        from chess_coach.opening_study_reconcile import reconcile_locked
+        from tests.test_private_study import Provider
+
+        provider = Provider()
+        patch.setenv("CHESS_SUBJECT", "learner")
+        patch.setenv("CHESS_DB", str(path))
+        patch.setenv("LICHESS_STUDY_TOKEN", "fixture-token")
+        patch.setattr(study_anonymous, "request", provider.anonymous)
+        patch.setattr(
+            study_session.httpx,
+            "Client",
+            lambda **_kwargs: nullcontext(SimpleNamespace(request=provider.request)),
+        )
+        form_page = ranked_client.get(
+            "/repertoire/unfamiliar",
+            query_string={"ranked": "1", "choice": selected_choice},
+            base_url="https://coach.invalid",
+            headers=ranked_headers,
+        )
+        assert form_page.status_code == 200 and b"Request private Study" in form_page.data
+        with ranked_client.session_transaction(base_url="https://coach.invalid") as session:
+            csrf = session["csrf"]
+        form = {"csrf": csrf, "context_choice": selected_choice, "version": course["version"]}
+        submit_headers = {**ranked_headers, "Origin": "https://coach.invalid"}
+        staged = opening_study_request.staged
+        appeared = planning / ("opening-study-" + "f" * 64 + "-intent.json")
+
+        @contextmanager
+        def changed_before_queue(*args):
+            with staged(*args) as temporary:
+                appeared.write_text("{}")
+                try:
+                    yield temporary
+                finally:
+                    appeared.unlink()
+
+        with patch.context() as changed:
+            changed.setattr(opening_study_request, "staged", changed_before_queue)
+            refused = ranked_client.post(
+                "/repertoire/unfamiliar/course/study",
+                data=form,
+                base_url="https://coach.invalid",
+                headers=submit_headers,
+            )
+        assert refused.status_code == 409 and provider.created == 0
+        queued = ranked_client.post(
+            "/repertoire/unfamiliar/course/study",
+            data=form,
+            base_url="https://coach.invalid",
+            headers=submit_headers,
+        )
+        assert queued.status_code == 302
+        slot = planning / opening_study_request.SLOT
+        assert json.loads(slot.read_text())["selection"] == {"context_choice": selected_choice}
+        fake_engine.write_text("#!/bin/sh\nexit 1\n")
+        opening_study_worker.run(db, "learner", root)
+        assert json.loads(slot.read_text())["state"] == "stale" and provider.created == 0
+        fake_engine.write_text("#!/bin/sh\nexit 0\n")
+        reissued = ranked_client.post(
+            "/repertoire/unfamiliar/course/study",
+            data=form,
+            base_url="https://coach.invalid",
+            headers=submit_headers,
+        )
+        assert reissued.status_code == 302
+        opening_study_worker.run(db, "learner", root)
+        assert json.loads(slot.read_text())["state"] == "incomplete" and provider.created == 1
+        reconcile_locked(root, course["version"])
+        assert provider.created == 1 and not provider.uploaded
+        opening_study_worker.run(db, "learner", root)
+        assert json.loads(slot.read_text())["state"] == "incomplete" and len(provider.uploaded) == 1
+        opening_study_worker.run(db, "learner", root)
+        assert json.loads(slot.read_text())["state"] == "complete" and provider.created == 1
+        intent = planning / f"opening-study-{course['version']}-intent.json"
+        receipt = json.loads(intent.read_text())
+        assert (
+            receipt["anonymous_verified"]
+            and receipt["privacy_verified"]
+            and receipt["ordered_verified"]
+        )
+        assert receipt["chapters"] == ["done"] and len(receipt["chapter_ids"]) == 1
+        assert provider.uploaded[0]["pgn"] == course["chapters"][0]["pgn"]
         patch.setattr(opening_engine, "start_engine", original_start_engine)
         assert hashlib.sha256(path.read_bytes()).hexdigest() == database_hash
         patch.setattr(public_fork_candidate, "fork_proof", proof_impl)
