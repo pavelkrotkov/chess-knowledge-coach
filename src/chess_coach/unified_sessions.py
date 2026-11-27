@@ -73,7 +73,7 @@ def start(
         item_id,
     )
     budget = _diagnostic_budget(db, diagnostic, source_type, goal, training, item_id)
-    capture = _capture_budget(db, window_offer, project_root)
+    capture = _capture_budget(db, window_offer, project_root, opening=opening)
     try:
         db.connection.execute("BEGIN IMMEDIATE")
         _opening_check(opening, db, project_root, subject)

@@ -24,11 +24,15 @@ def binding(db, binding, root, budget):
         "capture_sources",
     }:
         raise ValueError("capture practice offer changed")
-    if type(binding["revision"]) is not int or binding["revision"] != revision(db):
-        raise ValueError("capture practice offer changed")
+    require_revision(db, binding["revision"])
     value = binding["capture_input"]
     _capture_input(value)
     _capture_input(binding["capture_sources"])
     if root is None or budget is None:
         raise ValueError("capture practice offer changed")
     return value
+
+
+def require_revision(db, value):
+    if type(value) is not int or value != revision(db):
+        raise ValueError("capture practice offer changed")

@@ -4,10 +4,15 @@ from .curriculum_prerequisite_token import _decode
 from .curriculum_window_cursor import decode
 from .curriculum_window_scope import POLICY
 from .fact_fingerprint import canonical, digest
-from .opening_context_launch_scope import _scope
+from .opening_context_launch_scope import _scope, common_offer
 
 
 def _check(data, window, owner):
+    from .curriculum_capture_offer import COMMON_WINDOW_POLICY
+
+    if data[0] == COMMON_WINDOW_POLICY:
+        common_offer(data, window, owner)
+        return
     if data[:2] != [POLICY, owner]:
         raise ValueError("practice window changed")
     if window["selection_only"] or window["state"]["subject_hash"] != owner:

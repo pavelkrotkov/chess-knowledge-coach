@@ -18,9 +18,9 @@ def _bounded(budget, action):
 
 
 def check(db, data, subject, source, version, key, mode, root, budget):
-    from .curriculum_capture_offer import COMMON_POLICY
+    from .curriculum_capture_offer import COMMON_POLICY, COMMON_WINDOW_POLICY
 
-    if data[0] == COMMON_POLICY:
+    if data[0] in {COMMON_POLICY, COMMON_WINDOW_POLICY}:
         from .curriculum_common_offer import check as check_common
 
         return check_common(db, data, subject, source, version, key, mode, root, budget)

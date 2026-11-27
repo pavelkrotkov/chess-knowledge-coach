@@ -49,6 +49,10 @@ def _prepare(
     current = preflight(db, root, subject, data[2])
     if current["binding"] != data[3]:
         raise ValueError("opening context changed")
+    from .curriculum_capture_offer import COMMON_WINDOW_POLICY, token_policy
+
+    if token_policy(db, window) == COMMON_WINDOW_POLICY:
+        begin(current)
     current["task"] = bind(db, subject, current, corpus, data, version, key)
     validate(current, db, root, subject)
     begin(current)

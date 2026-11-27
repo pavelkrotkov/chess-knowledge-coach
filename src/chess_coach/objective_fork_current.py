@@ -8,12 +8,11 @@ from .learner_identity import normalize_identity
 from .objective_fork_mapping import matches as mapping_matches
 
 
-def current(db, evidence_id, subject, *, check=None):
+def current(db, evidence_id, subject, *, check=None, _history=None):
     evidence = _summary(evidence_row(db, evidence_id))
     if not _eligible(evidence, subject) or not mapping_matches(db, evidence):
         raise ValueError("fork objective unavailable")
-    options = {"_fork_check": check} if check is not None else {}
-    evidence = inspect_evidence(db, evidence_id, **options)
+    evidence = inspect_evidence(db, evidence_id, _fork_check=check, _history=_history)
     if evidence["fork_source_currentness"] != "current":
         raise ValueError("fork source unavailable or stale")
     fact = evidence["facts"][0]
