@@ -435,8 +435,9 @@ def _public_capture_pv_workflow(root, monkeypatch, *, black=False, defense=False
     )
     ingest_pgn(db, owned)
     openings = root / "synthetic-openings.tsv"
+    played_history = histories[1] if defense else histories[0]
     openings.write_text(
-        f"eco\tname\tmoves\nC20\tPlayed\t{histories[0]}\nC20\tAlternative\t{histories[2]}\n"
+        f"eco\tname\tmoves\nC20\tPlayed\t{played_history}\nC20\tAlternative\t{histories[2]}\n"
     )
     import_openings(db, openings, version="fixture", source_url="cc0://fixture")
     config = PipelineConfig(
