@@ -2944,8 +2944,8 @@ def _daily_capture_workflow(tmp_path, monkeypatch):
     from chess_coach import unified_session_state
     from tests.capture_certificate_fixture import cli as fresh_cli
 
-    reviewed_at = datetime.now(UTC) - timedelta(days=2, minutes=5)
-    fixed_as_of = reviewed_at + timedelta(minutes=5)
+    fixed_as_of = min(now, datetime.now(UTC) - timedelta(days=2))
+    reviewed_at = fixed_as_of - timedelta(minutes=5)
 
     class ReviewClock(datetime):
         @classmethod
@@ -3068,7 +3068,7 @@ def _daily_capture_workflow(tmp_path, monkeypatch):
         assert unknown["recall"]["probability"] is None
     finally:
         db.connection.rollback()
-    already = daily_plan(db, subject=LEARNER, corpus_version="plan-fixture")
+    already = after_review
     assert already["capture_status"] == "already_scheduled"
     assert not any(
         item["kind"] == "new" and item["prompt_key"] == capture["prompt_key"]
@@ -3102,7 +3102,7 @@ def _daily_capture_workflow(tmp_path, monkeypatch):
         as_of=datetime.now(UTC) + timedelta(days=2),
     )
     assert any(item.get("item_id") == item_id for item in again["items"])
-    _scheduled_deadline_controls(db, tmp_path, monkeypatch, now)
+    _scheduled_deadline_controls(db, tmp_path, monkeypatch, fixed_as_of)
     review_evidence(db, int(capture["source_key"]), decision="reject", actor="fixture")
     stale = client.post(
         "/unified/start",
