@@ -5,6 +5,7 @@ from .tactical_course import (
     DEFAULT_PROTECTION_ROLES_VERSION,
     DEFAULT_ROLES_VERSION,
     FORK_VERSIONS,
+    MIXED_SELECTED_VERSION,
     NAMED_VERSION,
     SELECTED_FORK_ROLES_VERSION,
     SELECTED_PROTECTION_ROLES_VERSION,
@@ -38,6 +39,9 @@ def chapters(chapters, index, pattern, kind):
         (DEFAULT_PROTECTION_ROLES_VERSION, "protection"),
         (DEFAULT_PROTECTION_ROLES_VERSION, "capture"),
         (DEFAULT_PROTECTION_ROLES_VERSION, "fork"),
+        (MIXED_SELECTED_VERSION, "capture"),
+        (MIXED_SELECTED_VERSION, "fork"),
+        (MIXED_SELECTED_VERSION, "protection"),
     }:
         chapters, end = group(chapters, index)
         return chapters, end, True, pattern["kind"] != "protection"

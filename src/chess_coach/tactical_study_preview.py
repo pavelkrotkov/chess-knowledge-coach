@@ -12,6 +12,8 @@ from .tactical_course import (
     DEFAULT_ROLES_VERSION,
     LEGACY_POLICY,
     LEGACY_VERSION,
+    MIXED_SELECTED_POLICY,
+    MIXED_SELECTED_VERSION,
     NAMED_POLICY,
     NAMED_VERSION,
     POLICY,
@@ -65,6 +67,7 @@ def preview(envelope, expected):
             SELECTED_PROTECTION_ROLES_VERSION,
             SELECTED_PROTECTION_ROLES_POLICY,
         ),
+        "local-tactical-course-export-v16": (MIXED_SELECTED_VERSION, MIXED_SELECTED_POLICY),
         "local-tactical-course-export-v15": (
             DEFAULT_PROTECTION_ROLES_VERSION,
             DEFAULT_PROTECTION_ROLES_POLICY,

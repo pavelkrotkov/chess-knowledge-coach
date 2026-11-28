@@ -13,6 +13,7 @@ from .tactical_course import (
     DEFAULT_PROTECTION_ROLES_VERSION,
     DEFAULT_ROLES_VERSION,
     FORK_VERSIONS,
+    MIXED_SELECTED_VERSION,
     NAMED_VERSION,
     SELECTED_PROTECTION_ROLES_VERSION,
     SELECTED_ROLES_VERSION,
@@ -48,6 +49,7 @@ def revalidate(
                 NAMED_VERSION,
                 SELECTED_ROLES_VERSION,
                 SELECTED_PROTECTION_ROLES_VERSION,
+                MIXED_SELECTED_VERSION,
                 *FORK_VERSIONS,
             }
             else None,
@@ -62,6 +64,7 @@ def revalidate(
                 DEFAULT_ROLES_VERSION,
                 DEFAULT_FORK_VERSION,
                 DEFAULT_PROTECTION_ROLES_VERSION,
+                MIXED_SELECTED_VERSION,
                 SELECTED_ROLES_VERSION,
                 SELECTED_PROTECTION_ROLES_VERSION,
                 *FORK_VERSIONS,

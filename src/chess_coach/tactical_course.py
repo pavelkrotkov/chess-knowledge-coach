@@ -23,6 +23,8 @@ from .tactical_course_contract import (
     FORK_VERSIONS,
     LEGACY_POLICY,
     LEGACY_VERSION,
+    MIXED_SELECTED_POLICY,
+    MIXED_SELECTED_VERSION,
     NAMED_POLICY,
     NAMED_VERSION,
     POLICY,
@@ -69,6 +71,8 @@ __all__ = [
     "LEGACY_POLICY",
     "LEGACY_VERSION",
     "MAX_PATTERNS",
+    "MIXED_SELECTED_POLICY",
+    "MIXED_SELECTED_VERSION",
     "NAMED_POLICY",
     "NAMED_VERSION",
     "PAIRS",
@@ -124,7 +128,8 @@ def _policy(selected):
         (FORK_PAIR,): SELECTED_FORK_ROLES_VERSION,
         (("hanging_piece", "prevent"),): SELECTED_PROTECTION_ROLES_VERSION,
     }
-    version = versions.get(tuple(chosen), THEMATIC_SELECTED_VERSION)
+    default = MIXED_SELECTED_VERSION if len(chosen) > 1 else THEMATIC_SELECTED_VERSION
+    version = versions.get(tuple(chosen), default)
     return version, CONTRACTS[version][0], chosen, SELECTED_SECONDS
 
 
@@ -152,10 +157,16 @@ def build(db, subject, corpus, *, budget=None, selected=None):
             SELECTED_ROLES_VERSION,
             DEFAULT_FORK_VERSION,
             DEFAULT_PROTECTION_ROLES_VERSION,
+            MIXED_SELECTED_VERSION,
         },
         roles=version in ROLE_COURSE_VERSIONS,
         fork=version in QUALIFIED_FORK_VERSIONS,
-        protection=version in {SELECTED_PROTECTION_ROLES_VERSION, DEFAULT_PROTECTION_ROLES_VERSION},
+        protection=version
+        in {
+            SELECTED_PROTECTION_ROLES_VERSION,
+            DEFAULT_PROTECTION_ROLES_VERSION,
+            MIXED_SELECTED_VERSION,
+        },
     )
     budget.check()
     _check_empty(patterns, selected, coverage, unavailable, chosen)
