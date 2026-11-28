@@ -1735,7 +1735,12 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
                 chosen,
                 tactical_course.SELECTED_SECONDS,
             )
-        return current_policy(selected)
+        return (
+            tactical_course.THEMATIC_SELECTED_VERSION,
+            tactical_course.THEMATIC_SELECTED_POLICY,
+            chosen,
+            tactical_course.SELECTED_SECONDS,
+        )
 
     monkeypatch.setattr(tactical_course, "_policy", legacy_policy)
     project, path = capture_project(tmp_path, "project")
