@@ -60,6 +60,8 @@ def verify_owned(db, subject, pattern, lesson, chapters, budget, selected, roles
                 from .tactical_course_protection_roles import explanation
             elif pattern["kind"] == "fork":
                 from .tactical_course_fork_roles import explanation
+            elif pattern["kind"] in {"mate", "short_mate"}:
+                from .tactical_course_mate_roles import explanation
             else:
                 from .tactical_course_capture_roles import explanation
 

@@ -26,6 +26,10 @@ def compare(saved, expected, *, gamebook=False, roles=False, kind=None):
 
 
 def _practice(chapter, kind):
+    if kind in {"mate", "short_mate"}:
+        from .tactical_course_mate_roles import rehearsal
+
+        return rehearsal(chapter)
     if kind == "protection":
         from .tactical_course_protection_roles import rehearsal
 

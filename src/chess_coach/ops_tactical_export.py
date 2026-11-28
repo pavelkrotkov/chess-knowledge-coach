@@ -13,6 +13,7 @@ from .tactical_course import (
     FORK_VERSIONS,
     MIXED_SELECTED_VERSION,
     NAMED_VERSION,
+    SELECTED_MATE_VERSION,
     SELECTED_PROTECTION_ROLES_VERSION,
     SELECTED_ROLES_VERSION,
     SELECTED_VERSION,
@@ -55,6 +56,7 @@ def prepare(root, preview, expected_hash, output, *, offer=False):
             SELECTED_ROLES_VERSION,
             SELECTED_PROTECTION_ROLES_VERSION,
             MIXED_SELECTED_VERSION,
+            SELECTED_MATE_VERSION,
         }:
             budget.slice_seconds = SELECTED_SECONDS
         result = build(

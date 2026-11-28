@@ -6,6 +6,8 @@ from .course_preview import preview_hash
 from .tactical_course import (
     DEFAULT_FORK_POLICY,
     DEFAULT_FORK_VERSION,
+    DEFAULT_MATE_POLICY,
+    DEFAULT_MATE_VERSION,
     DEFAULT_PROTECTION_ROLES_POLICY,
     DEFAULT_PROTECTION_ROLES_VERSION,
     DEFAULT_ROLES_POLICY,
@@ -25,6 +27,8 @@ from .tactical_course import (
     SELECTED_FORK_ROLES_POLICY,
     SELECTED_FORK_ROLES_VERSION,
     SELECTED_FORK_VERSION,
+    SELECTED_MATE_POLICY,
+    SELECTED_MATE_VERSION,
     SELECTED_POLICY,
     SELECTED_PROTECTION_ROLES_POLICY,
     SELECTED_PROTECTION_ROLES_VERSION,
@@ -67,6 +71,8 @@ def preview(envelope, expected):
             SELECTED_PROTECTION_ROLES_VERSION,
             SELECTED_PROTECTION_ROLES_POLICY,
         ),
+        "local-tactical-course-export-v17": (DEFAULT_MATE_VERSION, DEFAULT_MATE_POLICY),
+        "local-tactical-course-export-v18": (SELECTED_MATE_VERSION, SELECTED_MATE_POLICY),
         "local-tactical-course-export-v16": (MIXED_SELECTED_VERSION, MIXED_SELECTED_POLICY),
         "local-tactical-course-export-v15": (
             DEFAULT_PROTECTION_ROLES_VERSION,

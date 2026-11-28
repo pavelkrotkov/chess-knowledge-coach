@@ -5,31 +5,18 @@ from .tactical_course import (
     DEFAULT_PROTECTION_ROLES_VERSION,
     DEFAULT_ROLES_VERSION,
     FORK_VERSIONS,
+    MATE_ROLE_VERSIONS,
     MIXED_SELECTED_VERSION,
     NAMED_VERSION,
     SELECTED_FORK_ROLES_VERSION,
     SELECTED_PROTECTION_ROLES_VERSION,
     SELECTED_ROLES_VERSION,
 )
-
-
-def group(chapters, index):
-    pair = chapters[index : index + 2]
-    if [(item.get("role"), item["source"]["type"]) for item in pair] != [
-        ("explanation", "own-game"),
-        ("worked", "own-game"),
-    ]:
-        raise ValueError("capture chapter order differs")
-    end = index + 2
-    if end < len(chapters) and chapters[end].get("role") == "practice":
-        if chapters[end]["source"]["type"] != "corpus":
-            raise ValueError("capture practice source differs")
-        end += 1
-    return chapters[index:end], end
+from .tactical_course_role_block import group as group
 
 
 def chapters(chapters, index, pattern, kind):
-    if (kind, pattern["kind"]) in {
+    if kind in MATE_ROLE_VERSIONS or (kind, pattern["kind"]) in {
         (DEFAULT_ROLES_VERSION, "capture"),
         (SELECTED_ROLES_VERSION, "capture"),
         (SELECTED_FORK_ROLES_VERSION, "fork"),
@@ -43,7 +30,13 @@ def chapters(chapters, index, pattern, kind):
         (MIXED_SELECTED_VERSION, "fork"),
         (MIXED_SELECTED_VERSION, "protection"),
     }:
-        chapters, end = group(chapters, index)
+        chapters, end = group(
+            chapters,
+            index,
+            practice_sources=("corpus", "public")
+            if pattern["kind"] in {"mate", "short_mate"}
+            else ("corpus",),
+        )
         return chapters, end, True, pattern["kind"] != "protection"
     if index >= len(chapters) or chapters[index]["source"]["type"] != "own-game":
         raise ValueError("owned chapter order differs")

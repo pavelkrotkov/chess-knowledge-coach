@@ -477,7 +477,7 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
         enqueue(db, project, LEARNER, "test")
         prepare_course(db, LEARNER, project)
         default_offer, default_body = offered(project, path, LEARNER, "test")
-        assert default_body["kind"] == "local-tactical-course-export-v15"
+        assert default_body["kind"] == "local-tactical-course-export-v17"
         assert [part["role"] for part in default_body["chapters"]] == [
             "explanation",
             "worked",
@@ -497,7 +497,7 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
         default_preview_path = project / ".runtime" / "planning" / "default-fork-preview.json"
         prepare_default_cli(project, default_preview_path)
         default_preview = json.loads(default_preview_path.read_text())
-        assert default_preview["kind"] == "local-tactical-course-v15"
+        assert default_preview["kind"] == "local-tactical-course-v17"
         default_cli = project / ".runtime" / "planning" / "default-fork-cli.json"
         before_default_reads = learning_rows()
         with monkeypatch.context() as guarded_default:
@@ -1192,7 +1192,7 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
             )
             assert download.status_code == 200 and b"Practice a defense" in download.data
         assert learning_rows() == before_mixed_reads
-        assert mixed["kind"] == "local-tactical-course-export-v15"
+        assert mixed["kind"] == "local-tactical-course-export-v17"
         assert {part["kind"] for part in mixed["patterns"]} >= {"capture", "fork", "protection"}
         assert [
             item["role"] for item in mixed["chapters"][protection_index : protection_index + 3]
@@ -2706,7 +2706,7 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
     with monkeypatch.context() as current_default:
         current_default.setattr(tactical_course, "_policy", current_policy)
         default_course = build_course(db, LEARNER, "test", budget=Budget(db))
-        assert default_course["kind"] == "local-tactical-course-v15"
+        assert default_course["kind"] == "local-tactical-course-v17"
         explain, worked_default, exercise = default_course["preview"]["chapters"]
         assert [part["role"] for part in (explain, worked_default, exercise)] == [
             "explanation",
@@ -2724,7 +2724,7 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
         assert "net gain of at least three material points" in explanation_note
         assert "Played" in explanation_note and "Source review:" in explanation_note
         default_export = build_export(db, LEARNER, "test", default_course, Budget(db))
-        assert default_export["kind"] == "local-tactical-course-export-v15"
+        assert default_export["kind"] == "local-tactical-course-export-v17"
         assert study_preview(default_export, default_export["export_sha256"]) == default_course
         with study_revalidate(
             path, default_export, default_export["export_sha256"], project_root=project
@@ -4175,7 +4175,7 @@ def test_protection_lesson_offers_only_a_current_bounded_line_replay(tmp_path, m
         course = tactical_preview(db, LEARNER, "test")
         exported = tactical_export(db, LEARNER, "test", course, CourseBudget(db))
     assert historical_course["kind"] == "local-tactical-course-v13"
-    assert course["kind"] == "local-tactical-course-v15"
+    assert course["kind"] == "local-tactical-course-v17"
     assert next(p for p in course["preview"]["patterns"] if p["kind"] == "protection")
     assert expected[1] in historical_course["preview"]["chapters"]
     assert [ch["role"] for ch in course["preview"]["chapters"]] == [
@@ -4388,7 +4388,7 @@ def test_protection_lesson_offers_only_a_current_bounded_line_replay(tmp_path, m
             budget=CourseBudget(db, slice_seconds=SELECTED_SECONDS),
         )
         assert (default["kind"], selected["kind"]) == (
-            "local-tactical-course-v15",
+            "local-tactical-course-v17",
             "local-tactical-course-v14",
         )
         assert [item["role"] for item in selected["preview"]["chapters"]] == [
@@ -4869,6 +4869,49 @@ def test_mate_lesson_starts_owned_practice_and_rechecks_review(tmp_path, monkeyp
             == "complete"
         )
         mate_decision(db, position, "fixture_a")
+
+    # Qualify the current course sources before any rehearsal changes familiarity.
+    from chess_coach.tactical_course import build as build_course
+
+    default_course = build_course(db, "fixture_a", "test")
+    selected_course = build_course(db, "fixture_a", "test", selected=["mate_in_one:execute"])
+    assert (default_course["kind"], selected_course["kind"]) == (
+        "local-tactical-course-v17",
+        "local-tactical-course-v18",
+    )
+    for course in (default_course, selected_course):
+        pattern = next(item for item in course["preview"]["patterns"] if item["kind"] == "mate")
+        assert pattern["independent_games"] == 2
+        assert len({item["game_key"] for item in pattern["supporting_sources"]}) == 2
+        assert [item["role"] for item in course["preview"]["chapters"]] == ["explanation", "worked"]
+        snapshot = course["preview"]["chapters"][1]["source_snapshot"]
+        assert snapshot["objective"] == "mate_in_one"
+        board = chess.Board(snapshot["prompt_fen"])
+        board.push_uci(snapshot["lines"][0])
+        assert board.is_checkmate()
+        assert course["preview"]["selection"]["unavailable"][0]["reason"] == (
+            "related corpus or compatible unfamiliar example unavailable"
+        )
+    from chess_coach import tactical_course
+    from chess_coach.tactical_course_budget import Budget
+    from chess_coach.tactical_export import build as export_course
+    from chess_coach.tactical_study_preview import preview as study_preview
+
+    def released_default(_selected):
+        return (
+            tactical_course.DEFAULT_PROTECTION_ROLES_VERSION,
+            tactical_course.DEFAULT_PROTECTION_ROLES_POLICY,
+            tactical_course.CURRENT_PAIRS,
+            None,
+        )
+
+    with monkeypatch.context() as historical:
+        historical.setattr(tactical_course, "_policy", released_default)
+        old_course = build_course(db, "fixture_a", "test")
+    assert old_course["kind"] == "local-tactical-course-v15"
+    assert len(old_course["preview"]["chapters"]) == 1
+    old_export = export_course(db, "fixture_a", "test", old_course, Budget(db))
+    assert study_preview(old_export, old_export["export_sha256"]) == old_course
     db.close()
     app = create_app(
         db_path=path,

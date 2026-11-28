@@ -28,8 +28,9 @@ SUBJECT = "fixture_a"
 @pytest.mark.parametrize("form", ["prepared", "async_final"])
 def test_private_card_rotates_only_after_complete_unassisted_rehearsal(tmp_path, monkeypatch, form):
     import chess_coach.web_coaching as web_coaching
+    from tests.capture_certificate_fixture import project as course_project
 
-    path = tmp_path / "coaching.sqlite"
+    project, path = course_project(tmp_path, "short-project")
     db = Database(path)
     db.initialize()
     monkeypatch.setattr(chess.engine.SimpleEngine, "popen_uci", lambda _: Engine())
@@ -82,7 +83,12 @@ def test_private_card_rotates_only_after_complete_unassisted_rehearsal(tmp_path,
             tactical = build(db, SUBJECT, "test")
         assert [item["kind"] for item in tactical["preview"]["patterns"]] == ["short_mate"]
         assert all(item["mode"] == "conceal" for item in tactical["preview"]["chapters"])
-        assert "Worked example, ungraded" in tactical["preview"]["chapters"][0]["pgn"]
+        assert [item["role"] for item in tactical["preview"]["chapters"]] == [
+            "explanation",
+            "worked",
+        ]
+        assert "forced mate within two of your moves" in tactical["preview"]["chapters"][0]["pgn"]
+        assert "Worked example, ungraded" in tactical["preview"]["chapters"][1]["pgn"]
         assert (
             tactical["preview"]["selection"]["unavailable"][0]["reason"]
             == "related corpus or compatible unfamiliar example unavailable"
@@ -94,6 +100,120 @@ def test_private_card_rotates_only_after_complete_unassisted_rehearsal(tmp_path,
         )
         assert calculation["examined"] == 2 and calculation["limited"]
         assert tactical["preview"]["selection"]["per_pair_limit"] == 2
+
+        # Reuse the real related-short-mate corpus example with this owned proof.
+        from chess_coach.related_mate_source import source_for_evidence
+        from chess_coach.tactical_course_budget import Budget, PreviewUnavailable
+        from chess_coach.tactical_course_choice import SLICE_SECONDS as SELECTED_SECONDS
+        from chess_coach.tactical_export import build as export_course
+        from chess_coach.tactical_study_current import revalidate
+        from chess_coach.tactical_study_preview import preview as study_preview
+
+        source_mate = source_for_evidence(db, SUBJECT, examples[0]["evidence_id"])
+        initial = chess.Board("6k1/1p3ppp/8/7Q/8/5R2/7r/K4R2 b - - 0 1")
+        db.connection.execute(
+            "INSERT INTO puzzle_corpora(version,source,checksum,state) VALUES(?,?,?,?)",
+            ("test", "fixture", "checksum", "staging"),
+        )
+        corpus = db.connection.execute(
+            "SELECT id FROM puzzle_corpora WHERE version=?", ("test",)
+        ).fetchone()[0]
+        db.connection.execute(
+            "INSERT INTO puzzles(puzzle_id,corpus_id,fen,source,solution,rating,rating_deviation,themes_json,objective) "
+            "VALUES(?,?,?,?,?,?,?,?,?)",
+            (
+                "short",
+                corpus,
+                initial.fen(),
+                "https://example.invalid",
+                "b7b6 " + source_mate["lines"][0],
+                1200,
+                80,
+                json.dumps(["mateIn2"]),
+                "unknown",
+            ),
+        )
+        db.connection.execute(
+            "INSERT INTO puzzle_themes VALUES(?,?,?,?)", (corpus, "short", "mateIn2", 1200)
+        )
+        db.connection.execute("UPDATE puzzle_corpora SET state=? WHERE id=?", ("ready", corpus))
+        db.connection.commit()
+        default_course = build(db, SUBJECT, "test")
+        assert default_course["kind"] == "local-tactical-course-v17"
+        assert [item["role"] for item in default_course["preview"]["chapters"]] == [
+            "explanation",
+            "worked",
+            "practice",
+        ], default_course["preview"]["selection"]["unavailable"]
+        selected_course = build(db, SUBJECT, "test", selected=["calculation:execute"])
+        assert selected_course["kind"] == "local-tactical-course-v18"
+        assert [item["role"] for item in selected_course["preview"]["chapters"]] == [
+            "explanation",
+            "worked",
+            "practice",
+        ]
+        practice = selected_course["preview"]["chapters"][2]
+        assert practice["source"]["type"] == "corpus" and practice["mode"] == "conceal"
+        assert "not a proof against every defense" in practice["pgn"]
+        candidate = export_course(
+            db, SUBJECT, "test", selected_course, Budget(db, slice_seconds=SELECTED_SECONDS)
+        )
+        assert study_preview(candidate, candidate["export_sha256"]) == selected_course
+        with revalidate(
+            path,
+            candidate,
+            candidate["export_sha256"],
+            project_root=project,
+            subject=SUBJECT,
+            corpus="test",
+        ) as check:
+            check()
+
+        evidence_id = selected_course["preview"]["patterns"][0]["supporting_sources"][0][
+            "evidence_id"
+        ]
+        review_budget = Budget(db, slice_seconds=SELECTED_SECONDS)
+        db.connection.execute("SAVEPOINT mate_course_review")
+        try:
+            review_evidence(db, evidence_id, decision="reject", actor="fixture")
+            with pytest.raises((ValueError, PreviewUnavailable)):
+                export_course(db, SUBJECT, "test", selected_course, review_budget)
+        finally:
+            db.connection.execute("ROLLBACK TO SAVEPOINT mate_course_review")
+            db.connection.execute("RELEASE SAVEPOINT mate_course_review")
+
+        from chess_coach.tactical_course_offer import offer
+        from chess_coach.tactical_course_publish import publish
+
+        output = project / ".runtime" / "planning" / "mate-course.json"
+        publish(output, candidate, Budget(db, slice_seconds=SELECTED_SECONDS), readonly=True)
+        offer(
+            project,
+            path,
+            SUBJECT,
+            output,
+            candidate,
+            Budget(db, slice_seconds=SELECTED_SECONDS),
+            enabled=True,
+        )
+        course_app = create_app(
+            db_path=path,
+            subject=SUBJECT,
+            actor="fixture",
+            corpus="test",
+            login="login",
+            origin="https://coach.invalid",
+            project_root=project,
+        )
+        candidate_hash = candidate["export_sha256"]
+        page = course_app.test_client().get(
+            f"/coaching/tactical-course?version={candidate_hash}&chapter=2",
+            base_url="https://coach.invalid",
+            headers={"Tailscale-User-Login": "login"},
+        )
+        evidence = practice["source"]["binding"]["evidence_id"]
+        assert page.status_code == 200
+        assert f"/evidence/{evidence}/related-mates".encode() in page.data
 
         # Compare the complete bounded pair with and without history reuse.
         import chess_coach.learner_context as learner_context
