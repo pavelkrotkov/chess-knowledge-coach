@@ -36,6 +36,7 @@ def _reference_options():
             "capture_pv",
             "defense_pv",
             "mate",
+            "pin",
             "short_mate",
             "back_rank",
             "created_backrank",

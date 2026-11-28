@@ -91,6 +91,7 @@ def prepare_public(
     discovery_material=False,
     discovery_opportunity=False,
     created_backrank=False,
+    pin=False,
 ):
     from .opening_public_proof import prepare
 
@@ -116,4 +117,5 @@ def prepare_public(
             discovery_material=discovery_material,
             discovery_opportunity=discovery_opportunity,
             created_backrank=created_backrank,
+            pin=pin,
         )

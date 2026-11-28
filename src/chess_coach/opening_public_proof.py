@@ -42,6 +42,7 @@ def prepare(
     discovery_material=False,
     discovery_opportunity=False,
     created_backrank=False,
+    pin=False,
 ):
     kind = normalize(
         forks,
@@ -58,6 +59,7 @@ def prepare(
         discovery_material=discovery_material,
         discovery_opportunity=discovery_opportunity,
         created_backrank=created_backrank,
+        pin=pin,
     )
     pv_mode = kind in {"capture_pv", "defense_pv"}
     start = time.monotonic()

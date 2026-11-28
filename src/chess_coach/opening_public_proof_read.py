@@ -51,6 +51,7 @@ def lookup(
             return None
         if proof_kind in {
             "mate",
+            "pin",
             "short_mate",
             "back_rank",
             "created_backrank",

@@ -42,6 +42,7 @@ class Engine:
 
 
 def test_source_review_and_closed_mastery(tmp_path, monkeypatch):
+    _public_pin_index_workflow(tmp_path, monkeypatch)
     board = chess.Board("2k5/3r1N2/N1n1B2p/3P4/1R6/8/8/1R1K4 w - - 0 1")
     game = chess.pgn.Game()
     game.setup(board)
@@ -356,3 +357,287 @@ def test_bounded_worker_publishes_relative_prevention_and_browser_explanation(
     successes = [x for x in relative if x["outcome"] == "success"]
     selection = select({"matching": [(x, snapshot) for x in successes]})
     assert selection and not selection["repeated_miss"]
+
+
+def _public_pin_index_workflow(tmp_path, monkeypatch):
+    """Qualify both public pin branches on independently retained original histories."""
+    import base64
+    import contextlib
+    import hashlib
+    import io
+    import json
+    import random
+    import subprocess
+
+    import httpx
+    import pytest
+
+    import chess_coach.mastery as mastery
+    import chess_coach.objective_worker as objective_worker
+    import chess_coach.opening_public_pin_game as pin_game
+    import chess_coach.ops_opening_profile as profile_cli
+    from chess_coach.fact_fingerprint import canonical, digest
+    from chess_coach.opening_classification import classify_game
+    from chess_coach.opening_full_history_build import build as build_history
+    from chess_coach.opening_recent_acquire import acquire
+    from chess_coach.opening_recent_index import build as build_recent
+    from chess_coach.opening_recent_source import PREFIX_BYTES, PREFIX_NAME
+    from chess_coach.opening_snapshot import SOURCE, VERSION, import_snapshot
+
+    histories = (
+        "e4 e5 Qh5 Nf6 Nc3 Nxh5 d3 Qh4 b3 Nf6 Bf4 Qh6 Bg3 Nc6 h3 a6 "
+        "Be2 b6 f3 g6 a4 Ra7 h4 Rb7 Bh2 Rb8 g3 Ra8 Rb1 Bb4",
+        "e4 e5 Qh5 Nc6 Nc3 Nf6 d3 Nxh5 b3 Qh4 Bf4 Nf6 Bg3 Qh6 h3 a6 "
+        "Be2 b6 f3 g6 a4 Ra7 h4 Rb7 Bh2 Rb8 g3 Ra8 Rb1 Bb4",
+    )
+    games = []
+    for index, history in enumerate(histories):
+        board = chess.Board()
+        for san in history.split():
+            board.push_san(san)
+        assert len(board.move_stack) == 30
+        game = chess.pgn.Game.from_board(board)
+        game.headers.update(
+            Event="Rated Blitz game",
+            White=f"Peer {index}-{1100 + index}",
+            Black=f"Reference {index}-{1200 + index}",
+            Result="0-1",
+            Date="2026.10.01",
+            TimeControl="600+0",
+            WhiteElo="1650",
+            BlackElo="1700",
+        )
+        games.append((game, [move.uci() for move in board.move_stack]))
+    root = tmp_path / "public-pin-execution"
+    planning, data = root / ".runtime" / "planning", root / ".runtime" / "data"
+    planning.mkdir(parents=True, mode=0o700)
+    data.mkdir(mode=0o700)
+    db_path = data / "synthetic.sqlite"
+    with monkeypatch.context() as patch:
+        patch.delenv("CHESS_SCHEMA_COMPAT", raising=False)
+        db = Database(db_path)
+        db.initialize()
+        import_snapshot(db)
+        owned = games[0][0]
+        owned.headers.update(
+            White="synthetic peer", Black="learner", UTCDate="2026.01.02", UTCTime="12:06:00"
+        )
+        ingest_pgn(db, str(owned))
+        game_id = db.connection.execute("SELECT max(id) FROM games").fetchone()[0]
+        position_id = db.connection.execute(
+            "SELECT id FROM positions WHERE game_id=? AND ply=4", (game_id,)
+        ).fetchone()[0]
+        classify_game(db, game_id, version=VERSION, source_url=SOURCE)
+        db.close()
+        before = hashlib.sha256(db_path.read_bytes()).hexdigest()
+        owned.headers.update(White="Peer 0-1100", Black="Reference 0-1200")
+        text = "\n\n".join(str(game) for game, _ in games)
+        noise = base64.b64encode(random.Random(791).randbytes(1_400_000)).decode()
+        compressed = subprocess.run(
+            ["/usr/bin/zstd", "-q", "-c"],
+            input=(text + "\n\n{" + noise).encode(),
+            stdout=subprocess.PIPE,
+            check=True,
+        ).stdout
+        assert len(compressed) > PREFIX_BYTES
+        prefix = compressed[:PREFIX_BYTES]
+
+        def response(request):
+            return httpx.Response(
+                206,
+                headers={
+                    "Content-Range": f"bytes 0-{PREFIX_BYTES - 1}/{PREFIX_BYTES * 2}",
+                    "Content-Length": str(PREFIX_BYTES),
+                    "ETag": '"synthetic-pin"',
+                },
+                content=prefix,
+                request=request,
+            )
+
+        with httpx.Client(transport=httpx.MockTransport(response)) as client:
+            acquire(root, "learner", client=client)
+        assert build_recent(root, "learner")["accepted"] == 2
+        assert build_history(root, "learner")["accepted"] == 2
+        patch.setenv("CHESS_DB", str(db_path))
+        patch.setenv("CHESS_SUBJECT", "learner")
+        args = [
+            "opening-profile",
+            "--project-root",
+            str(root),
+            "--game-id",
+            str(game_id),
+            "--position-id",
+            str(position_id),
+            "--alternative",
+            "b8c6",
+            "--reference",
+            "recent",
+        ]
+        for window in ("continuation", "initial"):
+            patch.setattr(
+                sys,
+                "argv",
+                [*args, "--prepare-public", "--proof-kind", "pin", "--fork-window", window],
+            )
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                profile_cli.main()
+            prepared = json.loads(output.getvalue())
+            policy = prepared["pin_policy"]
+            assert (
+                policy["producer"],
+                policy["mapper"],
+                policy["pin_version"],
+                policy["operation"],
+            ) == ("pin-execute", "pin-execute-mapper", "1.0.1", "execute")
+            assert policy["verifier"] == "pin-execution-verifier-v1"
+            assert policy["objective"] == "pin-execution-objective-v1"
+            assert policy["goal"] == "execute_named_pin" and policy["scope"] == "pin-execute-v1"
+            assert prepared["reference"]["license"] == "CC0-1.0"
+            assert prepared["reference"]["source_sha256"] == hashlib.sha256(prefix).hexdigest()
+            if window == "continuation":
+                assert all(
+                    b["example"] is None
+                    and b["ended_before_window"] == 1
+                    and b["status"] == "incomplete"
+                    for b in prepared["branches"].values()
+                )
+                continue
+            for label, (_, moves) in zip(("played", "alternative"), games, strict=True):
+                branch = prepared["branches"][label]
+                assert branch["eligible"] == branch["selected"] == branch["supported"] == 1
+                assert branch["short_records"] == 1 and branch["preparation_incomplete"]
+                example = branch["example"]
+                assert example["recorded"] and example["candidate_san"] == "Bb4"
+                assert example["side_to_move"] == "black" and example["pinner_piece"] == "bishop"
+                assert example["full_history_sha256"] == digest(canonical(moves))
+                assert example["history_sha256"] == digest(canonical(moves[: example["ply"] - 1]))
+                assert example["source_identity"] and example["record_hash"]
+                board = chess.Board()
+                for uci in moves[: example["ply"] - 1]:
+                    board.push_uci(uci)
+                assert example["fen"] == board.fen(en_passant="fen", promoted=True)
+                board.push_uci(example["candidate_uci"])
+                proof = example["proof"]
+                assert proof["type"] == "absolute_pin" and proof["legal_replies"] == 15
+                assert {w["reply"] for w in proof["branches"]} == {
+                    m.uci() for m in board.legal_moves
+                }
+                for witness in proof["branches"]:
+                    child = board.copy(stack=True)
+                    child.push_uci(witness["reply"])
+                    assert chess.Move.from_uci(witness["capture"]) in child.legal_moves
+                    child.push_uci(witness["capture"])
+                    assert child.is_checkmate() == witness["mate"]
+        _public_pin_coverage_and_interruption(root, db_path, game_id, position_id, patch)
+
+        def forbidden(*_args, **_kwargs):
+            pytest.fail("proof, engine, provider, or learning on private read")
+
+        with patch.context() as read:
+            read.setattr(pin_game, "pin_proof", forbidden)
+            read.setattr(pin_game, "pins", forbidden)
+            read.setattr(chess.engine.SimpleEngine, "popen_uci", forbidden)
+            read.setattr(httpx.Client, "send", forbidden)
+            read.setattr(mastery, "update_mastery", forbidden)
+            read.setattr(objective_worker, "process", forbidden)
+            read.setattr(sys, "argv", [*args, "--proof-kind", "pin"])
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                profile_cli.main()
+            shown = json.loads(output.getvalue())["public_preparation"]
+            assert shown["pin_status"] == "prepared"
+            assert all(b["supported"] == 1 for b in shown["branches"].values())
+            app = create_app(
+                db_path=db_path,
+                project_root=root,
+                subject="learner",
+                actor="fixture",
+                corpus="test",
+                login="fixture",
+                origin="https://coach.invalid",
+            )
+            route = f"/repertoire/games/{game_id}/openings/{position_id}/profile"
+            client = app.test_client()
+            assert client.get(route, base_url="https://coach.invalid").status_code == 403
+            query = {"reference": "recent", "alternative": "b8c6", "proof_kind": "pin"}
+            page = client.get(
+                route,
+                query_string=query,
+                base_url="https://coach.invalid",
+                headers={"Tailscale-User-Login": "fixture"},
+            )
+            assert page.status_code == 200 and page.data.count(b"Public source example") == 2
+            assert b"Black played Bb4" in page.data and b"pins the" in page.data
+            prefix_path = planning / PREFIX_NAME
+            original_prefix = prefix_path.read_bytes()
+            artifacts = {
+                p: hashlib.sha256(p.read_bytes()).hexdigest()
+                for p in planning.glob("opening-public-proof-*.json")
+            }
+            prefix_path.chmod(0o600)
+            try:
+                with prefix_path.open("r+b") as stream:
+                    stream.write(bytes([original_prefix[0] ^ 1]))
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    profile_cli.main()
+                assert json.loads(output.getvalue())["public_preparation"] is None
+                stale = client.get(
+                    route,
+                    query_string=query,
+                    base_url="https://coach.invalid",
+                    headers={"Tailscale-User-Login": "fixture"},
+                )
+                assert stale.status_code == 200 and b"No current pin preparation" in stale.data
+            finally:
+                with prefix_path.open("r+b") as stream:
+                    stream.write(original_prefix[:1])
+                prefix_path.chmod(0o400)
+            assert prefix_path.read_bytes() == original_prefix
+            assert {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in artifacts} == artifacts
+        assert hashlib.sha256(db_path.read_bytes()).hexdigest() == before
+
+
+def _public_pin_coverage_and_interruption(root, db_path, game_id, position_id, patch):
+    """Count known censored metadata before work and retain an actual earlier proof."""
+    import time
+
+    import chess_coach.opening_public_pin_game as pin_game
+    from chess_coach.opening_profile_cli_db import private_database
+    from chess_coach.opening_public_fork_later import bound
+    from chess_coach.opening_public_pin import evaluate
+    from chess_coach.opening_public_pin_coverage import empty
+    from chess_coach.opening_public_pin_policy import policy
+    from chess_coach.opening_public_prevention_observe import ProofLimit
+    from chess_coach.opening_public_proof_source import binding
+    from chess_coach.style_schedule_budget import history_budget
+
+    deadline = time.monotonic() + 20
+    with private_database(root, "learner", database=db_path) as db:
+        with history_budget(deadline=deadline):
+            base, _ = binding(db, root, "learner", game_id, position_id, "b8c6", deadline)
+        full = bound(root, "learner", deadline)
+    selected = policy(base, full[1], "initial")
+    context = {"matched_candidates": 2, "excluded_context": 0, "unknown_context": 0}
+    metadata = [(1, 60, "{}"), (2, 61, "{}")]
+    assert empty(context, metadata, False, selected)["censored"] == 2
+    original = pin_game.pin_proof
+    returned = []
+
+    def interrupted(*args, **kwargs):
+        if returned:
+            raise ProofLimit()
+        value = original(*args, **kwargs)
+        if value:
+            returned.append(value)
+        return value
+
+    with patch.context() as bounded:
+        bounded.setattr(pin_game, "pin_proof", interrupted)
+        start = time.monotonic()
+        result, _, _ = evaluate(full[0], selected, start, start + 20)
+    assert returned and result["played"]["example"]["proof"] == returned[0]
+    assert result["alternative"]["proof_limit"]
+    assert result["alternative"]["status"] == "incomplete"
+    assert result["alternative"]["preparation_incomplete"]
