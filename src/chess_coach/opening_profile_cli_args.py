@@ -26,6 +26,7 @@ def parse():
             "skewer",
             "double_mate",
             "discovery_material",
+            "discovery_opportunity",
         ),
         default="fork",
     )

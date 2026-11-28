@@ -41,6 +41,7 @@ def _reference_options():
             "skewer",
             "double_mate",
             "discovery_material",
+            "discovery_opportunity",
         }
     ):
         abort(400)
