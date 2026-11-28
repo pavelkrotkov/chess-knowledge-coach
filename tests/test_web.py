@@ -512,8 +512,15 @@ def test_private_access_and_csrf(setup, tmp_path, monkeypatch):
         "patterns": [],
         "selection": {"coverage": [], "unavailable": []},
     }
+    # This synthetic view fixture checks compatibility, not source qualification.
+    from chess_coach.course_parts import partition
+
+    layout = partition([[worked]], offered["hash"])
     with monkeypatch.context() as patch:
         patch.setattr("chess_coach.web_tactical_course.offered", lambda *_: (offered, course))
+        patch.setattr(
+            "chess_coach.web_tactical_course.selected", lambda *_: (layout, layout["parts"][0])
+        )
         patch.setattr("chess_coach.web_tactical_course.status", lambda *_: {"configured": False})
         patch.setattr("chess_coach.web_tactical_course.preparation", lambda *_: None)
         patch.setattr("chess_coach.web_tactical_course.preparation_details", lambda *_: None)
