@@ -1499,6 +1499,7 @@ def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch, tmp_pa
         with pytest.raises(ValueError, match="verified source changed"):
             request_purpose(budget_db, decisions[0], LEARNER)
     budget_db.close()
+    _short_mate_index_workflow(tmp_path, monkeypatch)
     _immediate_mate_index_workflow(tmp_path, monkeypatch)
     _opening_fit_route(monkeypatch, tmp_path)
 
@@ -1595,6 +1596,337 @@ def test_report_engine_digest_reuse_and_freshness(tmp_path, monkeypatch):
     configure()
     assert len(hashed) == 9
     db.close()
+
+
+def _short_mate_index_workflow(tmp_path, monkeypatch):
+    """Bind two genuine synthetic short mates through the immutable public index."""
+    import base64
+    import contextlib
+    import hashlib
+    import random
+    import sqlite3
+    import subprocess
+    import time
+
+    import httpx
+    import pytest
+
+    import chess_coach.mastery as mastery
+    import chess_coach.objective_worker as objective_worker
+    import chess_coach.opening_public_short_mate_game as short_game
+    import chess_coach.ops_opening_profile as profile_cli
+    from chess_coach.fact_fingerprint import canonical, digest
+    from chess_coach.objective_short_history import history_hash
+    from chess_coach.opening_classification import classify_game
+    from chess_coach.opening_full_history_build import build as build_history
+    from chess_coach.opening_profile_cli_db import private_database
+    from chess_coach.opening_public_fork_later import bound
+    from chess_coach.opening_public_proof_current import confirm
+    from chess_coach.opening_public_proof_source import binding
+    from chess_coach.opening_public_short_mate import evaluate
+    from chess_coach.opening_public_short_mate_policy import policy
+    from chess_coach.opening_recent_acquire import acquire
+    from chess_coach.opening_recent_index import build as build_recent
+    from chess_coach.opening_recent_source import PREFIX_BYTES
+    from chess_coach.opening_snapshot import SOURCE, VERSION, import_snapshot
+    from chess_coach.style_schedule_budget import history_budget
+
+    lines = (
+        "e4 e5 Nf3 d6 Bc4 Bg4 Nc3 g6 Nxe5 Bxd1 Bxf7+ Ke7 Nd5#",
+        "d4 e5 e4 d6 Bc4 Bg4 Nf3 g6 Nc3 a6 Nxe5 Bxd1 Bxf7+ Ke7 Nd5#",
+    )
+    games = []
+    for index, line_text in enumerate(lines):
+        board = chess.Board()
+        for san in line_text.split():
+            board.push_san(san)
+        assert board.is_checkmate()
+        game = chess.pgn.Game.from_board(board)
+        game.headers.update(
+            Event="Rated Blitz game",
+            White=f"Reference {index}-{1100 + index}",
+            Black=f"Peer {index}-{1100 + index}",
+            Result="1-0",
+            Date="2026.10.01",
+            TimeControl="600+0",
+            WhiteElo="1700",
+            BlackElo="1650",
+        )
+        games.append((game, [move.uci() for move in board.move_stack]))
+
+    root = tmp_path / "public-short-mate"
+    planning = root / ".runtime" / "planning"
+    data = root / ".runtime" / "data"
+    planning.mkdir(parents=True, mode=0o700)
+    data.mkdir(mode=0o700)
+    db_path = data / "synthetic.sqlite"
+    with monkeypatch.context() as patch:
+        patch.delenv("CHESS_SCHEMA_COMPAT", raising=False)
+        db = Database(db_path)
+        db.initialize()
+        import_snapshot(db)
+        owned = games[0][0]
+        owned.headers.update(
+            White="learner",
+            Black="synthetic peer",
+            UTCDate="2026.01.02",
+            UTCTime="12:06:00",
+            TimeControl="600+0",
+        )
+        ingest_pgn(db, str(owned))
+        game_id = db.connection.execute("SELECT max(id) FROM games").fetchone()[0]
+        position_id = db.connection.execute(
+            "SELECT id FROM positions WHERE game_id=? AND ply=1", (game_id,)
+        ).fetchone()[0]
+        classify_game(db, game_id, version=VERSION, source_url=SOURCE)
+        db.close()
+        before = hashlib.sha256(db_path.read_bytes()).hexdigest()
+        owned.headers.update(White="Reference 0-1100", Black="Peer 0-1100")
+        prior = [
+            "e2e4",
+            "e7e5",
+            "f1c4",
+            "b8c6",
+            "d2d3",
+            "g8f6",
+            "b1c3",
+            "f8c5",
+            "g1f3",
+            "d7d6",
+            "h2h3",
+            "h7h6",
+            "a2a3",
+            "a7a6",
+            "b2b3",
+            "b7b6",
+            "c1b2",
+            "c8b7",
+            "f3h4",
+            "f6h7",
+            "a3a4",
+            "a6a5",
+            "b3b4",
+            "b6b5",
+            "g2g3",
+            "a8a7",
+            "h1g1",
+            "h8g8",
+            "d1h5",
+            "c6d4",
+            "h5f7",
+        ]
+        cycle = ["g1f3", "g8f6", "f3g1", "f6g8"]
+        repeated_moves = prior[:2] + cycle + prior[2:4] + cycle + prior[4:]
+        repeated_board = chess.Board()
+        for uci in repeated_moves:
+            repeated_board.push_uci(uci)
+        assert repeated_board.is_checkmate()
+        repeated = chess.pgn.Game.from_board(repeated_board)
+        repeated.headers.update(
+            Event="Rated Blitz game",
+            White="Reference 2-1102",
+            Black="Peer 2-1102",
+            Result="1-0",
+            Date="2026.10.01",
+            TimeControl="600+0",
+            WhiteElo="1700",
+            BlackElo="1650",
+        )
+        text = "\n\n".join([*(str(game) for game, _ in games), str(repeated)])
+        noise = base64.b64encode(random.Random(1060).randbytes(1_400_000)).decode()
+        compressed = subprocess.run(
+            ["/usr/bin/zstd", "-q", "-c"],
+            input=(text + "\n\n{" + noise).encode(),
+            stdout=subprocess.PIPE,
+            check=True,
+        ).stdout
+        assert len(compressed) > PREFIX_BYTES
+        prefix = compressed[:PREFIX_BYTES]
+
+        def response(request):
+            return httpx.Response(
+                206,
+                headers={
+                    "Content-Range": f"bytes 0-{PREFIX_BYTES - 1}/{PREFIX_BYTES * 2}",
+                    "Content-Length": str(PREFIX_BYTES),
+                    "ETag": '"synthetic-short-mate"',
+                },
+                content=prefix,
+                request=request,
+            )
+
+        with httpx.Client(transport=httpx.MockTransport(response)) as client:
+            acquire(root, "learner", client=client)
+        assert build_recent(root, "learner")["accepted"] == 3
+        assert build_history(root, "learner")["accepted"] == 3
+        start = time.monotonic()
+        deadline = start + 30
+        with private_database(root, "learner", database=db_path) as read_db:
+            version = read_db.connection.execute("PRAGMA data_version").fetchone()[0]
+            with history_budget(deadline=deadline):
+                base, index = binding(
+                    read_db, root, "learner", game_id, position_id, "d2d4", deadline
+                )
+            full = bound(root, "learner", deadline)
+            assert base["reference"]["license"] == "CC0-1.0"
+            assert base["reference"]["source_sha256"] == hashlib.sha256(prefix).hexdigest()
+            assert full[1] == hashlib.sha256(full[0][0].read_bytes()).hexdigest()
+            selected = policy(base, full[1], "initial")
+            result, _, _ = evaluate(full[0], selected, start, start + 20)
+            confirm(
+                read_db,
+                root,
+                "learner",
+                game_id,
+                position_id,
+                "d2d4",
+                deadline,
+                base,
+                index,
+                full,
+                version,
+            )
+        for label, (_, moves) in zip(("played", "alternative"), games, strict=True):
+            branch = result[label]
+            expected = 2 if label == "played" else 1
+            assert branch["eligible"] == branch["selected"] == expected
+            assert branch["supported"] == branch["analyzed"] == 1
+            assert branch["unsupported"] == branch["censored"] == expected - 1
+            assert branch["preparation_incomplete"] >= expected - 1
+            example = branch["example"]
+            board = chess.Board()
+            for uci in moves[: example["ply"] - 1]:
+                board.push_uci(uci)
+            assert example["side_to_move"] == ("white" if board.turn else "black")
+            assert example["history_hash"] == history_hash(board)
+            assert example["full_history_sha256"] == digest(canonical(moves))
+            roots = example["alternatives"]
+            assert {item["move"]["uci"] for item in roots} == {
+                move.uci() for move in board.legal_moves
+            }
+            proved = [
+                item for item in roots if item["status"] == "proved" and item["distance_plies"] == 3
+            ]
+            assert [item["move"]["uci"] for item in proved] == ["c4f7"]
+            for item in proved:
+                board.push_uci(item["move"]["uci"])
+                assert {line["defense"]["uci"] for line in item["defenses"]} == {
+                    move.uci() for move in board.legal_moves
+                }
+                for line in item["defenses"]:
+                    board.push_uci(line["defense"]["uci"])
+                    board.push_uci(line["mate"]["uci"])
+                    assert board.is_checkmate()
+                    board.pop()
+                    board.pop()
+                board.pop()
+            with sqlite3.connect(full[0][0].as_uri() + "?mode=ro&immutable=1", uri=True) as indexed:
+                stored = indexed.execute(
+                    "SELECT identity,moves FROM histories WHERE game_id=?", (example["record"],)
+                ).fetchone()
+            assert stored[0] == example["source_identity"]
+            assert json.loads(stored[1]) == moves
+            assert example["record_hash"]
+        assert hashlib.sha256(db_path.read_bytes()).hexdigest() == before
+        continuation = policy(base, full[1], "continuation")
+        later_start = time.monotonic()
+        later, _, _ = evaluate(full[0], continuation, later_start, later_start + 20)
+        for label, branch in later.items():
+            assert branch["status"] == "incomplete"
+            assert branch["ended_before_window"] == 1
+            assert branch["unsupported"] == int(label == "played")
+            assert branch["preparation_incomplete"] == 1 + int(label == "played")
+            assert branch["censored"] == 0
+            assert branch["example"] is None
+
+        patch.setenv("CHESS_DB", str(db_path))
+        patch.setenv("CHESS_SUBJECT", "learner")
+        args = [
+            "opening-profile",
+            "--project-root",
+            str(root),
+            "--game-id",
+            str(game_id),
+            "--position-id",
+            str(position_id),
+            "--alternative",
+            "d2d4",
+            "--reference",
+            "recent",
+        ]
+        for window in ("continuation", "initial"):
+            patch.setattr(
+                sys,
+                "argv",
+                [*args, "--prepare-public", "--proof-kind", "short_mate", "--fork-window", window],
+            )
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                profile_cli.main()
+            prepared = json.loads(output.getvalue())
+            assert prepared["version"] == "public-opening-short-mate-v1"
+            assert prepared["short_mate_policy"]["window"] == window
+            for label, branch in prepared["branches"].items():
+                if window == "initial":
+                    assert branch["supported"] == 1
+                    assert branch["unsupported"] == branch["censored"] == int(label == "played")
+                else:
+                    assert branch["ended_before_window"] == 1 and branch["example"] is None
+        patch.setattr(
+            sys,
+            "argv",
+            [*args, "--prepare-public-forks", "--proof-kind", "short_mate"],
+        )
+        with pytest.raises(SystemExit, match="Opening profile unavailable"):
+            profile_cli.main()
+
+        def forbidden(*_args, **_kwargs):
+            pytest.fail("proof, engine, provider, or learning on private read")
+
+        with patch.context() as read:
+            read.setattr(short_game, "proof", forbidden)
+            read.setattr(chess.engine.SimpleEngine, "popen_uci", forbidden)
+            read.setattr(httpx.Client, "send", forbidden)
+            read.setattr(mastery, "update_mastery", forbidden)
+            read.setattr(objective_worker, "process", forbidden)
+            read.setattr(sys, "argv", [*args, "--proof-kind", "short_mate"])
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                profile_cli.main()
+            shown = json.loads(output.getvalue())["public_preparation"]
+            assert shown["short_mate_status"] == "prepared"
+            assert shown["branches"]["played"]["supported"] == 1
+            assert shown["branches"]["alternative"]["supported"] == 1
+            app = create_app(
+                db_path=db_path,
+                project_root=root,
+                subject="learner",
+                actor="fixture",
+                corpus="test",
+                login="fixture",
+                origin="https://coach.invalid",
+            )
+            route = f"/repertoire/games/{game_id}/openings/{position_id}/profile"
+            client = app.test_client()
+            assert client.get(route, base_url="https://coach.invalid").status_code == 403
+            page = client.get(
+                route,
+                query_string={
+                    "reference": "recent",
+                    "alternative": "d2d4",
+                    "proof_kind": "short_mate",
+                },
+                base_url="https://coach.invalid",
+                headers={"Tailscale-User-Login": "fixture"},
+            )
+            assert page.status_code == 200
+            assert b"Prepared public short forced mates" in page.data
+            assert page.data.count(b"Public short-mate example") == 2
+            assert b"White is to move" in page.data
+            assert b"Defender reply" in page.data and b"mating answer" in page.data
+            assert b"Bxf7+" in page.data and b"Nd5#" in page.data
+        assert hashlib.sha256(db_path.read_bytes()).hexdigest() == before
+        print("short_mate_index_gate=passed")
 
 
 def _immediate_mate_index_workflow(tmp_path, monkeypatch):

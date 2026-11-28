@@ -1,10 +1,13 @@
 """Normalize and validate the complete public-preparation request grammar."""
 
 
-def normalize(forks, prevent, protection, capture_pv, defense_pv, mate, window):
+def normalize(
+    forks, prevent, protection, capture_pv, defense_pv, mate, window, *, short_mate=False
+):
     if mate and any((protection, capture_pv, defense_pv)):
         raise ValueError("invalid mate selection")
     choices = (
+        (short_mate, "short_mate"),
         (defense_pv, "defense_pv"),
         (capture_pv, "capture_pv"),
         (protection, "protection"),
@@ -20,6 +23,15 @@ def normalize(forks, prevent, protection, capture_pv, defense_pv, mate, window):
         "protection": (forks, prevent, window != "initial"),
         "prevention": (forks, mate, window not in {"initial", "continuation"}),
         "mate": (forks, window not in {"initial", "continuation"}),
+        "short_mate": (
+            forks,
+            prevent,
+            protection,
+            capture_pv,
+            defense_pv,
+            mate,
+            window not in {"initial", "continuation"},
+        ),
     }
     messages = {
         "capture": "fork preparation required",
@@ -28,6 +40,7 @@ def normalize(forks, prevent, protection, capture_pv, defense_pv, mate, window):
         "protection": "invalid protection selection",
         "prevention": "invalid prevention selection",
         "mate": "invalid mate selection",
+        "short_mate": "invalid short-mate selection",
     }
     if any(invalid.get(kind, ())):
         raise ValueError(messages[kind])

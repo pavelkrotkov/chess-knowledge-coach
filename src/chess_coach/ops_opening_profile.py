@@ -29,6 +29,7 @@ def main():
                 capture_pv=args.prepare_public == "capture_pv",
                 defense_pv=args.prepare_public == "defense_pv",
                 mate=args.proof_kind == "mate",
+                short_mate=args.proof_kind == "short_mate",
             )
         elif args.recommendation_course:
             from .opening_recommendation_cli import report as recommendation

@@ -35,8 +35,11 @@ def prepare(
     capture_pv=False,
     defense_pv=False,
     mate=False,
+    short_mate=False,
 ):
-    kind = normalize(forks, prevent, protection, capture_pv, defense_pv, mate, fork_window)
+    kind = normalize(
+        forks, prevent, protection, capture_pv, defense_pv, mate, fork_window, short_mate=short_mate
+    )
     pv_mode = kind in {"capture_pv", "defense_pv"}
     start = time.monotonic()
     deadline = start + SECONDS

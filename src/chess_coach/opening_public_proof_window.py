@@ -2,17 +2,23 @@
 
 from .opening_public_fork_later import bound as full_bound
 from .opening_public_fork_later import branches as later_branches
+from .opening_public_mate import evaluate as mate_evaluate
 from .opening_public_mate_policy import policy as mate_policy
+from .opening_public_prevention import evaluate as prevention_evaluate
 from .opening_public_prevention_policy import prevention
 from .opening_public_proof_prepare import branches
 from .opening_public_proof_versions import combined, continuation
 from .opening_public_protection_policy import protection
+from .opening_public_short_mate import evaluate as short_mate_evaluate
+from .opening_public_short_mate_policy import policy as short_mate_policy
 
 
 def choose(base, full, kind, window):
     if kind == "fork":
         return continuation(base, full[1])
-    return {"prevention": prevention, "mate": mate_policy}[kind](base, full[1], window)
+    return {"prevention": prevention, "mate": mate_policy, "short_mate": short_mate_policy}[kind](
+        base, full[1], window
+    )
 
 
 def select(base, root, subject, deadline, kind, window):
@@ -27,14 +33,13 @@ def select(base, root, subject, deadline, kind, window):
 
 
 def evaluate(index, base, identity, full, start, deadline):
-    if "mate" in identity["policy"]:
-        from .opening_public_mate import evaluate as mate_evaluate
-
-        return mate_evaluate(full[0], identity, start, deadline)
-    if "prevention" in identity["policy"]:
-        from .opening_public_prevention import evaluate as prevention_evaluate
-
-        return prevention_evaluate(full[0], identity, start, deadline)
+    for kind, handler in (
+        ("short_mate", short_mate_evaluate),
+        ("mate", mate_evaluate),
+        ("prevention", prevention_evaluate),
+    ):
+        if kind in identity["policy"]:
+            return handler(full[0], identity, start, deadline)
     result, sample = branches(index, base if full else identity, start, deadline)
     coverage = None
     if full:

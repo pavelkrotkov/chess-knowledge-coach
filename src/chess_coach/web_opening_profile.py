@@ -29,7 +29,15 @@ def _reference_options():
         reference not in {"broadcast", "recent"}
         or fork_window not in {"initial", "continuation"}
         or proof_kind
-        not in {"fork", "prevention", "protection", "capture_pv", "defense_pv", "mate"}
+        not in {
+            "fork",
+            "prevention",
+            "protection",
+            "capture_pv",
+            "defense_pv",
+            "mate",
+            "short_mate",
+        }
     ):
         abort(400)
     return reference, fork_window, proof_kind
