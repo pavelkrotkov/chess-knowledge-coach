@@ -49,9 +49,14 @@ def lookup(
         check(deadline)
         if value is None:
             return None
-        if proof_kind in {"mate", "short_mate", "back_rank", "skewer", "double_mate"} and (
-            full is None or proof_kind not in value["binding"]["policy"]
-        ):
+        if proof_kind in {
+            "mate",
+            "short_mate",
+            "back_rank",
+            "skewer",
+            "double_mate",
+            "discovery_material",
+        } and (full is None or proof_kind not in value["binding"]["policy"]):
             return None
         pv_policies = {"defense_pv": defense_policy, "capture_pv": capture_pv_policy}
         if proof_kind in pv_policies:

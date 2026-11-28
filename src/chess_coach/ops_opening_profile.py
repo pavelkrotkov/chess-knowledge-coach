@@ -33,6 +33,7 @@ def main():
                 back_rank=args.proof_kind == "back_rank",
                 skewer=args.proof_kind == "skewer",
                 double_mate=args.proof_kind == "double_mate",
+                discovery_material=args.proof_kind == "discovery_material",
             )
         elif args.recommendation_course:
             from .opening_recommendation_cli import report as recommendation

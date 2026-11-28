@@ -21,6 +21,7 @@ def view(payload, legacy=None):
         ("back_rank", "back_rank"),
         ("skewer", "skewer"),
         ("double_mate", "double_mate"),
+        ("discovery_material", "discovery_material"),
     ):
         if key in policy:
             result[f"{label}_policy"] = {
@@ -46,6 +47,7 @@ def requested(result, window, kind):
         "back_rank",
         "skewer",
         "double_mate",
+        "discovery_material",
     }:
         result[f"{kind}_status"] = "prepared" if f"{kind}_policy" in result else "unavailable"
     return result

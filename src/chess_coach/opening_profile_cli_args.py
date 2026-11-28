@@ -25,6 +25,7 @@ def parse():
             "back_rank",
             "skewer",
             "double_mate",
+            "discovery_material",
         ),
         default="fork",
     )

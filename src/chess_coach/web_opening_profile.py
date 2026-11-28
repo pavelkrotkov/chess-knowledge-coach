@@ -40,6 +40,7 @@ def _reference_options():
             "back_rank",
             "skewer",
             "double_mate",
+            "discovery_material",
         }
     ):
         abort(400)
