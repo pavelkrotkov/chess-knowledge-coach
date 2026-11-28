@@ -7,6 +7,7 @@ from .opening_public_discovery_material_policy import policy as discovery_materi
 from .opening_public_double_mate_policy import policy as double_mate_policy
 from .opening_public_fork_later import bound as full_bound
 from .opening_public_mate_policy import policy as mate_policy
+from .opening_public_pin_policy import policy as pin_policy
 from .opening_public_prevention_policy import prevention
 from .opening_public_proof_evaluate import evaluate as evaluate
 from .opening_public_proof_versions import combined, continuation
@@ -21,6 +22,7 @@ def choose(base, full, kind, window):
     return {
         "prevention": prevention,
         "mate": mate_policy,
+        "pin": pin_policy,
         "short_mate": short_mate_policy,
         "back_rank": back_rank_policy,
         "created_backrank": created_backrank_policy,

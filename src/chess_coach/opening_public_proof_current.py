@@ -12,6 +12,7 @@ def selected(directory, identity, root, subject, deadline, window, *, kind="fork
         "fork",
         "prevention",
         "mate",
+        "pin",
         "short_mate",
         "back_rank",
         "created_backrank",

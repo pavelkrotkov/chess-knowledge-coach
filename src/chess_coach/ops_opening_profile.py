@@ -36,6 +36,7 @@ def main():
                 discovery_material=args.proof_kind == "discovery_material",
                 discovery_opportunity=args.proof_kind == "discovery_opportunity",
                 created_backrank=args.proof_kind == "created_backrank",
+                pin=args.proof_kind == "pin",
             )
         elif args.recommendation_course:
             from .opening_recommendation_cli import report as recommendation

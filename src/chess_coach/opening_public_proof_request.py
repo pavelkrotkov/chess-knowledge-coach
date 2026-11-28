@@ -17,10 +17,12 @@ def normalize(
     discovery_material=False,
     discovery_opportunity=False,
     created_backrank=False,
+    pin=False,
 ):
     if mate and any((protection, capture_pv, defense_pv)):
         raise ValueError("invalid mate selection")
     choices = (
+        (pin, "pin"),
         (created_backrank, "created_backrank"),
         (discovery_opportunity, "discovery_opportunity"),
         (discovery_material, "discovery_material"),
@@ -37,6 +39,22 @@ def normalize(
     )
     kind = next((name for enabled, name in choices if enabled), "capture")
     invalid = {
+        "pin": (
+            forks,
+            prevent,
+            protection,
+            capture_pv,
+            defense_pv,
+            mate,
+            short_mate,
+            back_rank,
+            skewer,
+            double_mate,
+            discovery_material,
+            discovery_opportunity,
+            created_backrank,
+            window not in {"initial", "continuation"},
+        ),
         "created_backrank": (
             forks,
             prevent,
@@ -129,6 +147,7 @@ def normalize(
         ),
     }
     messages = {
+        "pin": "invalid pin selection",
         "created_backrank": "invalid created back-rank defense selection",
         "discovery_opportunity": "invalid discovery opportunity selection",
         "discovery_material": "invalid recorded discovery material selection",

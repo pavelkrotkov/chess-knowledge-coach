@@ -6,6 +6,7 @@ from .opening_public_discovery_material import branch as discovery_material_bran
 from .opening_public_double_mate import evaluate as double_mate_evaluate
 from .opening_public_fork_later import branches as later_branches
 from .opening_public_mate import evaluate as mate_evaluate
+from .opening_public_pin import evaluate as pin_evaluate
 from .opening_public_prevention import evaluate as prevention_evaluate
 from .opening_public_proof_prepare import branches
 from .opening_public_short_mate import evaluate as short_mate_evaluate
@@ -26,6 +27,7 @@ def evaluate(index, base, identity, full, start, deadline):
         ("created_backrank", created_backrank_evaluate),
         ("short_mate", short_mate_evaluate),
         ("mate", mate_evaluate),
+        ("pin", pin_evaluate),
         ("prevention", prevention_evaluate),
     ):
         if kind in identity["policy"]:
