@@ -10,13 +10,18 @@ from .tactical_study_exposure_prepare import begin
 VERSION = "tactical-study-exposure-v1"
 
 
-def bind(state, learner):
+def bind(state, learner, *, multipart=None):
     owner = learner_key(learner)
     existing = state.get("tactical_delivery")
     if existing is None:
         state["tactical_delivery"] = {"version": VERSION, "owner": owner, "chapters": {}}
     elif existing.get("version") != VERSION or existing.get("owner") != owner:
         raise StudyError("tactical exposure owner unavailable")
+    delivery = state["tactical_delivery"]
+    if existing is None and multipart is not None:
+        delivery["multipart"] = multipart
+    elif delivery.get("multipart") != multipart:
+        raise StudyError("tactical exposure part identity differs")
 
 
 def clear(state, index):

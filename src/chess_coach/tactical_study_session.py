@@ -5,15 +5,18 @@ import time
 from contextlib import nullcontext
 from functools import partial
 
+from .course_parts import partition
 from .course_paths import paths
 from .pipeline_network_deadline import network_deadline
 from .study_publisher import publish
 from .study_remote import StudyError
 from .study_session import _publish, locked
+from .tactical_export_groups import course_groups
 from .tactical_export_input import load
 from .tactical_study_current import revalidate
 from .tactical_study_destination import prepare
 from .tactical_study_intents import intent
+from .tactical_study_part import select
 from .tactical_study_path import planning as private_planning
 
 
@@ -23,12 +26,14 @@ def prepare_locked(root, export_path, expected_hash):
     with locked(database, planning):
         export = load(root, export_path)
         with revalidate(database, export, expected_hash, project_root=root) as check:
-            destination = intent(planning, expected_hash)
-            course = {"course": export["export"], "course_sha256": expected_hash}
+            if partition(course_groups(export["export"]), expected_hash)["part_count"] != 1:
+                raise ValueError("choose a course part")
+            course = select(export["export"], expected_hash, None)
+            destination = intent(planning, course["course_sha256"])
             return _publish(database, destination, course, action=partial(prepare, check=check))
 
 
-def publish_locked(root, export_path, expected_hash, *, queued=False):
+def publish_locked(root, export_path, expected_hash, *, queued=False, part=None):
     private_planning(root, os.environ["CHESS_SUBJECT"])
     database, planning, _, _ = paths(root, export_path, export_path, output=False)
     with locked(database, planning, sync_wait=not queued):
@@ -37,8 +42,13 @@ def publish_locked(root, export_path, expected_hash, *, queued=False):
             database, export, expected_hash, with_budget=queued, project_root=root
         ) as source:
             check = source.check if queued else source
-            destination = intent(planning, expected_hash)
-            course = {"course": export["export"], "course_sha256": expected_hash}
+            if (
+                part is None
+                and partition(course_groups(export["export"]), expected_hash)["part_count"] != 1
+            ):
+                raise ValueError("choose a course part")
+            course = select(export["export"], expected_hash, part)
+            destination = intent(planning, course["course_sha256"])
             timer = (
                 network_deadline(max(0.001, source.expires - time.monotonic()))
                 if queued
