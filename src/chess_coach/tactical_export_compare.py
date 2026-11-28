@@ -8,11 +8,11 @@ from .fact_fingerprint import canonical
 from .study_pgn_verify import matches
 
 
-def compare(saved, expected, *, gamebook=False, roles=False):
+def compare(saved, expected, *, gamebook=False, roles=False, kind=None):
     if expected is None:
         raise ValueError("related source unavailable")
     if roles:
-        expected = {**expected, "role": "practice"}
+        expected = _practice(expected, kind)
     modes = {"conceal", "gamebook"} if gamebook else {"conceal"}
     if canonical(saved) != canonical(expected) or saved["mode"] not in modes:
         raise ValueError("course chapter differs")
@@ -23,3 +23,11 @@ def compare(saved, expected, *, gamebook=False, roles=False):
     game.headers["Orientation"] = saved["orientation"]
     if not matches({**expected, "name": saved["title"]}, str(game)):
         raise ValueError("course chapter replay differs")
+
+
+def _practice(chapter, kind):
+    if kind == "protection":
+        from .tactical_course_protection_roles import rehearsal
+
+        return rehearsal(chapter)
+    return {**chapter, "role": "practice"}

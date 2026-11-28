@@ -3,6 +3,7 @@
 from .course_guidance import challenge
 from .tactical_course_budget import PreviewUnavailable
 from .tactical_course_capture_roles import compose
+from .tactical_course_protection import identity as protection_identity
 from .tactical_course_resolve import own, related
 
 MAX_PATTERNS = 3
@@ -35,35 +36,56 @@ def assemble(
     named=False,
     roles=False,
     fork=False,
+    protection=False,
 ):
     patterns, chapters, unavailable = [], [], []
     for index, group in enumerate(groups):
         if len(patterns) >= MAX_PATTERNS:
             return patterns, chapters, unavailable, len(groups) - index
         pair = {"skill": group["lesson"]["skill"], "operation": group["lesson"]["operation"]}
-        result = own(db, subject, group, budget)
+        options = {"identity_for": protection_identity} if protection else {}
+        result = own(db, subject, group, budget, **options)
         if not isinstance(result, tuple):
             unavailable.append({**pair, "reason": result or "owned source unavailable"})
             continue
         choice, own_chapter, bindings = result
         patterns.append(_pattern(group, choice, bindings))
-        if fork and choice["kind"] == "fork":
-            from .tactical_course_fork_practice import related as fork_related
-            from .tactical_course_fork_roles import compose as fork_compose
-
-            item, reason = fork_related(db, subject, corpus, choice, budget)
-            # Saved v11 courses keep two roles; newer versions add the explanation.
-            chapters_for_pattern = fork_compose(own_chapter, item, budget, roles)
-        else:
-            item, reason = related(
-                db, subject, corpus, choice, budget, thematic=thematic, named=named
-            )
-            chapters_for_pattern = compose(choice, own_chapter, item, roles)
+        item, reason, chapters_for_pattern = _chapters(
+            db,
+            subject,
+            corpus,
+            choice,
+            own_chapter,
+            budget,
+            thematic=thematic,
+            named=named,
+            roles=roles,
+            fork=fork,
+            protection=protection,
+        )
         if item is None:
             unavailable.append({**pair, "reason": reason})
         chapters.extend(chapters_for_pattern)
     _require_patterns(patterns, allow_empty)
     return patterns, chapters, unavailable, 0
+
+
+def _chapters(
+    db, subject, corpus, choice, owned, budget, *, thematic, named, roles, fork, protection
+):
+    if fork and choice["kind"] == "fork":
+        from .tactical_course_fork_practice import related as fork_related
+        from .tactical_course_fork_roles import compose as fork_compose
+
+        item, reason = fork_related(db, subject, corpus, choice, budget)
+        # Saved v11 courses keep two roles; newer versions add the explanation.
+        return item, reason, fork_compose(owned, item, budget, roles)
+    item, reason = related(db, subject, corpus, choice, budget, thematic=thematic, named=named)
+    if protection:
+        from .tactical_course_protection_roles import compose as protection_compose
+
+        return item, reason, protection_compose(owned, item)
+    return item, reason, compose(choice, owned, item, roles)
 
 
 def _require_patterns(patterns, allow_empty):

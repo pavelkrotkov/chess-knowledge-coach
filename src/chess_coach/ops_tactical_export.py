@@ -12,6 +12,7 @@ from .schema_compat import readonly
 from .tactical_course import (
     FORK_VERSIONS,
     NAMED_VERSION,
+    SELECTED_PROTECTION_ROLES_VERSION,
     SELECTED_ROLES_VERSION,
     SELECTED_VERSION,
     THEMATIC_SELECTED_VERSION,
@@ -51,6 +52,7 @@ def prepare(root, preview, expected_hash, output, *, offer=False):
             NAMED_VERSION,
             *FORK_VERSIONS,
             SELECTED_ROLES_VERSION,
+            SELECTED_PROTECTION_ROLES_VERSION,
         }:
             budget.slice_seconds = SELECTED_SECONDS
         result = build(

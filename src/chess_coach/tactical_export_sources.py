@@ -26,11 +26,16 @@ def lesson(db, subject, pattern, budget, *, pairs=PAIRS):
     }
 
 
-def choice(db, subject, lesson, budget):
+def choice(db, subject, lesson, budget, *, protection=False):
+    options = {}
+    if protection:
+        from .tactical_course_protection import identity
+
+        options["identity_for"] = identity
     for item in lesson["examples"]:
         try:
             with budget.scope(snapshot=True):
-                result = resolve_example(db, subject, lesson, item)
+                result = resolve_example(db, subject, lesson, item, **options)
         except (ValueError, KeyError, TypeError, IndexError):
             continue
         if result:
@@ -51,7 +56,9 @@ def verify_owned(db, subject, pattern, lesson, chapters, budget, selected, roles
         )
     with budget.scope(snapshot=False):
         if roles:
-            if pattern["kind"] == "fork":
+            if pattern["kind"] == "protection":
+                from .tactical_course_protection_roles import explanation
+            elif pattern["kind"] == "fork":
                 from .tactical_course_fork_roles import explanation
             else:
                 from .tactical_course_capture_roles import explanation
