@@ -8,6 +8,14 @@ class Budget:
     limit: int = 6000
     nodes: int = 0
 
+    @classmethod
+    def fresh(cls, limit, existing=None):
+        if existing is None:
+            return cls(limit)
+        if not isinstance(existing, cls) or existing.limit != limit or existing.nodes:
+            raise ValueError("invalid proof budget")
+        return existing
+
     def visit(self):
         if self.nodes >= self.limit:
             return False
