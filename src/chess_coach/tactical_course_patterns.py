@@ -37,6 +37,7 @@ def assemble(
     roles=False,
     fork=False,
     protection=False,
+    mate=False,
 ):
     patterns, chapters, unavailable = [], [], []
     for index, group in enumerate(groups):
@@ -63,6 +64,7 @@ def assemble(
             roles=roles,
             fork=fork,
             protection=protection_group,
+            mate=mate,
         )
         if item is None:
             unavailable.append({**pair, "reason": reason})
@@ -72,7 +74,7 @@ def assemble(
 
 
 def _chapters(
-    db, subject, corpus, choice, owned, budget, *, thematic, named, roles, fork, protection
+    db, subject, corpus, choice, owned, budget, *, thematic, named, roles, fork, protection, mate
 ):
     if fork and choice["kind"] == "fork":
         from .tactical_course_fork_practice import related as fork_related
@@ -82,6 +84,10 @@ def _chapters(
         # Saved v11 courses keep two roles; newer versions add the explanation.
         return item, reason, fork_compose(owned, item, budget, roles)
     item, reason = related(db, subject, corpus, choice, budget, thematic=thematic, named=named)
+    if mate and choice["kind"] in {"mate", "short_mate"}:
+        from .tactical_course_mate_roles import compose as mate_compose
+
+        return item, reason, mate_compose(owned, item)
     if protection:
         from .tactical_course_protection_roles import compose as protection_compose
 

@@ -10,7 +10,7 @@ from .opening_queue_location import scope
 from .schema_compat import readonly
 from .tactical_course_budget import Budget
 from .tactical_course_choice import SLICE_SECONDS as SELECTED_SECONDS
-from .tactical_course_contract import MIXED_SELECTED_VERSION
+from .tactical_course_contract import MIXED_SELECTED_VERSION, SELECTED_MATE_VERSION
 from .tactical_export_chapters import verify
 from .tactical_export_contract import validate
 from .tactical_export_groups import groups
@@ -29,7 +29,11 @@ def current(root, database, subject, corpus, envelope, version):
         connection.execute("PRAGMA query_only=ON")
         db = SimpleNamespace(connection=connection, path=path, capture_root=None)
         db.capture_root = scope(db, root)
-        slice_seconds = SELECTED_SECONDS if body["kind"] == MIXED_SELECTED_VERSION else None
+        slice_seconds = (
+            SELECTED_SECONDS
+            if body["kind"] in {MIXED_SELECTED_VERSION, SELECTED_MATE_VERSION}
+            else None
+        )
         _current_groups(db, subject, corpus, body, Budget(db, slice_seconds=slice_seconds), version)
 
 

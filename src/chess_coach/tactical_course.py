@@ -15,6 +15,8 @@ from .tactical_course_contract import (
     CONTRACTS,
     DEFAULT_FORK_POLICY,
     DEFAULT_FORK_VERSION,
+    DEFAULT_MATE_POLICY,
+    DEFAULT_MATE_VERSION,
     DEFAULT_PROTECTION_ROLES_POLICY,
     DEFAULT_PROTECTION_ROLES_VERSION,
     DEFAULT_ROLES_POLICY,
@@ -23,6 +25,7 @@ from .tactical_course_contract import (
     FORK_VERSIONS,
     LEGACY_POLICY,
     LEGACY_VERSION,
+    MATE_ROLE_VERSIONS,
     MIXED_SELECTED_POLICY,
     MIXED_SELECTED_VERSION,
     NAMED_POLICY,
@@ -38,6 +41,8 @@ from .tactical_course_contract import (
     SELECTED_FORK_ROLES_POLICY,
     SELECTED_FORK_ROLES_VERSION,
     SELECTED_FORK_VERSION,
+    SELECTED_MATE_POLICY,
+    SELECTED_MATE_VERSION,
     SELECTED_POLICY,
     SELECTED_PROTECTION_ROLES_POLICY,
     SELECTED_PROTECTION_ROLES_VERSION,
@@ -62,6 +67,8 @@ __all__ = [
     "CURRENT_PAIRS",
     "DEFAULT_FORK_POLICY",
     "DEFAULT_FORK_VERSION",
+    "DEFAULT_MATE_POLICY",
+    "DEFAULT_MATE_VERSION",
     "DEFAULT_PROTECTION_ROLES_POLICY",
     "DEFAULT_PROTECTION_ROLES_VERSION",
     "DEFAULT_ROLES_POLICY",
@@ -70,6 +77,7 @@ __all__ = [
     "FORK_VERSIONS",
     "LEGACY_POLICY",
     "LEGACY_VERSION",
+    "MATE_ROLE_VERSIONS",
     "MAX_PATTERNS",
     "MIXED_SELECTED_POLICY",
     "MIXED_SELECTED_VERSION",
@@ -89,6 +97,8 @@ __all__ = [
     "SELECTED_FORK_ROLES_POLICY",
     "SELECTED_FORK_ROLES_VERSION",
     "SELECTED_FORK_VERSION",
+    "SELECTED_MATE_POLICY",
+    "SELECTED_MATE_VERSION",
     "SELECTED_POLICY",
     "SELECTED_PROTECTION_ROLES_POLICY",
     "SELECTED_PROTECTION_ROLES_VERSION",
@@ -120,7 +130,7 @@ __all__ = [
 
 def _policy(selected):
     if selected is None:
-        version = DEFAULT_PROTECTION_ROLES_VERSION
+        version = DEFAULT_MATE_VERSION
         return version, *CONTRACTS[version], None
     chosen = pairs(selected)
     versions = {
@@ -130,6 +140,8 @@ def _policy(selected):
     }
     default = MIXED_SELECTED_VERSION if len(chosen) > 1 else THEMATIC_SELECTED_VERSION
     version = versions.get(tuple(chosen), default)
+    if any(skill in {"mate_in_one", "calculation"} for skill, _ in chosen):
+        version = SELECTED_MATE_VERSION
     return version, CONTRACTS[version][0], chosen, SELECTED_SECONDS
 
 
@@ -158,6 +170,7 @@ def build(db, subject, corpus, *, budget=None, selected=None):
             DEFAULT_FORK_VERSION,
             DEFAULT_PROTECTION_ROLES_VERSION,
             MIXED_SELECTED_VERSION,
+            *MATE_ROLE_VERSIONS,
         },
         roles=version in ROLE_COURSE_VERSIONS,
         fork=version in QUALIFIED_FORK_VERSIONS,
@@ -166,7 +179,9 @@ def build(db, subject, corpus, *, budget=None, selected=None):
             SELECTED_PROTECTION_ROLES_VERSION,
             DEFAULT_PROTECTION_ROLES_VERSION,
             MIXED_SELECTED_VERSION,
+            *MATE_ROLE_VERSIONS,
         },
+        mate=version in MATE_ROLE_VERSIONS,
     )
     budget.check()
     _check_empty(patterns, selected, coverage, unavailable, chosen)
