@@ -15,13 +15,13 @@ def _retain_candidates(result, candidates, include):
         result["pre_move_candidates"] = None if candidates is None else sorted(candidates)
 
 
-def observe(board, played, *, node_limit=MAX_NODES, include_candidates=False):
+def observe(board, played, *, node_limit=MAX_NODES, include_candidates=False, budget=None):
     if not 1 <= node_limit <= MAX_NODES:
         raise ValueError("invalid back-rank proof budget")
     if played not in board.legal_moves or board.outcome(claim_draw=False):
         raise ValueError("decision unavailable")
     alternatives = sorted(board.legal_moves, key=lambda move: move.uci())
-    budget = Budget(node_limit)
+    budget = Budget.fresh(node_limit, budget)
     result = {
         "version": VERSION,
         "node_limit": node_limit,

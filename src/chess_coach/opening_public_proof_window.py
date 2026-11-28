@@ -1,6 +1,7 @@
 """Choose one fork window and its independent immutable source binding."""
 
 from .opening_public_back_rank_policy import policy as back_rank_policy
+from .opening_public_created_backrank_policy import policy as created_backrank_policy
 from .opening_public_discovery_material_policy import opportunity as discovery_opportunity_policy
 from .opening_public_discovery_material_policy import policy as discovery_material_policy
 from .opening_public_double_mate_policy import policy as double_mate_policy
@@ -22,6 +23,7 @@ def choose(base, full, kind, window):
         "mate": mate_policy,
         "short_mate": short_mate_policy,
         "back_rank": back_rank_policy,
+        "created_backrank": created_backrank_policy,
         "skewer": skewer_policy,
         "double_mate": double_mate_policy,
         "discovery_material": discovery_material_policy,

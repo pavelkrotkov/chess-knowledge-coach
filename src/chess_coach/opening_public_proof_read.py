@@ -53,6 +53,7 @@ def lookup(
             "mate",
             "short_mate",
             "back_rank",
+            "created_backrank",
             "skewer",
             "double_mate",
             "discovery_material",

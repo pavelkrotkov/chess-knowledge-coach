@@ -37,6 +37,7 @@ def test_automatic_defense_is_provisional_replayable_and_closed(tmp_path, monkey
 
 
 def test_back_rank_practice_ownership_reveal_and_safe_line(tmp_path, monkeypatch):
+    _created_backrank_public_workflow(tmp_path, monkeypatch)
     from chess_coach.back_rank_practice import VERSION, list_candidates
     from chess_coach.coaching_practice import choices
     from chess_coach.lesson_mechanisms import describe
@@ -603,3 +604,305 @@ def _prerequisite_workflow(tmp_path, monkeypatch):
         window_test.setattr(window_scope, "clock", lambda: wall[0])
         _window_legacy_workflow(db, tmp_path, window_test, wall, "fixture_a")
     db.close()
+
+
+def _created_backrank_public_workflow(tmp_path, monkeypatch):
+    """Exercise created public back-rank defense on two original indexed histories."""
+    import base64
+    import contextlib
+    import hashlib
+    import io
+    import json
+    import random
+    import subprocess
+    import sys
+
+    import chess
+    import chess.engine
+    import chess.pgn
+    import httpx
+
+    import chess_coach.mastery as mastery
+    import chess_coach.objective_worker as objective_worker
+    import chess_coach.opening_public_created_backrank_example as created_example
+    import chess_coach.opening_public_created_backrank_scan as created_scan
+    import chess_coach.ops_opening_profile as profile_cli
+    from chess_coach.db import Database
+    from chess_coach.fact_fingerprint import canonical, digest
+    from chess_coach.ingest import ingest_pgn
+    from chess_coach.objective_short_history import history_hash
+    from chess_coach.opening_classification import classify_game
+    from chess_coach.opening_full_history_build import build as build_history
+    from chess_coach.opening_recent_acquire import acquire
+    from chess_coach.opening_recent_index import build as build_recent
+    from chess_coach.opening_recent_source import PREFIX_BYTES, PREFIX_NAME
+    from chess_coach.opening_snapshot import SOURCE, VERSION, import_snapshot
+    from chess_coach.web import create_app
+
+    tail = (
+        "d4 Bg4 dxe5 Bxf3 Qxf3 dxe5 Bc4 Nf6 Qb3 Qe7 Nc3 c6 "
+        "Bg5 b5 Nxb5 cxb5 Bxb5+ Nbd7 O-O-O Rd8 Rxd7 Rxd7 Rd1 "
+        "Qe6 Bxd7+ Nxd7 a3 Nb8 Rd8#"
+    )
+    lines = (f"e4 e5 Nf3 d6 {tail}", f"e4 d6 Nf3 e5 {tail}")
+    games = []
+    for index, line in enumerate(lines):
+        board = chess.Board()
+        for san in line.split():
+            board.push_san(san)
+        assert len(board.move_stack) == 33 and board.is_checkmate()
+        game = chess.pgn.Game.from_board(board)
+        game.headers.update(
+            Event="Rated Blitz game",
+            White=f"Peer {index}-{1100 + index}",
+            Black=f"Reference {index}-{1200 + index}",
+            Result="1-0",
+            Date="2026.10.01",
+            TimeControl="600+0",
+            WhiteElo="1650",
+            BlackElo="1700",
+        )
+        games.append((game, [move.uci() for move in board.move_stack]))
+    root = tmp_path / "public-created-backrank"
+    planning, data = root / ".runtime" / "planning", root / ".runtime" / "data"
+    planning.mkdir(parents=True, mode=0o700)
+    data.mkdir(mode=0o700)
+    db_path = data / "synthetic.sqlite"
+    with monkeypatch.context() as patch:
+        patch.delenv("CHESS_SCHEMA_COMPAT", raising=False)
+        db = Database(db_path)
+        db.initialize()
+        import_snapshot(db)
+        owned = games[0][0]
+        owned.headers.update(
+            White="synthetic peer", Black="learner", UTCDate="2026.01.02", UTCTime="12:06:00"
+        )
+        ingest_pgn(db, str(owned))
+        game_id = db.connection.execute("SELECT max(id) FROM games").fetchone()[0]
+        position_id = db.connection.execute(
+            "SELECT id FROM positions WHERE game_id=? AND ply=2", (game_id,)
+        ).fetchone()[0]
+        classify_game(db, game_id, version=VERSION, source_url=SOURCE)
+        db.close()
+        before = hashlib.sha256(db_path.read_bytes()).hexdigest()
+        owned.headers.update(White="Peer 0-1100", Black="Reference 0-1200")
+        text = "\n\n".join(str(game) for game, _ in games)
+        noise = base64.b64encode(random.Random(801).randbytes(1_400_000)).decode()
+        compressed = subprocess.run(
+            ["/usr/bin/zstd", "-q", "-c"],
+            input=(text + "\n\n{" + noise).encode(),
+            stdout=subprocess.PIPE,
+            check=True,
+        ).stdout
+        assert len(compressed) > PREFIX_BYTES
+        prefix = compressed[:PREFIX_BYTES]
+
+        def response(request):
+            return httpx.Response(
+                206,
+                headers={
+                    "Content-Range": f"bytes 0-{PREFIX_BYTES - 1}/{PREFIX_BYTES * 2}",
+                    "Content-Length": str(PREFIX_BYTES),
+                    "ETag": '"synthetic-created-backrank"',
+                },
+                content=prefix,
+                request=request,
+            )
+
+        with httpx.Client(transport=httpx.MockTransport(response)) as client:
+            acquire(root, "learner", client=client)
+        assert build_recent(root, "learner")["accepted"] == 2
+        assert build_history(root, "learner")["accepted"] == 2
+        patch.setenv("CHESS_DB", str(db_path))
+        patch.setenv("CHESS_SUBJECT", "learner")
+        args = [
+            "opening-profile",
+            "--project-root",
+            str(root),
+            "--game-id",
+            str(game_id),
+            "--position-id",
+            str(position_id),
+            "--alternative",
+            "d7d6",
+            "--reference",
+            "recent",
+        ]
+        for window in ("continuation", "initial"):
+            patch.setattr(
+                sys,
+                "argv",
+                [
+                    *args,
+                    "--prepare-public",
+                    "--proof-kind",
+                    "created_backrank",
+                    "--fork-window",
+                    window,
+                ],
+            )
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                profile_cli.main()
+            prepared = json.loads(output.getvalue())
+            policy = prepared["created_backrank_policy"]
+            assert policy["origin"] == "newly_allowed" and policy["operation"] == "prevent"
+            assert (policy["observer_node_limit"], policy["observer_reply_limit"]) == (6000, 100)
+            assert (policy["judge_node_limit"], policy["judge_reply_limit"]) == (100, 100)
+            if window == "continuation":
+                assert all(
+                    not b["examples"] and b["preparation_incomplete"]
+                    for b in prepared["branches"].values()
+                )
+                continue
+            for label, (_, moves) in zip(("played", "alternative"), games, strict=True):
+                branch = prepared["branches"][label]
+                assert branch["eligible"] == branch["selected"] == branch["supported"] == 1
+                assert branch["nominated"] == 16 and branch["unknown_observations"] == 15
+                example = branch["examples"][0]
+                board = chess.Board()
+                for uci in moves[:31]:
+                    board.push_uci(uci)
+                assert example["ply"] == 32 and example["side_to_move"] == "black"
+                assert example["fen"] == board.fen(en_passant="fen", promoted=True)
+                assert example["history_hash"] == history_hash(board)
+                assert example["full_history_sha256"] == digest(canonical(moves))
+                assert (
+                    example["source_identity"]
+                    and example["history_sha256"]
+                    and example["record_hash"]
+                )
+                observer = example["observer"]
+                assert observer["status"] == "opportunity" and observer["origin"] == "newly_allowed"
+                assert observer["outcome"] == "allows" and observer["pre_move_candidates"] == []
+                assert len(observer["alternatives"]) == len(list(board.legal_moves))
+                assert example["recorded_uci"] == "d7b8" and example["recorded_san"] == "Nb8"
+                assert example["recorded_verdict"]["mate_reply"]["uci"] == "d1d8"
+                assert example["recorded_verdict"]["mate_reply"]["san"] == "Rd8#"
+                h6 = next(item for item in example["alternatives"] if item["move"] == "h7h6")
+                assert h6["status"] == "correct" and h6["reason"] == "no_immediate_checkmate_reply"
+                for verdict in [example["recorded_verdict"], *example["alternatives"]]:
+                    if "legal_replies" not in verdict:
+                        continue
+                    position = board.copy(stack=True)
+                    position.push_uci(verdict["move"])
+                    assert verdict["history_hash"] == history_hash(board)
+                    assert set(verdict["legal_replies"]) == {m.uci() for m in position.legal_moves}
+                    assert verdict["replies_scanned"] == len(verdict["legal_replies"])
+                assert len(example["recorded_verdict"]["legal_replies"]) == 46
+                assert len(h6["legal_replies"]) == 45
+
+        _created_backrank_interruption(root, db_path, game_id, position_id, patch)
+
+        def forbidden(*_args, **_kwargs):
+            pytest.fail("proof, engine, provider, or learning on private read")
+
+        with patch.context() as read:
+            read.setattr(created_scan, "observe", forbidden)
+            read.setattr(created_example, "judge", forbidden)
+            read.setattr(chess.engine.SimpleEngine, "popen_uci", forbidden)
+            read.setattr(httpx.Client, "send", forbidden)
+            read.setattr(mastery, "update_mastery", forbidden)
+            read.setattr(objective_worker, "process", forbidden)
+            read.setattr(sys, "argv", [*args, "--proof-kind", "created_backrank"])
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                profile_cli.main()
+            shown = json.loads(output.getvalue())["public_preparation"]
+            assert shown["created_backrank_status"] == "prepared"
+            assert all(b["supported"] == 1 for b in shown["branches"].values())
+            app = create_app(
+                db_path=db_path,
+                project_root=root,
+                subject="learner",
+                actor="fixture",
+                corpus="test",
+                login="fixture",
+                origin="https://coach.invalid",
+            )
+            route = f"/repertoire/games/{game_id}/openings/{position_id}/profile"
+            client = app.test_client()
+            assert client.get(route, base_url="https://coach.invalid").status_code == 403
+            query = {"reference": "recent", "alternative": "d7d6", "proof_kind": "created_backrank"}
+            page = client.get(
+                route,
+                query_string=query,
+                base_url="https://coach.invalid",
+                headers={"Tailscale-User-Login": "fixture"},
+            )
+            assert page.status_code == 200
+            assert page.data.count(b"Public newly allowed back-rank example") == 2
+            assert b"Black played Nb8, newly allowing Rd8#" in page.data
+            assert b"h6" in page.data and b"no immediate mating reply" in page.data
+            prefix_path = planning / PREFIX_NAME
+            original_prefix = prefix_path.read_bytes()
+            artifacts = {
+                p: hashlib.sha256(p.read_bytes()).hexdigest()
+                for p in planning.glob("opening-public-proof-*.json")
+            }
+            prefix_path.chmod(0o600)
+            try:
+                with prefix_path.open("r+b") as stream:
+                    stream.write(bytes([original_prefix[0] ^ 1]))
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    profile_cli.main()
+                assert json.loads(output.getvalue())["public_preparation"] is None
+                stale = client.get(
+                    route,
+                    query_string=query,
+                    base_url="https://coach.invalid",
+                    headers={"Tailscale-User-Login": "fixture"},
+                )
+                assert stale.status_code == 200
+                assert b"No current newly allowed back-rank preparation" in stale.data
+            finally:
+                with prefix_path.open("r+b") as stream:
+                    stream.write(original_prefix[:1])
+                prefix_path.chmod(0o400)
+            assert prefix_path.read_bytes() == original_prefix
+            assert {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in artifacts} == artifacts
+        assert hashlib.sha256(db_path.read_bytes()).hexdigest() == before
+
+
+def _created_backrank_interruption(root, db_path, game_id, position_id, patch):
+    """Keep actual earlier verified answers when later independent judging stops."""
+    import sqlite3
+    import time
+
+    import chess_coach.opening_public_created_backrank_example as created_example
+    from chess_coach.opening_profile_cli_db import private_database
+    from chess_coach.opening_public_created_backrank import branch
+    from chess_coach.opening_public_created_backrank_policy import policy
+    from chess_coach.opening_public_fork_later import bound
+    from chess_coach.opening_public_proof_source import binding
+    from chess_coach.style_schedule_budget import history_budget
+
+    deadline = time.monotonic() + 20
+    with private_database(root, "learner", database=db_path) as read_db:
+        with history_budget(deadline=deadline):
+            base, _ = binding(read_db, root, "learner", game_id, position_id, "d7d6", deadline)
+        full = bound(root, "learner", deadline)
+    selected = policy(base, full[1], "initial")
+    selected = {**selected, "index_sha256": full[1]}
+    original = created_example._judge
+    returned = []
+
+    def interrupted(board, move, start, end):
+        if len(returned) == 2:
+            raise TimeoutError("fixture later independent judgment")
+        result = original(board, move, start, end)
+        returned.append(result)
+        return result
+
+    with patch.context() as bounded:
+        bounded.setattr(created_example, "_judge", interrupted)
+        with sqlite3.connect(full[0][0].as_uri() + "?mode=ro&immutable=1", uri=True) as indexed:
+            start = time.monotonic()
+            partial = branch(indexed, selected, base["source"]["played"], start + 20, start=start)
+    assert partial["status"] == "incomplete" and partial["interrupted"]
+    assert partial["unfinished_games"] and partial["examples"]
+    value = partial["examples"][0]
+    assert value["interrupted"] and value["recorded_verdict"] == returned[0]
+    assert value["alternatives"] == [returned[1]] and returned[1]["status"] == "correct"
+    assert returned[0]["legal_replies"] and returned[1]["legal_replies"]
