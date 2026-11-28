@@ -38,3 +38,13 @@ def digest_file(path, deadline):
             deadline.check()
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def publish_bytes(target, value):
+    staged = temporary(target)
+    try:
+        staged.write_bytes(value)
+        sync(staged)
+        _publish(staged, target)
+    finally:
+        staged.unlink(missing_ok=True)

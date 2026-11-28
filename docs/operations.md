@@ -275,6 +275,59 @@ before an authorized run, stop other project writers, and preserve the normal
 operating reserve. Neither a sizing estimate nor a successful compressed
 backup establishes that the subsequent native migration fits.
 
+### Explicit offline archive-pair recovery
+
+This separate offline mode unlinks its source. Before live use, obtain explicit
+agreement on every project-local path, stopping and verifying the five services
+above, the source unlink, and the specific offline exceptions to the normal
+source-pinning and no-primary-replacement rules. The command-line acknowledgment
+does not grant that permission. Keep the ordinary backup instructions as the
+default. Do not run this mode against an active database.
+
+After the approved maintenance and path checks, with all project writers
+stopped, use a reviewed release and four distinct new paths on the same
+filesystem. `SOURCE` must be a healthy, standalone DELETE-mode SQLite file.
+
+```sh
+"$release" -I -B -m chess_coach.cli offline-gzip-pair SOURCE ARCHIVE_A.gz ARCHIVE_B.gz RESTORED.sqlite --project-root "$PWD" --acknowledge-source-unlink
+```
+
+The command makes two independently written gzip archives, each limited to
+900,000,000 bytes of logical and allocated space. It closes the source SQLite
+and raw handles, obtains a Linux write lease on one raw descriptor, and compares
+both complete decoded archives with that source before unlinking. A pending or
+lost lease, source change, or insufficient projected space stops before unlink.
+It then fsyncs the source directory and closes the source descriptor before
+measuring actual space. It restores A to a distinct file, compares the complete
+bytes against independently decoded B, and checks SQLite integrity and foreign
+keys. It retains both archives and `ARCHIVE_A.gz.pair.json`; the metadata records
+the observed physical comparison, not a typed-row comparison.
+
+Space estimates are not a filesystem quota. The operator requires stopped
+writers, checks actual project allocation and free space during each phase, and
+reserves working and operating space. Compression is unknown: a refusal leaves
+the source in place before unlink. The source can already be unlinked when a
+later filesystem, timeout or restore failure occurs. The explicit operation has
+a 3,600-second bound; it does not establish that a current-sized database will
+finish within it or fit. On handled failures, the command removes its own
+unpublished temporary files. Preserve the published archives and metadata;
+do not assume automatic rollback. An abrupt process kill may leave temporary
+files that require inspection before manual recovery.
+
+If the error reports that the source was unlinked, retain the pair and metadata,
+keep writers stopped, and choose a different approved new project-local path.
+After checking current capacity, recover with the same byte and SQLite checks:
+
+```sh
+"$release" -I -B -m chess_coach.cli restore-offline-gzip-pair ARCHIVE_A.gz ARCHIVE_B.gz ARCHIVE_A.gz.pair.json RECOVERED.sqlite --project-root "$PWD"
+```
+
+This manual recovery never removes either archive or replaces an existing file.
+The pair metadata and hashes detect accidental corruption; they do not
+authenticate an adversarial replacement of both metadata and archives. A
+completed generated rehearsal does not establish the live database, upgrade,
+rollback or private acceptance gates.
+
 For a coordinated read-only inventory of a project-contained schema-32 source,
 without initializing or migrating it, use the dedicated process:
 
