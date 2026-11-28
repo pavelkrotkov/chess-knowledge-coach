@@ -38,6 +38,7 @@ def _reference_options():
             "mate",
             "short_mate",
             "back_rank",
+            "skewer",
         }
     ):
         abort(400)

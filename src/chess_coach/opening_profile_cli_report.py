@@ -86,6 +86,7 @@ def prepare_public(
     mate=False,
     short_mate=False,
     back_rank=False,
+    skewer=False,
 ):
     from .opening_public_proof import prepare
 
@@ -106,4 +107,5 @@ def prepare_public(
             mate=mate,
             short_mate=short_mate,
             back_rank=back_rank,
+            skewer=skewer,
         )

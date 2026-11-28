@@ -1499,6 +1499,7 @@ def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch, tmp_pa
         with pytest.raises(ValueError, match="verified source changed"):
             request_purpose(budget_db, decisions[0], LEARNER)
     budget_db.close()
+    _skewer_index_workflow(tmp_path, monkeypatch)
     _back_rank_index_workflow(tmp_path, monkeypatch)
     _short_mate_index_workflow(tmp_path, monkeypatch)
     _immediate_mate_index_workflow(tmp_path, monkeypatch)
@@ -1597,6 +1598,372 @@ def test_report_engine_digest_reuse_and_freshness(tmp_path, monkeypatch):
     configure()
     assert len(hashed) == 9
     db.close()
+
+
+def _skewer_index_workflow(tmp_path, monkeypatch):
+    """Bind played and alternative royal-skewer witnesses to the public index."""
+    import base64
+    import contextlib
+    import hashlib
+    import random
+    import sqlite3
+    import subprocess
+    import time
+
+    import httpx
+    import pytest
+
+    import chess_coach.mastery as mastery
+    import chess_coach.objective_worker as objective_worker
+    import chess_coach.opening_public_skewer_game as skewer_game
+    import chess_coach.ops_opening_profile as profile_cli
+    from chess_coach.fact_fingerprint import canonical, digest
+    from chess_coach.objective_short_history import history_hash
+    from chess_coach.opening_classification import classify_game
+    from chess_coach.opening_full_history_build import build as build_history
+    from chess_coach.opening_profile_cli_db import private_database
+    from chess_coach.opening_public_fork_later import bound
+    from chess_coach.opening_public_proof_coverage import _selected
+    from chess_coach.opening_public_proof_current import confirm
+    from chess_coach.opening_public_proof_source import binding
+    from chess_coach.opening_public_skewer import evaluate
+    from chess_coach.opening_public_skewer_game import inspect
+    from chess_coach.opening_public_skewer_policy import policy
+    from chess_coach.opening_recent_acquire import acquire
+    from chess_coach.opening_recent_index import build as build_recent
+    from chess_coach.opening_recent_source import PREFIX_BYTES, PREFIX_NAME
+    from chess_coach.opening_snapshot import SOURCE, VERSION, import_snapshot
+    from chess_coach.style_schedule_budget import history_budget
+
+    lines = (
+        "e4 e5 b3 d6 Bb2 d5 Bc3 Be7 Nf3 Bf6 a3 c5 g3 c4 b4 Ke7 b5 Qf8 exd5 h6 Bb4+ Kd7 Bxf8",
+        "Nf3 d6 e4 e5 b3 d5 Bb2 Be7 Bc3 Bf6 a3 c5 g3 c4 b4 Ke7 b5 Qf8 exd5 h6 Bb4+ Kd7 Bxf8",
+        "e4 e5 b3 d6 Bb2 d5 Bc3 Be7 Nf3 Bf6 a3 c5 g3 c4 b4 Ke7 b5 Qf8 exd5 h6 b6",
+    )
+    games = []
+    for index, line in enumerate(lines):
+        board = chess.Board()
+        for san in line.split():
+            board.push_san(san)
+        assert len(board.move_stack) == (21 if index == 2 else 23)
+        game = chess.pgn.Game.from_board(board)
+        game.headers.update(
+            Event="Rated Blitz game",
+            White=f"Reference {index}-{1100 + index}",
+            Black=f"Peer {index}-{1100 + index}",
+            Result="1-0",
+            Date="2026.10.01",
+            TimeControl="600+0",
+            WhiteElo="1700",
+            BlackElo="1650",
+        )
+        games.append((game, [move.uci() for move in board.move_stack]))
+
+    root = tmp_path / "public-skewer"
+    planning, data = root / ".runtime" / "planning", root / ".runtime" / "data"
+    planning.mkdir(parents=True, mode=0o700)
+    data.mkdir(mode=0o700)
+    db_path = data / "synthetic.sqlite"
+    with monkeypatch.context() as patch:
+        patch.delenv("CHESS_SCHEMA_COMPAT", raising=False)
+        db = Database(db_path)
+        db.initialize()
+        import_snapshot(db)
+        owned = games[0][0]
+        owned.headers.update(
+            White="learner",
+            Black="synthetic peer",
+            UTCDate="2026.01.02",
+            UTCTime="12:06:00",
+            TimeControl="600+0",
+        )
+        ingest_pgn(db, str(owned))
+        game_id = db.connection.execute("SELECT max(id) FROM games").fetchone()[0]
+        position_id = db.connection.execute(
+            "SELECT id FROM positions WHERE game_id=? AND ply=1", (game_id,)
+        ).fetchone()[0]
+        classify_game(db, game_id, version=VERSION, source_url=SOURCE)
+        db.close()
+        before = hashlib.sha256(db_path.read_bytes()).hexdigest()
+        owned.headers.update(White="Reference 0-1100", Black="Peer 0-1100")
+        prior = (
+            "e2e4 e7e5 f1c4 b8c6 d2d3 g8f6 b1c3 f8c5 g1f3 d7d6 "
+            "h2h3 h7h6 a2a3 a7a6 b2b3 b7b6 c1b2 c8b7 f3h4 f6h7 "
+            "a3a4 a6a5 b3b4 b6b5 g2g3 a8a7 h1g1 h8g8 d1h5 c6d4 h5f7"
+        )
+        prior_moves = prior.split()
+        cycle = ["g1f3", "g8f6", "f3g1", "f6g8"]
+        repeated_moves = prior_moves[:2] + cycle + prior_moves[2:4] + cycle + prior_moves[4:]
+        repeated_board = chess.Board()
+        for uci in repeated_moves:
+            repeated_board.push_uci(uci)
+        assert repeated_board.is_checkmate()
+        repeated = chess.pgn.Game.from_board(repeated_board)
+        repeated.headers.update(
+            Event="Rated Blitz game",
+            White="Reference 3-1103",
+            Black="Peer 3-1103",
+            Result="1-0",
+            Date="2026.10.01",
+            TimeControl="600+0",
+            WhiteElo="1700",
+            BlackElo="1650",
+        )
+        # Put the actual non-recorded witness first, so both presentations are
+        # exercised through ordinary independent-game selection.
+        text = "\n\n".join([str(games[2][0]), str(games[1][0]), str(games[0][0]), str(repeated)])
+        noise = base64.b64encode(random.Random(793).randbytes(1_400_000)).decode()
+        compressed = subprocess.run(
+            ["/usr/bin/zstd", "-q", "-c"],
+            input=(text + "\n\n{" + noise).encode(),
+            stdout=subprocess.PIPE,
+            check=True,
+        ).stdout
+        assert len(compressed) > PREFIX_BYTES
+        prefix = compressed[:PREFIX_BYTES]
+
+        def response(request):
+            return httpx.Response(
+                206,
+                headers={
+                    "Content-Range": f"bytes 0-{PREFIX_BYTES - 1}/{PREFIX_BYTES * 2}",
+                    "Content-Length": str(PREFIX_BYTES),
+                    "ETag": '"synthetic-skewer"',
+                },
+                content=prefix,
+                request=request,
+            )
+
+        with httpx.Client(transport=httpx.MockTransport(response)) as client:
+            acquire(root, "learner", client=client)
+        assert build_recent(root, "learner")["accepted"] == 4
+        assert build_history(root, "learner")["accepted"] == 4
+        start = time.monotonic()
+        deadline = start + 30
+        with private_database(root, "learner", database=db_path) as read_db:
+            version = read_db.connection.execute("PRAGMA data_version").fetchone()[0]
+            with history_budget(deadline=deadline):
+                base, index = binding(
+                    read_db, root, "learner", game_id, position_id, "g1f3", deadline
+                )
+            full = bound(root, "learner", deadline)
+            assert base["reference"]["license"] == "CC0-1.0"
+            assert base["reference"]["source_sha256"] == hashlib.sha256(prefix).hexdigest()
+            assert full[1] == hashlib.sha256(full[0][0].read_bytes()).hexdigest()
+            selected = policy(base, full[1], "initial")
+            result, _, _ = evaluate(full[0], selected, start, start + 20)
+            confirm(
+                read_db,
+                root,
+                "learner",
+                game_id,
+                position_id,
+                "g1f3",
+                deadline,
+                base,
+                index,
+                full,
+                version,
+            )
+        for label, (_, moves) in zip(("played", "alternative"), (games[2], games[1]), strict=True):
+            branch = result[label]
+            expected = 3 if label == "played" else 1
+            assert branch["eligible"] == branch["selected"] == expected
+            assert branch["supported"] == expected - int(label == "played")
+            assert branch["unsupported"] == branch["censored"] == int(label == "played")
+            assert branch["preparation_incomplete"] >= int(label == "played")
+            example = branch["example"]
+            assert example["ply"] == 21 and example["root_uci"] == "c3b4"
+            assert example["proof"]["played"] == (label == "alternative")
+            assert example["proof"]["root"] == "Bb4+"
+            assert example["proof"]["target"] == "queen" and example["proof"]["square"] == "f8"
+            assert example["proof"]["replies"] == 3
+            board = chess.Board()
+            for uci in moves[:20]:
+                board.push_uci(uci)
+            assert example["history_hash"] == history_hash(board)
+            assert example["full_history_sha256"] == digest(canonical(moves))
+            with sqlite3.connect(full[0][0].as_uri() + "?mode=ro&immutable=1", uri=True) as indexed:
+                stored = indexed.execute(
+                    "SELECT identity,moves FROM histories WHERE game_id=?", (example["record"],)
+                ).fetchone()
+            assert stored[0] == example["source_identity"]
+            assert json.loads(stored[1]) == moves and example["record_hash"]
+        selected_binding = {**selected, "index_sha256": full[1]}
+        with sqlite3.connect(full[0][0].as_uri() + "?mode=ro&immutable=1", uri=True) as indexed:
+            rows, _ = _selected(indexed, selected_binding, "e2e4", start + 20)
+            played_row = next(
+                row
+                for row in rows
+                if json.loads(
+                    indexed.execute(
+                        "SELECT moves FROM histories WHERE game_id=?", (row[0],)
+                    ).fetchone()[0]
+                )
+                == games[0][1]
+            )
+            played = inspect(indexed, played_row, selected_binding, "e2e4", start, start + 20)
+            played_identity = indexed.execute(
+                "SELECT identity FROM histories WHERE game_id=?", (played_row[0],)
+            ).fetchone()[0]
+        assert played["example"]["record"] == played_row[0]
+        assert played["example"]["source_identity"] == played_identity
+        assert played["example"]["proof"]["played"] is True
+        assert played["example"]["full_history_sha256"] == digest(canonical(games[0][1]))
+        witness = result["played"]["example"]
+        assert witness["ply"] == 21
+        assert witness["recorded_uci"] == "b5b6" and witness["root_uci"] == "c3b4"
+        assert witness["proof"]["played"] is False and witness["proof"]["replies"] == 3
+        assert witness["proof"]["target"] == "queen" and witness["proof"]["square"] == "f8"
+        assert witness["proof"]["reply"] == "Kd7" and witness["proof"]["capture"] == "Bxf8"
+        variant = chess.Board()
+        for uci in games[2][1][:20]:
+            variant.push_uci(uci)
+        assert witness["history_hash"] == history_hash(variant)
+        assert witness["source_identity"] and witness["record_hash"]
+        assert witness["full_history_sha256"] == digest(canonical(games[2][1]))
+        assert result["played"]["preparation_incomplete"] >= 1
+        continuation = policy(base, full[1], "continuation")
+        later_start = time.monotonic()
+        later, _, _ = evaluate(full[0], continuation, later_start, later_start + 20)
+        for label, branch in later.items():
+            expected = 2 if label == "played" else 1
+            assert branch["status"] == "incomplete"
+            assert branch["ended_before_window"] == expected
+            assert branch["unsupported"] == int(label == "played")
+            assert branch["preparation_incomplete"] == expected + int(label == "played")
+            assert branch["censored"] == 0
+            assert branch["example"] is None
+
+        patch.setenv("CHESS_DB", str(db_path))
+        patch.setenv("CHESS_SUBJECT", "learner")
+        args = [
+            "opening-profile",
+            "--project-root",
+            str(root),
+            "--game-id",
+            str(game_id),
+            "--position-id",
+            str(position_id),
+            "--alternative",
+            "g1f3",
+            "--reference",
+            "recent",
+        ]
+        for window in ("continuation", "initial"):
+            patch.setattr(
+                sys,
+                "argv",
+                [
+                    *args,
+                    "--prepare-public",
+                    "--proof-kind",
+                    "skewer",
+                    "--fork-window",
+                    window,
+                ],
+            )
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                profile_cli.main()
+            prepared = json.loads(output.getvalue())
+            assert prepared["version"] == "public-opening-royal-skewer-v1"
+            assert prepared["skewer_policy"]["window"] == window
+            for label, branch in prepared["branches"].items():
+                if window == "initial":
+                    assert branch["supported"] == (2 if label == "played" else 1)
+                    assert branch["unsupported"] == branch["censored"] == int(label == "played")
+                    assert branch["example"]["proof"]["played"] == (label == "alternative")
+                else:
+                    assert branch["ended_before_window"] == (2 if label == "played" else 1)
+                    assert branch["example"] is None
+        patch.setattr(
+            sys,
+            "argv",
+            [
+                *args,
+                "--prepare-public-forks",
+                "--proof-kind",
+                "skewer",
+            ],
+        )
+        with pytest.raises(SystemExit, match="Opening profile unavailable"):
+            profile_cli.main()
+
+        def forbidden(*_args, **_kwargs):
+            pytest.fail("proof, engine, provider, or learning on private read")
+
+        with patch.context() as read:
+            read.setattr(skewer_game, "inspect_proof", forbidden)
+            read.setattr(chess.engine.SimpleEngine, "popen_uci", forbidden)
+            read.setattr(httpx.Client, "send", forbidden)
+            read.setattr(mastery, "update_mastery", forbidden)
+            read.setattr(objective_worker, "process", forbidden)
+            read.setattr(sys, "argv", [*args, "--proof-kind", "skewer"])
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                profile_cli.main()
+            shown = json.loads(output.getvalue())["public_preparation"]
+            assert shown["skewer_status"] == "prepared"
+            assert shown["branches"]["played"]["example"]["proof"]["played"] is False
+            assert shown["branches"]["alternative"]["example"]["proof"]["played"] is True
+            app = create_app(
+                db_path=db_path,
+                project_root=root,
+                subject="learner",
+                actor="fixture",
+                corpus="test",
+                login="fixture",
+                origin="https://coach.invalid",
+            )
+            route = f"/repertoire/games/{game_id}/openings/{position_id}/profile"
+            client = app.test_client()
+            assert client.get(route, base_url="https://coach.invalid").status_code == 403
+            page = client.get(
+                route,
+                query_string={"reference": "recent", "alternative": "g1f3", "proof_kind": "skewer"},
+                base_url="https://coach.invalid",
+                headers={"Tailscale-User-Login": "fixture"},
+            )
+            assert page.status_code == 200
+            assert b"Prepared public royal skewers" in page.data
+            assert page.data.count(b"Public skewer example") == 2
+            assert b"White is to move" in page.data and b"Bb4+" in page.data
+            assert b"verified alternative" in page.data and b"was played" in page.data
+            assert b"representative proof line" in page.data
+            assert b"not necessarily the recorded continuation" in page.data
+            prefix_path = planning / PREFIX_NAME
+            original_prefix = prefix_path.read_bytes()
+            artifacts = set(planning.glob("opening-public-proof-*.json"))
+            prefix_path.chmod(0o600)
+            try:
+                with prefix_path.open("r+b") as stream:
+                    stream.write(bytes([original_prefix[0] ^ 1]))
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    profile_cli.main()
+                assert json.loads(output.getvalue())["public_preparation"] is None
+                stale = client.get(
+                    route,
+                    query_string={
+                        "reference": "recent",
+                        "alternative": "g1f3",
+                        "proof_kind": "skewer",
+                    },
+                    base_url="https://coach.invalid",
+                    headers={"Tailscale-User-Login": "fixture"},
+                )
+                assert stale.status_code == 200
+                assert b"No current skewer preparation" in stale.data
+                assert b"Public skewer example" not in stale.data
+            finally:
+                with prefix_path.open("r+b") as stream:
+                    stream.write(original_prefix[:1])
+                prefix_path.chmod(0o400)
+            assert prefix_path.read_bytes() == original_prefix
+            assert set(planning.glob("opening-public-proof-*.json")) == artifacts
+        assert hashlib.sha256(db_path.read_bytes()).hexdigest() == before
+        print("skewer_index_gate=passed")
 
 
 def _back_rank_index_workflow(tmp_path, monkeypatch):
