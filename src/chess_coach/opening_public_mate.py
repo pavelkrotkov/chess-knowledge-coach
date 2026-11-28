@@ -35,7 +35,7 @@ def branch(db, binding, move, deadline, *, start):
         return unavailable("deadline")
     rows, context = found
     selected = rows[:MAX_GAMES]
-    result = coverage(context, len(selected), len(rows) > MAX_GAMES)
+    result = coverage(context, selected, len(rows) > MAX_GAMES, binding)
     _collect(db, selected, binding, move, start, deadline, result)
     return finish(result)
 

@@ -1708,9 +1708,18 @@ def _immediate_mate_index_workflow(tmp_path, monkeypatch):
             classify_game(mate_db, mate_black_game, version=VERSION, source_url=SOURCE)
             mate_db.close()
         mate_db_hash = hashlib.sha256(mate_db_path.read_bytes()).hexdigest()
+        mate_moves = mate_histories[0].split()
+        mate_cycle = ["g1f3", "g8f6", "f3g1", "f6g8"]
+        mate_repeated = " ".join(
+            mate_moves[:2] + mate_cycle + mate_moves[2:4] + mate_cycle + mate_moves[4:]
+        )
+        mate_repetition_board = chess.Board()
+        for mate_uci in mate_repeated.split()[:6]:
+            mate_repetition_board.push_uci(mate_uci)
+        assert mate_repetition_board.is_repetition(2)
         mate_text = "\n\n".join(
             mate_reference(mate_index, mate_history)
-            for mate_index, mate_history in enumerate(mate_histories)
+            for mate_index, mate_history in enumerate((*mate_histories, mate_repeated))
         )
         noise = base64.b64encode(random.Random(743).randbytes(1_400_000)).decode()
         mate_zstd = subprocess.run(
@@ -1736,8 +1745,8 @@ def _immediate_mate_index_workflow(tmp_path, monkeypatch):
 
         with httpx.Client(transport=httpx.MockTransport(mate_response)) as mate_fake:
             acquire(mate_root, "learner", client=mate_fake)
-        assert build_recent(mate_root, "learner")["accepted"] == 2
-        assert build_mate_history(mate_root, "learner")["accepted"] == 2
+        assert build_recent(mate_root, "learner")["accepted"] == 3
+        assert build_mate_history(mate_root, "learner")["accepted"] == 3
         mate_cli.setenv("CHESS_SUBJECT", "learner")
         mate_cli.setenv("CHESS_DB", str(mate_db_path))
         mate_cli.setattr(
@@ -1834,13 +1843,20 @@ def _immediate_mate_index_workflow(tmp_path, monkeypatch):
                 ("played", "alternative"), mate_histories, strict=True
             ):
                 mate_branch = mate_result[mate_label]
-                assert mate_branch["eligible"] == mate_branch["selected"] == 1
+                mate_expected = 2 if mate_label == "played" else 1
+                assert mate_branch["eligible"] == mate_branch["selected"] == mate_expected
                 if mate_window == "continuation":
                     assert mate_branch["status"] == "incomplete"
                     assert mate_branch["ended_before_window"] == 1
+                    assert mate_branch["unsupported"] == mate_expected - 1
+                    assert mate_branch["censored"] == 0
+                    assert mate_branch["preparation_incomplete"] == mate_expected
                     assert mate_branch["example"] is None
                     continue
                 assert mate_branch["analyzed"] == mate_branch["supported"] == 1
+                assert mate_branch["unsupported"] == mate_expected - 1
+                assert mate_branch["censored"] == mate_expected - 1
+                assert mate_branch["preparation_incomplete"] == mate_expected - 1
                 mate_example = mate_branch["example"]
                 assert mate_example["ply"] == 31 and mate_example["recorded_mate"]
                 assert [item["move"] for item in mate_example["alternatives"]] == ["h5f7"]
@@ -1908,9 +1924,11 @@ def _immediate_mate_index_workflow(tmp_path, monkeypatch):
             )
         assert mate_black_base["color"] == "black"
         mate_black_played = mate_black_result["played"]
-        assert mate_black_played["eligible"] == mate_black_played["selected"] == 1
+        assert mate_black_played["eligible"] == mate_black_played["selected"] == 2
         assert mate_black_played["analyzed"] == 1
-        assert mate_black_played["unsupported"] == 0
+        assert mate_black_played["unsupported"] == 1
+        assert mate_black_played["censored"] == 1
+        assert mate_black_played["preparation_incomplete"] == 1
 
         def mate_forbidden(*_args, **_kwargs):
             pytest.fail("proof, engine, or provider on private read")

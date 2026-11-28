@@ -1,10 +1,11 @@
 """Keep per-game and branch mate coverage in one shared contract."""
 
+from .opening_public_fork_windows import bounds
+
 COUNTERS = (
     "analyzed",
     "supported",
     "unsupported",
-    "censored",
     "ended_before_window",
     "preparation_incomplete",
 )
@@ -26,12 +27,16 @@ def unavailable(reason):
     return {"status": "incomplete", "reason": reason, "eligible": None, "selected": None}
 
 
-def coverage(context, selected, more):
+def coverage(context, selected, more, binding):
     return {
         **dict.fromkeys(COUNTERS, 0),
         "status": "prepared",
         "eligible": context["matched_candidates"],
-        "selected": selected,
+        "selected": len(selected),
+        "censored": sum(
+            row[1] > bounds(binding["ply"], row[1], binding["policy"]["mate"]["window"])[1]
+            for row in selected
+        ),
         "excluded_context": context["excluded_context"],
         "unknown_context": context["unknown_context"],
         "more_eligible": more,
