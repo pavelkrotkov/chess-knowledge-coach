@@ -12,7 +12,7 @@ from .opening_public_skewer import evaluate as skewer_evaluate
 
 
 def evaluate(index, base, identity, full, start, deadline):
-    if "discovery_material" in identity["policy"]:
+    if {"discovery_material", "discovery_opportunity"} & identity["policy"].keys():
         binding = {**identity, "index_sha256": full[1]}
         result, sample = later_branches(
             full[0], binding, deadline, brancher=discovery_material_branch

@@ -34,6 +34,7 @@ def main():
                 skewer=args.proof_kind == "skewer",
                 double_mate=args.proof_kind == "double_mate",
                 discovery_material=args.proof_kind == "discovery_material",
+                discovery_opportunity=args.proof_kind == "discovery_opportunity",
             )
         elif args.recommendation_course:
             from .opening_recommendation_cli import report as recommendation

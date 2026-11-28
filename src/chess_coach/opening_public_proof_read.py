@@ -56,6 +56,7 @@ def lookup(
             "skewer",
             "double_mate",
             "discovery_material",
+            "discovery_opportunity",
         } and (full is None or proof_kind not in value["binding"]["policy"]):
             return None
         pv_policies = {"defense_pv": defense_policy, "capture_pv": capture_pv_policy}

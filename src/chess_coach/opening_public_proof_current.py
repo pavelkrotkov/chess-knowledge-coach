@@ -17,6 +17,7 @@ def selected(directory, identity, root, subject, deadline, window, *, kind="fork
         "skewer",
         "double_mate",
         "discovery_material",
+        "discovery_opportunity",
     }:
         raise ValueError("invalid proof kind")
     if window == "initial" and kind == "fork":

@@ -89,6 +89,7 @@ def prepare_public(
     skewer=False,
     double_mate=False,
     discovery_material=False,
+    discovery_opportunity=False,
 ):
     from .opening_public_proof import prepare
 
@@ -112,4 +113,5 @@ def prepare_public(
             skewer=skewer,
             double_mate=double_mate,
             discovery_material=discovery_material,
+            discovery_opportunity=discovery_opportunity,
         )

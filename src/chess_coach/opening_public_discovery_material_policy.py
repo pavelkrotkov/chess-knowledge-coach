@@ -40,3 +40,21 @@ def policy(identity, sha, window):
         "version": VERSION,
         "policy": {**identity["policy"], "discovery_material": material},
     }
+
+
+def opportunity(identity, sha, window):
+    recorded = policy(identity, sha, window)
+    material = {
+        **recorded["policy"]["discovery_material"],
+        "version": "public-opening-discovery-material-opportunity-v1",
+        "root_scope": "all_legal",
+        "root_order": "recorded-first-uci",
+    }
+    policies = {
+        key: value for key, value in recorded["policy"].items() if key != "discovery_material"
+    }
+    return {
+        **recorded,
+        "version": material["version"],
+        "policy": {**policies, "discovery_opportunity": material},
+    }

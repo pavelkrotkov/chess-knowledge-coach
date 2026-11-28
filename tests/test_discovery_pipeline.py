@@ -1280,7 +1280,244 @@ def _recorded_public_material_workflow(tmp_path, monkeypatch):
                 prefix_path.chmod(0o400)
             assert prefix_path.read_bytes() == original_prefix
             assert set(planning.glob("opening-public-proof-*.json")) == artifacts
+        _opportunity_public_material_workflow(
+            root, db_path, game_id, position_id, base, full, variant_moves, patch
+        )
         assert hashlib.sha256(db_path.read_bytes()).hexdigest() == before
+
+
+def _opportunity_public_material_workflow(
+    root, db_path, game_id, position_id, base, full, variant_moves, patch
+):
+    """Check all roots, immutable recorded compatibility, and actual partial proof retention."""
+    import contextlib
+    import hashlib
+    import io
+    import sqlite3
+    import time
+
+    import httpx
+
+    import chess_coach.mastery as mastery
+    import chess_coach.objective_worker as objective_worker
+    import chess_coach.opening_public_discovery_opportunity_scan as opportunity_scan
+    import chess_coach.ops_opening_profile as profile_cli
+    from chess_coach.fact_fingerprint import canonical, digest
+    from chess_coach.opening_public_discovery_material import branch
+    from chess_coach.opening_public_discovery_material_game import inspect
+    from chess_coach.opening_public_discovery_material_policy import opportunity
+    from chess_coach.opening_public_proof_coverage import _selected
+    from chess_coach.opening_recent_source import PREFIX_NAME
+
+    planning = root / ".runtime" / "planning"
+    old = {
+        path: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in planning.glob("opening-public-proof-*.json")
+    }
+    assert len(old) == 2
+    args = [
+        "opening-profile",
+        "--project-root",
+        str(root),
+        "--game-id",
+        str(game_id),
+        "--position-id",
+        str(position_id),
+        "--alternative",
+        "b8c6",
+        "--reference",
+        "recent",
+    ]
+    patch.setattr(sys, "argv", [*args, "--proof-kind", "discovery_opportunity"])
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output):
+        profile_cli.main()
+    assert json.loads(output.getvalue())["public_preparation"] is None
+    selected = opportunity(base, full[1], "initial")
+    assert selected["policy"]["discovery_opportunity"]["root_scope"] == "all_legal"
+    selected = {**selected, "index_sha256": full[1]}
+    deadline = time.monotonic() + 20
+    with sqlite3.connect(full[0][0].as_uri() + "?mode=ro&immutable=1", uri=True) as indexed:
+        rows, _ = _selected(indexed, selected, base["source"]["played"], deadline)
+        row = next(
+            row
+            for row in rows
+            if json.loads(
+                indexed.execute(
+                    "SELECT moves FROM histories WHERE game_id=?", (row[0],)
+                ).fetchone()[0]
+            )
+            == variant_moves
+        )
+        observed = inspect(indexed, row, selected, base["source"]["played"], deadline)
+        example = observed["example"]
+        assert example["recorded_uci"] == "h6h5" and example["ply"] == 24
+        assert example["full_history_sha256"] == digest(canonical(variant_moves))
+        assert example["history_hash"] and example["history_sha256"] and example["record_hash"]
+        assert not any(root["recorded"] for root in example["roots"])
+        assert any(root["move"] == "d4f3" and not root["recorded"] for root in example["roots"])
+        original = opportunity_scan._root
+        found = []
+
+        def interrupted(board, move, recorded, tick):
+            if found:
+                raise TimeoutError("fixture later root")
+            result = original(board, move, recorded, tick)
+            if result[0]:
+                found.append(result[0])
+            return result
+
+        with patch.context() as bounded:
+            bounded.setattr(opportunity_scan, "_root", interrupted)
+            partial = branch(indexed, selected, base["source"]["played"], time.monotonic() + 20)
+        assert found and partial["status"] == "incomplete" and partial["interrupted"]
+        assert partial["unfinished_roots"] and partial["unfinished_games"]
+        assert partial["examples"][-1]["roots"][0] == found[0]
+        assert partial["examples"][-1]["roots"][0]["certificates"]
+
+    for window in ("continuation", "initial"):
+        patch.setattr(
+            sys,
+            "argv",
+            [
+                *args,
+                "--prepare-public",
+                "--proof-kind",
+                "discovery_opportunity",
+                "--fork-window",
+                window,
+            ],
+        )
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            profile_cli.main()
+        prepared = json.loads(output.getvalue())
+        assert prepared["discovery_opportunity_policy"]["root_scope"] == "all_legal"
+        if window == "continuation":
+            assert all(
+                not b["examples"] and b["preparation_incomplete"]
+                for b in prepared["branches"].values()
+            )
+            continue
+        for branch_value in prepared["branches"].values():
+            assert branch_value["supported"] >= 1 and branch_value["examples"]
+            for example in branch_value["examples"]:
+                assert (
+                    example["source_identity"]
+                    and example["history_sha256"]
+                    and example["record_hash"]
+                )
+                _assert_discovery_root_witnesses(example)
+            assert any(
+                root["move"] == "d4f3" and root["recorded"]
+                for example in branch_value["examples"]
+                for root in example["roots"]
+            )
+        unplayed = next(
+            example
+            for example in prepared["branches"]["played"]["examples"]
+            if example["recorded_uci"] == "h6h5"
+        )
+        assert unplayed["recorded_uci"] == "h6h5"
+        assert any(root["move"] == "d4f3" and not root["recorded"] for root in unplayed["roots"])
+        _assert_discovery_root_witnesses(unplayed)
+    assert {path: hashlib.sha256(path.read_bytes()).hexdigest() for path in old} == old
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("proof, engine, provider, or learning on private read")
+
+    with patch.context() as read:
+        read.setattr(opportunity_scan, "prove", forbidden)
+        read.setattr(opportunity_scan, "discoveries", forbidden)
+        read.setattr(chess.engine.SimpleEngine, "popen_uci", forbidden)
+        read.setattr(httpx.Client, "send", forbidden)
+        read.setattr(mastery, "update_mastery", forbidden)
+        read.setattr(objective_worker, "process", forbidden)
+        read.setattr(sys, "argv", [*args, "--proof-kind", "discovery_opportunity"])
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            profile_cli.main()
+        shown = json.loads(output.getvalue())["public_preparation"]
+        assert shown["discovery_opportunity_status"] == "prepared"
+        app = create_app(
+            db_path=db_path,
+            project_root=root,
+            subject="learner",
+            actor="fixture",
+            corpus="test",
+            login="fixture",
+            origin="https://coach.invalid",
+        )
+        route = f"/repertoire/games/{game_id}/openings/{position_id}/profile"
+        client = app.test_client()
+        assert client.get(route, base_url="https://coach.invalid").status_code == 403
+        query = {
+            "reference": "recent",
+            "alternative": "b8c6",
+            "proof_kind": "discovery_opportunity",
+        }
+        page = client.get(
+            route,
+            query_string=query,
+            base_url="https://coach.invalid",
+            headers={"Tailscale-User-Login": "fixture"},
+        )
+        assert page.status_code == 200 and b"Unplayed legal alternative Nf3+" in page.data
+        prefix = planning / PREFIX_NAME
+        original_prefix = prefix.read_bytes()
+        artifacts = {
+            p: hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in planning.glob("opening-public-proof-*.json")
+        }
+        prefix.chmod(0o600)
+        try:
+            with prefix.open("r+b") as stream:
+                stream.write(bytes([original_prefix[0] ^ 1]))
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                profile_cli.main()
+            assert json.loads(output.getvalue())["public_preparation"] is None
+            stale = client.get(
+                route,
+                query_string=query,
+                base_url="https://coach.invalid",
+                headers={"Tailscale-User-Login": "fixture"},
+            )
+            assert (
+                stale.status_code == 200
+                and b"No current discovery opportunity preparation" in stale.data
+            )
+        finally:
+            with prefix.open("r+b") as stream:
+                stream.write(original_prefix[:1])
+            prefix.chmod(0o400)
+        assert prefix.read_bytes() == original_prefix
+        assert {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in artifacts} == artifacts
+
+
+def _assert_discovery_root_witnesses(example):
+    board = chess.Board(example["fen"])
+    for root in example["roots"]:
+        move = chess.Move.from_uci(root["move"])
+        assert move in board.legal_moves
+        after = board.copy()
+        after.push(move)
+        for proof in root["certificates"]:
+            assert not proof["mate"] and proof["minimum_gain"] >= 3
+            assert proof["legal_replies"] == len(list(after.legal_moves))
+            assert {b["reply"] for b in proof["branches"]} == {m.uci() for m in after.legal_moves}
+            if root["move"] == "d4f3":
+                assert not proof["double_check"] and proof["legal_replies"] == 4
+                assert (proof["slider"], proof["target"]) == ("c5", "f2")
+            for witness in proof["branches"]:
+                reply = chess.Move.from_uci(witness["reply"])
+                assert reply in after.legal_moves
+                following = after.copy()
+                following.push(reply)
+                capture = chess.Move.from_uci(witness["capture"])
+                assert capture in following.legal_moves
+                assert chess.square_name(capture.from_square) == proof["slider"]
+                assert chess.square_name(capture.to_square) == proof["target"]
 
 
 def _recent_defense_workflow(monkeypatch):

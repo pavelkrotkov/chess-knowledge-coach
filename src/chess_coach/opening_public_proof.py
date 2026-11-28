@@ -40,6 +40,7 @@ def prepare(
     skewer=False,
     double_mate=False,
     discovery_material=False,
+    discovery_opportunity=False,
 ):
     kind = normalize(
         forks,
@@ -54,6 +55,7 @@ def prepare(
         skewer=skewer,
         double_mate=double_mate,
         discovery_material=discovery_material,
+        discovery_opportunity=discovery_opportunity,
     )
     pv_mode = kind in {"capture_pv", "defense_pv"}
     start = time.monotonic()

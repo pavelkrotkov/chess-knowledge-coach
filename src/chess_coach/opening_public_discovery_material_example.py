@@ -13,8 +13,8 @@ from .opening_public_mate_policy import check
 from .opening_public_proof_replay import _attribution
 
 
-def example(db, row, binding, source, moves, rows, ply, board, recorded, proofs):
-    certificates = []
+def certificates(board, proofs):
+    values = []
     for proof in proofs:
         value = dict(proof)
         value["slider_piece"] = chess.piece_name(
@@ -23,7 +23,11 @@ def example(db, row, binding, source, moves, rows, ply, board, recorded, proofs)
         value["target_piece"] = chess.piece_name(
             board.piece_type_at(chess.parse_square(proof["target"]))
         )
-        certificates.append(value)
+        values.append(value)
+    return values
+
+
+def example(db, row, binding, source, moves, rows, ply, board, recorded, proofs):
     value = {
         "ply": ply,
         "fen": board.fen(),
@@ -31,7 +35,7 @@ def example(db, row, binding, source, moves, rows, ply, board, recorded, proofs)
         "moving_piece": chess.piece_name(board.piece_type_at(recorded.from_square)),
         "recorded_uci": recorded.uci(),
         "recorded_san": board.san(recorded),
-        "certificates": certificates,
+        "certificates": certificates(board, proofs),
         "source_identity": source,
         "history_hash": history_hash(board),
         "history_sha256": digest(canonical(rows[: ply - 1])),

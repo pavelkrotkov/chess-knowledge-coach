@@ -22,6 +22,7 @@ def view(payload, legacy=None):
         ("skewer", "skewer"),
         ("double_mate", "double_mate"),
         ("discovery_material", "discovery_material"),
+        ("discovery_opportunity", "discovery_opportunity"),
     ):
         if key in policy:
             result[f"{label}_policy"] = {
@@ -48,6 +49,7 @@ def requested(result, window, kind):
         "skewer",
         "double_mate",
         "discovery_material",
+        "discovery_opportunity",
     }:
         result[f"{kind}_status"] = "prepared" if f"{kind}_policy" in result else "unavailable"
     return result
