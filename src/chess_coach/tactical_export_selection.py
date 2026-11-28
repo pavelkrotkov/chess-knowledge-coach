@@ -1,40 +1,29 @@
 """Validate saved preview selection and coverage policy."""
 
-from .tactical_course import (
-    CONTRACTS,
-    DEFAULT_FORK_VERSION,
-    DEFAULT_ROLES_VERSION,
-    FORK_VERSIONS,
-    NAMED_VERSION,
-    PROTECTION_VERSION,
-    SELECTED_PROTECTION_ROLES_VERSION,
-    SELECTED_ROLES_VERSION,
-    SELECTED_VERSION,
-    THEMATIC_SELECTED_VERSION,
-    THEMATIC_VERSION,
-    VERSION,
-)
 from .tactical_course_budget import SLICE_SECONDS, TOTAL_SECONDS
 from .tactical_course_choice import SLICE_SECONDS as SELECTED_SECONDS
 from .tactical_course_choice import WORK_POLICY, check_budget, from_pairs
+from .tactical_course_contract import (
+    CONTRACTS,
+    PROTECTION_VERSION,
+)
+from .tactical_course_contract import (
+    MODERN as MODERN,
+)
+from .tactical_course_contract import (
+    NAMED as NAMED,
+)
+from .tactical_course_contract import (
+    SELECTED as SELECTED,
+)
+from .tactical_course_contract import (
+    THEMATIC as THEMATIC,
+)
 from .tactical_course_patterns import MAX_PATTERNS
 from .tactical_course_protection import PER_BAND
 from .tactical_course_selection import PER_PAIR
 from .tactical_export_coverage import coverage
 from .tactical_export_gaps import omissions
-
-NAMED = {NAMED_VERSION, SELECTED_ROLES_VERSION}
-SELECTED = {
-    SELECTED_VERSION,
-    THEMATIC_SELECTED_VERSION,
-    SELECTED_PROTECTION_ROLES_VERSION,
-    *FORK_VERSIONS,
-    *NAMED,
-}
-THEMATIC = {THEMATIC_VERSION, DEFAULT_ROLES_VERSION, DEFAULT_FORK_VERSION} | (
-    SELECTED - {SELECTED_VERSION}
-)
-MODERN = {PROTECTION_VERSION, VERSION, SELECTED_VERSION, *THEMATIC}
 
 
 def _omissions(selection, pairs, modern):
