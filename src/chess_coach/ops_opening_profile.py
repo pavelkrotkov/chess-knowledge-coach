@@ -18,7 +18,7 @@ def main():
     parser.add_argument("--fork-window", choices=("initial", "continuation"), default="initial")
     parser.add_argument(
         "--proof-kind",
-        choices=("fork", "prevention", "protection", "capture_pv", "defense_pv"),
+        choices=("fork", "prevention", "protection", "capture_pv", "defense_pv", "pin"),
         default="fork",
     )
     mode = parser.add_mutually_exclusive_group()
@@ -68,6 +68,13 @@ def main():
         help="Prepare bounded public defense consequences",
     )
     mode.add_argument(
+        "--prepare-public-pin",
+        dest="prepare_public",
+        action="store_const",
+        const="pin",
+        help="Prepare bounded public pin-execution evidence",
+    )
+    mode.add_argument(
         "--recommendation-course", action="store_true", help="Read a source-bound selected revision"
     )
     args = parser.parse_args()
@@ -90,6 +97,7 @@ def main():
                 protection=args.prepare_public == "protection",
                 capture_pv=args.prepare_public == "capture_pv",
                 defense_pv=args.prepare_public == "defense_pv",
+                pin=args.prepare_public == "pin",
             )
         elif args.recommendation_course:
             from .opening_recommendation_cli import report as recommendation

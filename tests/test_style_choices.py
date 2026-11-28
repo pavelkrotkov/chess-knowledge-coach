@@ -2734,6 +2734,198 @@ def _opening_fit_route(monkeypatch, tmp_path):
             with patch.context() as cli:
                 cli.setenv("CHESS_DB", str(db_path))
                 cli.delenv("CHESS_SCHEMA_COMPAT", raising=False)
+                import contextlib
+                import io
+                import sys as public_prep_sys
+
+                import chess_coach.opening_public_proof_replay as public_replay
+                import chess_coach.ops_opening_profile as profile_cli
+                from chess_coach.opening_full_history_build import build as build_full_history
+                from chess_coach.opening_profile_cli_report import prepare_public
+
+                with cli.context() as pin_cli:
+                    pin_cli.setenv("CHESS_SUBJECT", "learner")
+                    # Two licensed synthetic public records reach the same proved pin
+                    # after distinct current/candidate opening moves. This is not live acceptance.
+                    pin_root = tmp_path / "public-pin"
+                    pin_planning = pin_root / ".runtime" / "planning"
+                    pin_data = pin_root / ".runtime" / "data"
+                    pin_planning.mkdir(parents=True, mode=0o700)
+                    pin_data.mkdir(mode=0o700)
+                    pin_db_path = pin_data / "synthetic.sqlite"
+                    source_connection = real_connect(db_path)
+                    destination_connection = real_connect(pin_db_path)
+                    source_connection.backup(destination_connection)
+                    destination_connection.close()
+                    source_connection.close()
+                    pin_histories = (
+                        "e4 e5 Qh5 Nf6 Nc3 Nxh5 d3 Qh4 b3 Nf6 Bf4 Qh6 Bg3 Nc6 h3 a6 "
+                        "Be2 b6 f3 g6 a4 Ra7 h4 Rb7 Bh2 Rb8 g3 Ra8 Rb1 Bb4",
+                        "e4 e5 Qh5 Nc6 Nc3 Nf6 d3 Nxh5 b3 Qh4 Bf4 Nf6 Bg3 Qh6 h3 a6 "
+                        "Be2 b6 f3 g6 a4 Ra7 h4 Rb7 Bh2 Rb8 g3 Ra8 Rb1 Bb4",
+                    )
+                    with pin_cli.context() as setup:
+                        setup.setattr(sqlite3, "connect", real_connect)
+                        pin_db = Database(pin_db_path)
+                        game = chess.pgn.Game()
+                        game.headers.update(
+                            White="synthetic peer",
+                            Black="learner",
+                            Result="*",
+                            UTCDate="2026.01.02",
+                            UTCTime="12:06:00",
+                            TimeControl="600+0",
+                        )
+                        board, node = game.board(), game
+                        for san in pin_histories[0].split():
+                            move = board.parse_san(san)
+                            node = node.add_variation(move)
+                            board.push(move)
+                        ingest_pgn(pin_db, str(game))
+                        pin_game = pin_db.connection.execute(
+                            "SELECT max(id) FROM games"
+                        ).fetchone()[0]
+                        pin_position = pin_db.connection.execute(
+                            "SELECT id FROM positions WHERE game_id=? AND ply=4", (pin_game,)
+                        ).fetchone()[0]
+                        classify_game(pin_db, pin_game, version=VERSION, source_url=SOURCE)
+                        pin_db.close()
+                    pin_db_hash = hashlib.sha256(pin_db_path.read_bytes()).hexdigest()
+                    pin_text = "\n\n".join(
+                        rated_game(index, 900 + index, "600+0", moves=moves)
+                        for index, moves in enumerate(pin_histories)
+                    )
+                    pin_zstd = subprocess.run(
+                        ["/usr/bin/zstd", "-q", "-c"],
+                        input=(pin_text + "\n\n{" + noise).encode(),
+                        stdout=subprocess.PIPE,
+                        check=True,
+                    ).stdout
+                    assert len(pin_zstd) > PREFIX_BYTES
+                    pin_prefix = pin_zstd[:PREFIX_BYTES]
+
+                    def pin_response(request):
+                        return httpx.Response(
+                            206,
+                            headers={
+                                "Content-Range": f"bytes 0-{PREFIX_BYTES - 1}/{PREFIX_BYTES * 2}",
+                                "Content-Length": str(PREFIX_BYTES),
+                                "ETag": "synthetic-pin",
+                            },
+                            content=pin_prefix,
+                            request=request,
+                        )
+
+                    with httpx.Client(transport=httpx.MockTransport(pin_response)) as fake:
+                        acquire(pin_root, "learner", client=fake)
+                    assert build_recent(pin_root, "learner")["accepted"] == 2
+                    assert build_full_history(pin_root, "learner")["accepted"] == 2
+                    pin_cli.setenv("CHESS_DB", str(pin_db_path))
+                    pin_cli.setattr(
+                        public_prep_sys,
+                        "argv",
+                        [
+                            "opening-profile",
+                            "--project-root",
+                            str(pin_root),
+                            "--game-id",
+                            str(pin_game),
+                            "--position-id",
+                            str(pin_position),
+                            "--alternative",
+                            "b8c6",
+                            "--reference",
+                            "recent",
+                            "--prepare-public-pin",
+                        ],
+                    )
+                    output = io.StringIO()
+                    with contextlib.redirect_stdout(output):
+                        profile_cli.main()
+                    prepared_pin = json.loads(output.getvalue())
+                    assert prepared_pin["version"] == "public-opening-pin-execution-v1"
+                    for label in ("played", "alternative"):
+                        branch = prepared_pin["branches"][label]
+                        assert branch["eligible"] == branch["selected"] == 1
+                        assert branch["supported"] == 1 and branch["short_records"] == 1
+                        assert (
+                            branch["positions_inspected"] > 0 and branch["preparation_incomplete"]
+                        )
+                        example = branch["example"]
+                        assert example["recorded"] and example["candidate_san"] == "Bb4"
+                        assert (
+                            example["proof"]["type"] == "absolute_pin"
+                            and example["proof"]["legal_replies"] == 15
+                        )
+                        assert (
+                            example["history_sha256"]
+                            and example["full_history_sha256"]
+                            and example["record_hash"]
+                        )
+                    unavailable_pin = prepare_public(
+                        pin_root,
+                        "learner",
+                        pin_game,
+                        pin_position,
+                        "b8c6",
+                        pin=True,
+                        fork_window="continuation",
+                    )
+                    for branch in unavailable_pin["branches"].values():
+                        assert branch["selected"] == 1 and branch["ended_before_window"] == 1
+                        assert branch["status"] == "incomplete" and branch["example"] is None
+                    import chess_coach.opening_public_pin_game as public_pin_game
+
+                    with pin_cli.context() as no_proof:
+                        no_proof.setattr(
+                            public_pin_game,
+                            "pin_proof",
+                            lambda *_a, **_k: pytest.fail("pin proof on GET"),
+                        )
+                        shown_pin = cli_profile(
+                            pin_root,
+                            "learner",
+                            pin_game,
+                            pin_position,
+                            "b8c6",
+                            "recent",
+                            proof_kind="pin",
+                        )
+                        assert shown_pin["public_preparation"]["pin_status"] == "prepared"
+                        pin_app = create_app(
+                            db_path=pin_db_path,
+                            project_root=pin_root,
+                            subject="learner",
+                            actor="reviewer",
+                            corpus="test",
+                            login="fixture",
+                            origin="https://coach.invalid",
+                        )
+                        route = f"/repertoire/games/{pin_game}/openings/{pin_position}/profile"
+                        pin_client = pin_app.test_client()
+                        assert (
+                            pin_client.get(route, base_url="https://coach.invalid").status_code
+                            == 403
+                        )
+                        pin_page = pin_client.get(
+                            route,
+                            query_string={
+                                "reference": "recent",
+                                "alternative": "b8c6",
+                                "proof_kind": "pin",
+                            },
+                            base_url="https://coach.invalid",
+                            headers=headers,
+                        )
+                        assert (
+                            pin_page.status_code == 200
+                            and b"Prepared public pin opportunities" in pin_page.data
+                        )
+                        assert pin_page.data.count(b"Public source example") == 2
+                    assert hashlib.sha256(pin_db_path.read_bytes()).hexdigest() == pin_db_hash
+                    print(
+                        "synthetic indexed pin: both branches, unavailable window, private readback and source unchanged"
+                    )
                 report = cli_profile(recent_root, "learner", *later_games[0], "f1c4", "recent")
                 assert report["decision_ply"] == 3 and report["played"]["games"] == 8
                 assert report["played"]["queens"]["queenless_observed"] == 1
@@ -2778,12 +2970,6 @@ def _opening_fit_route(monkeypatch, tmp_path):
                     cli_profile(recent_root, "other", *later_games[0], "f1c4", "recent")
 
                 # The actual offline CLI prepares both current and candidate branches.
-                import contextlib
-                import io
-                import sys as public_prep_sys
-
-                import chess_coach.opening_public_proof_replay as public_replay
-                import chess_coach.ops_opening_profile as profile_cli
 
                 cli.setenv("CHESS_SUBJECT", "learner")
                 cli.setattr(
@@ -2841,8 +3027,6 @@ def _opening_fit_route(monkeypatch, tmp_path):
                 assert prepared["branches"]["played"]["unsupported"] > 0
                 artifact_names = set(recent_planning.glob("opening-public-proof-*.json"))
                 assert len(artifact_names) == 1
-
-                from chess_coach.opening_profile_cli_report import prepare_public
 
                 long_prepared = prepare_public(
                     recent_root, "learner", long_id, long_position, "f1c4"
@@ -3023,7 +3207,6 @@ def _opening_fit_route(monkeypatch, tmp_path):
                 with httpx.Client(transport=httpx.MockTransport(prevention_response)) as fake:
                     acquire(prevention_root, "learner", client=fake)
                 assert build_recent(prevention_root, "learner")["accepted"] == 3
-                from chess_coach.opening_full_history_build import build as build_full_history
 
                 assert build_full_history(prevention_root, "learner")["accepted"] == 3
                 cli.setattr(
@@ -4248,9 +4431,35 @@ def _opening_fit_route(monkeypatch, tmp_path):
                     nomination_db, recent_root, "learner", game_id, decision_id, "b1c3"
                 )
                 assert legacy["public_status"] == "available"
-                old_recommendation = legacy_recommendation(
-                    nomination_db, recent_root, "learner", game_id, decision_id, "b1c3"
-                )
+                import chess_coach.opening_recommendation_preview as recommendation_module
+
+                original_selection = recommendation_module.selection
+
+                def diagnostic_selection(report, *args):
+                    try:
+                        return original_selection(report, *args)
+                    except ValueError:
+                        nomination = report.get("fork_nomination", {})
+                        judgment = report.get("revision_judgments", {})
+                        print(
+                            "recommendation diagnostic:",
+                            {
+                                "branch_present": report.get("branch") is not None,
+                                "top_status": report.get("status"),
+                                "top_reason": report.get("reason"),
+                                "nomination_status": nomination.get("status"),
+                                "nomination_reason": nomination.get("reason"),
+                                "judgment_status": judgment.get("status"),
+                                "judgment_reason": judgment.get("reason"),
+                            },
+                        )
+                        raise
+
+                with checked_read.context() as diagnostic:
+                    diagnostic.setattr(recommendation_module, "selection", diagnostic_selection)
+                    old_recommendation = legacy_recommendation(
+                        nomination_db, recent_root, "learner", game_id, decision_id, "b1c3"
+                    )
                 direct_course = direct_roles(legacy)
                 selected_course = recommendation_preview(
                     nomination_db,

@@ -1,6 +1,7 @@
 """Read or confirm a window's current source binding."""
 
 from .opening_public_fork_later import bound as full_bound
+from .opening_public_pin_policy import policy as pin_policy
 from .opening_public_prevention_policy import prevention
 from .opening_public_proof_source import binding, check
 from .opening_public_proof_versions import continuation
@@ -9,7 +10,7 @@ from .style_schedule_budget import history_budget
 
 
 def selected(directory, identity, root, subject, deadline, window, *, kind="fork"):
-    if kind not in {"fork", "prevention"}:
+    if kind not in {"fork", "prevention", "pin"}:
         raise ValueError("invalid proof kind")
     if window == "initial" and kind == "fork":
         return (*current_preparation(directory, identity), None)
@@ -19,11 +20,10 @@ def selected(directory, identity, root, subject, deadline, window, *, kind="fork
         full = full_bound(root, subject, deadline)
     except (OSError, ValueError, TypeError, KeyError):
         return (*current_preparation(directory, identity, capture_only=True), None)
-    chosen = (
-        prevention(identity, full[1], window)
-        if kind == "prevention"
-        else continuation(identity, full[1])
-    )
+    if kind == "fork":
+        chosen = continuation(identity, full[1])
+    else:
+        chosen = {"pin": pin_policy, "prevention": prevention}[kind](identity, full[1], window)
     value, legacy = current_preparation(directory, identity, chosen=chosen)
     return value, legacy, full
 

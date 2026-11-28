@@ -24,13 +24,10 @@ def report(
         connection.set_progress_handler(lambda: int(time.monotonic() >= deadline), 1000)
         version = connection.execute("PRAGMA data_version").fetchone()[0]
         decision = inspect(db, game_id, position_id, subject)
-        choice = next(
-            (item for item in decision["catalog"]["items"] if item["uci"] == alternative), None
-        )
-        if choice is None:
+        if alternative not in (item["uci"] for item in decision["catalog"]["items"]):
             raise ValueError("opening alternative unavailable")
         played = profile(db, root, subject, decision, decision["played_uci"], reference, deadline)
-        other = profile(db, root, subject, decision, choice["uci"], reference, deadline)
+        other = profile(db, root, subject, decision, alternative, reference, deadline)
         prepared = None
         if reference == "recent":
             from .opening_public_proof_read import lookup
@@ -83,6 +80,7 @@ def prepare_public(
     protection=False,
     capture_pv=False,
     defense_pv=False,
+    pin=False,
 ):
     from .opening_public_proof import prepare
 
@@ -100,4 +98,5 @@ def prepare_public(
             protection=protection,
             capture_pv=capture_pv,
             defense_pv=defense_pv,
+            pin=pin,
         )

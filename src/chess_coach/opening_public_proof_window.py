@@ -2,17 +2,25 @@
 
 from .opening_public_fork_later import bound as full_bound
 from .opening_public_fork_later import branches as later_branches
+from .opening_public_pin_policy import policy as pin_policy
 from .opening_public_prevention_policy import prevention
 from .opening_public_proof_prepare import branches
 from .opening_public_proof_versions import combined, continuation
 
 
-def select(base, root, subject, deadline, forks, window, *, prevent=False):
-    if prevent:
-        if forks or window not in {"initial", "continuation"}:
-            raise ValueError("invalid prevention selection")
-        full, sha = full_bound(root, subject, deadline)
-        return prevention(base, sha, window), (full, sha)
+def _full_selection(base, root, subject, deadline, forks, window, *, prevent, pin):
+    if forks or (pin and prevent) or window not in {"initial", "continuation"}:
+        raise ValueError("invalid prevention selection" if prevent else "invalid pin selection")
+    full, sha = full_bound(root, subject, deadline)
+    selected_policy = pin_policy if pin else prevention
+    return selected_policy(base, sha, window), (full, sha)
+
+
+def select(base, root, subject, deadline, forks, window, *, prevent=False, pin=False):
+    if pin or prevent:
+        return _full_selection(
+            base, root, subject, deadline, forks, window, prevent=prevent, pin=pin
+        )
     if window == "continuation":
         if not forks:
             raise ValueError("fork preparation required")
@@ -24,6 +32,10 @@ def select(base, root, subject, deadline, forks, window, *, prevent=False):
 
 
 def evaluate(index, base, identity, full, start, deadline):
+    if "pin" in identity["policy"]:
+        from .opening_public_pin import evaluate as pin_evaluate
+
+        return pin_evaluate(full[0], identity, start, deadline)
     if "prevention" in identity["policy"]:
         from .opening_public_prevention import evaluate as prevention_evaluate
 

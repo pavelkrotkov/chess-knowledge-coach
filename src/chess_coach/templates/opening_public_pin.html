@@ -1,0 +1,16 @@
+<h3>Prepared public pin opportunities</h3>
+<p>These are bounded checks of public games, separate from your own play. A supported pin does not establish a mistake, preference, overall safety or learner progress. Other moves, counterplay and later positions remain unknown.</p>
+{% if prepared and prepared.pin_policy is defined %}
+{% for label, branch in (("Played", prepared.branches.played), ("Alternative", prepared.branches.alternative)) %}
+<section><h4>{{ label }} branch</h4>
+{% if branch.eligible is none %}<p>Matching context or preparation is unavailable; coverage is unknown.</p>{% else %}
+<p>Independent games: {{ branch.eligible }} eligible, {{ branch.selected }} selected, {{ branch.analyzed }} with inspected roots, {{ branch.supported }} with a supported example, {{ branch.unsupported }} with unsupported work, {{ branch.censored }} bounded by the window or frontier, and {{ branch.preparation_incomplete }} with unsearched work. Counts can overlap. {{ branch.short_records }} records ended before a full window; {{ branch.ended_before_window }} ended before it began. {% if branch.more_eligible %}Additional eligible games were outside the cap.{% endif %}</p>
+<p>Positions available: {{ branch.positions_available }}; positions inspected: {{ branch.positions_inspected }}; candidate roots checked: {{ branch.roots }}. No example is not a finding that no pin exists.</p>
+{% if branch.example %}<p><a href="{{ branch.example.source }}">Public source example</a>, record {{ branch.example.record }}, ply {{ branch.example.ply }}: {% if branch.example.recorded %}the recorded move{% else %}a legal alternative to the recorded move {{ branch.example.recorded_san }}{% endif %} {{ branch.example.candidate_san }} creates a {{ branch.example.proof.type | replace('_', ' ') }}. Against the legal immediate replies checked, the named piece can be captured for the stated material threshold or an immediate mate. Other play remains unknown.</p>{% else %}<p>No supported example is available in the checked roots.</p>{% endif %}
+{% endif %}</section>
+{% endfor %}
+<details><summary>Source and proof limits</summary>
+<p><a href="{{ prepared.reference.source_archive }}">Rated-game source</a> · <a href="{{ prepared.reference.license_url }}">{{ prepared.reference.license }}</a>. The retained prefix does not verify the whole archive. {{ prepared.reference.filters }}.</p>
+<p>Full-history index SHA-256: <code>{{ prepared.pin_policy.index_sha256 }}</code>. The {{ prepared.pin_policy.window }} window covers at most {{ prepared.pin_policy.positions }} recorded positions. At most {{ prepared.pin_policy.games_per_branch }} games per branch, {{ prepared.pin_policy.roots_per_game }} roots per game and {{ prepared.pin_policy.proofs_per_preparation }} pin proofs across both branches are checked under the shared {{ prepared.pin_policy.proof_seconds }}-second proof deadline. The proof examines at most {{ prepared.pin_policy.reply_limit }} legal replies and uses the existing exchange bounds.</p>
+</details>
+{% else %}<p>No current pin preparation is available for this exact pair and window. Coverage is unknown; preparation is an offline action.</p>{% endif %}

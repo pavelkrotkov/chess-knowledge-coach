@@ -10,6 +10,46 @@ from .opening_public_proof_source import PROOF_SECONDS, check
 from .purpose_deadline import cleanup_timeout, startup_timeout
 
 
+def prepare_selected(
+    database,
+    binary,
+    index,
+    base,
+    start,
+    deadline,
+    *,
+    forks,
+    prevent,
+    protection,
+    capture_pv,
+    defense_pv,
+    window,
+):
+    if defense_pv:
+        from .opening_public_defense_pv_policy import policy as defense_policy
+
+        identity = defense_policy(
+            base,
+            forks=forks,
+            prevent=prevent,
+            protection=protection,
+            capture_pv=capture_pv,
+            window=window,
+        )
+    else:
+        from .opening_public_capture_pv_policy import policy as capture_policy
+
+        identity = capture_policy(
+            base,
+            forks=forks,
+            prevent=prevent,
+            protection=protection,
+            window=window,
+        )
+    result, sample = prepare(database, binary, index, identity, start, deadline)
+    return identity, result, sample
+
+
 def prepare(database, binary, index, identity, start, deadline):
     state = {"binary": binary, "engine": None, "failed": False}
     with report_digests(), deep_lock(database):

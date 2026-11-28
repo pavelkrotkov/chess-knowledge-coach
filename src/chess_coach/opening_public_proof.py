@@ -4,8 +4,7 @@ import time
 
 from .fact_fingerprint import canonical, digest
 from .opening_public_capture_pv_current import verify as verify_capture_pv
-from .opening_public_capture_pv_policy import policy as capture_pv_policy
-from .opening_public_capture_pv_session import prepare as prepare_capture_pv
+from .opening_public_capture_pv_session import prepare_selected as prepare_capture_pv
 from .opening_public_proof_current import confirm
 from .opening_public_proof_files import publish
 from .opening_public_proof_read import view
@@ -35,7 +34,10 @@ def prepare(
     protection=False,
     capture_pv=False,
     defense_pv=False,
+    pin=False,
 ):
+    if pin and (protection or capture_pv or defense_pv):
+        raise ValueError("invalid pin selection")
     start = time.monotonic()
     deadline = start + SECONDS
     directory, _ = planning(root, subject)
@@ -49,23 +51,21 @@ def prepare(
             )
         base = identity
         if capture_pv or defense_pv:
-            if defense_pv:
-                from .opening_public_defense_pv_policy import policy as defense_policy
-
-                identity = defense_policy(
-                    base,
-                    forks=forks,
-                    prevent=prevent,
-                    protection=protection,
-                    capture_pv=capture_pv,
-                    window=fork_window,
-                )
-            else:
-                identity = capture_pv_policy(
-                    base, forks=forks, prevent=prevent, protection=protection, window=fork_window
-                )
+            identity, result, sample = prepare_capture_pv(
+                db.path,
+                ENGINE,
+                index,
+                base,
+                start,
+                deadline,
+                forks=forks,
+                prevent=prevent,
+                protection=protection,
+                capture_pv=capture_pv,
+                defense_pv=defense_pv,
+                window=fork_window,
+            )
             full = None
-            result, sample = prepare_capture_pv(db.path, ENGINE, index, identity, start, deadline)
             later_sample = None
         else:
             if protection:
@@ -75,7 +75,7 @@ def prepare(
                 )
             else:
                 identity, full = select(
-                    base, root, subject, deadline, forks, fork_window, prevent=prevent
+                    base, root, subject, deadline, forks, fork_window, prevent=prevent, pin=pin
                 )
             result, sample, later_sample = evaluate(
                 index, base, identity, full, start, start + PROOF_SECONDS
