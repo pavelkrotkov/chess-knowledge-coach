@@ -110,7 +110,7 @@ def test_private_card_rotates_only_after_complete_unassisted_rehearsal(tmp_path,
         from chess_coach.tactical_study_preview import preview as study_preview
 
         source_mate = source_for_evidence(db, SUBJECT, examples[0]["evidence_id"])
-        initial = chess.Board("6k1/1p3ppp/8/7Q/8/5R2/7r/KQ3R2 b - - 0 1")
+        initial = chess.Board("6k1/1p3ppp/8/7Q/8/5R2/7r/K4R2 b - - 0 1")
         db.connection.execute(
             "INSERT INTO puzzle_corpora(version,source,checksum,state) VALUES(?,?,?,?)",
             ("test", "fixture", "checksum", "staging"),
@@ -144,7 +144,7 @@ def test_private_card_rotates_only_after_complete_unassisted_rehearsal(tmp_path,
             "explanation",
             "worked",
             "practice",
-        ]
+        ], default_course["preview"]["selection"]["unavailable"]
         selected_course = build(db, SUBJECT, "test", selected=["calculation:execute"])
         assert selected_course["kind"] == "local-tactical-course-v18"
         assert [item["role"] for item in selected_course["preview"]["chapters"]] == [
