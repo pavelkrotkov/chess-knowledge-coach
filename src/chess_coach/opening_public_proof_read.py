@@ -49,7 +49,7 @@ def lookup(
         check(deadline)
         if value is None:
             return None
-        if proof_kind in {"mate", "short_mate", "back_rank", "skewer"} and (
+        if proof_kind in {"mate", "short_mate", "back_rank", "skewer", "double_mate"} and (
             full is None or proof_kind not in value["binding"]["policy"]
         ):
             return None

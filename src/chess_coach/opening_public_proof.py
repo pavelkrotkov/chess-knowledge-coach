@@ -38,6 +38,7 @@ def prepare(
     short_mate=False,
     back_rank=False,
     skewer=False,
+    double_mate=False,
 ):
     kind = normalize(
         forks,
@@ -50,6 +51,7 @@ def prepare(
         short_mate=short_mate,
         back_rank=back_rank,
         skewer=skewer,
+        double_mate=double_mate,
     )
     pv_mode = kind in {"capture_pv", "defense_pv"}
     start = time.monotonic()
