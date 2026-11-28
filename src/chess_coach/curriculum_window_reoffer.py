@@ -5,6 +5,7 @@ import time
 
 from .curriculum_cursor import revision
 from .curriculum_window_reoffer_scan import scan
+from .renewal_diagnostics import refusal
 from .tactical_course_budget import SLICE_SECONDS, PreviewUnavailable
 
 
@@ -26,7 +27,8 @@ def unstarted(db, value, budget):
         TypeError,
         KeyError,
         IndexError,
-    ):
+    ) as error:
+        refusal("reoffer", error)
         raise ValueError("previous offers could not be rechecked") from None
 
 

@@ -9,6 +9,7 @@ from .opening_context_launch_page import attach as attach_context
 from .plan_page_focus import focus as next_focus
 from .plan_page_options import minutes, priority, validate_advisory
 from .plan_promotion import recommendation as promotion_recommendation
+from .renewal_diagnostics import refusal
 from .tactical_course_budget import PreviewUnavailable
 from .tactical_course_deadline import PreviewDeadline
 from .web_db import database
@@ -46,12 +47,15 @@ def render(daily_plan):
                 current,
                 result,
             )
-    except (ValueError, OSError, sqlite3.Error, PreviewUnavailable, PreviewDeadline):
-        return render_template(
-            "plan.html",
-            error="The plan changed or the chosen goal or window is unavailable. Restart planning.",
-            plan=None,
-        ), 400
+    except (ValueError, OSError, sqlite3.Error, PreviewUnavailable, PreviewDeadline) as error:
+        if request.args.get("renew") == "1":
+            refusal("request", error)
+            message = "The plan could not be renewed. Retry renewal or choose a fresh plan."
+        else:
+            message = (
+                "The plan changed or the chosen goal or window is unavailable. Restart planning."
+            )
+        return render_template("plan.html", error=message, plan=None), 400
     validate_advisory(db, result)
     focus = promotion = generation = None
     if not request.args.get("cursor") and "window" not in result:
