@@ -1,5 +1,6 @@
 """Immutable tactical-course versions, policies, and selection contracts."""
 
+from .tactical_course_choice import from_pairs
 from .tactical_course_selection import CURRENT_PAIRS, PAIRS
 
 LEGACY_VERSION = "local-tactical-course-v1"
@@ -32,9 +33,16 @@ SELECTED_PROTECTION_ROLES_VERSION = "local-tactical-course-v14"
 SELECTED_PROTECTION_ROLES_POLICY = "provisional-recurring-tactics-v14"
 DEFAULT_PROTECTION_ROLES_VERSION = "local-tactical-course-v15"
 DEFAULT_PROTECTION_ROLES_POLICY = "provisional-recurring-tactics-v15"
+MIXED_SELECTED_VERSION = "local-tactical-course-v16"
+MIXED_SELECTED_POLICY = "provisional-recurring-tactics-v16"
 # Only selected fork versions use the eight-second slice; the default keeps two seconds.
 FORK_VERSIONS = {SELECTED_FORK_VERSION, SELECTED_FORK_ROLES_VERSION}
-QUALIFIED_FORK_VERSIONS = {*FORK_VERSIONS, DEFAULT_FORK_VERSION, DEFAULT_PROTECTION_ROLES_VERSION}
+QUALIFIED_FORK_VERSIONS = {
+    *FORK_VERSIONS,
+    DEFAULT_FORK_VERSION,
+    DEFAULT_PROTECTION_ROLES_VERSION,
+    MIXED_SELECTED_VERSION,
+}
 ROLE_COURSE_VERSIONS = {
     DEFAULT_ROLES_VERSION,
     SELECTED_ROLES_VERSION,
@@ -42,6 +50,7 @@ ROLE_COURSE_VERSIONS = {
     DEFAULT_FORK_VERSION,
     SELECTED_PROTECTION_ROLES_VERSION,
     DEFAULT_PROTECTION_ROLES_VERSION,
+    MIXED_SELECTED_VERSION,
 }
 FORK_PAIR = ("fork", "execute")
 CONTRACTS = {
@@ -59,6 +68,7 @@ CONTRACTS = {
     SELECTED_FORK_ROLES_VERSION: (SELECTED_FORK_ROLES_POLICY, [FORK_PAIR]),
     DEFAULT_FORK_VERSION: (DEFAULT_FORK_POLICY, CURRENT_PAIRS),
     DEFAULT_PROTECTION_ROLES_VERSION: (DEFAULT_PROTECTION_ROLES_POLICY, CURRENT_PAIRS),
+    MIXED_SELECTED_VERSION: (MIXED_SELECTED_POLICY, None),
     SELECTED_PROTECTION_ROLES_VERSION: (
         SELECTED_PROTECTION_ROLES_POLICY,
         [("hanging_piece", "prevent")],
@@ -71,6 +81,7 @@ SELECTED = {
     SELECTED_VERSION,
     THEMATIC_SELECTED_VERSION,
     SELECTED_PROTECTION_ROLES_VERSION,
+    MIXED_SELECTED_VERSION,
     *FORK_VERSIONS,
     *NAMED,
 }
@@ -81,3 +92,18 @@ THEMATIC = {
     DEFAULT_PROTECTION_ROLES_VERSION,
 } | (SELECTED - {SELECTED_VERSION})
 MODERN = {PROTECTION_VERSION, VERSION, SELECTED_VERSION, *THEMATIC}
+
+
+def pairs_for(kind, saved_pairs):
+    contract = CONTRACTS[kind]
+    if kind not in SELECTED:
+        return contract[1]
+    result = from_pairs(saved_pairs)
+    if kind == MIXED_SELECTED_VERSION and len(result) < 2:
+        raise ValueError("mixed selection requires multiple pairs")
+    required = [("hanging_piece", "execute")] if kind in NAMED else contract[1]
+    if required is not None and result != required:
+        raise ValueError(
+            "named capture selection differs" if kind in NAMED else "selected fork differs"
+        )
+    return result

@@ -1091,6 +1091,76 @@ def test_fork_lesson_uses_rechecked_fact_and_legal_line(tmp_path, monkeypatch):
                 )
             material_decision(db, position_id, LEARNER)
 
+        selected_pairs = ["hanging_piece:execute", "hanging_piece:prevent", "fork:execute"]
+
+        def released_mixed(values):
+            if values is not None:
+                return (
+                    tactical_course.THEMATIC_SELECTED_VERSION,
+                    tactical_course.THEMATIC_SELECTED_POLICY,
+                    tactical_course.pairs(values),
+                    SELECTED_SECONDS,
+                )
+            return current_fork_course_policy(values)
+
+        with monkeypatch.context() as historical:
+            historical.setattr(tactical_course, "_policy", released_mixed)
+            old_mixed = tactical_preview(
+                db,
+                LEARNER,
+                "test",
+                selected=selected_pairs,
+                budget=Budget(db, slice_seconds=SELECTED_SECONDS),
+            )
+        assert old_mixed["kind"] == "local-tactical-course-v7"
+        old_mixed_export = tactical_export(
+            db, LEARNER, "test", old_mixed, Budget(db, slice_seconds=SELECTED_SECONDS)
+        )
+        assert study_preview(old_mixed_export, old_mixed_export["export_sha256"]) == old_mixed
+        enqueue(db, project, LEARNER, "test", selected=selected_pairs)
+        prepare_course(db, LEARNER, project)
+        with monkeypatch.context() as guarded:
+            guarded.setattr("chess_coach.tactical_course_protection.probe", forbidden_default)
+            guarded.setattr("chess_coach.objective_protection_snapshot.probe", forbidden_default)
+            guarded.setattr("chess_coach.objective_protection_snapshot.judge", forbidden_default)
+            guarded.setattr("chess_coach.related_protection_features.probe", forbidden_default)
+            guarded.setattr("chess_coach.related_protection_features.judge", forbidden_default)
+            selected_identity, selected_body = mixed_offer()
+        assert selected_body["kind"] == "local-tactical-course-export-v16"
+        selected_export = json.loads((planning / selected_identity["file"]).read_text())
+        selected_mixed = study_preview(selected_export, selected_identity["hash"])
+        assert selected_mixed["kind"] == "local-tactical-course-v16"
+        assert {item["kind"] for item in selected_mixed["preview"]["patterns"]} == {
+            "capture",
+            "fork",
+            "protection",
+        }
+        assert (
+            sum(item.get("role") == "explanation" for item in selected_mixed["preview"]["chapters"])
+            == 3
+        )
+        assert (
+            sum(item.get("role") == "worked" for item in selected_mixed["preview"]["chapters"]) == 3
+        )
+        assert (
+            sum(item.get("role") == "practice" for item in selected_mixed["preview"]["chapters"])
+            == 3
+        )
+        partial_mixed = tactical_preview(
+            db,
+            LEARNER,
+            "not-configured",
+            selected=selected_pairs,
+            budget=Budget(db, slice_seconds=SELECTED_SECONDS),
+        )
+        assert partial_mixed["preview"]["selection"]["unavailable"]
+        assert not any(
+            item.get("role") == "practice" for item in partial_mixed["preview"]["chapters"]
+        )
+        with revalidate(
+            path, selected_export, selected_export["export_sha256"], project_root=project
+        ) as check:
+            check()
         enqueue(db, project, LEARNER, "test")
         prepare_course(db, LEARNER, project)
         before_mixed_reads = learning_rows()
@@ -1665,7 +1735,12 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
                 chosen,
                 tactical_course.SELECTED_SECONDS,
             )
-        return current_policy(selected)
+        return (
+            tactical_course.THEMATIC_SELECTED_VERSION,
+            tactical_course.THEMATIC_SELECTED_POLICY,
+            chosen,
+            tactical_course.SELECTED_SECONDS,
+        )
 
     monkeypatch.setattr(tactical_course, "_policy", legacy_policy)
     project, path = capture_project(tmp_path, "project")

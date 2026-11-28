@@ -9,7 +9,11 @@ from .opening_public_proof_files import latest, publish
 from .opening_queue_location import location
 from .opening_queue_lock import lock
 from .opening_recent_capacity import check as capacity
-from .tactical_course import DEFAULT_PROTECTION_ROLES_VERSION, QUALIFIED_FORK_VERSIONS
+from .tactical_course import (
+    DEFAULT_PROTECTION_ROLES_VERSION,
+    MIXED_SELECTED_VERSION,
+    QUALIFIED_FORK_VERSIONS,
+)
 from .tactical_course_budget import PreviewUnavailable
 from .tactical_course_deadline import PreviewDeadline
 
@@ -56,7 +60,7 @@ def current(root, database, subject, corpus, envelope, version, kind):
     if kind not in QUALIFIED_FORK_VERSIONS:
         return
     try:
-        if kind == DEFAULT_PROTECTION_ROLES_VERSION:
+        if kind in {DEFAULT_PROTECTION_ROLES_VERSION, MIXED_SELECTED_VERSION}:
             from .tactical_course_fork_read import current as fork_current
 
             try:

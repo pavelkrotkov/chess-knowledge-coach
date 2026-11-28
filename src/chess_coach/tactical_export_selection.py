@@ -2,10 +2,11 @@
 
 from .tactical_course_budget import SLICE_SECONDS, TOTAL_SECONDS
 from .tactical_course_choice import SLICE_SECONDS as SELECTED_SECONDS
-from .tactical_course_choice import WORK_POLICY, check_budget, from_pairs
+from .tactical_course_choice import WORK_POLICY, check_budget
 from .tactical_course_contract import (
     CONTRACTS,
     PROTECTION_VERSION,
+    pairs_for,
 )
 from .tactical_course_contract import (
     MODERN as MODERN,
@@ -38,16 +39,6 @@ def _omissions(selection, pairs, modern):
         raise ValueError("invalid preview omissions")
 
 
-def _pairs(selection, contract, selected, named):
-    if not selected:
-        return contract[1]
-    result = from_pairs(selection["pairs"])
-    required = [("hanging_piece", "execute")] if named else contract[1]
-    if required is not None and result != required:
-        raise ValueError("named capture selection differs" if named else "selected fork differs")
-    return result
-
-
 def selection(body, corpus):
     selection = body["selection"]
     contract = CONTRACTS.get(body.get("kind"))
@@ -55,7 +46,7 @@ def selection(body, corpus):
         raise ValueError("unsupported preview policy")
     # A selected preview must bind its canonical pairs and exact work policy.
     selected = body["kind"] in SELECTED
-    pairs = _pairs(selection, contract, selected, body["kind"] in NAMED)
+    pairs = pairs_for(body["kind"], selection["pairs"])
     expected = {
         "corpus_version": corpus,
         "pairs": [list(pair) for pair in pairs],

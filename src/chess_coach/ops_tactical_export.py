@@ -11,6 +11,7 @@ from .opening_queue_location import scope
 from .schema_compat import readonly
 from .tactical_course import (
     FORK_VERSIONS,
+    MIXED_SELECTED_VERSION,
     NAMED_VERSION,
     SELECTED_PROTECTION_ROLES_VERSION,
     SELECTED_ROLES_VERSION,
@@ -53,6 +54,7 @@ def prepare(root, preview, expected_hash, output, *, offer=False):
             *FORK_VERSIONS,
             SELECTED_ROLES_VERSION,
             SELECTED_PROTECTION_ROLES_VERSION,
+            MIXED_SELECTED_VERSION,
         }:
             budget.slice_seconds = SELECTED_SECONDS
         result = build(
