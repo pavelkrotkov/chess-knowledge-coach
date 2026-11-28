@@ -9,8 +9,8 @@ from .opening_queue_write import write
 from .study_remote import StudyError
 from .tactical_course_deadline import PreviewDeadline
 from .tactical_export_input import load
+from .tactical_study_part import receipt, select
 from .tactical_study_preview import preview
-from .tactical_study_receipt import exact
 from .tactical_study_request import SLOT, configured
 from .tactical_study_session import publish_locked
 from .tactical_study_slot import valid
@@ -35,8 +35,13 @@ def _publish(root, directory, learner, item):
     try:
         envelope = load(root, directory / item["file"])
         preview(envelope, item["version"])
-        if not exact(directory, learner, item["version"], envelope["export"]):
-            publish_locked(root, directory / item["file"], item["version"], queued=True)
+        part = item.get("part")
+        target = select(envelope["export"], item["version"], part)
+        if not receipt(directory, learner, target):
+            options = {"part": part} if part is not None else {}
+            publish_locked(root, directory / item["file"], item["version"], queued=True, **options)
+        if not receipt(directory, learner, target):
+            return "incomplete"
     except StudyError:
         return "incomplete"
     except ValueError:

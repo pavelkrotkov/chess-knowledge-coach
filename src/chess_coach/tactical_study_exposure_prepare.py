@@ -20,6 +20,10 @@ def begin(state, index, chapter):
         "pending_at": datetime.now(UTC).isoformat(),
         "verified_at": None,
     }
+    part = delivery.get("multipart")
+    if part is not None:
+        entry["parent_sha256"] = part["parent_sha256"]
+        entry["original_index"] = part["indices"][index]
     delivery["chapters"][str(index)] = entry
     if len(json.dumps(state, sort_keys=True).encode("utf-8")) > MAX_BYTES:
         raise StudyError("tactical exposure intent exceeds limit")

@@ -19,7 +19,7 @@ def publish(remote, path, course, *, check=lambda: None, strict=False):
     require_scopes(remote)
     from .tactical_study_exposure import bind
 
-    bind(state, remote.learner)
+    bind(state, remote.learner, multipart=course.get("multipart"))
     if state["study"] is None:
 
         def before_create():
