@@ -16,9 +16,11 @@ from tests.test_unified_sessions import token
 
 
 @pytest.mark.parametrize("played,outcome", [("f6g5", "failure"), ("b5c7", "success")])
-def test_unlisted_owned_fork_is_proved_for_success_and_miss(tmp_path, monkeypatch, played, outcome):
+def test_unlisted_owned_fork_is_proved_for_success_and_miss(
+    tmp_path, monkeypatch, caplog, played, outcome
+):
     if played == "f6g5":
-        _daily_fork_workflow(tmp_path, monkeypatch)
+        _daily_fork_workflow(tmp_path, monkeypatch, caplog)
     path = tmp_path / "fork.sqlite"
     db, evidence = owned_fork(path, monkeypatch, played)
     for _ in range(10):
@@ -1212,7 +1214,7 @@ def _window_legacy_workflow(original, tmp_path, patch, wall, subject):
     db.close()
 
 
-def _daily_fork_workflow(tmp_path, monkeypatch):
+def _daily_fork_workflow(tmp_path, monkeypatch, caplog):
     import html
     import io
     import sys
@@ -1713,10 +1715,33 @@ def _daily_fork_workflow(tmp_path, monkeypatch):
             login="fixture-login",
             origin="https://coach.invalid",
         )
+        before_unavailable = learning_state(unavailable_path)
+        caplog.clear()
         unavailable_page = unavailable_app.test_client().get(
             renewal_url, base_url="https://coach.invalid", headers=pair_headers
         )
         assert unavailable_page.status_code == 400
+        assert b"Retry renewal or choose a fresh plan" in unavailable_page.data
+        assert learning_state(unavailable_path) == before_unavailable
+        messages = [
+            record.getMessage()
+            for record in caplog.records
+            if record.name == "chess_coach.renewal_diagnostics"
+        ]
+        assert set(messages) == {
+            "renewal_refusal phase=renewal_reoffer category=source_unavailable",
+            "renewal_refusal phase=renewal_request category=recheck_unavailable",
+        }
+        caplog.clear()
+        wrong_scope = pair_client.get(
+            renewal_url + "&goal=capture", base_url="https://coach.invalid", headers=pair_headers
+        )
+        assert wrong_scope.status_code == 400
+        assert [
+            record.getMessage()
+            for record in caplog.records
+            if record.name == "chess_coach.renewal_diagnostics"
+        ] == ["renewal_refusal phase=renewal_request category=selection_or_scope"]
         assert (
             unavailable_db.connection.execute("SELECT count(*) FROM unified_sessions").fetchone()[0]
             == 1
