@@ -22,6 +22,7 @@ def parse():
             "defense_pv",
             "mate",
             "short_mate",
+            "back_rank",
         ),
         default="fork",
     )

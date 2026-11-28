@@ -2,11 +2,21 @@
 
 
 def normalize(
-    forks, prevent, protection, capture_pv, defense_pv, mate, window, *, short_mate=False
+    forks,
+    prevent,
+    protection,
+    capture_pv,
+    defense_pv,
+    mate,
+    window,
+    *,
+    short_mate=False,
+    back_rank=False,
 ):
     if mate and any((protection, capture_pv, defense_pv)):
         raise ValueError("invalid mate selection")
     choices = (
+        (back_rank, "back_rank"),
         (short_mate, "short_mate"),
         (defense_pv, "defense_pv"),
         (capture_pv, "capture_pv"),
@@ -23,6 +33,16 @@ def normalize(
         "protection": (forks, prevent, window != "initial"),
         "prevention": (forks, mate, window not in {"initial", "continuation"}),
         "mate": (forks, window not in {"initial", "continuation"}),
+        "back_rank": (
+            forks,
+            prevent,
+            protection,
+            capture_pv,
+            defense_pv,
+            mate,
+            short_mate,
+            window not in {"initial", "continuation"},
+        ),
         "short_mate": (
             forks,
             prevent,
@@ -41,6 +61,7 @@ def normalize(
         "prevention": "invalid prevention selection",
         "mate": "invalid mate selection",
         "short_mate": "invalid short-mate selection",
+        "back_rank": "invalid back-rank selection",
     }
     if any(invalid.get(kind, ())):
         raise ValueError(messages[kind])

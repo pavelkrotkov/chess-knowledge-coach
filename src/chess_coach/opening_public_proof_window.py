@@ -1,5 +1,7 @@
 """Choose one fork window and its independent immutable source binding."""
 
+from .opening_public_back_rank import evaluate as back_rank_evaluate
+from .opening_public_back_rank_policy import policy as back_rank_policy
 from .opening_public_fork_later import bound as full_bound
 from .opening_public_fork_later import branches as later_branches
 from .opening_public_mate import evaluate as mate_evaluate
@@ -16,9 +18,12 @@ from .opening_public_short_mate_policy import policy as short_mate_policy
 def choose(base, full, kind, window):
     if kind == "fork":
         return continuation(base, full[1])
-    return {"prevention": prevention, "mate": mate_policy, "short_mate": short_mate_policy}[kind](
-        base, full[1], window
-    )
+    return {
+        "prevention": prevention,
+        "mate": mate_policy,
+        "short_mate": short_mate_policy,
+        "back_rank": back_rank_policy,
+    }[kind](base, full[1], window)
 
 
 def select(base, root, subject, deadline, kind, window):
@@ -34,6 +39,7 @@ def select(base, root, subject, deadline, kind, window):
 
 def evaluate(index, base, identity, full, start, deadline):
     for kind, handler in (
+        ("back_rank", back_rank_evaluate),
         ("short_mate", short_mate_evaluate),
         ("mate", mate_evaluate),
         ("prevention", prevention_evaluate),
