@@ -13,10 +13,12 @@ def normalize(
     short_mate=False,
     back_rank=False,
     skewer=False,
+    double_mate=False,
 ):
     if mate and any((protection, capture_pv, defense_pv)):
         raise ValueError("invalid mate selection")
     choices = (
+        (double_mate, "double_mate"),
         (skewer, "skewer"),
         (back_rank, "back_rank"),
         (short_mate, "short_mate"),
@@ -35,6 +37,18 @@ def normalize(
         "protection": (forks, prevent, window != "initial"),
         "prevention": (forks, mate, window not in {"initial", "continuation"}),
         "mate": (forks, window not in {"initial", "continuation"}),
+        "double_mate": (
+            forks,
+            prevent,
+            protection,
+            capture_pv,
+            defense_pv,
+            mate,
+            short_mate,
+            back_rank,
+            skewer,
+            window not in {"initial", "continuation"},
+        ),
         "skewer": (
             forks,
             prevent,
@@ -76,6 +90,7 @@ def normalize(
         "short_mate": "invalid short-mate selection",
         "back_rank": "invalid back-rank selection",
         "skewer": "invalid skewer selection",
+        "double_mate": "invalid double-check mate selection",
     }
     if any(invalid.get(kind, ())):
         raise ValueError(messages[kind])

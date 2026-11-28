@@ -1,0 +1,22 @@
+<h3>Prepared public double-check mates</h3>
+<p>These bounded public examples show a legal immediate checkmate in which a moving piece reveals a slider and both check the king. They do not establish a missed move, preference, skill, or overall opening quality. Other positions remain unknown.</p>
+{% if prepared and prepared.double_mate_policy is defined %}
+<p>The {{ prepared.double_mate_policy.window }} window covers up to {{ prepared.double_mate_policy.positions }} plies and {{ prepared.double_mate_policy.games_per_branch }} independent games per branch. The source prefix does not verify the complete archive.</p>
+{% for label, branch in (("Played", prepared.branches.played), ("Alternative", prepared.branches.alternative)) %}
+<section><h4>{{ label }} branch</h4>
+{% if branch.eligible is none %}<p>Matching context or preparation is unavailable; counts are unknown.</p>{% else %}
+<p>Eligible: {{ branch.eligible }}; excluded by nominal context: {{ branch.excluded_context }}; unknown context: {{ branch.unknown_context }}; selected: {{ branch.selected }}; at least one position checked: {{ branch.analyzed }}; with a proved example: {{ branch.supported }}; unsupported: {{ branch.unsupported }}; censored: {{ branch.censored }}; ended before this window: {{ branch.ended_before_window }}; preparation incomplete: {{ branch.preparation_incomplete }}{% if branch.interrupted %}; the shared deadline interrupted preparation{% endif %}. Counts can overlap. The scan stops at the first qualified example in each game.</p>
+{% if branch.example %}
+<p><a href="{{ branch.example.source }}">Public double-check mate example</a>, record {{ branch.example.record }}, ply {{ branch.example.ply }}. {{ branch.example.side_to_move|capitalize }} is to move. The recorded move was {{ branch.example.recorded_san }}; it is not graded.</p>
+<ul>{% for answer in branch.example.alternatives %}<li>{{ answer.san }}: {% for discovery in answer.discoveries %}the {{ answer.moving_piece }} moves from {{ discovery.moved_from }} to {{ discovery.moved_to }}, revealing the {{ discovery.slider_piece }} on {{ discovery.slider }} toward the king on {{ discovery.target }}{% if not loop.last %}; {% endif %}{% endfor %}. The checking pieces are on {{ answer.checkers|join(", ") }}; checkmate leaves the defender no legal reply.</li>{% endfor %}</ul>
+<details><summary>Qualified alternatives and history details</summary>
+<p>Every listed move was independently confirmed as immediate mate and as a double-check discovery against the king. Legal qualifying moves: {% for answer in branch.example.alternatives %}{{ answer.san }} ({{ answer.move }}){% if not loop.last %}, {% endif %}{% endfor %}. A mating position has no defender branches; this is not a material-gain certificate.</p>
+<p>Original history SHA-256: <code>{{ branch.example.history_sha256 }}</code>; full retained history SHA-256: <code>{{ branch.example.full_history_sha256 }}</code>; record binding: <code>{{ branch.example.record_hash }}</code>.</p>
+</details>
+{% else %}<p>No worked example is available in the completed checks; other positions and incomplete searches remain unknown.</p>{% endif %}
+{% endif %}</section>{% endfor %}
+<details><summary>Source and proof details</summary>
+<p>Discovery producer {{ prepared.double_mate_policy.producer }}, mapper {{ prepared.double_mate_policy.mapper }}, version {{ prepared.double_mate_policy.discovery_version }}, scope {{ prepared.double_mate_policy.scope }}, operation {{ prepared.double_mate_policy.operation }}; mate version {{ prepared.double_mate_policy.mate_version }}; chess version {{ prepared.double_mate_policy.chess_version }}. Proof deadline {{ prepared.double_mate_policy.proof_seconds }} seconds; preparation deadline {{ prepared.double_mate_policy.shared_seconds }} seconds.</p>
+<p>Source: <a href="{{ prepared.reference.source_archive }}">public rated-game archive</a>, <a href="{{ prepared.reference.license_url }}">{{ prepared.reference.license }}</a>. Prefix SHA-256: <code>{{ prepared.reference.source_sha256 }}</code>; full-history index SHA-256: <code>{{ prepared.double_mate_policy.index_sha256 }}</code>.</p>
+</details>
+{% else %}<p>No current double-check mate preparation is available for this pair and window. Coverage is unknown; preparation is an offline action.</p>{% endif %}

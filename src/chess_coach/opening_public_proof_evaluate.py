@@ -1,6 +1,7 @@
 """Execute the selected bounded public proof and branch coverage."""
 
 from .opening_public_back_rank import evaluate as back_rank_evaluate
+from .opening_public_double_mate import evaluate as double_mate_evaluate
 from .opening_public_fork_later import branches as later_branches
 from .opening_public_mate import evaluate as mate_evaluate
 from .opening_public_prevention import evaluate as prevention_evaluate
@@ -11,6 +12,7 @@ from .opening_public_skewer import evaluate as skewer_evaluate
 
 def evaluate(index, base, identity, full, start, deadline):
     for kind, handler in (
+        ("double_mate", double_mate_evaluate),
         ("skewer", skewer_evaluate),
         ("back_rank", back_rank_evaluate),
         ("short_mate", short_mate_evaluate),

@@ -8,7 +8,15 @@ from .style_schedule_budget import history_budget
 
 
 def selected(directory, identity, root, subject, deadline, window, *, kind="fork"):
-    if kind not in {"fork", "prevention", "mate", "short_mate", "back_rank", "skewer"}:
+    if kind not in {
+        "fork",
+        "prevention",
+        "mate",
+        "short_mate",
+        "back_rank",
+        "skewer",
+        "double_mate",
+    }:
         raise ValueError("invalid proof kind")
     if window == "initial" and kind == "fork":
         return (*current_preparation(directory, identity), None)

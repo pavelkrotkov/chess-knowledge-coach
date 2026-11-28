@@ -24,6 +24,7 @@ def parse():
             "short_mate",
             "back_rank",
             "skewer",
+            "double_mate",
         ),
         default="fork",
     )

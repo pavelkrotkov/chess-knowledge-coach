@@ -20,6 +20,7 @@ def view(payload, legacy=None):
         ("short_mate", "short_mate"),
         ("back_rank", "back_rank"),
         ("skewer", "skewer"),
+        ("double_mate", "double_mate"),
     ):
         if key in policy:
             result[f"{label}_policy"] = {
@@ -37,6 +38,14 @@ def view(payload, legacy=None):
 def requested(result, window, kind):
     result["fork_window"] = window
     result["proof_kind"] = kind
-    if kind in {"protection", "prevention", "mate", "short_mate", "back_rank", "skewer"}:
+    if kind in {
+        "protection",
+        "prevention",
+        "mate",
+        "short_mate",
+        "back_rank",
+        "skewer",
+        "double_mate",
+    }:
         result[f"{kind}_status"] = "prepared" if f"{kind}_policy" in result else "unavailable"
     return result
