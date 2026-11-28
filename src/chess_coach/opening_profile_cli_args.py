@@ -14,7 +14,15 @@ def parse():
     parser.add_argument("--fork-window", choices=("initial", "continuation"), default="initial")
     parser.add_argument(
         "--proof-kind",
-        choices=("fork", "prevention", "protection", "capture_pv", "defense_pv", "mate"),
+        choices=(
+            "fork",
+            "prevention",
+            "protection",
+            "capture_pv",
+            "defense_pv",
+            "mate",
+            "short_mate",
+        ),
         default="fork",
     )
     mode = parser.add_mutually_exclusive_group()
@@ -26,7 +34,7 @@ def parse():
         dest="prepare_public",
         action="store_const",
         const="capture",
-        help="Prepare bounded recent public capture or selected immediate-mate evidence",
+        help="Prepare bounded recent public capture or selected mate evidence",
     )
     mode.add_argument(
         "--prepare-public-forks",

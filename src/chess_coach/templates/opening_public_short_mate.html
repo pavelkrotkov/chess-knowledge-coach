@@ -1,0 +1,23 @@
+<h3>Prepared public short forced mates</h3>
+<p>These bounded examples prove mate within two moves against every legal reply for each proved root. They do not establish a missed move, preference, skill, or overall opening quality. Other positions remain unknown.</p>
+{% if prepared and prepared.short_mate_policy is defined %}
+<p>The {{ prepared.short_mate_policy.window }} window covers up to {{ prepared.short_mate_policy.positions }} plies and {{ prepared.short_mate_policy.games_per_branch }} independent games per branch. The source prefix does not verify the complete archive.</p>
+{% for label, branch in (("Played", prepared.branches.played), ("Alternative", prepared.branches.alternative)) %}
+<section><h4>{{ label }} branch</h4>
+{% if branch.eligible is none %}<p>Matching context or preparation is unavailable; counts are unknown.</p>{% else %}
+<p>Eligible: {{ branch.eligible }}; excluded by nominal context: {{ branch.excluded_context }}; unknown context: {{ branch.unknown_context }}; selected: {{ branch.selected }}; at least one position checked: {{ branch.analyzed }}; with a proved example: {{ branch.supported }}; unsupported: {{ branch.unsupported }}; censored: {{ branch.censored }}; ended before this window: {{ branch.ended_before_window }}; preparation incomplete: {{ branch.preparation_incomplete }}{% if branch.interrupted %}; the shared deadline interrupted preparation{% endif %}. Counts can overlap. The scan stops at the first proved example in each game.</p>
+{% if branch.example %}
+<p><a href="{{ branch.example.source }}">Public short-mate example</a>, record {{ branch.example.record }}, ply {{ branch.example.ply }}. {{ branch.example.side_to_move|capitalize }} is to move. The recorded move was {{ branch.example.recorded_san }}; it is not graded.</p>
+<ul>{% for root in branch.example.alternatives if root.status == "proved" %}<li>{{ root.move.san }}: {{ root.distance_plies }}-ply mate{% if root.defenses %}<ul>{% for line in root.defenses %}<li>Defender reply {{ line.defense.san }} → mating answer {{ line.mate.san }}</li>{% endfor %}</ul>{% endif %}</li>{% endfor %}</ul>
+<details><summary>All legal alternatives and proof details</summary>
+<p>The proof visited {{ branch.example.nodes }} nodes. Every legal alternative is listed below; an unknown result is not a disproof.</p>
+<ul>{% for root in branch.example.alternatives %}<li>{{ root.move.san }}: {{ root.status }}{% if root.status == "proved" %}, {{ root.distance_plies }}-ply mate{% endif %}</li>{% endfor %}</ul>
+<p>Original history SHA-256: <code>{{ branch.example.history_sha256 }}</code>; full retained history SHA-256: <code>{{ branch.example.full_history_sha256 }}</code>; record binding: <code>{{ branch.example.record_hash }}</code>.</p>
+</details>
+{% else %}<p>No worked example is available in the completed checks; other positions and incomplete searches remain unknown.</p>{% endif %}
+{% endif %}</section>{% endfor %}
+<details><summary>Source and proof limits</summary>
+<p>Each position has at most {{ prepared.short_mate_policy.nodes }} search nodes and {{ prepared.short_mate_policy.reply_limit }} replies, across a {{ prepared.short_mate_policy.plies }}-ply horizon. Proof version {{ prepared.short_mate_policy.proof_version }}; chess version {{ prepared.short_mate_policy.chess_version }}. Proof deadline {{ prepared.short_mate_policy.proof_seconds }} seconds; preparation deadline {{ prepared.short_mate_policy.shared_seconds }} seconds.</p>
+<p>Source: <a href="{{ prepared.reference.source_archive }}">public rated-game archive</a>, <a href="{{ prepared.reference.license_url }}">{{ prepared.reference.license }}</a>. Prefix SHA-256: <code>{{ prepared.reference.source_sha256 }}</code>; full-history index SHA-256: <code>{{ prepared.short_mate_policy.index_sha256 }}</code>.</p>
+</details>
+{% else %}<p>No current short-mate preparation is available for this pair and window. Coverage is unknown; preparation is an offline action.</p>{% endif %}
