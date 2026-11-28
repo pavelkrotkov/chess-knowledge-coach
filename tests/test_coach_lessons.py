@@ -1995,6 +1995,42 @@ def test_repeated_failure_coaching_preview_is_private_and_historical(tmp_path, m
     assert download.mimetype == "application/x-chess-pgn"
     assert download.headers["Content-Disposition"] == 'attachment; filename="tactical-course.pgn"'
     assert download.headers["Cache-Control"] == "no-store"
+
+    # The offered, source-checked export is the only parent used by the private view.
+    from chess_coach.course_parts import partition
+    from chess_coach.tactical_export_groups import course_groups
+
+    manifest = partition(course_groups(exported["export"]), version)
+    assert manifest["parent_sha256"] == version and manifest["part_count"] == 1
+    assert manifest["parts"][0]["indices"] == list(range(chapter_count))
+    assert manifest["parts"][0]["pgn"] == expected_pgn
+    assert manifest["sha256"].encode() in shown.data
+    part_download = course_client.get(
+        download_url + "&part=0", base_url="https://coach.invalid", headers=course_headers
+    )
+    assert part_download.status_code == 200 and part_download.get_data(as_text=True) == expected_pgn
+    assert (
+        course_client.get(
+            download_url + "&part=1", base_url="https://coach.invalid", headers=course_headers
+        ).status_code
+        == 400
+    )
+
+    # Synthetic chapters exercise layout only; they are not a qualified large course.
+    for count in (63, 64):
+        synthetic = [{**chapter, "title": f"Synthetic {index}"} for index in range(count)]
+        groups = [[item] for item in synthetic[:-2]] + [synthetic[-2:]]
+        layout = partition(groups, "0" * 64)
+        assert layout == partition(groups, "0" * 64)
+        assert layout["part_count"] == (1 if count == 63 else 2)
+        assert [item for part in layout["parts"] for item in part["chapters"]] == synthetic
+        assert [item for part in layout["parts"] for item in part["indices"]] == list(range(count))
+        assert all(1 <= len(part["chapters"]) <= 63 for part in layout["parts"])
+        assert all(part["parent_sha256"] == "0" * 64 for part in layout["parts"])
+    assert [len(part["chapters"]) for part in layout["parts"]] == [62, 2]
+    continued = partition([synthetic], "0" * 64)["parts"]
+    assert [len(part["chapters"]) for part in continued] == [63, 1]
+    assert continued[0]["continues_next"] and continued[1]["continues_previous"]
     assert (
         db.connection.execute(
             "SELECT COUNT(*) FROM tactical_exposures WHERE kind='download'"

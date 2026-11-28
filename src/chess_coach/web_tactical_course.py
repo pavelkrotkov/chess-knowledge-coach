@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 from flask import Blueprint, Response, abort, current_app, render_template, request
 
+from .course_parts import from_course
 from .tactical_course_display import chapter as display
 from .tactical_course_offer_read import offered
 from .tactical_course_presentation import lines as presentation_lines
@@ -18,8 +19,8 @@ from .web_tactical_study import submit
 tactical_course_views = Blueprint("tactical_course_views", __name__)
 
 
-def _index(name, count):
-    value = request.args.get(name, "0")
+def _index(name, count, default=0):
+    value = request.args.get(name, str(default))
     if not value.isascii() or not value.isdecimal() or len(value) > 4:
         abort(400)
     index = int(value)
@@ -38,14 +39,19 @@ def show():
             current_app.config["SUBJECT"],
             current_app.config["CORPUS"],
         )
+        manifest = from_course(course, item["hash"])
+        part_index = _index("part", manifest["part_count"])
+        part = manifest["parts"][part_index]
         expected = request.args.get("version")
         if request.args.get("download") == "1":
             if expected != item["hash"]:
                 abort(409, "The offered course changed. Return to Coaching.")
-            return _download(course, item["hash"])
+            return _download(part, item["hash"])
         if expected is not None and expected != item["hash"]:
             abort(409, "The offered course changed. Return to Coaching.")
-        index = _index("chapter", len(course["chapters"]))
+        index = _index("chapter", len(course["chapters"]), part["indices"][0])
+        if index not in part["indices"]:
+            abort(400, "Chapter is outside the selected part.")
         lines = presentation_lines(course["chapters"][index])
         shown = display(course["chapters"][index], index, _index("line", len(lines)))
         source = shown["chapter"]["source"]
@@ -75,6 +81,8 @@ def show():
     page = render_template(
         "tactical_course_browser.html",
         course=course,
+        manifest=manifest,
+        part=part,
         offer=item,
         shown=shown,
         study=study,
@@ -87,16 +95,20 @@ def show():
     return page
 
 
-def _download(course, artifact):
-    document = "\n\n".join(chapter["pgn"] for chapter in course["chapters"]) + "\n"
+def _download(part, artifact):
+    name = (
+        "tactical-course.pgn"
+        if part["count"] == 1
+        else f"tactical-course-part-{part['number']}.pgn"
+    )
     response = Response(
-        document,
+        part["pgn"],
         mimetype="application/x-chess-pgn",
         headers={
-            "Content-Disposition": 'attachment; filename="tactical-course.pgn"',
+            "Content-Disposition": f'attachment; filename="{name}"',
         },
     )
-    _record(artifact, list(enumerate(course["chapters"])), "download")
+    _record(artifact, list(zip(part["indices"], part["chapters"], strict=True)), "download")
     return response
 
 
