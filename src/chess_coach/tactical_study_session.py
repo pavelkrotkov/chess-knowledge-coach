@@ -14,6 +14,7 @@ from .tactical_export_input import load
 from .tactical_study_current import revalidate
 from .tactical_study_destination import prepare
 from .tactical_study_intents import intent
+from .tactical_study_parts import manifest, target
 from .tactical_study_path import planning as private_planning
 
 
@@ -23,12 +24,14 @@ def prepare_locked(root, export_path, expected_hash):
     with locked(database, planning):
         export = load(root, export_path)
         with revalidate(database, export, expected_hash, project_root=root) as check:
+            if manifest(export["export"], expected_hash)["part_count"] != 1:
+                raise ValueError("multipart course requires queued publication")
             destination = intent(planning, expected_hash)
             course = {"course": export["export"], "course_sha256": expected_hash}
             return _publish(database, destination, course, action=partial(prepare, check=check))
 
 
-def publish_locked(root, export_path, expected_hash, *, queued=False):
+def publish_locked(root, export_path, expected_hash, *, queued=False, part_number=None):
     private_planning(root, os.environ["CHESS_SUBJECT"])
     database, planning, _, _ = paths(root, export_path, export_path, output=False)
     with locked(database, planning, sync_wait=not queued):
@@ -37,8 +40,16 @@ def publish_locked(root, export_path, expected_hash, *, queued=False):
             database, export, expected_hash, with_budget=queued, project_root=root
         ) as source:
             check = source.check if queued else source
-            destination = intent(planning, expected_hash)
-            course = {"course": export["export"], "course_sha256": expected_hash}
+            parts = manifest(export["export"], expected_hash)
+            if part_number is None:
+                if parts["part_count"] != 1:
+                    raise ValueError("multipart course requires a part")
+                course = {"course": export["export"], "course_sha256": expected_hash}
+            else:
+                if type(part_number) is not int or not 1 <= part_number <= parts["part_count"]:
+                    raise ValueError("course part unavailable")
+                course = target(parts["parts"][part_number - 1], parts["sha256"])
+            destination = intent(planning, course["course_sha256"])
             timer = (
                 network_deadline(max(0.001, source.expires - time.monotonic()))
                 if queued

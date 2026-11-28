@@ -10,6 +10,7 @@ from .opening_queue_write import write
 from .opening_study_request_validate import credentials
 from .tactical_course_offer import STUDY_SLOT as SLOT
 from .tactical_course_offer_read import offered
+from .tactical_study_parts import manifest
 from .tactical_study_slot import replaceable
 
 
@@ -22,7 +23,7 @@ def enqueue(db, root, learner, corpus, version):
     if not configured(root, db, learner, corpus, version):
         raise ValueError("Study credentials unavailable")
     with lock(directory):
-        selected, _ = offered(root, db.path, learner, corpus)
+        selected, course = offered(root, db.path, learner, corpus)
         if selected["hash"] != version:
             raise ValueError("offered course changed")
         item = {
@@ -34,6 +35,9 @@ def enqueue(db, root, learner, corpus, version):
             "state": "queued",
             "turn": "opening",
         }
+        parts = manifest(course, version)
+        if parts["part_count"] > 1:
+            item["multipart"] = {"sha256": parts["sha256"], "part_count": parts["part_count"]}
         slot = directory / SLOT
         previous = read(slot)
         if previous is None and (slot.exists() or slot.is_symlink()):

@@ -33,12 +33,13 @@
 <ol aria-label="Download course parts">{% for item in manifest.parts %}<li>Part {{ item.number }} of {{ item.count }} · chapters {{ item.indices[0] + 1 }}–{{ item.indices[-1] + 1 }} · <code>{{ item.sha256 }}</code> · <a href="{{ url_for('tactical_course_views.show', version=offer.hash, part=loop.index0) }}">View</a> · <a href="{{ url_for('tactical_course_views.show', download=1, version=offer.hash, part=loop.index0) }}">Download PGN</a>{% if item.continues_previous %} · continues the previous lesson{% endif %}{% if item.continues_next %} · lesson continues in the next part{% endif %}</li>{% endfor %}</ol>
 <p>Worked examples are ungraded. Some chapters offer interactive practice. Study publication is a separate action.</p>
 {% if exposure_unavailable %}<p>Delivery tracking is unavailable in compatibility mode, so held-out assessment qualification is unavailable.</p>{% endif %}
-{% if manifest.part_count > 1 %}<p>Publishing a course in multiple Studies is not yet available.</p>{% elif study.receipt %}<p><a href="{{ study.receipt.url }}">Open the verified private Study</a> · verified {{ study.receipt.verified_at }}.</p>{% else %}
+{% if manifest.part_count > 1 %}<ol aria-label="Private Study parts">{% for part in study.parts %}<li>Part {{ part.number }}: {% if part.receipt %}<a href="{{ part.receipt.url }}">Open verified private Study</a> · verified {{ part.receipt.verified_at }}{% else %}{{ part.state }}{% endif %}</li>{% endfor %}</ol>{% endif %}
+{% if manifest.part_count == 1 and study.receipt %}<p><a href="{{ study.receipt.url }}">Open the verified private Study</a> · verified {{ study.receipt.verified_at }}.</p>{% else %}
 {% if study.state == "queued" %}<p>Publication is queued for the scheduled worker.</p>
 {% elif study.state == "incomplete" %}<p>Publication is incomplete. The worker will retry when credentials and the service are available; another unresolved Study may need reconciliation first.</p>
 {% elif study.state == "stale" %}<p>The requested source is stale. An incomplete earlier Study may require operator reconciliation.</p>
 {% elif study.state == "blocked" %}<p>An earlier incomplete Study request needs reconciliation before requesting this course.</p>
-{% elif study.state == "complete" %}<p>The publication receipt could not be verified.</p>
+{% elif study.state == "complete" and manifest.part_count == 1 %}<p>The publication receipt could not be verified.</p>
 {% elif study.state == "unavailable" %}<p>Publication status is unavailable.</p>{% endif %}
 {% if not study.configured %}<p>Study credentials or account configuration are unavailable.</p>{% else %}<p>Study credentials are configured; permissions are checked when publishing.</p>{% if study.state not in ["queued", "incomplete", "complete", "stale", "unavailable", "blocked"] %}<form method="post" action="{{ url_for('tactical_course_views.submit') }}"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="version" value="{{ offer.hash }}"><button>Request a private Study</button></form>{% endif %}{% endif %}
 {% endif %}

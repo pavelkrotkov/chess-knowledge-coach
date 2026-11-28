@@ -45,7 +45,17 @@ def check_intents(db, subject, key, cutoff, *, ignore_artifact=None):
         paths.append(legacy)
     owner, target, result = learner_key(subject), digest(key), "not_recorded"
     for path in paths:
-        if _own_intent(path, ignore_artifact, owner, target, cutoff):
+        if _own_intent(
+            path,
+            ignore_artifact,
+            owner,
+            target,
+            cutoff,
+            root=root,
+            directory=directory,
+            database=database,
+            subject=subject,
+        ):
             continue
         found = inspect_intent(path, root, directory, database, subject, owner, target, cutoff)
         if found == "provided":
@@ -55,16 +65,17 @@ def check_intents(db, subject, key, cutoff, *, ignore_artifact=None):
     return result
 
 
-def _own_intent(path, artifact, owner, target, cutoff):
-    if artifact is None or path.name != f"tactical-study-{artifact}-intent.json":
+def _own_intent(path, artifact, owner, target, cutoff, *, root, directory, database, subject):
+    if artifact is None:
         return False
     state = read(path)
     source, version = kind(path, state)
     delivery = state.get("tactical_delivery")
-    return (
-        source == "tactical"
-        and version == artifact
-        and isinstance(delivery, dict)
-        and delivery.get("owner") == owner
-        and tracked(state, owner, target, cutoff) is not None
-    )
+    if source != "tactical" or not isinstance(delivery, dict) or delivery.get("owner") != owner:
+        return False
+    if version != artifact:
+        from .tactical_study_parts_binding import member
+
+        if not member(root, directory, database, subject, artifact, state):
+            return False
+    return tracked(state, owner, target, cutoff) is not None

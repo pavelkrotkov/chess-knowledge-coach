@@ -30,6 +30,8 @@ def replaceable(directory, old, item, database, learner):
         raise ValueError("Study request unavailable")
     if (old["version"], old["file"]) == (item["version"], item["file"]):
         return False
+    if old.get("multipart") is not None and old["state"] != "complete":
+        raise ValueError("Earlier Study request remains incomplete")
     intent = directory / f"tactical-study-{old['version']}-intent.json"
     if intent.exists() and (read(intent) or {}).get("complete") is not True:
         raise ValueError("Earlier Study request remains incomplete")
