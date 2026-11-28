@@ -23,7 +23,7 @@ def report(
         deadline = time.monotonic() + 12
         connection.set_progress_handler(lambda: int(time.monotonic() >= deadline), 1000)
         version = connection.execute("PRAGMA data_version").fetchone()[0]
-        decision = inspect(db, game_id, position_id, subject)
+        decision = inspect(db, game_id, position_id, subject, alternative=alternative)
         choice = next(
             (item for item in decision["catalog"]["items"] if item["uci"] == alternative), None
         )
@@ -85,6 +85,7 @@ def prepare_public(
     defense_pv=False,
     mate=False,
     short_mate=False,
+    back_rank=False,
 ):
     from .opening_public_proof import prepare
 
@@ -104,4 +105,5 @@ def prepare_public(
             defense_pv=defense_pv,
             mate=mate,
             short_mate=short_mate,
+            back_rank=back_rank,
         )

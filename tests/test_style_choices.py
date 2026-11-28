@@ -1499,6 +1499,7 @@ def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch, tmp_pa
         with pytest.raises(ValueError, match="verified source changed"):
             request_purpose(budget_db, decisions[0], LEARNER)
     budget_db.close()
+    _back_rank_index_workflow(tmp_path, monkeypatch)
     _short_mate_index_workflow(tmp_path, monkeypatch)
     _immediate_mate_index_workflow(tmp_path, monkeypatch)
     _opening_fit_route(monkeypatch, tmp_path)
@@ -1596,6 +1597,367 @@ def test_report_engine_digest_reuse_and_freshness(tmp_path, monkeypatch):
     configure()
     assert len(hashed) == 9
     db.close()
+
+
+def _back_rank_index_workflow(tmp_path, monkeypatch):
+    """Bind independently qualified back-rank mates through the public index."""
+    import base64
+    import contextlib
+    import hashlib
+    import random
+    import sqlite3
+    import subprocess
+    import time
+
+    import httpx
+    import pytest
+
+    import chess_coach.mastery as mastery
+    import chess_coach.objective_worker as objective_worker
+    import chess_coach.opening_public_back_rank_game as back_game
+    import chess_coach.opening_public_mate_example as mate_example
+    import chess_coach.ops_opening_profile as profile_cli
+    from chess_coach.fact_fingerprint import canonical, digest
+    from chess_coach.objective_short_history import history_hash
+    from chess_coach.opening_classification import classify_game
+    from chess_coach.opening_full_history_build import build as build_history
+    from chess_coach.opening_profile_cli_db import private_database
+    from chess_coach.opening_public_back_rank import evaluate
+    from chess_coach.opening_public_back_rank_example import classify
+    from chess_coach.opening_public_back_rank_policy import policy
+    from chess_coach.opening_public_fork_later import bound
+    from chess_coach.opening_public_proof_current import confirm
+    from chess_coach.opening_public_proof_source import binding
+    from chess_coach.opening_recent_acquire import acquire
+    from chess_coach.opening_recent_index import build as build_recent
+    from chess_coach.opening_recent_source import PREFIX_BYTES, PREFIX_NAME
+    from chess_coach.opening_snapshot import SOURCE, VERSION, import_snapshot
+    from chess_coach.style_schedule_budget import history_budget
+
+    tail = (
+        "d4 Bg4 dxe5 Bxf3 Qxf3 dxe5 Bc4 Nf6 Qb3 Qe7 Nc3 c6 Bg5 b5 "
+        "Nxb5 cxb5 Bxb5+ Nbd7 O-O-O Rd8 Rxd7 Rxd7 Rd1 Qe6 "
+        "Bxd7+ Nxd7 Qb8+ Nxb8 Rd8#"
+    )
+    lines = (f"e4 e5 Nf3 d6 {tail}", f"Nf3 d6 e4 e5 {tail}")
+    games = []
+    for index, line in enumerate(lines):
+        board = chess.Board()
+        for san in line.split():
+            board.push_san(san)
+        assert board.is_checkmate() and len(board.move_stack) == 33
+        game = chess.pgn.Game.from_board(board)
+        game.headers.update(
+            Event="Rated Blitz game",
+            White=f"Reference {index}-{1100 + index}",
+            Black=f"Peer {index}-{1100 + index}",
+            Result="1-0",
+            Date="2026.10.01",
+            TimeControl="600+0",
+            WhiteElo="1700",
+            BlackElo="1650",
+        )
+        games.append((game, [move.uci() for move in board.move_stack]))
+
+    generic = (
+        "e2e4 e7e5 f1c4 b8c6 d2d3 g8f6 b1c3 f8c5 g1f3 d7d6 "
+        "h2h3 h7h6 a2a3 a7a6 b2b3 b7b6 c1b2 c8b7 f3h4 f6h7 "
+        "a3a4 a6a5 b3b4 b6b5 g2g3 a8a7 h1g1 h8g8 d1h5 c6d4 h5f7"
+    )
+    generic_board = chess.Board()
+    for uci in generic.split():
+        generic_board.push_uci(uci)
+    assert generic_board.is_checkmate()
+    generic_source = generic_board.copy(stack=True)
+    generic_source.pop()
+    qualified, other = classify(generic_source, time.monotonic() + 20)
+    assert qualified == [] and other > 0
+    generic_game = chess.pgn.Game.from_board(generic_board)
+    generic_game.headers.update(
+        Event="Rated Blitz game",
+        White="Reference 2-1102",
+        Black="Peer 2-1102",
+        Result="1-0",
+        Date="2026.10.01",
+        TimeControl="600+0",
+        WhiteElo="1700",
+        BlackElo="1650",
+    )
+
+    root = tmp_path / "public-back-rank"
+    planning, data = root / ".runtime" / "planning", root / ".runtime" / "data"
+    planning.mkdir(parents=True, mode=0o700)
+    data.mkdir(mode=0o700)
+    db_path = data / "synthetic.sqlite"
+    with monkeypatch.context() as patch:
+        patch.delenv("CHESS_SCHEMA_COMPAT", raising=False)
+        db = Database(db_path)
+        db.initialize()
+        import_snapshot(db)
+        owned = games[0][0]
+        owned.headers.update(
+            White="learner",
+            Black="synthetic peer",
+            UTCDate="2026.01.02",
+            UTCTime="12:06:00",
+            TimeControl="600+0",
+        )
+        ingest_pgn(db, str(owned))
+        game_id = db.connection.execute("SELECT max(id) FROM games").fetchone()[0]
+        position_id = db.connection.execute(
+            "SELECT id FROM positions WHERE game_id=? AND ply=1", (game_id,)
+        ).fetchone()[0]
+        classify_game(db, game_id, version=VERSION, source_url=SOURCE)
+        db.close()
+        before = hashlib.sha256(db_path.read_bytes()).hexdigest()
+        owned.headers.update(White="Reference 0-1100", Black="Peer 0-1100")
+        generic_moves = [move.uci() for move in generic_board.move_stack]
+        cycle = ["g1f3", "g8f6", "f3g1", "f6g8"]
+        repeated_moves = generic_moves[:2] + cycle + generic_moves[2:4] + cycle + generic_moves[4:]
+        repeated_board = chess.Board()
+        for uci in repeated_moves:
+            repeated_board.push_uci(uci)
+        assert repeated_board.is_checkmate()
+        repeated = chess.pgn.Game.from_board(repeated_board)
+        repeated.headers.update(
+            Event="Rated Blitz game",
+            White="Reference 3-1103",
+            Black="Peer 3-1103",
+            Result="1-0",
+            Date="2026.10.01",
+            TimeControl="600+0",
+            WhiteElo="1700",
+            BlackElo="1650",
+        )
+        text = "\n\n".join([*(str(game) for game, _ in games), str(generic_game), str(repeated)])
+        noise = base64.b64encode(random.Random(1061).randbytes(1_400_000)).decode()
+        compressed = subprocess.run(
+            ["/usr/bin/zstd", "-q", "-c"],
+            input=(text + "\n\n{" + noise).encode(),
+            stdout=subprocess.PIPE,
+            check=True,
+        ).stdout
+        assert len(compressed) > PREFIX_BYTES
+        prefix = compressed[:PREFIX_BYTES]
+
+        def response(request):
+            return httpx.Response(
+                206,
+                headers={
+                    "Content-Range": f"bytes 0-{PREFIX_BYTES - 1}/{PREFIX_BYTES * 2}",
+                    "Content-Length": str(PREFIX_BYTES),
+                    "ETag": '"synthetic-back-rank"',
+                },
+                content=prefix,
+                request=request,
+            )
+
+        with httpx.Client(transport=httpx.MockTransport(response)) as client:
+            acquire(root, "learner", client=client)
+        assert build_recent(root, "learner")["accepted"] == 4
+        assert build_history(root, "learner")["accepted"] == 4
+        start = time.monotonic()
+        deadline = start + 30
+        with private_database(root, "learner", database=db_path) as read_db:
+            version = read_db.connection.execute("PRAGMA data_version").fetchone()[0]
+            with history_budget(deadline=deadline):
+                base, index = binding(
+                    read_db, root, "learner", game_id, position_id, "g1f3", deadline
+                )
+            full = bound(root, "learner", deadline)
+            assert base["reference"]["license"] == "CC0-1.0"
+            assert base["reference"]["source_sha256"] == hashlib.sha256(prefix).hexdigest()
+            assert full[1] == hashlib.sha256(full[0][0].read_bytes()).hexdigest()
+            selected = policy(base, full[1], "initial")
+            result, _, _ = evaluate(full[0], selected, start, start + 20)
+            confirm(
+                read_db,
+                root,
+                "learner",
+                game_id,
+                position_id,
+                "g1f3",
+                deadline,
+                base,
+                index,
+                full,
+                version,
+            )
+        for label, (_, moves) in zip(("played", "alternative"), games, strict=True):
+            branch = result[label]
+            expected = 3 if label == "played" else 1
+            assert branch["eligible"] == branch["selected"] == expected
+            assert branch["analyzed"] == expected - int(label == "played")
+            assert branch["supported"] == 1
+            assert branch["other_mate_games"] == int(label == "played")
+            assert branch["other_mates"] >= int(label == "played")
+            assert branch["unsupported"] == branch["censored"] == int(label == "played")
+            assert branch["preparation_incomplete"] == int(label == "played")
+            example = branch["example"]
+            assert example["ply"] == 33 and example["recorded_mate"]
+            board = chess.Board()
+            for uci in moves[: example["ply"] - 1]:
+                board.push_uci(uci)
+            assert example["side_to_move"] == ("white" if board.turn else "black")
+            assert example["full_history_sha256"] == digest(canonical(moves))
+            assert [item["move"] for item in example["alternatives"]] == ["d1d8"]
+            for item in example["alternatives"]:
+                assert item["status"] == "correct" and item["reason"] == "immediate_checkmate"
+                assert item["history_hash"] == history_hash(board)
+                assert item["geometry"]["king"] == "e8"
+                assert item["geometry"]["checkers"] == ["d8"]
+            with sqlite3.connect(full[0][0].as_uri() + "?mode=ro&immutable=1", uri=True) as indexed:
+                stored = indexed.execute(
+                    "SELECT identity,moves FROM histories WHERE game_id=?", (example["record"],)
+                ).fetchone()
+            assert stored[0] == example["source_identity"]
+            assert json.loads(stored[1]) == moves and example["record_hash"]
+        assert hashlib.sha256(db_path.read_bytes()).hexdigest() == before
+        continuation = policy(base, full[1], "continuation")
+        later_start = time.monotonic()
+        later, _, _ = evaluate(full[0], continuation, later_start, later_start + 20)
+        for label, branch in later.items():
+            expected = 2 if label == "played" else 1
+            assert branch["status"] == "incomplete"
+            assert branch["ended_before_window"] == expected
+            assert branch["unsupported"] == int(label == "played")
+            assert branch["preparation_incomplete"] == expected + int(label == "played")
+            assert branch["censored"] == 0
+            assert branch["example"] is None
+
+        patch.setenv("CHESS_DB", str(db_path))
+        patch.setenv("CHESS_SUBJECT", "learner")
+        args = [
+            "opening-profile",
+            "--project-root",
+            str(root),
+            "--game-id",
+            str(game_id),
+            "--position-id",
+            str(position_id),
+            "--alternative",
+            "g1f3",
+            "--reference",
+            "recent",
+        ]
+        for window in ("continuation", "initial"):
+            patch.setattr(
+                sys,
+                "argv",
+                [
+                    *args,
+                    "--prepare-public",
+                    "--proof-kind",
+                    "back_rank",
+                    "--fork-window",
+                    window,
+                ],
+            )
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                profile_cli.main()
+            prepared = json.loads(output.getvalue())
+            assert prepared["version"] == "public-opening-back-rank-mate-v1"
+            assert prepared["back_rank_policy"]["window"] == window
+            for label, branch in prepared["branches"].items():
+                if window == "initial":
+                    assert branch["supported"] == 1
+                    assert branch["unsupported"] == branch["censored"] == int(label == "played")
+                else:
+                    assert branch["ended_before_window"] == (2 if label == "played" else 1)
+                    assert branch["example"] is None
+        patch.setattr(
+            sys,
+            "argv",
+            [
+                *args,
+                "--prepare-public-forks",
+                "--proof-kind",
+                "back_rank",
+            ],
+        )
+        with pytest.raises(SystemExit, match="Opening profile unavailable"):
+            profile_cli.main()
+
+        def forbidden(*_args, **_kwargs):
+            pytest.fail("proof, engine, provider, or learning on private read")
+
+        with patch.context() as read:
+            read.setattr(back_game, "classify", forbidden)
+            read.setattr(mate_example, "judge", forbidden)
+            read.setattr(chess.engine.SimpleEngine, "popen_uci", forbidden)
+            read.setattr(httpx.Client, "send", forbidden)
+            read.setattr(mastery, "update_mastery", forbidden)
+            read.setattr(objective_worker, "process", forbidden)
+            read.setattr(sys, "argv", [*args, "--proof-kind", "back_rank"])
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                profile_cli.main()
+            shown = json.loads(output.getvalue())["public_preparation"]
+            assert shown["back_rank_status"] == "prepared"
+            assert shown["branches"]["played"]["supported"] == 1
+            assert shown["branches"]["alternative"]["supported"] == 1
+            app = create_app(
+                db_path=db_path,
+                project_root=root,
+                subject="learner",
+                actor="fixture",
+                corpus="test",
+                login="fixture",
+                origin="https://coach.invalid",
+            )
+            route = f"/repertoire/games/{game_id}/openings/{position_id}/profile"
+            client = app.test_client()
+            assert client.get(route, base_url="https://coach.invalid").status_code == 403
+            page = client.get(
+                route,
+                query_string={
+                    "reference": "recent",
+                    "alternative": "g1f3",
+                    "proof_kind": "back_rank",
+                },
+                base_url="https://coach.invalid",
+                headers={"Tailscale-User-Login": "fixture"},
+            )
+            assert page.status_code == 200
+            assert b"Prepared public back-rank mates" in page.data
+            assert page.data.count(b"Public back-rank example") == 2
+            assert b"White is to move" in page.data and b"Rd8#" in page.data
+            assert b"The defender has no legal reply" in page.data
+            # Change and restore only this generated synthetic prefix, as in the
+            # existing profile currentness workflow.
+            prefix_path = planning / PREFIX_NAME
+            original_prefix = prefix_path.read_bytes()
+            artifacts = set(planning.glob("opening-public-proof-*.json"))
+            prefix_path.chmod(0o600)
+            try:
+                with prefix_path.open("r+b") as stream:
+                    stream.write(bytes([original_prefix[0] ^ 1]))
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    profile_cli.main()
+                assert json.loads(output.getvalue())["public_preparation"] is None
+                stale = client.get(
+                    route,
+                    query_string={
+                        "reference": "recent",
+                        "alternative": "g1f3",
+                        "proof_kind": "back_rank",
+                    },
+                    base_url="https://coach.invalid",
+                    headers={"Tailscale-User-Login": "fixture"},
+                )
+                assert stale.status_code == 200
+                assert b"No current back-rank preparation" in stale.data
+                assert b"Public back-rank example" not in stale.data
+            finally:
+                with prefix_path.open("r+b") as stream:
+                    stream.write(original_prefix[:1])
+                prefix_path.chmod(0o400)
+            assert prefix_path.read_bytes() == original_prefix
+            assert set(planning.glob("opening-public-proof-*.json")) == artifacts
+        assert hashlib.sha256(db_path.read_bytes()).hexdigest() == before
+        print("back_rank_index_gate=passed")
 
 
 def _short_mate_index_workflow(tmp_path, monkeypatch):

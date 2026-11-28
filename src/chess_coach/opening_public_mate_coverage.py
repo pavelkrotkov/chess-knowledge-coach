@@ -30,6 +30,7 @@ def unavailable(reason):
 def coverage(context, selected, more, binding, *, kind="mate"):
     return {
         **dict.fromkeys(COUNTERS, 0),
+        **({"other_mates": 0, "other_mate_games": 0} if kind == "back_rank" else {}),
         "status": "prepared",
         "eligible": context["matched_candidates"],
         "selected": len(selected),
@@ -48,6 +49,9 @@ def coverage(context, selected, more, binding, *, kind="mate"):
 def record(result, item):
     for key in COUNTERS:
         result[key] += item[key]
+    if "other_mates" in item:
+        result["other_mates"] += item["other_mates"]
+        result["other_mate_games"] += int(item["other_mates"] > 0)
     if result["example"] is None:
         result["example"] = item["example"]
 

@@ -37,6 +37,7 @@ def _reference_options():
             "defense_pv",
             "mate",
             "short_mate",
+            "back_rank",
         }
     ):
         abort(400)
@@ -47,8 +48,11 @@ def _reference_options():
 def show(game_id: int, position_id: int):
     db = database()
     version = db.connection.execute("PRAGMA data_version").fetchone()[0]
+    selected = request.args.get("alternative")
     try:
-        decision = inspect(db, game_id, position_id, current_app.config["SUBJECT"])
+        decision = inspect(
+            db, game_id, position_id, current_app.config["SUBJECT"], alternative=selected
+        )
     except ValueError:
         abort(404)
     root, subject = current_app.config["PROJECT_ROOT"], current_app.config["SUBJECT"]
@@ -56,7 +60,6 @@ def show(game_id: int, position_id: int):
     deadline = profile_deadline(reference)
     played = profile(db, root, subject, decision, decision["played_uci"], reference, deadline)
     items = decision["catalog"]["items"]
-    selected = request.args.get("alternative")
     alternative = _alternative(items, selected)
     other = (
         profile(db, root, subject, decision, alternative["uci"], reference, deadline)
