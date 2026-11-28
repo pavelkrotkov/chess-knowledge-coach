@@ -4,14 +4,13 @@ import time
 
 from .fact_fingerprint import canonical, digest
 from .opening_public_capture_pv_current import verify as verify_capture_pv
-from .opening_public_capture_pv_policy import policy as capture_pv_policy
-from .opening_public_capture_pv_session import prepare as prepare_capture_pv
+from .opening_public_capture_pv_session import prepare_selected as prepare_capture_pv
 from .opening_public_proof_current import confirm
 from .opening_public_proof_files import publish
 from .opening_public_proof_read import view
+from .opening_public_proof_request import normalize
 from .opening_public_proof_source import PROOF_SECONDS, SECONDS, binding
 from .opening_public_proof_window import evaluate, select
-from .opening_public_protection_policy import protection as protection_policy
 from .opening_queue_binding import ENGINE
 from .opening_queue_files import MAX_BYTES
 from .opening_recent_capacity import check as capacity
@@ -35,7 +34,10 @@ def prepare(
     protection=False,
     capture_pv=False,
     defense_pv=False,
+    mate=False,
 ):
+    kind = normalize(forks, prevent, protection, capture_pv, defense_pv, mate, fork_window)
+    pv_mode = kind in {"capture_pv", "defense_pv"}
     start = time.monotonic()
     deadline = start + SECONDS
     directory, _ = planning(root, subject)
@@ -48,35 +50,20 @@ def prepare(
                 db, root, subject, game_id, position_id, alternative, deadline
             )
         base = identity
-        if capture_pv or defense_pv:
-            if defense_pv:
-                from .opening_public_defense_pv_policy import policy as defense_policy
-
-                identity = defense_policy(
-                    base,
-                    forks=forks,
-                    prevent=prevent,
-                    protection=protection,
-                    capture_pv=capture_pv,
-                    window=fork_window,
-                )
-            else:
-                identity = capture_pv_policy(
-                    base, forks=forks, prevent=prevent, protection=protection, window=fork_window
-                )
-            full = None
-            result, sample = prepare_capture_pv(db.path, ENGINE, index, identity, start, deadline)
-            later_sample = None
+        if pv_mode:
+            identity, result, sample = prepare_capture_pv(
+                db.path,
+                ENGINE,
+                index,
+                base,
+                start,
+                deadline,
+                kind=kind,
+                window=fork_window,
+            )
+            full = later_sample = None
         else:
-            if protection:
-                identity, full = (
-                    protection_policy(base, forks=forks, prevent=prevent, window=fork_window),
-                    None,
-                )
-            else:
-                identity, full = select(
-                    base, root, subject, deadline, forks, fork_window, prevent=prevent
-                )
+            identity, full = select(base, root, subject, deadline, kind, fork_window)
             result, sample, later_sample = evaluate(
                 index, base, identity, full, start, start + PROOF_SECONDS
             )
@@ -92,7 +79,7 @@ def prepare(
 
         def recheck():
             # The source can change during record checks, so confirm it last.
-            if capture_pv or defense_pv:
+            if pv_mode:
                 verify_capture_pv(index, identity, result, deadline)
             confirm(
                 db,

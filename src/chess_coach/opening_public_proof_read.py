@@ -5,6 +5,8 @@ import sqlite3
 from .opening_public_capture_pv_current import verify as verify_capture_pv
 from .opening_public_capture_pv_policy import policy as capture_pv_policy
 from .opening_public_capture_pv_policy import selected as selected_capture_pv
+from .opening_public_defense_pv_policy import policy as defense_policy
+from .opening_public_defense_pv_policy import selected as selected_defense_pv
 from .opening_public_proof_current import confirm, selected
 from .opening_public_proof_source import binding, check
 from .opening_public_proof_view import requested, view
@@ -32,14 +34,14 @@ def lookup(
             identity, index = binding(
                 db, root, subject, game_id, position_id, alternative, deadline
             )
-        if proof_kind == "defense_pv":
-            from .opening_public_defense_pv_policy import selected as selected_defense_pv
-
-            value, legacy, full = selected_defense_pv(directory, identity, fork_window)
-        elif proof_kind == "capture_pv":
-            value, legacy, full = selected_capture_pv(directory, identity, fork_window)
-        elif proof_kind == "protection":
-            value, legacy, full = selected_protection(directory, identity, fork_window)
+        selectors = {
+            "defense_pv": selected_defense_pv,
+            "capture_pv": selected_capture_pv,
+            "protection": selected_protection,
+        }
+        selector = selectors.get(proof_kind)
+        if selector is not None:
+            value, legacy, full = selector(directory, identity, fork_window)
         else:
             value, legacy, full = selected(
                 directory, identity, root, subject, deadline, fork_window, kind=proof_kind
@@ -47,12 +49,11 @@ def lookup(
         check(deadline)
         if value is None:
             return None
-        if proof_kind == "defense_pv":
-            from .opening_public_defense_pv_policy import policy as defense_policy
-
-            verify_capture_pv(index, defense_policy(identity), value["branches"], deadline)
-        elif proof_kind == "capture_pv":
-            verify_capture_pv(index, capture_pv_policy(identity), value["branches"], deadline)
+        if proof_kind == "mate" and (full is None or "mate" not in value["binding"]["policy"]):
+            return None
+        pv_policies = {"defense_pv": defense_policy, "capture_pv": capture_pv_policy}
+        if proof_kind in pv_policies:
+            verify_capture_pv(index, pv_policies[proof_kind](identity), value["branches"], deadline)
         confirm(
             db,
             root,

@@ -1499,6 +1499,7 @@ def test_duplicate_imports_do_not_count_as_independent_games(monkeypatch, tmp_pa
         with pytest.raises(ValueError, match="verified source changed"):
             request_purpose(budget_db, decisions[0], LEARNER)
     budget_db.close()
+    _immediate_mate_index_workflow(tmp_path, monkeypatch)
     _opening_fit_route(monkeypatch, tmp_path)
 
 
@@ -1594,6 +1595,389 @@ def test_report_engine_digest_reuse_and_freshness(tmp_path, monkeypatch):
     configure()
     assert len(hashed) == 9
     db.close()
+
+
+def _immediate_mate_index_workflow(tmp_path, monkeypatch):
+    """Exercise real indexed mate preparation with isolated synthetic data."""
+    import base64
+    import contextlib
+    import hashlib
+    import random
+    import sqlite3
+    import subprocess
+    import time
+
+    import httpx
+    import pytest
+
+    import chess_coach.opening_public_mate_example as mate_example_module
+    import chess_coach.opening_public_mate_game as mate_game_module
+    import chess_coach.ops_opening_profile as mate_cli_main
+    from chess_coach.opening_classification import classify_game
+    from chess_coach.opening_profile_cli_report import report as mate_cli_report
+    from chess_coach.opening_recent_acquire import acquire
+    from chess_coach.opening_recent_index import build as build_recent
+    from chess_coach.opening_recent_source import PREFIX_BYTES
+    from chess_coach.opening_snapshot import SOURCE, VERSION, import_snapshot
+
+    real_connect = sqlite3.connect
+    # Qualify original indexed mate records for both real branch selections.
+    with monkeypatch.context() as mate_cli:
+        mate_cli.delenv("CHESS_SCHEMA_COMPAT", raising=False)
+        from chess_coach.fact_fingerprint import canonical, digest
+        from chess_coach.objective_short_history import (
+            history_hash as mate_history_hash,
+        )
+        from chess_coach.opening_full_history_build import build as build_mate_history
+        from chess_coach.opening_profile_cli_db import private_database as mate_database
+        from chess_coach.opening_public_fork_later import bound as mate_bound
+        from chess_coach.opening_public_mate import evaluate as evaluate_mate
+        from chess_coach.opening_public_mate_policy import policy as mate_policy
+        from chess_coach.opening_public_proof_current import confirm as confirm_mate
+        from chess_coach.opening_public_proof_source import binding as mate_binding
+        from chess_coach.style_schedule_budget import (
+            history_budget as mate_history_budget,
+        )
+
+        mate_root = tmp_path / "public-mate"
+        mate_planning = mate_root / ".runtime" / "planning"
+        mate_data = mate_root / ".runtime" / "data"
+        mate_planning.mkdir(parents=True, mode=0o700)
+        mate_data.mkdir(mode=0o700)
+        mate_db_path = mate_data / "synthetic.sqlite"
+        mate_histories = (
+            "e2e4 e7e5 f1c4 b8c6 d2d3 g8f6 b1c3 f8c5 g1f3 d7d6 "
+            "h2h3 h7h6 a2a3 a7a6 b2b3 b7b6 c1b2 c8b7 f3h4 f6h7 "
+            "a3a4 a6a5 b3b4 b6b5 g2g3 a8a7 h1g1 h8g8 d1h5 c6d4 h5f7",
+            "d2d4 e7e5 e2e4 b8c6 f1c4 g8f6 b1c3 f8c5 g1f3 d7d6 "
+            "h2h3 h7h6 a2a3 a7a6 b2b3 b7b6 c1b2 c8b7 f3h4 f6h7 "
+            "a3a4 a6a5 b3b4 b6b5 g2g3 a8a7 h1g1 h8g8 d1h5 c6d4 h5f7",
+        )
+
+        def mate_reference(mate_index, mate_history):
+            mate_board = chess.Board()
+            for mate_uci in mate_history.split():
+                mate_board.push_uci(mate_uci)
+            assert mate_board.is_checkmate()
+            mate_pgn = chess.pgn.Game.from_board(mate_board)
+            mate_pgn.headers.update(
+                Event="Rated Blitz game",
+                White=f"Reference {mate_index}-{1100 + mate_index}",
+                Black=f"Peer {mate_index}-{1100 + mate_index}",
+                Result="1-0",
+                Date="2026.10.01",
+                TimeControl="600+0",
+                WhiteElo="1700",
+                BlackElo="1650",
+            )
+            return str(mate_pgn)
+
+        with mate_cli.context() as mate_setup:
+            mate_setup.setattr(sqlite3, "connect", real_connect)
+            mate_db = Database(mate_db_path)
+            mate_db.initialize()
+            import_snapshot(mate_db)
+            mate_pgn = chess.pgn.Game()
+            mate_pgn.headers.update(
+                White="learner",
+                Black="synthetic peer",
+                Result="1-0",
+                UTCDate="2026.01.02",
+                UTCTime="12:06:00",
+                TimeControl="600+0",
+            )
+            mate_board, mate_node = mate_pgn.board(), mate_pgn
+            for mate_uci in mate_histories[0].split():
+                mate_move = mate_board.parse_uci(mate_uci)
+                mate_node = mate_node.add_variation(mate_move)
+                mate_board.push(mate_move)
+            ingest_pgn(mate_db, str(mate_pgn))
+            mate_game = mate_db.connection.execute("SELECT max(id) FROM games").fetchone()[0]
+            mate_position = mate_db.connection.execute(
+                "SELECT id FROM positions WHERE game_id=? AND ply=1", (mate_game,)
+            ).fetchone()[0]
+            classify_game(mate_db, mate_game, version=VERSION, source_url=SOURCE)
+            mate_pgn.headers["White"] = "synthetic peer"
+            mate_pgn.headers["Black"] = "learner"
+            mate_pgn.headers["UTCDate"] = "2026.01.03"
+            ingest_pgn(mate_db, str(mate_pgn))
+            mate_black_game = mate_db.connection.execute("SELECT max(id) FROM games").fetchone()[0]
+            mate_black_position = mate_db.connection.execute(
+                "SELECT id FROM positions WHERE game_id=? AND ply=2", (mate_black_game,)
+            ).fetchone()[0]
+            classify_game(mate_db, mate_black_game, version=VERSION, source_url=SOURCE)
+            mate_db.close()
+        mate_db_hash = hashlib.sha256(mate_db_path.read_bytes()).hexdigest()
+        mate_text = "\n\n".join(
+            mate_reference(mate_index, mate_history)
+            for mate_index, mate_history in enumerate(mate_histories)
+        )
+        noise = base64.b64encode(random.Random(743).randbytes(1_400_000)).decode()
+        mate_zstd = subprocess.run(
+            ["/usr/bin/zstd", "-q", "-c"],
+            input=(mate_text + "\n\n{" + noise).encode(),
+            stdout=subprocess.PIPE,
+            check=True,
+        ).stdout
+        assert len(mate_zstd) > PREFIX_BYTES
+        mate_prefix = mate_zstd[:PREFIX_BYTES]
+
+        def mate_response(request):
+            return httpx.Response(
+                206,
+                headers={
+                    "Content-Range": f"bytes 0-{PREFIX_BYTES - 1}/{PREFIX_BYTES * 2}",
+                    "Content-Length": str(PREFIX_BYTES),
+                    "ETag": '"synthetic-immediate-mate"',
+                },
+                content=mate_prefix,
+                request=request,
+            )
+
+        with httpx.Client(transport=httpx.MockTransport(mate_response)) as mate_fake:
+            acquire(mate_root, "learner", client=mate_fake)
+        assert build_recent(mate_root, "learner")["accepted"] == 2
+        assert build_mate_history(mate_root, "learner")["accepted"] == 2
+        mate_cli.setenv("CHESS_SUBJECT", "learner")
+        mate_cli.setenv("CHESS_DB", str(mate_db_path))
+        mate_cli.setattr(
+            sys,
+            "argv",
+            [
+                "opening-profile",
+                "--project-root",
+                str(mate_root),
+                "--game-id",
+                str(mate_game),
+                "--position-id",
+                str(mate_position),
+                "--alternative",
+                "d2d4",
+                "--reference",
+                "recent",
+                "--prepare-public-forks",
+                "--proof-kind",
+                "mate",
+            ],
+        )
+        with pytest.raises(SystemExit, match="Opening profile unavailable"):
+            mate_cli_main.main()
+        for mate_window in ("initial", "continuation"):
+            mate_start = time.monotonic()
+            mate_deadline = mate_start + 30
+            with mate_database(mate_root, "learner") as mate_read_db:
+                mate_version = mate_read_db.connection.execute("PRAGMA data_version").fetchone()[0]
+                with mate_history_budget(deadline=mate_deadline):
+                    mate_base, mate_index = mate_binding(
+                        mate_read_db,
+                        mate_root,
+                        "learner",
+                        mate_game,
+                        mate_position,
+                        "d2d4",
+                        mate_deadline,
+                    )
+                mate_full = mate_bound(mate_root, "learner", mate_deadline)
+                assert mate_base["reference"]["license"] == "CC0-1.0"
+                assert (
+                    mate_base["reference"]["source_sha256"]
+                    == hashlib.sha256(mate_prefix).hexdigest()
+                )
+                assert mate_full[1] == hashlib.sha256(mate_full[0][0].read_bytes()).hexdigest()
+                mate_selected = mate_policy(mate_base, mate_full[1], mate_window)
+                mate_result, _, _ = evaluate_mate(
+                    mate_full[0], mate_selected, mate_start, mate_start + 20
+                )
+                confirm_mate(
+                    mate_read_db,
+                    mate_root,
+                    "learner",
+                    mate_game,
+                    mate_position,
+                    "d2d4",
+                    mate_deadline,
+                    mate_base,
+                    mate_index,
+                    mate_full,
+                    mate_version,
+                )
+            mate_cli.setattr(
+                sys,
+                "argv",
+                [
+                    "opening-profile",
+                    "--project-root",
+                    str(mate_root),
+                    "--game-id",
+                    str(mate_game),
+                    "--position-id",
+                    str(mate_position),
+                    "--alternative",
+                    "d2d4",
+                    "--reference",
+                    "recent",
+                    "--prepare-public",
+                    "--proof-kind",
+                    "mate",
+                    "--fork-window",
+                    mate_window,
+                ],
+            )
+            mate_output = io.StringIO()
+            with contextlib.redirect_stdout(mate_output):
+                mate_cli_main.main()
+            mate_prepared = json.loads(mate_output.getvalue())
+            assert mate_prepared["version"] == "public-opening-immediate-mate-v1"
+            assert mate_prepared["mate_policy"]["window"] == mate_window
+            assert mate_prepared["branches"] == mate_result
+            for mate_label, mate_history in zip(
+                ("played", "alternative"), mate_histories, strict=True
+            ):
+                mate_branch = mate_result[mate_label]
+                assert mate_branch["eligible"] == mate_branch["selected"] == 1
+                if mate_window == "continuation":
+                    assert mate_branch["status"] == "incomplete"
+                    assert mate_branch["ended_before_window"] == 1
+                    assert mate_branch["example"] is None
+                    continue
+                assert mate_branch["analyzed"] == mate_branch["supported"] == 1
+                mate_example = mate_branch["example"]
+                assert mate_example["ply"] == 31 and mate_example["recorded_mate"]
+                assert [item["move"] for item in mate_example["alternatives"]] == ["h5f7"]
+                assert mate_example["alternatives"][0]["reason"] == "immediate_checkmate"
+                mate_source_board = chess.Board()
+                for mate_uci in mate_history.split()[:-1]:
+                    mate_source_board.push_uci(mate_uci)
+                assert mate_example["alternatives"][0]["history_hash"] == mate_history_hash(
+                    mate_source_board
+                )
+                assert mate_example["full_history_sha256"] == digest(
+                    canonical(mate_history.split())
+                )
+                mate_indexed = real_connect(
+                    mate_full[0][0].as_uri() + "?mode=ro&immutable=1", uri=True
+                )
+                mate_stored = mate_indexed.execute(
+                    "SELECT h.identity,h.moves,g.context FROM histories h "
+                    "JOIN games g ON g.id=h.game_id WHERE h.game_id=?",
+                    (mate_example["record"],),
+                ).fetchone()
+                mate_indexed.close()
+                assert mate_stored[0] == mate_example["source_identity"]
+                assert json.loads(mate_stored[1]) == mate_history.split()
+                assert json.loads(mate_stored[2])["Result"] == "1-0"
+                assert mate_example["record_hash"]
+        # A real black-owned selection must analyze the same game
+        # even though its final mate was delivered by the other side.
+        mate_black_start = time.monotonic()
+        mate_black_deadline = mate_black_start + 30
+        with mate_database(mate_root, "learner") as mate_read_db:
+            mate_black_version = mate_read_db.connection.execute("PRAGMA data_version").fetchone()[
+                0
+            ]
+            with mate_history_budget(deadline=mate_black_deadline):
+                mate_black_base, mate_black_index = mate_binding(
+                    mate_read_db,
+                    mate_root,
+                    "learner",
+                    mate_black_game,
+                    mate_black_position,
+                    "c7c5",
+                    mate_black_deadline,
+                )
+            mate_black_full = mate_bound(mate_root, "learner", mate_black_deadline)
+            mate_black_policy = mate_policy(mate_black_base, mate_black_full[1], "initial")
+            mate_black_result, _, _ = evaluate_mate(
+                mate_black_full[0],
+                mate_black_policy,
+                mate_black_start,
+                mate_black_start + 20,
+            )
+            confirm_mate(
+                mate_read_db,
+                mate_root,
+                "learner",
+                mate_black_game,
+                mate_black_position,
+                "c7c5",
+                mate_black_deadline,
+                mate_black_base,
+                mate_black_index,
+                mate_black_full,
+                mate_black_version,
+            )
+        assert mate_black_base["color"] == "black"
+        mate_black_played = mate_black_result["played"]
+        assert mate_black_played["eligible"] == mate_black_played["selected"] == 1
+        assert mate_black_played["analyzed"] == 1
+        assert mate_black_played["unsupported"] == 0
+
+        def mate_forbidden(*_args, **_kwargs):
+            pytest.fail("proof, engine, or provider on private read")
+
+        with mate_cli.context() as mate_read:
+            mate_read.setattr(mate_game_module, "immediate_mates", mate_forbidden)
+            mate_read.setattr(mate_example_module, "judge", mate_forbidden)
+            mate_read.setattr(chess.engine.SimpleEngine, "popen_uci", mate_forbidden)
+            mate_read.setattr(httpx.Client, "send", mate_forbidden)
+            mate_shown = mate_cli_report(
+                mate_root,
+                "learner",
+                mate_game,
+                mate_position,
+                "d2d4",
+                "recent",
+                proof_kind="mate",
+            )["public_preparation"]
+            assert mate_shown["mate_status"] == "prepared"
+            assert mate_shown["branches"]["played"]["supported"] == 1
+            assert mate_shown["branches"]["alternative"]["supported"] == 1
+            mate_read.setattr(
+                sys,
+                "argv",
+                [
+                    "opening-profile",
+                    "--project-root",
+                    str(mate_root),
+                    "--game-id",
+                    str(mate_game),
+                    "--position-id",
+                    str(mate_position),
+                    "--alternative",
+                    "d2d4",
+                    "--reference",
+                    "recent",
+                    "--proof-kind",
+                    "mate",
+                ],
+            )
+            mate_output = io.StringIO()
+            with contextlib.redirect_stdout(mate_output):
+                mate_cli_main.main()
+            assert json.loads(mate_output.getvalue())["public_preparation"] == mate_shown
+            mate_app = create_app(
+                db_path=mate_db_path,
+                project_root=mate_root,
+                subject="learner",
+                actor="fixture",
+                corpus="test",
+                login="fixture",
+                origin="https://coach.invalid",
+            )
+            mate_route = f"/repertoire/games/{mate_game}/openings/{mate_position}/profile"
+            mate_client = mate_app.test_client()
+            assert mate_client.get(mate_route, base_url="https://coach.invalid").status_code == 403
+            mate_page = mate_client.get(
+                mate_route,
+                query_string={"reference": "recent", "alternative": "d2d4", "proof_kind": "mate"},
+                base_url="https://coach.invalid",
+                headers={"Tailscale-User-Login": "fixture"},
+            )
+            assert mate_page.status_code == 200
+            assert b"Prepared public immediate mates" in mate_page.data
+            assert mate_page.data.count(b"Public mate example") == 2
+        assert hashlib.sha256(mate_db_path.read_bytes()).hexdigest() == mate_db_hash
+        print("synthetic indexed immediate mate: both branches and unavailable window")
 
 
 def _opening_fit_route(monkeypatch, tmp_path):
@@ -3063,6 +3447,7 @@ def _opening_fit_route(monkeypatch, tmp_path):
                     prevention["reference"]["source_sha256"]
                     == hashlib.sha256(prevention_prefix).hexdigest()
                 )
+
                 from chess_coach.fact_fingerprint import canonical, digest
 
                 for label, origin in (("played", "pre_existing"), ("alternative", "created")):

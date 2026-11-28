@@ -83,6 +83,7 @@ def prepare_public(
     protection=False,
     capture_pv=False,
     defense_pv=False,
+    mate=False,
 ):
     from .opening_public_proof import prepare
 
@@ -100,4 +101,5 @@ def prepare_public(
             protection=protection,
             capture_pv=capture_pv,
             defense_pv=defense_pv,
+            mate=mate,
         )
