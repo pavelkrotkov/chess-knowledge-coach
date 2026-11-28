@@ -60,6 +60,7 @@ def test_typed_rows_hidden_rowids_and_without_rowid_preserved(tmp_path, monkeypa
     right.close()
     _compressed_recovery_checks(tmp_path, source, monkeypatch)
     _zstd_recovery_checks(tmp_path, source, monkeypatch)
+    _offline_pair_checks(tmp_path, monkeypatch)
 
 
 def _row_size_preflight_checks():
@@ -668,3 +669,125 @@ def test_committed_wal_writer_during_real_backup_keeps_pinned_snapshot(tmp_path,
     finally:
         writer.close()
         setup.close()
+
+
+def _offline_pair_checks(tmp_path, monkeypatch):
+    """Exercise the CLI against generated SQLite and retained failure evidence."""
+    import contextlib
+    import io
+    import json
+    import os
+    import signal
+    import sys
+
+    import pytest
+
+    from chess_coach import cli, recovery_pair
+
+    def setup(name):
+        directory = tmp_path / name
+        directory.mkdir()
+        source = directory / "source.sqlite"
+        connection = sqlite3.connect(source)
+        connection.execute("CREATE TABLE sample(value TEXT)")
+        connection.execute("INSERT INTO sample VALUES('synthetic')")
+        connection.commit()
+        connection.close()
+        return directory, source, source.read_bytes()
+
+    def arguments(directory, source):
+        return [
+            str(source),
+            str(directory / "a.gz"),
+            str(directory / "b.gz"),
+            str(directory / "restored.sqlite"),
+            "--project-root",
+            str(tmp_path),
+            "--acknowledge-source-unlink",
+        ]
+
+    def run(args):
+        monkeypatch.setattr(sys, "argv", ["chess-coach", *args])
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            cli.main()
+        return json.loads(output.getvalue())
+
+    def recover(directory):
+        return run(
+            [
+                "restore-offline-gzip-pair",
+                str(directory / "a.gz"),
+                str(directory / "b.gz"),
+                str(directory / "a.gz.pair.json"),
+                str(directory / "manual.sqlite"),
+                "--project-root",
+                str(tmp_path),
+            ]
+        )
+
+    directory, source, original = setup("offline-pair-success")
+    assert run(["offline-gzip-pair", *arguments(directory, source)])["status"] == "verified"
+    assert not source.exists()
+    assert (directory / "restored.sqlite").read_bytes() == original
+    metadata = json.loads((directory / "a.gz.pair.json").read_text())
+    assert metadata["verified"] == "both_archives_match_sole_leased_source"
+    assert "typed_fidelity" not in metadata and "restore_integrity" not in metadata
+    assert recover(directory)["status"] == "verified"
+    assert (directory / "manual.sqlite").read_bytes() == original
+    assert (directory / "a.gz").exists() and (directory / "b.gz").exists()
+
+    directory, source, original = setup("offline-pair-corrupt")
+    prove = recovery_pair._prove_pair
+
+    def truncate(lease, a, b, metadata, first, second, deadline):
+        b.write_bytes(b.read_bytes()[:-1])
+        return prove(lease, a, b, metadata, first, second, deadline)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(recovery_pair, "_prove_pair", truncate)
+        with pytest.raises(ValueError, match="archive"):
+            run(["offline-gzip-pair", *arguments(directory, source)])
+    assert source.read_bytes() == original
+
+    directory, source, original = setup("offline-pair-capacity")
+    check_space = recovery_pair.require_space
+
+    def no_reclaim(root, target, deadline, remaining=0, credit=0):
+        if credit:
+            raise ValueError("offline recovery capacity unavailable")
+        return check_space(root, target, deadline, remaining, credit)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(recovery_pair, "require_space", no_reclaim)
+        with pytest.raises(ValueError, match="capacity"):
+            run(["offline-gzip-pair", *arguments(directory, source)])
+    assert source.read_bytes() == original
+    assert (directory / "a.gz").exists() and (directory / "b.gz").exists()
+
+    directory, source, original = setup("offline-pair-break")
+    original_check = recovery_pair.Lease.check
+
+    def break_lease(lease):
+        os.kill(os.getpid(), signal.SIGIO)
+        original_check(lease)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(recovery_pair.Lease, "check", break_lease)
+        with pytest.raises(ValueError, match="lease broken"):
+            run(["offline-gzip-pair", *arguments(directory, source)])
+    assert source.read_bytes() == original
+
+    directory, source, original = setup("offline-pair-post-unlink")
+
+    def fail_restore(*_args, **_kwargs):
+        raise OSError("synthetic restore failure")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(recovery_pair, "restore_pair", fail_restore)
+        with pytest.raises(RuntimeError, match="source unlinked"):
+            run(["offline-gzip-pair", *arguments(directory, source)])
+    assert not source.exists()
+    assert (directory / "a.gz").exists() and (directory / "b.gz").exists()
+    assert (directory / "a.gz.pair.json").exists()
+    assert recover(directory)["status"] == "verified"
+    assert (directory / "manual.sqlite").read_bytes() == original

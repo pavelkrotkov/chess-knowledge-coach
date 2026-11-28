@@ -32,6 +32,40 @@ def configure(sub):
         parser.add_argument("--project-root", type=Path, required=True)
         parser.add_argument("--check-only", action="store_true")
 
+    parser = sub.add_parser("offline-gzip-pair")
+    for name in ("source", "archive_a", "archive_b", "restored"):
+        parser.add_argument(name, type=Path)
+    parser.add_argument("--project-root", type=Path, required=True)
+    parser.add_argument("--acknowledge-source-unlink", action="store_true", required=True)
+
+    parser = sub.add_parser("restore-offline-gzip-pair")
+    for name in ("archive_a", "archive_b", "metadata", "restored"):
+        parser.add_argument(name, type=Path)
+    parser.add_argument("--project-root", type=Path, required=True)
+
+
+def _offline_pair(args):
+    from .recovery_pair import offline_pair
+
+    result = offline_pair(
+        args.source,
+        args.archive_a,
+        args.archive_b,
+        args.restored,
+        project_root=args.project_root,
+        acknowledge_unlink=args.acknowledge_source_unlink,
+    )
+    print(json.dumps(result))
+
+
+def _restore_pair(args):
+    from .recovery_pair import manual_restore
+
+    result = manual_restore(
+        args.archive_a, args.archive_b, args.metadata, args.restored, project_root=args.project_root
+    )
+    print(json.dumps(result))
+
 
 def _compressed(args, codec):
     result = compressed_recovery(
@@ -93,6 +127,8 @@ def _plan_analysis_history(args):
 
 COMMANDS = {
     "plan-analysis-history": _plan_analysis_history,
+    "offline-gzip-pair": _offline_pair,
+    "restore-offline-gzip-pair": _restore_pair,
     "backup-db": _backup,
     "restore-db": _restore,
     "backup-gzip-verify": _gzip,

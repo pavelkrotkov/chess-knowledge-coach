@@ -57,3 +57,21 @@ def pinned_raw(source, deadline):
     ):
         metadata = _metadata(reader, raw, source)
         yield reader, raw, metadata
+
+
+def identity(info):
+    return (
+        info.st_dev,
+        info.st_ino,
+        info.st_mode,
+        info.st_nlink,
+        info.st_size,
+        info.st_mtime_ns,
+        info.st_ctime_ns,
+    )
+
+
+def check_identity(source, fd, expected):
+    if identity(os.fstat(fd)) != expected or identity(source.lstat()) != expected:
+        raise ValueError("offline recovery source changed")
+    _companions(source)

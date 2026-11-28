@@ -7,9 +7,11 @@ SECONDS = 300
 
 
 class Deadline:
-    def __init__(self):
+    def __init__(self, seconds=SECONDS):
+        if not 0 < seconds <= 3600:
+            raise ValueError("invalid recovery deadline")
         now = time.monotonic()
-        self.end = now + SECONDS
+        self.end = now + seconds
         self.busy_end = now + 30
 
     def check(self):
