@@ -1,0 +1,21 @@
+<h3>Prepared public royal skewers</h3>
+<p>These bounded public examples check a king and an aligned rear piece, with a verified capture after each covered legal reply. They do not establish a missed move, preference, skill, or overall safety. Other positions and roots remain unknown.</p>
+{% if prepared and prepared.skewer_policy is defined %}
+<p>The {{ prepared.skewer_policy.window }} window covers up to {{ prepared.skewer_policy.positions }} plies and {{ prepared.skewer_policy.games_per_branch }} independent games per branch. The source prefix does not verify the complete archive.</p>
+{% for label, branch in (("Played", prepared.branches.played), ("Alternative", prepared.branches.alternative)) %}
+<section><h4>{{ label }} branch</h4>
+{% if branch.eligible is none %}<p>Matching context or preparation is unavailable; counts are unknown.</p>{% else %}
+<p>Eligible: {{ branch.eligible }}; excluded by nominal context: {{ branch.excluded_context }}; unknown context: {{ branch.unknown_context }}; selected: {{ branch.selected }}; at least one position checked: {{ branch.analyzed }}; with a proved example: {{ branch.supported }}; unsupported: {{ branch.unsupported }}; censored: {{ branch.censored }}; ended before this window: {{ branch.ended_before_window }}; preparation incomplete: {{ branch.preparation_incomplete }}{% if branch.interrupted %}; the shared deadline interrupted preparation{% endif %}. Counts can overlap; unresolved geometry, exchanges and counterplay are unknown. The scan stops at the first supported root.</p>
+{% if branch.example %}
+<p><a href="{{ branch.example.source }}">Public skewer example</a>, record {{ branch.example.record }}, ply {{ branch.example.ply }}. {{ branch.example.side_to_move|capitalize }} is to move. The recorded move was {{ branch.example.recorded_san }}. {% if branch.example.proof.played %}The proved move {{ branch.example.proof.root }} was played.{% else %}The proved move {{ branch.example.proof.root }} is a verified alternative; the recorded move is not graded.{% endif %}</p>
+<p>The checking move targets the {{ branch.example.proof.target }} on {{ branch.example.proof.square }} behind the king. The proof covered {{ branch.example.proof.replies }} legal defender replies. One representative proof line is defender reply {{ branch.example.proof.reply }}, then {{ branch.example.proof.capture }}; this is not necessarily the recorded continuation.</p>
+<details><summary>Source and proof details</summary>
+<p>The proof stops at the first supported checking root; other roots remain unknown. Original history SHA-256: <code>{{ branch.example.history_sha256 }}</code>; full retained history SHA-256: <code>{{ branch.example.full_history_sha256 }}</code>; record binding: <code>{{ branch.example.record_hash }}</code>.</p>
+</details>
+{% else %}<p>No worked example is available in the completed checks; unresolved and unsearched positions remain unknown.</p>{% endif %}
+{% endif %}</section>{% endfor %}
+<details><summary>Source and proof limits</summary>
+<p>Proof version {{ prepared.skewer_policy.proof_version }}; chess version {{ prepared.skewer_policy.chess_version }}; at most {{ prepared.skewer_policy.root_limit }} checking roots, {{ prepared.skewer_policy.reply_limit }} defender replies, {{ prepared.skewer_policy.exchange_nodes }} exchange nodes and {{ prepared.skewer_policy.exchange_plies }} exchange plies, with minimum gain {{ prepared.skewer_policy.minimum_gain }}. Proof deadline {{ prepared.skewer_policy.proof_seconds }} seconds; preparation deadline {{ prepared.skewer_policy.shared_seconds }} seconds.</p>
+<p>Source: <a href="{{ prepared.reference.source_archive }}">public rated-game archive</a>, <a href="{{ prepared.reference.license_url }}">{{ prepared.reference.license }}</a>. Prefix SHA-256: <code>{{ prepared.reference.source_sha256 }}</code>; full-history index SHA-256: <code>{{ prepared.skewer_policy.index_sha256 }}</code>.</p>
+</details>
+{% else %}<p>No current skewer preparation is available for this pair and window. Coverage is unknown; preparation is an offline action.</p>{% endif %}
