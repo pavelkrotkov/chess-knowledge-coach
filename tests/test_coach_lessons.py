@@ -4869,6 +4869,29 @@ def test_mate_lesson_starts_owned_practice_and_rechecks_review(tmp_path, monkeyp
             == "complete"
         )
         mate_decision(db, position, "fixture_a")
+
+    # Qualify the current course sources before any rehearsal changes familiarity.
+    from chess_coach.tactical_course import build as build_course
+
+    default_course = build_course(db, "fixture_a", "test")
+    selected_course = build_course(db, "fixture_a", "test", selected=["mate_in_one:execute"])
+    assert (default_course["kind"], selected_course["kind"]) == (
+        "local-tactical-course-v15",
+        "local-tactical-course-v7",
+    )
+    for course in (default_course, selected_course):
+        pattern = next(item for item in course["preview"]["patterns"] if item["kind"] == "mate")
+        assert pattern["independent_games"] == 2
+        assert len({item["game_key"] for item in pattern["supporting_sources"]}) == 2
+        assert len(course["preview"]["chapters"]) == 1
+        snapshot = course["preview"]["chapters"][0]["source_snapshot"]
+        assert snapshot["objective"] == "mate_in_one"
+        board = chess.Board(snapshot["prompt_fen"])
+        board.push_uci(snapshot["lines"][0])
+        assert board.is_checkmate()
+        assert course["preview"]["selection"]["unavailable"][0]["reason"] == (
+            "related corpus or compatible unfamiliar example unavailable"
+        )
     db.close()
     app = create_app(
         db_path=path,
