@@ -86,6 +86,7 @@ def make_game(path, monkeypatch):
 
 
 def test_source_worker_lesson_practice_and_review(tmp_path, monkeypatch):
+    _recorded_public_material_workflow(tmp_path, monkeypatch)
     _recent_defense_workflow(monkeypatch)
     path = tmp_path / "discovery.sqlite"
     db, config = make_game(path, monkeypatch)
@@ -983,6 +984,303 @@ def test_source_worker_lesson_practice_and_review(tmp_path, monkeypatch):
     )
     success_db.connection.commit()
     assert inspect_evidence(success_db, success_id)["discovery_success_currentness"] == "stale"
+
+
+def _recorded_public_material_workflow(tmp_path, monkeypatch):
+    """Exercise the isolated public recorded-discovery profile on original histories."""
+    import base64
+    import contextlib
+    import hashlib
+    import io
+    import random
+    import sqlite3
+    import subprocess
+    import time
+
+    import httpx
+
+    import chess_coach.mastery as mastery
+    import chess_coach.objective_worker as objective_worker
+    import chess_coach.opening_public_discovery_material_example as material_example
+    import chess_coach.opening_public_discovery_material_game as material_game
+    import chess_coach.ops_opening_profile as profile_cli
+    from chess_coach.fact_fingerprint import canonical, digest
+    from chess_coach.objective_short_history import history_hash
+    from chess_coach.opening_classification import classify_game
+    from chess_coach.opening_full_history_build import build as build_history
+    from chess_coach.opening_profile_cli_db import private_database
+    from chess_coach.opening_public_discovery_material_policy import policy
+    from chess_coach.opening_public_fork_later import bound
+    from chess_coach.opening_public_proof_coverage import _selected
+    from chess_coach.opening_public_proof_source import binding
+    from chess_coach.opening_recent_acquire import acquire
+    from chess_coach.opening_recent_index import build as build_recent
+    from chess_coach.opening_recent_source import PREFIX_BYTES, PREFIX_NAME
+    from chess_coach.opening_snapshot import SOURCE, VERSION, import_snapshot
+    from chess_coach.style_schedule_budget import history_budget
+
+    tail = "Bc4 Bc5 O-O d6 d3 Nf6 c3 Nd4 Nh4 O-O Bb5 a6 f4 a5 Qe2 Ng4 Qf2 h6 Re1"
+    lines = (f"e4 e5 Nf3 Nc6 {tail} Nf3+", f"e4 Nc6 Nf3 e5 {tail} Nf3+")
+    games = []
+    for index, line in enumerate(lines):
+        board = chess.Board()
+        for san in line.split():
+            board.push_san(san)
+        assert len(board.move_stack) == 24
+        game = chess.pgn.Game.from_board(board)
+        game.headers.update(
+            Event="Rated Blitz game",
+            White=f"Peer {index}-{1100 + index}",
+            Black=f"Reference {index}-{1200 + index}",
+            Result="0-1",
+            Date="2026.10.01",
+            TimeControl="600+0",
+            WhiteElo="1650",
+            BlackElo="1700",
+        )
+        games.append((game, [move.uci() for move in board.move_stack]))
+    board = chess.Board()
+    for uci in games[0][1][:23]:
+        board.push_uci(uci)
+    assert chess.Move.from_uci("h6h5") in board.legal_moves
+    board.push_uci("h6h5")
+    variant = chess.pgn.Game.from_board(board)
+    variant.headers.update(
+        Event="Rated Blitz game",
+        White="Peer 2-1102",
+        Black="Reference 2-1202",
+        Result="0-1",
+        Date="2026.10.01",
+        TimeControl="600+0",
+        WhiteElo="1650",
+        BlackElo="1700",
+    )
+    variant_moves = [move.uci() for move in board.move_stack]
+    root = tmp_path / "public-discovery-material"
+    planning, data = root / ".runtime" / "planning", root / ".runtime" / "data"
+    planning.mkdir(parents=True, mode=0o700)
+    data.mkdir(mode=0o700)
+    db_path = data / "synthetic.sqlite"
+    with monkeypatch.context() as patch:
+        patch.delenv("CHESS_SCHEMA_COMPAT", raising=False)
+        db = Database(db_path)
+        db.initialize()
+        import_snapshot(db)
+        owned = games[0][0]
+        owned.headers.update(
+            White="synthetic peer", Black="learner", UTCDate="2026.01.02", UTCTime="12:06:00"
+        )
+        ingest_pgn(db, str(owned))
+        game_id = db.connection.execute("SELECT max(id) FROM games").fetchone()[0]
+        position_id = db.connection.execute(
+            "SELECT id FROM positions WHERE game_id=? AND ply=2", (game_id,)
+        ).fetchone()[0]
+        classify_game(db, game_id, version=VERSION, source_url=SOURCE)
+        db.close()
+        before = hashlib.sha256(db_path.read_bytes()).hexdigest()
+        owned.headers.update(White="Peer 0-1100", Black="Reference 0-1200")
+        text = "\n\n".join([*(str(game) for game, _ in games), str(variant)])
+        noise = base64.b64encode(random.Random(795).randbytes(1_400_000)).decode()
+        compressed = subprocess.run(
+            ["/usr/bin/zstd", "-q", "-c"],
+            input=(text + "\n\n{" + noise).encode(),
+            stdout=subprocess.PIPE,
+            check=True,
+        ).stdout
+        assert len(compressed) > PREFIX_BYTES
+        prefix = compressed[:PREFIX_BYTES]
+
+        def response(request):
+            return httpx.Response(
+                206,
+                headers={
+                    "Content-Range": f"bytes 0-{PREFIX_BYTES - 1}/{PREFIX_BYTES * 2}",
+                    "Content-Length": str(PREFIX_BYTES),
+                    "ETag": '"synthetic-discovery"',
+                },
+                content=prefix,
+                request=request,
+            )
+
+        with httpx.Client(transport=httpx.MockTransport(response)) as client:
+            acquire(root, "learner", client=client)
+        assert build_recent(root, "learner")["accepted"] == 3
+        assert build_history(root, "learner")["accepted"] == 3
+        deadline = time.monotonic() + 30
+        with private_database(root, "learner", database=db_path) as read_db:
+            with history_budget(deadline=deadline):
+                base, _ = binding(read_db, root, "learner", game_id, position_id, "b8c6", deadline)
+            full = bound(root, "learner", deadline)
+        assert base["reference"]["license"] == "CC0-1.0"
+        assert base["reference"]["source_sha256"] == hashlib.sha256(prefix).hexdigest()
+        selected = policy(base, full[1], "initial")
+        selected = {**selected, "index_sha256": full[1]}
+        with sqlite3.connect(full[0][0].as_uri() + "?mode=ro&immutable=1", uri=True) as indexed:
+            rows, _ = _selected(indexed, selected, base["source"]["played"], deadline)
+            row = next(
+                row
+                for row in rows
+                if json.loads(
+                    indexed.execute(
+                        "SELECT moves FROM histories WHERE game_id=?", (row[0],)
+                    ).fetchone()[0]
+                )
+                == variant_moves
+            )
+            observed = material_game.inspect(
+                indexed, row, selected, base["source"]["played"], deadline
+            )
+        assert observed["analyzed"] == 1 and observed["example"] is None
+
+        patch.setenv("CHESS_DB", str(db_path))
+        patch.setenv("CHESS_SUBJECT", "learner")
+        args = [
+            "opening-profile",
+            "--project-root",
+            str(root),
+            "--game-id",
+            str(game_id),
+            "--position-id",
+            str(position_id),
+            "--alternative",
+            "b8c6",
+            "--reference",
+            "recent",
+        ]
+        for window in ("continuation", "initial"):
+            patch.setattr(
+                sys,
+                "argv",
+                [
+                    *args,
+                    "--prepare-public",
+                    "--proof-kind",
+                    "discovery_material",
+                    "--fork-window",
+                    window,
+                ],
+            )
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                profile_cli.main()
+            prepared = json.loads(output.getvalue())
+            assert prepared["discovery_material_policy"]["root_scope"] == "recorded"
+            if window == "continuation":
+                for branch in prepared["branches"].values():
+                    assert branch["example"] is None and branch["preparation_incomplete"]
+                continue
+            for label, (_, moves) in zip(("played", "alternative"), games, strict=True):
+                branch = prepared["branches"][label]
+                assert branch["counts_scope"] == "completed_game_inspections"
+                assert branch["unfinished_games"] == 0
+                assert branch["supported"] == 1
+                example = branch["example"]
+                board = chess.Board()
+                for uci in moves[:23]:
+                    board.push_uci(uci)
+                assert example["ply"] == 24 and example["recorded_uci"] == "d4f3"
+                assert example["side_to_move"] == "black" and example["fen"] == board.fen()
+                assert example["history_hash"] == history_hash(board)
+                assert example["full_history_sha256"] == digest(canonical(moves))
+                assert (
+                    example["history_sha256"]
+                    and example["record_hash"]
+                    and example["source_identity"]
+                )
+                assert example["certificates"]
+                for certificate in example["certificates"]:
+                    assert (certificate["slider"], certificate["target"]) == ("c5", "f2")
+                    assert (certificate["moved_from"], certificate["moved_to"]) == ("d4", "f3")
+                    assert not certificate["mate"] and not certificate["double_check"]
+                    assert certificate["minimum_gain"] >= 3 and certificate["legal_replies"] == 4
+                    board.push_uci(example["recorded_uci"])
+                    assert {b["reply"] for b in certificate["branches"]} == {
+                        m.uci() for m in board.legal_moves
+                    }
+                    for witness in certificate["branches"]:
+                        reply = chess.Move.from_uci(witness["reply"])
+                        assert reply in board.legal_moves
+                        following = board.copy(stack=True)
+                        following.push(reply)
+                        capture = chess.Move.from_uci(witness["capture"])
+                        assert capture in following.legal_moves and capture.uci() == "c5f2"
+                    board.pop()
+
+        def forbidden(*_args, **_kwargs):
+            pytest.fail("proof, engine, provider, or learning on private read")
+
+        with patch.context() as read:
+            read.setattr(material_example, "prove", forbidden)
+            read.setattr(material_example, "discoveries", forbidden)
+            read.setattr(chess.engine.SimpleEngine, "popen_uci", forbidden)
+            read.setattr(httpx.Client, "send", forbidden)
+            read.setattr(mastery, "update_mastery", forbidden)
+            read.setattr(objective_worker, "process", forbidden)
+            read.setattr(sys, "argv", [*args, "--proof-kind", "discovery_material"])
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                profile_cli.main()
+            shown = json.loads(output.getvalue())["public_preparation"]
+            assert shown["discovery_material_status"] == "prepared"
+            assert shown["branches"]["played"]["supported"] == 1
+            assert shown["branches"]["alternative"]["supported"] == 1
+            app = create_app(
+                db_path=db_path,
+                project_root=root,
+                subject="learner",
+                actor="fixture",
+                corpus="test",
+                login="fixture",
+                origin="https://coach.invalid",
+            )
+            route = f"/repertoire/games/{game_id}/openings/{position_id}/profile"
+            client = app.test_client()
+            assert client.get(route, base_url="https://coach.invalid").status_code == 403
+            query = {
+                "reference": "recent",
+                "alternative": "b8c6",
+                "proof_kind": "discovery_material",
+            }
+            page = client.get(
+                route,
+                query_string=query,
+                base_url="https://coach.invalid",
+                headers={"Tailscale-User-Login": "fixture"},
+            )
+            assert page.status_code == 200
+            assert page.data.count(b"Public recorded discovery example") == 2
+            assert b"Unplayed moves are unsearched" in page.data
+            assert (
+                b"Black played Nf3+" in page.data
+                and b"bishop on c5 toward the queen on f2" in page.data
+            )
+            prefix_path = planning / PREFIX_NAME
+            original_prefix = prefix_path.read_bytes()
+            artifacts = set(planning.glob("opening-public-proof-*.json"))
+            prefix_path.chmod(0o600)
+            try:
+                with prefix_path.open("r+b") as stream:
+                    stream.write(bytes([original_prefix[0] ^ 1]))
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    profile_cli.main()
+                assert json.loads(output.getvalue())["public_preparation"] is None
+                stale = client.get(
+                    route,
+                    query_string=query,
+                    base_url="https://coach.invalid",
+                    headers={"Tailscale-User-Login": "fixture"},
+                )
+                assert stale.status_code == 200
+                assert b"No current recorded material discovery preparation" in stale.data
+                assert b"Public recorded discovery example" not in stale.data
+            finally:
+                with prefix_path.open("r+b") as stream:
+                    stream.write(original_prefix[:1])
+                prefix_path.chmod(0o400)
+            assert prefix_path.read_bytes() == original_prefix
+            assert set(planning.glob("opening-public-proof-*.json")) == artifacts
+        assert hashlib.sha256(db_path.read_bytes()).hexdigest() == before
 
 
 def _recent_defense_workflow(monkeypatch):

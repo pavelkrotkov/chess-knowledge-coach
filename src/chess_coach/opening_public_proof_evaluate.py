@@ -1,6 +1,7 @@
 """Execute the selected bounded public proof and branch coverage."""
 
 from .opening_public_back_rank import evaluate as back_rank_evaluate
+from .opening_public_discovery_material import branch as discovery_material_branch
 from .opening_public_double_mate import evaluate as double_mate_evaluate
 from .opening_public_fork_later import branches as later_branches
 from .opening_public_mate import evaluate as mate_evaluate
@@ -11,6 +12,12 @@ from .opening_public_skewer import evaluate as skewer_evaluate
 
 
 def evaluate(index, base, identity, full, start, deadline):
+    if "discovery_material" in identity["policy"]:
+        binding = {**identity, "index_sha256": full[1]}
+        result, sample = later_branches(
+            full[0], binding, deadline, brancher=discovery_material_branch
+        )
+        return result, sample, None
     for kind, handler in (
         ("double_mate", double_mate_evaluate),
         ("skewer", skewer_evaluate),

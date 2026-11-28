@@ -1436,3 +1436,5 @@ session retains only lines that match the fork; other legal choices need
 verification. The source line digest, selected indices and filter version are
 rechecked on resume. Existing session moves and reveal accounting apply;
 completion does not create skill evidence or verify unlisted alternatives.
+
+A separately prepared public opening profile checks recorded moves for bounded material discoveries on the current and candidate branches. Its immutable policy identifies the recorded-root scope, source, original history, limits and independent certificates for every supported target at the representative first proved position in each game. Unplayed moves, unresolved geometry, unsupported history, unvisited positions and interrupted preparation remain unknown. The result does not establish a personal mistake, compensation, overall safety or opening quality.
