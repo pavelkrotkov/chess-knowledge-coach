@@ -38,19 +38,21 @@ def restore_pair(archive_a, archive_b, metadata, destination, *, project_root, d
     size = value["raw_bytes"]
     require_space(root, target, deadline, size)
     staged = temporary(target)
-    guard = Guard(root, target, deadline)
-    manifest = {
-        "archive_bytes": first["bytes"],
-        "archive_sha256": first["sha256"],
-        "raw_bytes": size,
-        "raw_sha256": value["raw_sha256"],
-    }
-    restore(a, staged, manifest, guard, deadline)
-    sync(staged)
-    with staged.open("rb") as raw:
-        compare(b, second, raw, size, value["raw_sha256"], deadline, deadline.check)
-    verify_standalone(staged, deadline)
-    guard.check(0, force=True)
-    _publish(staged, target)
-    staged.unlink()
-    return {"status": "verified", "comparison": "complete_bytes_against_second_archive"}
+    try:
+        guard = Guard(root, target, deadline)
+        manifest = {
+            "archive_bytes": first["bytes"],
+            "archive_sha256": first["sha256"],
+            "raw_bytes": size,
+            "raw_sha256": value["raw_sha256"],
+        }
+        restore(a, staged, manifest, guard, deadline)
+        sync(staged)
+        with staged.open("rb") as raw:
+            compare(b, second, raw, size, value["raw_sha256"], deadline, deadline.check)
+        verify_standalone(staged, deadline)
+        guard.check(0, force=True)
+        _publish(staged, target)
+        return {"status": "verified", "comparison": "complete_bytes_against_second_archive"}
+    finally:
+        staged.unlink(missing_ok=True)

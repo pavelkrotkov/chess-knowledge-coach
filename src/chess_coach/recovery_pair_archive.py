@@ -16,20 +16,22 @@ class ArchiveGuard(Guard):
 def write_archive(raw, target, metadata, root, deadline):
     limit = archive_limit(root, target, deadline)
     staged = temporary(target)
-    guard = ArchiveGuard(root, target, deadline)
-    raw.seek(0)
-    result = compress(raw, staged, metadata, {"archive_limit_bytes": limit}, guard, deadline)
-    sync(staged)
-    if staged.stat().st_blocks * 512 > ARCHIVE_LIMIT:
-        raise ValueError("offline archive allocation exceeds limit")
-    guard.check(force=True)
-    _publish(staged, target)
-    staged.unlink()
-    return {
-        "bytes": result["archive_bytes"],
-        "sha256": result["archive_sha256"],
-        "raw_sha256": result["raw_sha256"],
-    }
+    try:
+        guard = ArchiveGuard(root, target, deadline)
+        raw.seek(0)
+        result = compress(raw, staged, metadata, {"archive_limit_bytes": limit}, guard, deadline)
+        sync(staged)
+        if staged.stat().st_blocks * 512 > ARCHIVE_LIMIT:
+            raise ValueError("offline archive allocation exceeds limit")
+        guard.check(force=True)
+        _publish(staged, target)
+        return {
+            "bytes": result["archive_bytes"],
+            "sha256": result["archive_sha256"],
+            "raw_sha256": result["raw_sha256"],
+        }
+    finally:
+        staged.unlink(missing_ok=True)
 
 
 def check_archive(path, metadata, deadline):

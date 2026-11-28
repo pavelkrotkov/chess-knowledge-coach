@@ -42,7 +42,9 @@ def digest_file(path, deadline):
 
 def publish_bytes(target, value):
     staged = temporary(target)
-    staged.write_bytes(value)
-    sync(staged)
-    _publish(staged, target)
-    staged.unlink()
+    try:
+        staged.write_bytes(value)
+        sync(staged)
+        _publish(staged, target)
+    finally:
+        staged.unlink(missing_ok=True)

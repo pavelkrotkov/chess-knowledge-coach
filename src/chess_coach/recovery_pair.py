@@ -41,7 +41,7 @@ def offline_pair(source, archive_a, archive_b, restored, *, project_root, acknow
             lease.unlink()
         require_space(root, target, deadline, metadata["raw_bytes"])
         return restore_pair(a, b, meta, target, project_root=root, deadline=deadline)
-    except Exception as error:
+    except BaseException as error:
         if lease.removed:
             raise RuntimeError(
                 "source unlinked; retain the archive pair and metadata for manual recovery"

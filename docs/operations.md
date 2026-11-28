@@ -309,8 +309,10 @@ reserves working and operating space. Compression is unknown: a refusal leaves
 the source in place before unlink. The source can already be unlinked when a
 later filesystem, timeout or restore failure occurs. The explicit operation has
 a 3,600-second bound; it does not establish that a current-sized database will
-finish within it or fit. Preserve both archives, metadata and any partial files
-after failure; do not assume automatic rollback.
+finish within it or fit. On handled failures, the command removes its own
+unpublished temporary files. Preserve the published archives and metadata;
+do not assume automatic rollback. An abrupt process kill may leave temporary
+files that require inspection before manual recovery.
 
 If the error reports that the source was unlinked, retain the pair and metadata,
 keep writers stopped, and choose a different approved new project-local path.

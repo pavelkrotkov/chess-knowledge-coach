@@ -682,7 +682,7 @@ def _offline_pair_checks(tmp_path, monkeypatch):
 
     import pytest
 
-    from chess_coach import cli, recovery_pair
+    from chess_coach import cli, recovery_pair, recovery_pair_restore
 
     def setup(name):
         directory = tmp_path / name
@@ -779,14 +779,28 @@ def _offline_pair_checks(tmp_path, monkeypatch):
 
     directory, source, original = setup("offline-pair-post-unlink")
 
-    def fail_restore(*_args, **_kwargs):
-        raise OSError("synthetic restore failure")
+    compared = []
+    original_compare = recovery_pair_restore.compare
+
+    def observe_compare(*args, **kwargs):
+        result = original_compare(*args, **kwargs)
+        compared.append(True)
+        return result
+
+    def interrupt_after_restore(path, _deadline):
+        assert compared == [True]
+        assert path.read_bytes() == original
+        raise KeyboardInterrupt("synthetic post-unlink interruption")
 
     with monkeypatch.context() as patch:
-        patch.setattr(recovery_pair, "restore_pair", fail_restore)
-        with pytest.raises(RuntimeError, match="source unlinked"):
+        patch.setattr(recovery_pair_restore, "compare", observe_compare)
+        patch.setattr(recovery_pair_restore, "verify_standalone", interrupt_after_restore)
+        with pytest.raises(RuntimeError, match="source unlinked") as error:
             run(["offline-gzip-pair", *arguments(directory, source)])
+    assert isinstance(error.value.__cause__, KeyboardInterrupt)
     assert not source.exists()
+    assert not (directory / "restored.sqlite").exists()
+    assert not list(directory.glob(".chess-recovery-*"))
     assert (directory / "a.gz").exists() and (directory / "b.gz").exists()
     assert (directory / "a.gz.pair.json").exists()
     assert recover(directory)["status"] == "verified"
